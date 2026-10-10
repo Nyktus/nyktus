@@ -10,7 +10,12 @@
 // change or delete them.
 package audit
 
-import "net/netip"
+import (
+	"context"
+	"net/netip"
+
+	"nyktus.org/nyktus/internal/platform/httpx"
+)
 
 // Action names what was done, in the form "resource.verb", for example
 // "user.create". Actions are declared as constants of this type, so that every
@@ -97,4 +102,15 @@ type Entry struct {
 	ClientIP netip.Addr
 	// RequestID links the entry to the logs of the request, if there was one.
 	RequestID string
+}
+
+// WithRequest returns e with the client address and the request ID of the HTTP
+// request that ctx belongs to, so that handlers and the services they call do not
+// pass them on one by one. The client address is the one that the
+// httpx.ClientIP middleware determined, never a header value. Outside a request,
+// both stay empty.
+func (e Entry) WithRequest(ctx context.Context) Entry {
+	e.ClientIP = httpx.ClientIPFrom(ctx)
+	e.RequestID = httpx.RequestIDFrom(ctx)
+	return e
 }

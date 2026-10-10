@@ -167,7 +167,7 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger) er
 	}
 	logger.InfoContext(ctx, "console: listening", slog.String("addr", ln.Addr().String()))
 
-	srv := httpx.NewServer(console.NewHandler(logger, pool), logger)
+	srv := httpx.NewServer(console.NewHandler(logger, pool, cfg.TrustedProxies), logger)
 	if err := httpx.Serve(ctx, srv, ln); err != nil {
 		return fmt.Errorf("console: %w", err)
 	}

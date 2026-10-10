@@ -37,7 +37,7 @@ func TestHealthEndpoints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			h := NewHandler(slog.New(slog.DiscardHandler), fakePinger{err: tt.dbErr})
+			h := NewHandler(slog.New(slog.DiscardHandler), fakePinger{err: tt.dbErr}, nil)
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, nil))
 			if w.Code != tt.status {
