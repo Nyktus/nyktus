@@ -23,6 +23,7 @@ Code is formatted with `gofmt` and checked by the linters configured in the repo
 - Everything that is not intended for import by other modules lives under `internal/`.
 - Interfaces are declared by the consumer, kept small, and only introduced where there is more than one implementation or a test needs a seam.
 - Package names are short, lowercase and singular. Avoid `util`, `common` and `helpers`.
+- Code below the HTTP layer reads the request ID and the client address through `internal/platform/request`, never through `httpx`, so that domain packages such as the audit log do not depend on HTTP.
 
 ### Errors
 
