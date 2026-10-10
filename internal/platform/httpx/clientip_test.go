@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"testing"
+
+	"nyktus.org/nyktus/internal/platform/request"
 )
 
 func TestClientIP(t *testing.T) {
@@ -79,10 +81,45 @@ func TestClientIP(t *testing.T) {
 			want:    "10.1.0.1",
 		},
 		{
-			name:    "entry with a port is invalid",
+			name:    "IPv4 entry with a port",
 			trusted: trusted,
 			remote:  "10.0.0.2:4711",
 			xff:     []string{"203.0.113.9:80"},
+			want:    "203.0.113.9",
+		},
+		{
+			name:    "IPv6 entry in brackets with a port",
+			trusted: trusted,
+			remote:  "10.0.0.2:4711",
+			xff:     []string{"[2001:db8:2::9]:80"},
+			want:    "2001:db8:2::9",
+		},
+		{
+			name:    "IPv6 entry in brackets",
+			trusted: trusted,
+			remote:  "10.0.0.2:4711",
+			xff:     []string{"[2001:db8:2::9]"},
+			want:    "2001:db8:2::9",
+		},
+		{
+			name:    "trusted entry with a port is skipped",
+			trusted: trusted,
+			remote:  "10.0.0.2:4711",
+			xff:     []string{"203.0.113.9, 10.1.0.1:443"},
+			want:    "203.0.113.9",
+		},
+		{
+			name:    "IPv4 address in brackets is invalid",
+			trusted: trusted,
+			remote:  "10.0.0.2:4711",
+			xff:     []string{"[203.0.113.9]"},
+			want:    "10.0.0.2",
+		},
+		{
+			name:    "host name is invalid",
+			trusted: trusted,
+			remote:  "10.0.0.2:4711",
+			xff:     []string{"client.example.com:80"},
 			want:    "10.0.0.2",
 		},
 		{
@@ -137,20 +174,12 @@ func TestClientIP(t *testing.T) {
 
 			var got netip.Addr
 			h := ClientIP(tt.trusted)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-				got = ClientIPFrom(r.Context())
+				got = request.ClientIP(r.Context())
 			}))
 			h.ServeHTTP(httptest.NewRecorder(), r)
 			if got.String() != tt.want {
-				t.Errorf("ClientIPFrom() = %s, want %s", got, tt.want)
+				t.Errorf("request.ClientIP() = %s, want %s", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestClientIPFrom_WithoutMiddlewareIsUnknown(t *testing.T) {
-	t.Parallel()
-
-	if got := ClientIPFrom(t.Context()); got.IsValid() {
-		t.Errorf("ClientIPFrom() = %s, want the zero address", got)
 	}
 }

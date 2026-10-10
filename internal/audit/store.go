@@ -9,6 +9,7 @@ import (
 	"net/netip"
 
 	"nyktus.org/nyktus/internal/platform/db"
+	"nyktus.org/nyktus/internal/platform/request"
 )
 
 // Store writes audit entries to PostgreSQL.
@@ -40,10 +41,9 @@ func (s *Store) Record(ctx context.Context, e Entry) error {
 	}
 	var ip *netip.Addr
 	if e.ClientIP.IsValid() {
-		// A dual-stack socket reports an IPv4 client as ::ffff:a.b.c.d, and a zone
-		// only names the interface that received the request. Without both, every
-		// client has exactly one spelling in the log.
-		addr := e.ClientIP.Unmap().WithZone("")
+		// Entries can carry an address from elsewhere than the request context,
+		// so every address is stored in its one canonical spelling.
+		addr := request.CanonicalAddr(e.ClientIP)
 		ip = &addr
 	}
 

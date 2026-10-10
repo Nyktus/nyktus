@@ -24,6 +24,7 @@ import (
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/platform/httpx"
+	"nyktus.org/nyktus/internal/platform/request"
 	"nyktus.org/nyktus/internal/platform/schematest"
 	"nyktus.org/nyktus/internal/user"
 )
@@ -83,7 +84,7 @@ func requestID(t *testing.T) string {
 	t.Helper()
 	var id string
 	h := httpx.RequestID(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		id = httpx.RequestIDFrom(r.Context())
+		id = request.ID(r.Context())
 	}))
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
 	if id == "" {

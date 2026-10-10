@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"nyktus.org/nyktus/internal/platform/logging"
+	"nyktus.org/nyktus/internal/platform/request"
 )
 
 func TestDecodeJSON(t *testing.T) {
@@ -126,7 +127,7 @@ func TestRequestID_IgnoresClientValueAndIsUnique(t *testing.T) {
 
 	var seen []string
 	h := RequestID(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		seen = append(seen, RequestIDFrom(r.Context()))
+		seen = append(seen, request.ID(r.Context()))
 	}))
 
 	for range 2 {

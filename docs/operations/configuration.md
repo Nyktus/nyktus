@@ -36,7 +36,7 @@ Settings of a server role are only read when the role runs. A process started wi
 
 Nyktus records the address of the client in the audit log. By default, it uses the address of the connection. Behind a reverse proxy, that is the address of the proxy.
 
-List the addresses of your reverse proxies in `NYKTUS_TRUSTED_PROXIES`. For a connection from one of these addresses, Nyktus reads the `X-Forwarded-For` header from right to left, skips the addresses of trusted proxies and takes the first other address as the client. A chain of several proxies works as long as all of them are listed. `X-Real-IP` is ignored.
+List the addresses of your reverse proxies in `NYKTUS_TRUSTED_PROXIES`. For a connection from one of these addresses, Nyktus reads the `X-Forwarded-For` header from right to left, skips the addresses of trusted proxies and takes the first other address as the client. A chain of several proxies works as long as all of them are listed. Entries may carry a port, such as `192.0.2.1:4711` or `[2001:db8::1]:4711`. `X-Real-IP` is ignored.
 
 - Configure each proxy to append the address it received the request from to `X-Forwarded-For`, which most proxies do by default. A proxy that replaces the header instead also works.
 - List only proxies that you operate. A client that connects directly, bypassing the proxy, cannot set its own address, because Nyktus only reads the header from trusted addresses.

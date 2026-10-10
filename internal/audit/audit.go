@@ -14,7 +14,7 @@ import (
 	"context"
 	"net/netip"
 
-	"nyktus.org/nyktus/internal/platform/httpx"
+	"nyktus.org/nyktus/internal/platform/request"
 )
 
 // Action names what was done, in the form "resource.verb", for example
@@ -104,13 +104,13 @@ type Entry struct {
 	RequestID string
 }
 
-// WithRequest returns e with the client address and the request ID of the HTTP
+// WithRequest returns e with the client address and the request ID of the
 // request that ctx belongs to, so that handlers and the services they call do not
-// pass them on one by one. The client address is the one that the
-// httpx.ClientIP middleware determined, never a header value. Outside a request,
+// pass them on one by one. The HTTP middleware determines the client address from
+// the socket and trusted proxies, never from a header alone. Outside a request,
 // both stay empty.
 func (e Entry) WithRequest(ctx context.Context) Entry {
-	e.ClientIP = httpx.ClientIPFrom(ctx)
-	e.RequestID = httpx.RequestIDFrom(ctx)
+	e.ClientIP = request.ClientIP(ctx)
+	e.RequestID = request.ID(ctx)
 	return e
 }
