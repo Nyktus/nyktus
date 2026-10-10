@@ -1,0 +1,9 @@
+* text=auto eol=lf
+
+*.png   binary
+*.jpg   binary
+*.ico   binary
+*.woff2 binary
+
+go.sum            linguist-generated
+package-lock.json linguist-generated

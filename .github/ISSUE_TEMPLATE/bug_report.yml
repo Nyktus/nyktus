@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a defect in Nyktus. Security issues go through the private advisory link instead.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the behavior you observed.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, deployment method, PostgreSQL version.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Remove secrets, tokens and personal data before posting.
+      render: text

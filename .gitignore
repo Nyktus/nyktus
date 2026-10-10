@@ -1,0 +1,38 @@
+# local files and notes
+/.localdev/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Go
+/bin/
+/dist/
+*.test
+*.out
+*.coverprofile
+coverage.*
+go.work
+go.work.sum
+
+# Node
+node_modules/
+web/dist/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+*.tsbuildinfo
+
+# Editors and operating systems
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+
+# Personal AI agent settings
+.claude/settings.local.json
+CLAUDE.local.md
