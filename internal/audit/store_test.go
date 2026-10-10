@@ -351,6 +351,19 @@ func TestRecord_StoresClientAndRequestOfTheMiddleware(t *testing.T) {
 	}
 }
 
+func TestRecord_AcceptsEveryAction(t *testing.T) {
+	t.Parallel()
+
+	store, _ := newStore(t)
+	for _, action := range audit.Actions {
+		e := systemEntry()
+		e.Action = action
+		if err := store.Record(t.Context(), e); err != nil {
+			t.Errorf("Record(%s) error = %v, want nil", action, err)
+		}
+	}
+}
+
 func TestRecord_RejectsInvalidEntries(t *testing.T) {
 	t.Parallel()
 

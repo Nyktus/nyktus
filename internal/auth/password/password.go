@@ -82,7 +82,8 @@ type Hasher struct {
 }
 
 // NewHasher returns a Hasher with the default parameters that runs at most
-// GOMAXPROCS hash operations at a time.
+// GOMAXPROCS hash operations at a time. The limit applies per Hasher, so a process
+// creates one and shares it among all code that hashes or verifies passwords.
 func NewHasher() *Hasher {
 	return newHasher(defaultParams(), runtime.GOMAXPROCS(0))
 }

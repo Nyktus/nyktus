@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -99,7 +100,11 @@ type Common struct {
 
 // Console holds the settings of the console role.
 type Console struct {
-	Addr        string
+	Addr string
+	// URL is the address under which users reach the console, such as
+	// "https://nyktus.example.com", without a trailing slash. Links that the
+	// console hands out, such as the setup URL, start with it.
+	URL         string
 	DatabaseURL Secret
 }
 
@@ -129,8 +134,10 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 	r := reader{src: src}
 	cfg := Serve{Common: r.common(), Roles: roles, TrustedProxies: r.prefixes("TRUSTED_PROXIES")}
 	if cfg.Has(RoleConsole) {
+		addr := r.addr("CONSOLE_ADDR", "127.0.0.1:8080")
 		cfg.Console = Console{
-			Addr:        r.addr("CONSOLE_ADDR", "127.0.0.1:8080"),
+			Addr:        addr,
+			URL:         r.consoleURL("CONSOLE_URL", cfg.Environment, addr),
 			DatabaseURL: r.requiredSecret("CONSOLE_DATABASE_URL"),
 		}
 	}
@@ -191,6 +198,52 @@ func (r *reader) addr(name, fallback string) string {
 		r.fail("%s%s: %w", prefix, name, err)
 	}
 	return addr
+}
+
+// consoleURL reads the external address of the console. It is required outside
+// development, because links handed out to users must reach the console through
+// its reverse proxy. In development, it defaults to the listen address.
+//
+// Only the scheme, host and port are accepted. The console serves its routes at
+// the root, and user information, a query or a fragment would end up in front of
+// the paths and fragments that the console appends.
+func (r *reader) consoleURL(name string, env Environment, addr string) string {
+	value := r.get(name)
+	if value == "" {
+		if env == Development {
+			return developmentURL(addr)
+		}
+		r.fail("%s%s is required", prefix, name)
+		return ""
+	}
+
+	u, err := url.Parse(value)
+	switch {
+	case err != nil:
+		r.fail("%s%s: %q is not a URL", prefix, name, value)
+	case u.Scheme != "https" && (u.Scheme != "http" || env != Development):
+		r.fail("%s%s: must start with https:// (http:// is allowed in development only)", prefix, name)
+	case u.Host == "" || u.Hostname() == "":
+		r.fail("%s%s: must name a host", prefix, name)
+	case u.User != nil || u.Opaque != "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.HasSuffix(value, "#"):
+		r.fail("%s%s: must consist of scheme, host and port only, such as https://nyktus.example.com", prefix, name)
+	default:
+		return u.Scheme + "://" + u.Host
+	}
+	return ""
+}
+
+// developmentURL derives the console URL from the listen address. A listener on
+// all interfaces is reached through localhost.
+func developmentURL(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return ""
+	}
+	if ip, err := netip.ParseAddr(host); host == "" || (err == nil && ip.IsUnspecified()) {
+		host = "localhost"
+	}
+	return "http://" + net.JoinHostPort(host, port)
 }
 
 // prefixes reads a comma-separated list of address ranges in CIDR notation. A

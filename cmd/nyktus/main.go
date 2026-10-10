@@ -16,6 +16,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
 	"nyktus.org/nyktus/internal/platform/buildinfo"
 	"nyktus.org/nyktus/internal/platform/config"
@@ -63,7 +65,7 @@ func run(ctx context.Context, args []string, src config.Source, stdout, stderr i
 	var err error
 	switch cmd, rest := args[0], args[1:]; cmd {
 	case "serve":
-		err = serve(ctx, rest, src, stderr)
+		err = serve(ctx, rest, src, stdout, stderr)
 	case "migrate":
 		err = runMigrate(ctx, rest, src, stderr)
 	case "version":
@@ -119,7 +121,7 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 	return nil
 }
 
-func serve(ctx context.Context, args []string, src config.Source, stderr io.Writer) error {
+func serve(ctx context.Context, args []string, src config.Source, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	rolesFlag := fs.String("roles", "", "comma-separated roles to run (default: all)")
@@ -142,13 +144,13 @@ func serve(ctx context.Context, args []string, src config.Source, stderr io.Writ
 		slog.String("environment", string(cfg.Environment)),
 	)
 
-	if err := serveConsole(ctx, cfg, logger); err != nil {
+	if err := serveConsole(ctx, cfg, logger, stdout); err != nil {
 		return logFailure(ctx, logger, "serve", err)
 	}
 	return nil
 }
 
-func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger) error {
+func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, stdout io.Writer) error {
 	pool, err := db.Open(ctx, cfg.Console.DatabaseURL.Value(), db.Options{})
 	if err != nil {
 		return fmt.Errorf("console: %w", err)
@@ -167,11 +169,42 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger) er
 	}
 	logger.InfoContext(ctx, "console: listening", slog.String("addr", ln.Addr().String()))
 
-	srv := httpx.NewServer(console.NewHandler(logger, pool, cfg.TrustedProxies), logger)
+	// The setup token is issued only once the console can accept the request that
+	// uses it, so that a start that fails leaves no valid token behind.
+	setupService := setup.NewService(pool)
+	if err := announceSetup(ctx, setupService, cfg.Console.URL, logger, stdout); err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("console: %w", err)
+	}
+
+	// One hasher for the process, so that its limit on concurrent hash operations
+	// bounds the memory of every path that hashes passwords together.
+	hasher := password.NewHasher()
+	srv := httpx.NewServer(console.NewHandler(console.Deps{
+		Logger:         logger,
+		DB:             pool,
+		Setup:          setup.NewHandler(logger, setupService, hasher),
+		TrustedProxies: cfg.TrustedProxies,
+	}), logger)
 	if err := httpx.Serve(ctx, srv, ln); err != nil {
 		return fmt.Errorf("console: %w", err)
 	}
 	logger.InfoContext(ctx, "console: stopped")
+	return nil
+}
+
+// announceSetup issues a setup token while no administrator exists and writes the
+// setup URL to stdout. The token is a secret, so it is kept out of the log, which
+// goes to stderr; the log only records that the setup is pending.
+func announceSetup(ctx context.Context, svc *setup.Service, consoleURL string, logger *slog.Logger, stdout io.Writer) error {
+	t, ok, err := svc.Issue(ctx)
+	if err != nil || !ok {
+		return err
+	}
+	if err := setup.WriteInstructions(stdout, consoleURL, t); err != nil {
+		return fmt.Errorf("write setup instructions: %w", err)
+	}
+	logger.InfoContext(ctx, "console: setup pending", slog.Any("token", t))
 	return nil
 }
 

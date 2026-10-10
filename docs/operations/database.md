@@ -59,8 +59,14 @@ Creating a database owned by another role needs more than `CREATEROLE`: it requi
 5. Start the console with its login role:
 
    ```sh
-   NYKTUS_CONSOLE_DATABASE_URL='postgres://nyktus_console_login:...@db/nyktus' nyktus serve --roles=console
+   NYKTUS_CONSOLE_DATABASE_URL='postgres://nyktus_console_login:...@db/nyktus' \
+   NYKTUS_CONSOLE_URL='https://nyktus.example.com' \
+     nyktus serve --roles=console
    ```
+
+   `NYKTUS_CONSOLE_URL` is the address under which users reach the console. See [Configuration](configuration.md).
+
+   On the first start, the console prints a URL for creating the first administrator. See [First start](first-start.md).
 
 ## Privilege check
 
