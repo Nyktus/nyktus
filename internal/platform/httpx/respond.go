@@ -29,6 +29,8 @@ type ErrorDetail struct {
 // Error codes used by the shared helpers.
 const (
 	CodeInvalidRequest   = "invalid_request"
+	CodeUnauthenticated  = "unauthenticated"
+	CodeForbidden        = "forbidden"
 	CodeNotFound         = "not_found"
 	CodeBodyTooLarge     = "body_too_large"
 	CodeUnsupportedMedia = "unsupported_media_type"

@@ -22,7 +22,7 @@ type Pinger interface {
 
 // NewRouter registers the console routes.
 func NewRouter(logger *slog.Logger, db Pinger) *httpx.Router {
-	rt := httpx.NewRouter(nil)
+	rt := httpx.NewRouter(logger, nil)
 	rt.Handle(http.MethodGet, "/livez", httpx.Public, http.HandlerFunc(live))
 	rt.Handle(http.MethodGet, "/readyz", httpx.Public, ready(logger, db))
 	return rt

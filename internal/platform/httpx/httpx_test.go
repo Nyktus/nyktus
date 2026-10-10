@@ -148,7 +148,7 @@ func TestAccessLog_LogsRoutePatternInsteadOfPath(t *testing.T) {
 
 	var logs bytes.Buffer
 	logger := logging.New(&logs, slog.LevelInfo)
-	rt := NewRouter(nil)
+	rt := NewRouter(slog.New(slog.DiscardHandler), nil)
 	rt.Handle(http.MethodGet, "/items/{id}", Public, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
@@ -238,13 +238,13 @@ func TestRouter_RejectsRouteWithoutAccessDeclaration(t *testing.T) {
 			t.Error("Handle() accepted a route without access declaration")
 		}
 	}()
-	NewRouter(nil).Handle(http.MethodGet, "/", Access{}, http.NotFoundHandler())
+	NewRouter(slog.New(slog.DiscardHandler), nil).Handle(http.MethodGet, "/", Access{}, http.NotFoundHandler())
 }
 
 func TestRouter_RecordsRoutesAndDispatchesByMethod(t *testing.T) {
 	t.Parallel()
 
-	rt := NewRouter(nil)
+	rt := NewRouter(slog.New(slog.DiscardHandler), nil)
 	rt.Handle(http.MethodGet, "/a", Public, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -263,7 +263,7 @@ func TestRouter_RecordsRoutesAndDispatchesByMethod(t *testing.T) {
 func TestRouter_AnswersUnmatchedRequestsWithJSONNotFound(t *testing.T) {
 	t.Parallel()
 
-	rt := NewRouter(nil)
+	rt := NewRouter(slog.New(slog.DiscardHandler), nil)
 	rt.Handle(http.MethodGet, "/a", Public, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))

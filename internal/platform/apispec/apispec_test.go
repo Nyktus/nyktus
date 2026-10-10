@@ -22,6 +22,7 @@ paths:
       responses:
         "200": {description: ok}
   /api/v1/users/{id}:
+    x-internal-note: path items may carry specification extensions
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}}
     get:
@@ -95,6 +96,22 @@ paths:
     get: {operationId: same, x-access: public, responses: {"200": {description: ok}}}
 `,
 			want: []string{`GET /a: x-access "admin" must be`, `GET /b: operationId "same" is already used by GET /a`},
+		},
+		{
+			name: "path items without operations",
+			spec: `
+openapi: 3.1.0
+paths:
+  /empty: {}
+  /null:
+  /referenced:
+    $ref: "#/components/pathItems/Referenced"
+`,
+			want: []string{
+				"/empty: path has no operations",
+				"/null: path has no operations",
+				"/referenced: $ref path items are not supported",
+			},
 		},
 		{
 			name: "misspelled method",

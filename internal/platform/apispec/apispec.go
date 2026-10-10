@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -41,8 +40,7 @@ var (
 		"patch": http.MethodPatch, "head": http.MethodHead, "options": http.MethodOptions, "trace": http.MethodTrace,
 	}
 	// pathItemFields are the fields of an OpenAPI path item that are not operations.
-	pathItemFields = []string{"$ref", "summary", "description", "servers", "parameters"}
-	accessFormat   = regexp.MustCompile(`^(public|authenticated|[a-z][a-z_]*:[a-z][a-z_]*)$`)
+	pathItemFields = []string{"summary", "description", "servers", "parameters"}
 )
 
 type document struct {
@@ -76,14 +74,20 @@ func Parse(data []byte) (*Spec, error) {
 	// Sorted, so that problems are reported in a stable order.
 	for _, path := range slices.Sorted(maps.Keys(doc.Paths)) {
 		item := doc.Paths[path]
+		if _, ok := item["$ref"]; ok {
+			errs = append(errs, fmt.Errorf("%s: $ref path items are not supported; define the operations inline", path))
+			continue
+		}
+		operations := 0
 		for _, field := range slices.Sorted(maps.Keys(item)) {
 			method, ok := methods[field]
 			if !ok {
-				if !slices.Contains(pathItemFields, field) {
+				if !slices.Contains(pathItemFields, field) && !strings.HasPrefix(field, "x-") {
 					errs = append(errs, fmt.Errorf("%s: unknown field %q", path, field))
 				}
 				continue
 			}
+			operations++
 			node := item[field]
 			var op operation
 			if err := node.Decode(&op); err != nil {
@@ -93,6 +97,9 @@ func Parse(data []byte) (*Spec, error) {
 			o := Operation{Method: method, Path: path, OperationID: op.OperationID, Access: op.Access}
 			errs = append(errs, validate(o, op, ids)...)
 			spec.Operations = append(spec.Operations, o)
+		}
+		if operations == 0 {
+			errs = append(errs, fmt.Errorf("%s: path has no operations", path))
 		}
 	}
 	if len(errs) > 0 {
@@ -111,13 +118,19 @@ func validate(o Operation, op operation, ids map[string]string) []error {
 	default:
 		ids[o.OperationID] = o.key()
 	}
-	if !accessFormat.MatchString(o.Access) {
+	if !validAccess(o.Access) {
 		errs = append(errs, fmt.Errorf("%s: x-access %q must be public, authenticated or resource:action", o.key(), o.Access))
 	}
 	if len(op.Responses) == 0 {
 		errs = append(errs, fmt.Errorf("%s: no responses are documented", o.key()))
 	}
 	return errs
+}
+
+// validAccess accepts the values that httpx.Access.String produces for a declared
+// access, so that the specification and the router share one permission format.
+func validAccess(access string) bool {
+	return access == httpx.Public.String() || access == httpx.Authenticated.String() || httpx.Permission(access).Valid()
 }
 
 // Compare reports every difference between the specification and routes: routes

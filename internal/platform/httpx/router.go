@@ -4,7 +4,9 @@
 package httpx
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"slices"
@@ -15,6 +17,9 @@ import (
 type Permission string
 
 var permissionFormat = regexp.MustCompile(`^[a-z][a-z_]*:[a-z][a-z_]*$`)
+
+// Valid reports whether p has the form "resource:action".
+func (p Permission) Valid() bool { return permissionFormat.MatchString(string(p)) }
 
 type accessKind int
 
@@ -42,7 +47,7 @@ var Authenticated = Access{kind: accessAuthenticated}
 // Require allows calls by authenticated principals that hold perm. It panics if
 // perm is not of the form "resource:action".
 func Require(perm Permission) Access {
-	if !permissionFormat.MatchString(string(perm)) {
+	if !perm.Valid() {
 		panic(fmt.Sprintf("httpx: invalid permission %q; expected resource:action", perm))
 	}
 	return Access{kind: accessPermission, permission: perm}
@@ -63,13 +68,27 @@ func (a Access) String() string {
 	}
 }
 
+// Permission returns the permission that the access requires. ok is false for
+// public and authenticated access, which require no permission.
+func (a Access) Permission() (perm Permission, ok bool) {
+	return a.permission, a.kind == accessPermission
+}
+
+// Errors returned by an Authorizer. The router answers them with 401 and 403.
+var (
+	ErrUnauthenticated = errors.New("unauthenticated")
+	ErrForbidden       = errors.New("forbidden")
+)
+
 // Authorizer authenticates requests and checks permissions for the router.
 type Authorizer interface {
-	// Authorize authenticates r and, if perm is not empty, checks that the
-	// principal holds perm. On success it returns the request to pass on, which
-	// carries the principal in its context. Otherwise it writes the error response
-	// and returns false.
-	Authorize(w http.ResponseWriter, r *http.Request, perm Permission) (*http.Request, bool)
+	// Authorize authenticates r and checks that the principal satisfies access,
+	// which is never Public. On success it returns the request to pass on, which
+	// carries the principal in its context. It returns ErrUnauthenticated if r
+	// carries no valid credentials and ErrForbidden if the principal lacks the
+	// permission; every other error is answered as a server error. The router writes
+	// all error responses, so an Authorizer cannot leave a denied request unanswered.
+	Authorize(r *http.Request, access Access) (*http.Request, error)
 }
 
 // Route describes a registered endpoint and its access requirement.
@@ -85,21 +104,22 @@ type Route struct {
 // a caller that lacks the permission.
 type Router struct {
 	mux    *http.ServeMux
+	logger *slog.Logger
 	authz  Authorizer
 	routes []Route
 }
 
 // NewRouter returns a router without routes. authz may be nil as long as only
-// public routes are registered.
+// public routes are registered. logger receives authorization failures.
 //
 // Requests that match no route receive a JSON 404, also when only the method
 // differs. This replaces the plain-text responses of http.ServeMux, which identify
 // the server as written in Go, and its 405 responses, whose Allow header lists the
 // methods of a route.
-func NewRouter(authz Authorizer) *Router {
+func NewRouter(logger *slog.Logger, authz Authorizer) *Router {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", notFound)
-	return &Router{mux: mux, authz: authz}
+	return &Router{mux: mux, logger: logger, authz: authz}
 }
 
 func notFound(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +127,8 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handle registers h for method and path, using the pattern syntax of
-// http.ServeMux. It panics if access is not declared, or if the route needs
+// http.ServeMux. As in http.ServeMux, a GET route also answers HEAD, with the same
+// access requirement. It panics if access is not declared, or if the route needs
 // authorization and the router has no Authorizer: the process then stops at
 // startup instead of serving a route without an enforced authorization decision.
 func (rt *Router) Handle(method, path string, access Access, h http.Handler) {
@@ -117,7 +138,7 @@ func (rt *Router) Handle(method, path string, access Access, h http.Handler) {
 		if rt.authz == nil {
 			panic(fmt.Sprintf("httpx: route %s %s requires authorization, but the router has no authorizer", method, path))
 		}
-		h = authorize(rt.authz, access.permission, h)
+		h = rt.authorize(access, h)
 	default:
 		panic(fmt.Sprintf("httpx: route %s %s has no access declaration", method, path))
 	}
@@ -125,13 +146,21 @@ func (rt *Router) Handle(method, path string, access Access, h http.Handler) {
 	rt.routes = append(rt.routes, Route{Method: method, Path: path, Access: access})
 }
 
-func authorize(authz Authorizer, perm Permission, next http.Handler) http.Handler {
+func (rt *Router) authorize(access Access, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r, ok := authz.Authorize(w, r, perm)
-		if !ok {
-			return
+		authorized, err := rt.authz.Authorize(r, access)
+		switch {
+		case errors.Is(err, ErrUnauthenticated):
+			WriteError(w, r, http.StatusUnauthorized, CodeUnauthenticated, "authentication required")
+		case errors.Is(err, ErrForbidden):
+			WriteError(w, r, http.StatusForbidden, CodeForbidden, "permission denied")
+		case err != nil:
+			ServerError(w, r, rt.logger, "authorize", err)
+		case authorized == nil:
+			ServerError(w, r, rt.logger, "authorize", errors.New("authorizer returned no request"))
+		default:
+			next.ServeHTTP(w, authorized)
 		}
-		next.ServeHTTP(w, r)
 	})
 }
 
