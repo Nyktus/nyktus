@@ -11,7 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
+
+	"nyktus.org/nyktus/internal/platform/db"
 )
 
 // Store errors.
@@ -28,15 +29,16 @@ const (
 
 // Store persists users in PostgreSQL.
 type Store struct {
-	db *pgxpool.Pool
+	db db.Querier
 }
 
-// NewStore returns a Store that uses pool.
-func NewStore(pool *pgxpool.Pool) *Store {
-	if pool == nil {
-		panic("user: nil pool")
+// NewStore returns a Store that runs its queries on q, a connection pool or a
+// transaction.
+func NewStore(q db.Querier) *Store {
+	if q == nil {
+		panic("user: nil querier")
 	}
-	return &Store{db: pool}
+	return &Store{db: q}
 }
 
 // NewUser describes an account to create.
