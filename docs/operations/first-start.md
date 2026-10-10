@@ -56,6 +56,6 @@ The password must have between 12 and 128 characters. The email address is store
 - **Closed for good.** Once an administrator exists, the console issues no more setup URLs, and the setup endpoint answers every request with the same response as a route that does not exist, also after a restart. Deactivating an administrator does not open the setup again.
 - **Nothing to learn without the token.** A well-formed request with an unknown, expired or used token receives the same answer as a route that does not exist. The fields of the request are only checked for a valid token.
 - **The token stays out of logs.** It is placed in the fragment of the URL, the part after `#`. Browsers never send the fragment to a server, so it does not appear in the access logs of the console or of a reverse proxy. The database stores only a SHA-256 hash of the token.
-- **Audit.** The creation of the administrator is recorded in the audit log with the client address and the setup token as the means of authentication.
+- **Audit.** The creation of the administrator is recorded in the [audit log](audit-log.md) with the client address and the setup token as the means of authentication.
 
 Treat the setup URL like a password until it has been used or has expired. Anyone who can read the standard output of the console in that time, for example through a central log collection, can use it.

@@ -29,7 +29,7 @@ var uuidFormat = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 
 type handler struct {
 	logger *slog.Logger
-	db     db.Querier
+	store  *audit.Store
 }
 
 // NewHandler returns the handler of GET /api/v1/audit-entries. The route must
@@ -38,7 +38,7 @@ func NewHandler(logger *slog.Logger, q db.Querier) http.Handler {
 	if logger == nil || q == nil {
 		panic("auditapi: handler needs a logger and a database")
 	}
-	return &handler{logger: logger, db: q}
+	return &handler{logger: logger, store: audit.NewStore(q)}
 }
 
 type actorResponse struct {
@@ -78,7 +78,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, err.Error())
 		return
 	}
-	entries, next, err := audit.NewStore(h.db).List(r.Context(), size, after)
+	entries, next, err := h.store.List(r.Context(), size, after)
+	if errors.Is(err, audit.ErrInvalidPageSize) {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, errInvalidLimit.Error())
+		return
+	}
 	if err != nil {
 		httpx.ServerError(w, r, h.logger, "audit: list entries", err)
 		return
@@ -139,9 +143,10 @@ func parseQuery(r *http.Request) (int, *audit.Cursor, error) {
 
 	size := defaultPageSize
 	if s, ok := query["limit"]; ok {
+		// The store checks the range, so that the bounds are defined once.
 		n, err := strconv.Atoi(s[0])
-		if err != nil || n < 1 || n > audit.MaxPageSize {
-			return 0, nil, errors.New("limit must be a number from 1 to " + strconv.Itoa(audit.MaxPageSize))
+		if err != nil {
+			return 0, nil, errInvalidLimit
 		}
 		size = n
 	}
@@ -156,7 +161,10 @@ func parseQuery(r *http.Request) (int, *audit.Cursor, error) {
 	return size, after, nil
 }
 
-var errInvalidCursor = errors.New("cursor is invalid; use the next_cursor of a previous response")
+var (
+	errInvalidCursor = errors.New("cursor is invalid; use the next_cursor of a previous response")
+	errInvalidLimit  = errors.New("limit must be a number from 1 to " + strconv.Itoa(audit.MaxPageSize))
+)
 
 // A cursor is opaque to clients. It encodes the time and the identifier of the
 // last entry of a page, which the next page continues after.

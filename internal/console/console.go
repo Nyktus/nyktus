@@ -50,7 +50,7 @@ type Deps struct {
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
 		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.AuditEntries == nil {
-		panic("console: router needs a logger, a database, an authorizer and the setup and session handlers")
+		panic("console: router needs a logger, a database, an authorizer and the setup, session and audit handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	rt.Handle(http.MethodGet, "/livez", httpx.Public, http.HandlerFunc(live))

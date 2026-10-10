@@ -238,6 +238,13 @@ paths:
         Returns audit entries from the newest to the oldest, a page at a time. To
         read the next page, pass the `next_cursor` of a response as `cursor`.
         Entries recorded meanwhile do not shift the following pages.
+
+        Entries are ordered by the time they were written, not by the time their
+        transaction committed. An entry of a transaction that took long to
+        commit can appear behind entries a reader has already passed. A client
+        that polls for new entries should therefore read again from a few minutes
+        before its newest entry. Entries with the same time are ordered by their
+        identifier, which makes the order total, not chronological.
       tags: [audit]
       x-access: audit:read
       security:
@@ -268,11 +275,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          description: The caller may not read the audit log.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
@@ -482,6 +485,12 @@ components:
         WWW-Authenticate:
           schema:
             type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: The caller lacks the permission that the operation requires. The denial is recorded in the audit log.
       content:
         application/json:
           schema:

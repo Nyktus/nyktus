@@ -12,12 +12,17 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.yaml.in/yaml/v3"
 
+	"nyktus.org/nyktus/api"
+	"nyktus.org/nyktus/internal/audit"
+	"nyktus.org/nyktus/internal/audit/auditapi"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
@@ -275,5 +280,59 @@ func TestListAuditEntries_RejectsInvalidQueries(t *testing.T) {
 	}
 	if status, _ := e.get(t, tok, "?cursor="+b64([]byte("2026-10-10T12:00:00.123456Z|00000000-0000-4000-8000-000000000000"))); status != http.StatusOK {
 		t.Errorf("valid cursor: status %d, want 200", status)
+	}
+}
+
+// The page size bounds live in code and in the specification; both must agree,
+// and the handler must behave as documented at the bounds.
+func TestListAuditEntries_PageSizeMatchesSpecification(t *testing.T) {
+	t.Parallel()
+
+	var spec struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name   string `yaml:"name"`
+				Schema struct {
+					Maximum int `yaml:"maximum"`
+					Default int `yaml:"default"`
+				} `yaml:"schema"`
+			} `yaml:"parameters"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(api.OpenAPI(), &spec); err != nil {
+		t.Fatalf("parse specification: %v", err)
+	}
+	var found bool
+	for _, p := range spec.Paths["/api/v1/audit-entries"]["get"].Parameters {
+		if p.Name != "limit" {
+			continue
+		}
+		found = true
+		if p.Schema.Maximum != audit.MaxPageSize || p.Schema.Default != auditapi.DefaultPageSize {
+			t.Errorf("specification: maximum %d, default %d; code: %d, %d", p.Schema.Maximum, p.Schema.Default, audit.MaxPageSize, auditapi.DefaultPageSize)
+		}
+	}
+	if !found {
+		t.Fatal("the specification does not document the parameter limit")
+	}
+
+	e := newEnv(t)
+	_, tok := e.signIn(t, "ada@example.com", "admin")
+	if _, err := e.owner.Exec(t.Context(), `
+INSERT INTO audit_entries (action, outcome, actor_kind, auth_method, changed_fields)
+SELECT 'user.create', 'success', 'system', 'cli', '{}' FROM generate_series(1, $1)`, audit.MaxPageSize+1); err != nil {
+		t.Fatalf("insert entries: %v", err)
+	}
+	for query, want := range map[string]int{
+		"": auditapi.DefaultPageSize,
+		"?limit=" + strconv.Itoa(audit.MaxPageSize): audit.MaxPageSize,
+	} {
+		status, body := e.get(t, tok, query)
+		if status != http.StatusOK || len(entries(t, body)) != want || body["next_cursor"] == nil {
+			t.Errorf("GET %s: status %d, %d entries; want %d and a next page", query, status, len(entries(t, body)), want)
+		}
+	}
+	if status, _ := e.get(t, tok, "?limit="+strconv.Itoa(audit.MaxPageSize+1)); status != http.StatusBadRequest {
+		t.Errorf("limit above the maximum: status %d, want 400", status)
 	}
 }

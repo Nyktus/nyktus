@@ -16,6 +16,8 @@ Requests without valid credentials are not recorded, so that anonymous clients c
 
 Administrators read the audit log through `GET /api/v1/audit-entries`. It returns entries from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`. Entries recorded meanwhile do not shift the following pages.
 
+Entries are ordered by the time they were written, not by the time their action was committed. An action that took long to complete can therefore appear behind entries you have already read. If you collect entries regularly, for example into a SIEM, read again from a few minutes before the newest entry you have and skip the identifiers you already know.
+
 ## Personal data
 
 Entries contain addresses, display names and client addresses of users. Restrict access to the audit log, and to backups of the database, accordingly.
