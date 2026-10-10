@@ -85,8 +85,8 @@ paths:
 
         Once an administrator exists, the setup is closed for good, also after a
         restart. From then on, and for every request whose token is unknown,
-        expired or already used, the operation answers exactly like a route that
-        does not exist. Fields are validated only for a valid token.
+        expired or already used, the operation answers with the same status,
+        headers and body as a route that does not exist. Fields are validated only for a valid token.
       tags: [setup]
       x-access: public
       requestBody:

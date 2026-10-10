@@ -177,10 +177,13 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 		return fmt.Errorf("console: %w", err)
 	}
 
+	// One hasher for the process, so that its limit on concurrent hash operations
+	// bounds the memory of every path that hashes passwords together.
+	hasher := password.NewHasher()
 	srv := httpx.NewServer(console.NewHandler(console.Deps{
 		Logger:         logger,
 		DB:             pool,
-		Setup:          setup.NewHandler(logger, setupService, password.NewHasher()),
+		Setup:          setup.NewHandler(logger, setupService, hasher),
 		TrustedProxies: cfg.TrustedProxies,
 	}), logger)
 	if err := httpx.Serve(ctx, srv, ln); err != nil {

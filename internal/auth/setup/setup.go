@@ -77,10 +77,28 @@ func (t Token) LogValue() slog.Value {
 	return slog.GroupValue(slog.Time("expires_at", t.ExpiresAt))
 }
 
+// String keeps the token out of formatted output, such as an error message.
+func (t Token) String() string {
+	return "setup token expiring at " + t.ExpiresAt.UTC().Format(time.RFC3339)
+}
+
+// GoString keeps the token out of %#v.
+func (t Token) GoString() string { return t.String() }
+
 // Issue issues a new setup token if no administrator exists. ok is false if one
 // exists. Expired tokens are removed. Tokens issued by other console processes
 // stay valid until they expire, so that a setup request can reach any of them.
 func (s *Service) Issue(ctx context.Context) (t Token, ok bool, err error) {
+	// Once the setup is closed, it stays closed, so the common case of a start
+	// needs no lock and cannot wait for one.
+	open, err := s.Open(ctx)
+	if err != nil {
+		return Token{}, false, fmt.Errorf("issue setup token: %w", err)
+	}
+	if !open {
+		return Token{}, false, nil
+	}
+
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		// The lock orders the issue after a concurrent setup: once the first
 		// administrator has been created, no new token can appear.

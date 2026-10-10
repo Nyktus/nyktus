@@ -40,13 +40,15 @@ type handler struct {
 // NewHandler returns the handler that creates the first administrator. It panics
 // if a dependency is missing.
 //
-// Once an administrator exists, it answers every request exactly like a route
-// that does not exist. While the setup is open, a well-formed request with an
+// Once an administrator exists, it answers every request with the same response
+// as a route that does not exist. While the setup is open, a well-formed request with an
 // unknown, expired or used token receives the same answer. Fields are validated
 // and the password is hashed only for a valid token, so that a caller without
 // one learns no validation rules and cannot make the server do expensive work.
 // A body that cannot be decoded is rejected before the token is known, so it
-// reveals that the setup is still open; without a token, that is of no use.
+// reveals that the setup is still open; without a token, that is of no use. The
+// response time is not equalized: the route is public and documented, and its
+// database lookups only show what a malformed body shows as well.
 func NewHandler(logger *slog.Logger, svc service, hasher passwordHasher) http.Handler {
 	if logger == nil || svc == nil || hasher == nil {
 		panic("setup: handler needs a logger, a service and a password hasher")
@@ -78,7 +80,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Before anything else, so that a closed setup answers every request, even a
-	// malformed one, like an unknown route.
+	// malformed one, with the response of an unknown route.
 	open, err := h.svc.Open(ctx)
 	if err != nil {
 		httpx.ServerError(w, r, h.logger, "setup: check for administrator", err)

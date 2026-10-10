@@ -132,7 +132,7 @@ func NewRouter(logger *slog.Logger, authz Authorizer) *Router {
 
 // NotFound writes the response to a request that matches no route. A handler that
 // must not reveal that its route exists, such as a disabled endpoint, answers with
-// it as well, so that its response cannot be told apart from an unknown route.
+// it as well, so that its response is the same as for an unknown route.
 func NotFound(w http.ResponseWriter, r *http.Request) {
 	WriteError(w, r, http.StatusNotFound, CodeNotFound, "not found")
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -136,6 +137,70 @@ func TestIssue_IssuesNoTokenOnceAnAdministratorExists(t *testing.T) {
 	}
 	if n := d.count(t, `SELECT count(*) FROM setup_tokens`); n != 0 {
 		t.Errorf("%d tokens stored, want none", n)
+	}
+}
+
+// Every start of every console process issues a token or finds the setup closed.
+// Once it is closed, a start must not wait for the setup lock, which another
+// session may hold.
+func TestIssue_TakesNoLockOnceAnAdministratorExists(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDB(t)
+	d.exec(t, `INSERT INTO users (email, display_name, role, status) VALUES ('ada@example.com', 'Ada', 'admin', 'pending')`)
+	holder, err := d.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = holder.Rollback(context.WithoutCancel(t.Context())) }()
+	if _, err := holder.Exec(t.Context(), `LOCK TABLE setup_tokens IN EXCLUSIVE MODE`); err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, ok, err := setup.NewService(d.console).Issue(t.Context())
+		if err == nil && ok {
+			err = errors.New("issued a token")
+		}
+		done <- err
+	}()
+	// Either Issue returns, or it waits for the lock, which pg_locks shows.
+	for {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Issue() error = %v, want no token and no error", err)
+			}
+			return
+		default:
+		}
+		var waiting bool
+		err := d.owner.QueryRow(t.Context(),
+			`SELECT EXISTS (SELECT FROM pg_locks WHERE relation = 'public.setup_tokens'::regclass AND NOT granted)`).Scan(&waiting)
+		if err != nil {
+			t.Fatalf("query locks: %v", err)
+		}
+		if waiting {
+			t.Fatal("Issue() waits for the setup lock although an administrator exists")
+		}
+	}
+}
+
+func TestToken_FormattingHidesTheValue(t *testing.T) {
+	t.Parallel()
+
+	tok := setup.Token{Value: "secret-token-value", ExpiresAt: time.Date(2026, 10, 10, 19, 0, 0, 0, time.UTC)}
+	for format, out := range map[string]string{
+		"%v":    fmt.Sprintf("%v", tok),
+		"%+v":   fmt.Sprintf("%+v", tok),
+		"%#v":   fmt.Sprintf("%#v", tok),
+		"%q":    fmt.Sprintf("%q", tok),
+		"error": fmt.Errorf("announce %v: %w", tok, errors.New("failed")).Error(),
+	} {
+		if strings.Contains(out, tok.Value) {
+			t.Errorf("format %s leaks the token: %s", format, out)
+		}
 	}
 }
 
