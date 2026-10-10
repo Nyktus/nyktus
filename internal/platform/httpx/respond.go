@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+
+	"nyktus.org/nyktus/internal/platform/request"
 )
 
 // ErrorResponse is the body of every error response.
@@ -65,7 +67,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, status int, code, messag
 	WriteJSON(w, status, ErrorResponse{Error: ErrorDetail{
 		Code:      code,
 		Message:   message,
-		RequestID: RequestIDFrom(r.Context()),
+		RequestID: request.ID(r.Context()),
 	}})
 }
 

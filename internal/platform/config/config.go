@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"slices"
 	"strings"
@@ -105,8 +106,12 @@ type Console struct {
 // Serve is the configuration of the serve command.
 type Serve struct {
 	Common
-	Roles   []Role
-	Console Console
+	Roles []Role
+	// TrustedProxies are the address ranges of reverse proxies whose
+	// X-Forwarded-For header is believed. Empty means that only the socket
+	// address counts.
+	TrustedProxies []netip.Prefix
+	Console        Console
 }
 
 // Has reports whether role is enabled.
@@ -122,7 +127,7 @@ type Migrate struct {
 // not enabled are neither read nor required.
 func LoadServe(src Source, roles []Role) (Serve, error) {
 	r := reader{src: src}
-	cfg := Serve{Common: r.common(), Roles: roles}
+	cfg := Serve{Common: r.common(), Roles: roles, TrustedProxies: r.prefixes("TRUSTED_PROXIES")}
 	if cfg.Has(RoleConsole) {
 		cfg.Console = Console{
 			Addr:        r.addr("CONSOLE_ADDR", "127.0.0.1:8080"),
@@ -186,6 +191,51 @@ func (r *reader) addr(name, fallback string) string {
 		r.fail("%s%s: %w", prefix, name, err)
 	}
 	return addr
+}
+
+// prefixes reads a comma-separated list of address ranges in CIDR notation. A
+// single address stands for a range of one address.
+//
+// Ranges must be written in their canonical form: "10.0.0.1/8" is rejected
+// rather than read as "10.0.0.0/8", because it suggests that only one address
+// is trusted. IPv4 ranges written in IPv6 notation are rejected as well, because
+// client addresses are compared in their IPv4 form and would never match.
+func (r *reader) prefixes(name string) []netip.Prefix {
+	value := r.get(name)
+	if value == "" {
+		return nil
+	}
+	var prefixes []netip.Prefix
+	for entry := range strings.SplitSeq(value, ",") {
+		entry = strings.TrimSpace(entry)
+		p, err := parsePrefix(entry)
+		if err != nil {
+			r.fail("%s%s: %w", prefix, name, err)
+			continue
+		}
+		prefixes = append(prefixes, p)
+	}
+	return prefixes
+}
+
+func parsePrefix(s string) (netip.Prefix, error) {
+	if !strings.Contains(s, "/") {
+		addr, err := netip.ParseAddr(s)
+		if err != nil || addr.Zone() != "" {
+			return netip.Prefix{}, fmt.Errorf("%q is not an address range", s)
+		}
+		s = netip.PrefixFrom(addr, addr.BitLen()).String()
+	}
+	p, err := netip.ParsePrefix(s)
+	switch {
+	case err != nil:
+		return netip.Prefix{}, fmt.Errorf("%q is not an address range", s)
+	case p != p.Masked():
+		return netip.Prefix{}, fmt.Errorf("%q has host bits set; write %q", s, p.Masked())
+	case p.Addr().Is4In6():
+		return netip.Prefix{}, fmt.Errorf("%q is an IPv4 range in IPv6 notation; write it as an IPv4 range", s)
+	}
+	return p, nil
 }
 
 // requiredSecret reads a secret either from NAME or from the file named by

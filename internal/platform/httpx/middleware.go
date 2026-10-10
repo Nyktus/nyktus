@@ -4,7 +4,6 @@
 package httpx
 
 import (
-	"context"
 	"crypto/rand"
 	"fmt"
 	"log/slog"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"nyktus.org/nyktus/internal/platform/logging"
+	"nyktus.org/nyktus/internal/platform/request"
 )
 
 // Middleware wraps a handler.
@@ -26,22 +26,15 @@ func Chain(h http.Handler, mw ...Middleware) http.Handler {
 	return h
 }
 
-type requestIDKey struct{}
-
-// RequestIDFrom returns the request ID stored in ctx, or an empty string.
-func RequestIDFrom(ctx context.Context) string {
-	id, _ := ctx.Value(requestIDKey{}).(string)
-	return id
-}
-
-// RequestID assigns each request a random ID, returns it in the X-Request-ID header
-// and attaches it to every log record of the request. An X-Request-ID sent by the
+// RequestID assigns each request a random ID, returns it in the X-Request-ID header,
+// stores it in the request context (see request.ID) and attaches it to every log
+// record of the request. An X-Request-ID sent by the
 // client is ignored, so that callers cannot forge or collide log correlation IDs.
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := rand.Text()
 		w.Header().Set("X-Request-ID", id)
-		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
+		ctx := request.WithID(r.Context(), id)
 		ctx = logging.WithAttrs(ctx, slog.String("request_id", id))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

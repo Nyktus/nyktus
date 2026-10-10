@@ -24,6 +24,7 @@ import (
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/platform/httpx"
+	"nyktus.org/nyktus/internal/platform/request"
 	"nyktus.org/nyktus/internal/platform/schematest"
 	"nyktus.org/nyktus/internal/user"
 )
@@ -83,7 +84,7 @@ func requestID(t *testing.T) string {
 	t.Helper()
 	var id string
 	h := httpx.RequestID(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		id = httpx.RequestIDFrom(r.Context())
+		id = request.ID(r.Context())
 	}))
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
 	if id == "" {
@@ -336,6 +337,20 @@ func TestRecord_StoresOneSpellingPerClientAddress(t *testing.T) {
 
 // The schema is the only validation of an entry, so every constraint is tested
 // through the store, as the console's database role.
+func TestRecord_StoresClientAndRequestOfTheMiddleware(t *testing.T) {
+	t.Parallel()
+
+	store, pool := newStore(t)
+	e, requestID := requestEntry(t, systemEntry())
+	if err := store.Record(t.Context(), e); err != nil {
+		t.Fatalf("Record() error = %v", err)
+	}
+	got := readEntry(t, pool)
+	if deref(got.ClientIP) != "203.0.113.9" || deref(got.RequestID) != requestID {
+		t.Errorf("client_ip = %q, request_id = %q, want 203.0.113.9 and %q", deref(got.ClientIP), deref(got.RequestID), requestID)
+	}
+}
+
 func TestRecord_RejectsInvalidEntries(t *testing.T) {
 	t.Parallel()
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/netip"
 	"slices"
 	"strings"
 	"testing"
@@ -84,6 +85,51 @@ func TestLoadServe_SkipsSettingsOfDisabledRoles(t *testing.T) {
 	}
 	if cfg.Has(RoleConsole) {
 		t.Error("Has(RoleConsole) = true without the role enabled")
+	}
+}
+
+func TestLoadServe_TrustedProxies(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		value string
+		want  []netip.Prefix
+		err   string
+	}{
+		{value: "", want: nil},
+		{
+			value: "10.0.0.0/8, 192.0.2.7 ,2001:db8::/32",
+			want: []netip.Prefix{
+				netip.MustParsePrefix("10.0.0.0/8"),
+				netip.MustParsePrefix("192.0.2.7/32"),
+				netip.MustParsePrefix("2001:db8::/32"),
+			},
+		},
+		{value: "10.0.0.1/8", err: `write "10.0.0.0/8"`},
+		{value: "::ffff:10.0.0.0/104", err: "IPv4 range in IPv6 notation"},
+		{value: "fe80::1%eth0", err: "not an address range"},
+		{value: "10.0.0.0/8,", err: `"" is not an address range`},
+		{value: "proxy.example.com", err: "not an address range"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			t.Parallel()
+
+			src := fakeSource{env: map[string]string{"NYKTUS_TRUSTED_PROXIES": tt.value}}
+			cfg, err := LoadServe(src.source(), nil)
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), "NYKTUS_TRUSTED_PROXIES") || !strings.Contains(err.Error(), tt.err) {
+					t.Errorf("LoadServe() error = %v, want it to contain %q", err, tt.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadServe() error = %v", err)
+			}
+			if !slices.Equal(cfg.TrustedProxies, tt.want) {
+				t.Errorf("TrustedProxies = %v, want %v", cfg.TrustedProxies, tt.want)
+			}
+		})
 	}
 }
 

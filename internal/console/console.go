@@ -8,6 +8,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"nyktus.org/nyktus/internal/platform/httpx"
@@ -29,9 +30,12 @@ func NewRouter(logger *slog.Logger, db Pinger) *httpx.Router {
 }
 
 // NewHandler returns the console HTTP handler with the shared middleware.
-func NewHandler(logger *slog.Logger, db Pinger) http.Handler {
+// trustedProxies are the address ranges of reverse proxies whose X-Forwarded-For
+// header determines the client address.
+func NewHandler(logger *slog.Logger, db Pinger, trustedProxies []netip.Prefix) http.Handler {
 	return httpx.Chain(NewRouter(logger, db),
 		httpx.RequestID,
+		httpx.ClientIP(trustedProxies),
 		httpx.AccessLog(logger),
 		httpx.Recover(logger),
 	)
