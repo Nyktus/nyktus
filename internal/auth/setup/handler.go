@@ -40,10 +40,13 @@ type handler struct {
 // NewHandler returns the handler that creates the first administrator. It panics
 // if a dependency is missing.
 //
-// Once an administrator exists, and for every request without a valid token, it
-// answers exactly like a route that does not exist. Fields are validated and the
-// password is hashed only for a valid token, so that a caller without one learns
-// nothing and cannot make the server do expensive work.
+// Once an administrator exists, it answers every request exactly like a route
+// that does not exist. While the setup is open, a well-formed request with an
+// unknown, expired or used token receives the same answer. Fields are validated
+// and the password is hashed only for a valid token, so that a caller without
+// one learns no validation rules and cannot make the server do expensive work.
+// A body that cannot be decoded is rejected before the token is known, so it
+// reveals that the setup is still open; without a token, that is of no use.
 func NewHandler(logger *slog.Logger, svc service, hasher passwordHasher) http.Handler {
 	if logger == nil || svc == nil || hasher == nil {
 		panic("setup: handler needs a logger, a service and a password hasher")
@@ -128,6 +131,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// A concurrent request has completed the setup, or the token has expired
 		// since it was checked.
 		httpx.NotFound(w, r)
+		return
+	case errors.Is(err, user.ErrEmailTaken):
+		// Only possible if an account without the role admin exists, for example
+		// one created directly in the database. The caller holds a valid token.
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "email is already in use")
 		return
 	case err != nil:
 		httpx.ServerError(w, r, h.logger, "setup: create administrator", err)

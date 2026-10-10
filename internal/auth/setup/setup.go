@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -46,9 +47,13 @@ type DB interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
-// Service issues setup tokens and creates the first administrator.
+// Service issues setup tokens and creates the first administrator. It is safe
+// for concurrent use.
 type Service struct {
 	db DB
+	// closed records that an administrator has been seen. The setup never opens
+	// again in this process, so a closed setup costs no database query.
+	closed atomic.Bool
 }
 
 // NewService returns a Service that works on d.
@@ -83,8 +88,12 @@ func (s *Service) Issue(ctx context.Context) (t Token, ok bool, err error) {
 			return err
 		}
 		exists, err := user.NewStore(tx).AdminExists(ctx)
-		if err != nil || exists {
+		if err != nil {
 			return err
+		}
+		if exists {
+			s.closed.Store(true)
+			return nil
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM setup_tokens WHERE expires_at <= clock_timestamp()`); err != nil {
 			return fmt.Errorf("delete expired setup tokens: %w", err)
@@ -112,8 +121,17 @@ func (s *Service) Issue(ctx context.Context) (t Token, ok bool, err error) {
 // Open reports whether the setup is open, which it is as long as no
 // administrator exists.
 func (s *Service) Open(ctx context.Context) (bool, error) {
+	if s.closed.Load() {
+		return false, nil
+	}
 	exists, err := user.NewStore(s.db).AdminExists(ctx)
-	return !exists, err
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		s.closed.Store(true)
+	}
+	return !exists, nil
 }
 
 // Valid reports whether token is a valid setup token, without consuming it. It
@@ -195,11 +213,15 @@ func (s *Service) Complete(ctx context.Context, token string, admin Admin) (user
 		return nil
 	})
 	switch {
-	case errors.Is(err, ErrClosed), errors.Is(err, ErrInvalidToken):
+	case errors.Is(err, ErrClosed):
+		s.closed.Store(true)
+		return user.User{}, err
+	case errors.Is(err, ErrInvalidToken):
 		return user.User{}, err
 	case err != nil:
 		return user.User{}, fmt.Errorf("complete setup: %w", err)
 	}
+	s.closed.Store(true)
 	return created, nil
 }
 
@@ -237,8 +259,9 @@ func URL(consoleURL string, t Token) string {
 // is meant for standard output, which is separate from the log.
 func WriteInstructions(w io.Writer, consoleURL string, t Token) error {
 	_, err := fmt.Fprintf(w, `
-Nyktus has no administrator yet. Open the following URL to create the first one.
-It is valid until %s. Restart Nyktus to get a new one.
+Nyktus has no administrator yet. Create the first one with the setup token in the
+following URL, as described in "First start" in the operations documentation.
+The token is valid until %s. Restart Nyktus to get a new one.
 
     %s
 

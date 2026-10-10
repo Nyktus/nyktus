@@ -163,16 +163,19 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 		}
 	}
 
-	setupService := setup.NewService(pool)
-	if err := announceSetup(ctx, setupService, cfg.Console.URL, logger, stdout); err != nil {
-		return fmt.Errorf("console: %w", err)
-	}
-
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Console.Addr)
 	if err != nil {
 		return fmt.Errorf("console: %w", err)
 	}
 	logger.InfoContext(ctx, "console: listening", slog.String("addr", ln.Addr().String()))
+
+	// The setup token is issued only once the console can accept the request that
+	// uses it, so that a start that fails leaves no valid token behind.
+	setupService := setup.NewService(pool)
+	if err := announceSetup(ctx, setupService, cfg.Console.URL, logger, stdout); err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("console: %w", err)
+	}
 
 	srv := httpx.NewServer(console.NewHandler(console.Deps{
 		Logger:         logger,

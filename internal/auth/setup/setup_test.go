@@ -224,6 +224,45 @@ func TestComplete_IsClosedOnceAnAdministratorExists(t *testing.T) {
 	}
 }
 
+// Once a process has seen an administrator, it answers the setup as closed without
+// asking the database again.
+func TestOpen_StaysClosedOnceAnAdministratorWasSeen(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]func(t *testing.T, d testDB, svc *setup.Service){
+		"created through this service": func(t *testing.T, _ testDB, svc *setup.Service) {
+			t.Helper()
+			if _, err := svc.Complete(t.Context(), issue(t, svc).Value, admin("ada@example.com")); err != nil {
+				t.Fatalf("Complete() error = %v", err)
+			}
+		},
+		"created elsewhere": func(t *testing.T, d testDB, _ *setup.Service) {
+			t.Helper()
+			d.exec(t, `INSERT INTO users (email, display_name, role, status) VALUES ('ada@example.com', 'Ada', 'admin', 'pending')`)
+		},
+	}
+	for name, create := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			d := newTestDB(t)
+			svc := setup.NewService(d.console)
+			if open, err := svc.Open(t.Context()); err != nil || !open {
+				t.Fatalf("Open() before the setup = %v, %v; want true", open, err)
+			}
+			create(t, d, svc)
+			if open, err := svc.Open(t.Context()); err != nil || open {
+				t.Fatalf("Open() with an administrator = %v, %v; want false", open, err)
+			}
+
+			d.exec(t, `DELETE FROM users`)
+			if open, err := svc.Open(t.Context()); err != nil || open {
+				t.Errorf("Open() after the administrator was removed = %v, %v; want false for the rest of the process", open, err)
+			}
+		})
+	}
+}
+
 // The administrator, the consumed token and the audit entry are one transaction:
 // if the entry cannot be written, the setup has not happened and the token can be
 // used again.

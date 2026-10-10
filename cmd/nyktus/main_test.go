@@ -171,3 +171,36 @@ func TestAnnounceSetup_PrintsURLToStdoutAndKeepsTokenOutOfLog(t *testing.T) {
 		t.Errorf("announced a setup although an administrator exists: stdout %q, log %q", stdout.String(), log.String())
 	}
 }
+
+// A start that fails must not leave a valid setup token behind, for example in a
+// crash loop that would otherwise fill the container log with valid setup URLs.
+func TestRun_FailedStartIssuesNoSetupToken(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, consoleURL := schematest.Console(t)
+	occupied, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = occupied.Close() }()
+
+	env := map[string]string{
+		"NYKTUS_CONSOLE_DATABASE_URL": consoleURL,
+		"NYKTUS_CONSOLE_ADDR":         occupied.Addr().String(),
+		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(t.Context(), []string{"serve", "--roles=console"}, source(env), &stdout, &stderr); code != exitFailure {
+		t.Fatalf("exit code = %d, want %d; stderr: %s", code, exitFailure, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want nothing", stdout.String())
+	}
+	var tokens int
+	if err := schematest.Open(t, ownerURL).QueryRow(t.Context(), "SELECT count(*) FROM setup_tokens").Scan(&tokens); err != nil {
+		t.Fatalf("count setup tokens: %v", err)
+	}
+	if tokens != 0 {
+		t.Errorf("%d setup tokens issued by a failed start, want none", tokens)
+	}
+}

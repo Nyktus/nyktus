@@ -15,11 +15,12 @@ A new installation has no accounts. The first administrator is created through a
    nyktus serve --roles=console
    ```
 
-   As long as no administrator exists, the console prints a setup URL to standard output every time it starts:
+   As long as no administrator exists, the console prints a setup URL to standard output every time it starts, once it is listening for requests:
 
    ```
-   Nyktus has no administrator yet. Open the following URL to create the first one.
-   It is valid until 2026-10-10T19:00:00Z. Restart Nyktus to get a new one.
+   Nyktus has no administrator yet. Create the first one with the setup token in the
+   following URL, as described in "First start" in the operations documentation.
+   The token is valid until 2026-10-10T19:00:00Z. Restart Nyktus to get a new one.
 
        https://nyktus.example.com/setup#token=...
    ```
@@ -53,7 +54,7 @@ The password must have between 12 and 128 characters. The email address is store
 - **One hour, once.** A setup URL is valid for one hour and can be used once. If it expires, restart the console to get a new one.
 - **Several console processes.** Every console process issues its own URL when it starts. Each of them works until it expires, so the setup also works behind a load balancer. Concurrent requests never create more than one administrator.
 - **Closed for good.** Once an administrator exists, the console issues no more setup URLs, and the setup endpoint answers every request like a route that does not exist, also after a restart. Deactivating an administrator does not open the setup again.
-- **Nothing to learn without the token.** A request with an unknown, expired or used token receives the same answer as a route that does not exist. The fields of the request are only checked for a valid token.
+- **Nothing to learn without the token.** A well-formed request with an unknown, expired or used token receives the same answer as a route that does not exist. The fields of the request are only checked for a valid token.
 - **The token stays out of logs.** It is placed in the fragment of the URL, the part after `#`. Browsers never send the fragment to a server, so it does not appear in the access logs of the console or of a reverse proxy. The database stores only a SHA-256 hash of the token.
 - **Audit.** The creation of the administrator is recorded in the audit log with the client address and the setup token as the means of authentication.
 

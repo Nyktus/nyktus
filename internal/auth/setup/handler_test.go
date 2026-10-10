@@ -258,6 +258,16 @@ func TestHandler_LostRaceAnswersAsUnknownRoute(t *testing.T) {
 	}
 }
 
+func TestHandler_RejectsAddressInUse(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeService{completeErr: fmt.Errorf("complete setup: %w", user.ErrEmailTaken)}
+	w := serve(t, svc, &fakeHasher{}, "/api/v1/setup", "application/json", body(nil))
+	if w.Code != http.StatusBadRequest || errorMessage(t, w) != "email is already in use" {
+		t.Errorf("response = %d %s, want 400", w.Code, w.Body)
+	}
+}
+
 func TestHandler_HidesServiceErrors(t *testing.T) {
 	t.Parallel()
 
