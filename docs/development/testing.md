@@ -36,6 +36,7 @@ Each of these properties needs its own test, named after the property:
 - Generated artifacts contain no product name, attribution or metadata that identifies Nyktus.
 - Every registered route declares its authentication and permission. The test enumerates the router, so a new route without a declaration fails the build.
 - Denied requests are rejected before the resource is loaded.
+- The console can add and read audit entries but never change or delete them.
 - Read-only roles and API keys without a write scope cannot write. A demoted user's keys lose the corresponding permissions.
 - Unsigned or tampered catalog packages are rejected without explicit confirmation. Archives with traversal paths or oversized entries are rejected.
 - The SSRF guard blocks every reserved address range.
@@ -70,7 +71,7 @@ Fakes cannot find a mismatch between a `SELECT` list and a `Scan`, a missing ind
 
 ### Drift between curated data and code is tested
 
-When data is maintained in two places, for example technique identifiers in the catalog and the bundled ATT&CK reference list, a test asserts that both agree. Generated files, such as the published catalog index, are compared against golden files that can be regenerated with an explicit flag.
+When data is maintained in two places, for example technique identifiers in the catalog and the bundled ATT&CK reference list, a test asserts that both agree. The same applies to values that code generates and the schema checks, such as request IDs and the constants of a type with a `CHECK` list: a test writes what the code produces, not a copy of it, to the database. Generated files, such as the published catalog index, are compared against golden files that can be regenerated with an explicit flag.
 
 ### End-to-end tests
 

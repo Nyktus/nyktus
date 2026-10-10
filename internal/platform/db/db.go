@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -58,8 +59,11 @@ func parseConfig(url string, opts Options) (*pgxpool.Config, error) {
 	return cfg, nil
 }
 
-// Querier is the subset of pgx used to run a single query.
+// Querier runs queries on a connection pool or inside a transaction. Stores work on
+// a Querier instead of a pool, so that a caller can combine several stores in one
+// transaction, for example an action and its audit entry.
 type Querier interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 

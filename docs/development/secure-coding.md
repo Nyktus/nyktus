@@ -46,7 +46,6 @@ Trigger endpoints receive requests for honeytokens. Their responses must not tel
 - **Errors stay internal.** Database or queue failures are logged and answered with the same response as success.
 - **No fingerprints.** Trigger responses must not carry product names, version information, `Server` or `X-Powered-By` headers, or any header that only Nyktus would send.
 - **Small bodies.** Request bodies on trigger endpoints are limited to 64 KiB.
-- **Client IP.** `X-Forwarded-For` and `X-Real-IP` are evaluated only when the connecting address is within the configured trusted proxy ranges. Otherwise the socket address is authoritative.
 - **Atomic recording.** An event and the job that processes it are written in one transaction. A recorded event without a corresponding job must be impossible.
 
 ### Health endpoints
@@ -72,6 +71,8 @@ Every handler must satisfy the following:
 8. **Audit.** Security-relevant writes create an audit log entry (see [Logging and audit](#logging-and-audit)).
 
 Every HTTP server sets `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout` and `IdleTimeout`, and a recover middleware turns panics into a logged `500` that still passes through the regular response middleware. If the response had already started, the panic is logged and the connection aborted, so a client never receives a truncated body that looks complete.
+
+**Client IP.** Every server, including the trigger endpoints, takes the client address from the socket unless the socket address lies within the configured trusted proxy ranges. Only then is `X-Forwarded-For` evaluated, from right to left: addresses within the trusted ranges are skipped, and the first other address is the client. A chain of proxies works without counting hops. A fixed hop count is not used, because it trusts the header even when a client bypasses the proxy. `X-Real-IP` is ignored.
 
 Requests that match no route receive a JSON `404`, also when only the method differs. The default responses of `net/http` are not used: their plain-text bodies identify the server as written in Go, and the `Allow` header of a `405` lists the methods of a route. The same applies to the redirects of `http.ServeMux` for unclean paths and subtree patterns, which would also answer before authorization runs.
 
@@ -228,7 +229,11 @@ The sensor runs inside the monitored network and talks to attackers directly.
 
 - Logs are structured (`log/slog`, JSON). Request-scoped logs use the `...Context` variants so that request ID and actor are attached automatically.
 - Never log passwords, session tokens, API keys, secrets, one-time codes or complete request bodies. Types that carry such values or password hashes implement `slog.LogValuer` and omit them, so that logging the whole value cannot leak them. Attacker-controlled values are logged as structured attributes, never concatenated into the message.
-- The audit log records every security-relevant write and every authentication event with the actor and the authentication method, including the API key identifier where applicable. For updates it records the names of changed fields, not their values, so the audit log does not become a second copy of the inventory.
+- The audit log records every security-relevant write and every authentication event with the actor and the authentication method, including the API key identifier where applicable. For updates it records the names of changed fields, not their values, so the audit log does not become a second copy of the inventory. Resources are recorded by type and identifier, never by name.
+- An audit entry is written in the transaction of the action it records. An action never takes effect without its entry, and a failed entry fails the action.
+- The audit log is append-only for the application. The console's database role can insert and read entries, but never update or delete them.
+- Entries keep a copy of the actor's address and display name, taken from the account by the database, so they stay readable after the account is deleted.
+- Requests without valid credentials are not audited, so anonymous clients cannot flood the audit log; the access log records them. Requests denied for a missing permission are audited. A failed sign-in for an unknown account does not record the submitted address, which is attacker input and sometimes holds a mistyped password.
 
 ## Web console
 
