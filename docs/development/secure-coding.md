@@ -35,6 +35,7 @@ The server binary runs one or more roles (`console`, `trigger`, `dns`, `worker`)
 - The `trigger` and `dns` roles have no `SELECT` privilege on any table. They resolve exactly one trigger value at a time through a dedicated database function that returns only what the response and the event need, and they insert events and jobs. They cannot list honeytokens or honeypots, and they cannot read alert channels, users or audit data. A compromised internet-facing host can test a value it already found, but never obtain the inventory.
 - Trigger code depends on narrow interfaces for resolving trigger values and recording events, never on the full store.
 - No role runs with `SUPERUSER` or `BYPASSRLS`. Migrations run with a separate owner role, never with an application role.
+- The operator creates one group role per server role, such as `nyktus_console`, before the first migration. Migrations grant privileges to these group roles but never create roles, so the owner role needs no `CREATEROLE`. A migration that needs a group role checks that it exists and stops with a clear error otherwise.
 - The server refuses to start outside development if a role's database user is a superuser, can bypass row-level security, can create roles or databases, can start replication, is a member of `pg_read_all_data`, `pg_write_all_data`, `pg_read_server_files`, `pg_write_server_files` or `pg_execute_server_program`, or owns the database or the schema.
 
 ## Trigger endpoints
@@ -80,15 +81,19 @@ Requests that match no route receive a JSON `404`, also when only the method dif
 
 There is no public registration.
 
-- **First start.** While no administrator exists, the server generates a setup URL containing a one-time token on every start and prints it to standard output. The setup page creates the first administrator with a name and password and accepts only that token. Without it, whoever reaches a fresh instance first could claim it.
+- **First start.** While no administrator exists, the server generates a setup URL containing a one-time token on every start and prints it to standard output. The setup page creates the first administrator with an email address, a display name and a password, and accepts only that token. Without it, whoever reaches a fresh instance first could claim it.
 - Once an administrator exists, the setup endpoint is permanently disabled and returns `404`, including after restarts.
 - **Further accounts** are created by administrators in the console or just in time through OpenID Connect. Creating an account yields a single-use, expiring activation link through which the user sets their own password. The link is shown to the administrator once and can additionally be sent by email when a mail server is configured.
 - Administrators never set or see another user's password.
 
+Local accounts sign in with their email address and password. The display name is shown in the console and the audit log and plays no part in authentication. Addresses are compared in lower case and NFC normalization, so every spelling of an address maps to one account.
+
 ### Passwords
 
-- Hash with Argon2id (memory 64 MiB, iterations 3, parallelism 4) and a random salt per hash.
-- Accept passwords from 12 to 128 characters. The upper bound protects the hashing step from denial of service.
+- Hash with Argon2id (memory 64 MiB, iterations 3, parallelism 4) and a random salt per hash. Hashes are stored in the PHC string format, and verification reads the parameters from the stored hash, so the parameters can be raised without invalidating existing passwords.
+- Accept passwords from 12 to 128 characters, counted as Unicode code points after NFC normalization. Reject invalid UTF-8. Normalization makes the same password typed on different systems produce the same hash. The upper bound protects the hashing step from denial of service.
+- Limit the number of concurrent hash operations. Each one allocates the full Argon2id memory, so parallel login attempts could otherwise exhaust the memory of the server. A rate limit at the reverse proxy is no substitute, because it applies per client.
+- The database accepts only encoded Argon2id hashes in the password column, so a plain-text password can never be stored by mistake.
 - Login must take the same time whether or not the account exists: verify against a precomputed dummy hash when no user is found.
 
 ### Account enumeration
@@ -157,6 +162,7 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 - Map database errors to sentinel errors in the store layer and compare with `errors.Is`. Detect constraint violations by SQLSTATE (`23505` for unique violations), never by message text.
 - Invariants that span several statements run in one transaction. Where concurrent requests can race, take the row lock explicitly and prove it with a test (see the [testing guidelines](testing.md)).
 - The schema is the last line of defense: use `NOT NULL`, `CHECK`, foreign keys and unique constraints for every invariant the database can express.
+- The schema is the last line of defense, not the first. PostgreSQL writes the complete failing row of a constraint violation to its server log, so a row with a secret, a password hash or a plain-text password passed by mistake would end up there. Stores validate every field before they write such a row.
 - Connection pools have explicit upper limits.
 
 ## Outbound requests
@@ -221,7 +227,7 @@ The sensor runs inside the monitored network and talks to attackers directly.
 ## Logging and audit
 
 - Logs are structured (`log/slog`, JSON). Request-scoped logs use the `...Context` variants so that request ID and actor are attached automatically.
-- Never log passwords, session tokens, API keys, secrets, one-time codes or complete request bodies. Attacker-controlled values are logged as structured attributes, never concatenated into the message.
+- Never log passwords, session tokens, API keys, secrets, one-time codes or complete request bodies. Types that carry such values or password hashes implement `slog.LogValuer` and omit them, so that logging the whole value cannot leak them. Attacker-controlled values are logged as structured attributes, never concatenated into the message.
 - The audit log records every security-relevant write and every authentication event with the actor and the authentication method, including the API key identifier where applicable. For updates it records the names of changed fields, not their values, so the audit log does not become a second copy of the inventory.
 
 ## Web console
