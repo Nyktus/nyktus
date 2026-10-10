@@ -4,8 +4,11 @@
 package audit
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 
 	"nyktus.org/nyktus/internal/platform/schematest"
 )
@@ -18,12 +21,13 @@ func TestList_CursorIsAnIndexConditionInTheGenericPlan(t *testing.T) {
 	t.Parallel()
 
 	ownerURL, _ := schematest.Console(t)
-	pool := schematest.Open(t, ownerURL)
-	conn, err := pool.Acquire(t.Context())
+	// A connection of its own, closed afterwards: the settings and the prepared
+	// statement below must not reach a connection that other queries reuse.
+	conn, err := pgx.Connect(t.Context(), ownerURL)
 	if err != nil {
-		t.Fatalf("acquire: %v", err)
+		t.Fatalf("connect: %v", err)
 	}
-	defer conn.Release()
+	defer func() { _ = conn.Close(context.WithoutCancel(t.Context())) }()
 
 	for _, statement := range []string{
 		"SET plan_cache_mode = force_generic_plan",

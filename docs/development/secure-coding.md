@@ -235,7 +235,8 @@ The sensor runs inside the monitored network and talks to attackers directly.
 - An audit entry is written in the transaction of the action it records. An action never takes effect without its entry, and a failed entry fails the action.
 - The audit log is append-only for the application. The console's database role can insert and read entries, but never update or delete them.
 - Entries keep a copy of the actor's address and display name, taken from the account by the database, so they stay readable after the account is deleted.
-- Requests without valid credentials are not audited, so anonymous clients cannot flood the audit log; the access log records them. Requests denied for a missing permission are audited. A failed sign-in for an unknown account does not record the submitted address, which is attacker input and sometimes holds a mistyped password.
+- Requests without valid credentials are not audited, so anonymous clients cannot flood the audit log; the access log records them. Requests denied for a missing permission are audited.
+- Entries that a signed-in user can cause at will without changing anything, such as denied requests and reads of personal data, are recorded at most once per user, action, outcome and minute (`audit.Store.RecordUnlessRepeated`). Writes, sign-ins and sign-outs are always recorded. A failed sign-in for an unknown account does not record the submitted address, which is attacker input and sometimes holds a mistyped password.
 
 ## Web console
 

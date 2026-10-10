@@ -245,6 +245,9 @@ paths:
         that polls for new entries should therefore read again from a few minutes
         before its newest entry. Entries with the same time are ordered by their
         identifier, which makes the order total, not chronological.
+
+        Entries contain personal data, so reads are recorded in the audit log as
+        `audit.read`, at most once per user and minute.
       tags: [audit]
       x-access: audit:read
       security:
@@ -490,7 +493,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Forbidden:
-      description: The caller lacks the permission that the operation requires. The denial is recorded in the audit log.
+      description: The caller lacks the permission that the operation requires. The denial is recorded in the audit log, at most once per user, permission and minute.
       content:
         application/json:
           schema:

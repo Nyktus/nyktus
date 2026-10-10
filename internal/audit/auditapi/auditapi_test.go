@@ -6,6 +6,7 @@ package auditapi_test
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -248,9 +249,10 @@ func TestListAuditEntries_PagesWithCursor(t *testing.T) {
 		t.Errorf("pages = %v, want %v", got, want)
 	}
 
+	// The reads above were recorded once, as the newest entry.
 	status, body := e.get(t, tok, "")
-	if status != http.StatusOK || len(entries(t, body)) != len(want) || body["next_cursor"] != nil {
-		t.Errorf("default page: status %d, %d entries, next %v; want all %d without a cursor", status, len(entries(t, body)), body["next_cursor"], len(want))
+	if status != http.StatusOK || len(entries(t, body)) != len(want)+1 || body["next_cursor"] != nil {
+		t.Errorf("default page: status %d, %d entries, next %v; want %d without a cursor", status, len(entries(t, body)), body["next_cursor"], len(want)+1)
 	}
 }
 
@@ -264,6 +266,10 @@ func TestListAuditEntries_RejectsInvalidQueries(t *testing.T) {
 		"?limit=0",
 		"?limit=201",
 		"?limit=ten",
+		"?limit=+50",
+		"?limit=0050",
+		"?limit=-0",
+		"?limit=99999999999999999999",
 		"?limit=1&limit=2",
 		"?offset=10",
 		"?cursor=%%%",
@@ -277,6 +283,11 @@ func TestListAuditEntries_RejectsInvalidQueries(t *testing.T) {
 		if status != http.StatusBadRequest || errBody["code"] != "invalid_request" {
 			t.Errorf("GET %s: status %d, body %v; want 400", query, status, body)
 		}
+	}
+	// The client chooses the parameter names, so the error does not repeat them.
+	name := strings.Repeat("n", 1000)
+	if _, body := e.get(t, tok, "?"+name+"=1"); strings.Contains(fmt.Sprint(body), name) {
+		t.Error("the error repeats the unknown parameter name")
 	}
 	if status, _ := e.get(t, tok, "?cursor="+b64([]byte("2026-10-10T12:00:00.123456Z|00000000-0000-4000-8000-000000000000"))); status != http.StatusOK {
 		t.Errorf("valid cursor: status %d, want 200", status)
@@ -334,5 +345,56 @@ SELECT 'user.create', 'success', 'system', 'cli', '{}' FROM generate_series(1, $
 	}
 	if status, _ := e.get(t, tok, "?limit="+strconv.Itoa(audit.MaxPageSize+1)); status != http.StatusBadRequest {
 		t.Errorf("limit above the maximum: status %d, want 400", status)
+	}
+}
+
+// Reads of the audit log return personal data and are recorded, but repeated
+// reads, like repeated denials, only once per minute, so that a signed-in user
+// cannot fill the log.
+func TestListAuditEntries_RecordsReadsAndDenialsOncePerWindow(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t)
+	adminID, admin := e.signIn(t, "ada@example.com", "admin")
+	viewerID, viewer := e.signIn(t, "vic@example.com", "viewer")
+	for range 3 {
+		if status, _ := e.get(t, admin, "?limit=1"); status != http.StatusOK {
+			t.Fatalf("admin read: status %d", status)
+		}
+		if status, _ := e.get(t, viewer, ""); status != http.StatusForbidden {
+			t.Fatalf("viewer read: status %d", status)
+		}
+	}
+	for _, tt := range []struct {
+		userID, outcome string
+	}{{adminID, "success"}, {viewerID, "denied"}} {
+		var n int
+		if err := e.owner.QueryRow(t.Context(), `
+SELECT count(*) FROM audit_entries WHERE action = 'audit.read' AND outcome = $1 AND actor_user_id = $2
+	AND client_ip IS NOT NULL AND request_id IS NOT NULL`, tt.outcome, tt.userID).Scan(&n); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if n != 1 {
+			t.Errorf("%s: %d entries after three requests, want 1", tt.outcome, n)
+		}
+	}
+}
+
+// Entries without changed fields carry an empty array, as the specification
+// requires, not null.
+func TestListAuditEntries_ChangedFieldsIsAlwaysAnArray(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t)
+	_, tok := e.signIn(t, "ada@example.com", "admin")
+	_, body := e.get(t, tok, "")
+	list := entries(t, body)
+	if len(list) == 0 {
+		t.Fatal("no entries")
+	}
+	for _, entry := range list {
+		if fields, ok := entry["changed_fields"].([]any); !ok || fields == nil {
+			t.Errorf("changed_fields = %#v in %v, want an array", entry["changed_fields"], entry)
+		}
 	}
 }

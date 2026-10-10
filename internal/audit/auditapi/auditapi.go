@@ -18,12 +18,15 @@ import (
 	"time"
 
 	"nyktus.org/nyktus/internal/audit"
+	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/platform/httpx"
 )
 
 // defaultPageSize is the page size if the request names none.
 const defaultPageSize = 50
+
+var limitFormat = regexp.MustCompile(`^[1-9][0-9]{0,8}$`)
 
 var uuidFormat = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
@@ -34,6 +37,10 @@ type handler struct {
 
 // NewHandler returns the handler of GET /api/v1/audit-entries. The route must
 // require the permission to read the audit log.
+//
+// Entries contain personal data, so every read is recorded in the audit log
+// itself, at most once per user and audit.RepeatWindow. The entry is written
+// before the response; without it, the reader receives no data.
 func NewHandler(logger *slog.Logger, q db.Querier) http.Handler {
 	if logger == nil || q == nil {
 		panic("auditapi: handler needs a logger and a database")
@@ -87,6 +94,20 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, r, h.logger, "audit: list entries", err)
 		return
 	}
+	p, ok := access.PrincipalFrom(r.Context())
+	if !ok {
+		httpx.ServerError(w, r, h.logger, "audit: record read", errors.New("no principal in the request context"))
+		return
+	}
+	err = h.store.RecordUnlessRepeated(r.Context(), audit.Entry{
+		Action:  audit.ActionAuditRead,
+		Outcome: audit.OutcomeSuccess,
+		Actor:   p.Actor(),
+	}.WithRequest(r.Context()))
+	if err != nil {
+		httpx.ServerError(w, r, h.logger, "audit: record read", err)
+		return
+	}
 
 	resp := listResponse{Entries: make([]entryResponse, 0, len(entries))}
 	for _, e := range entries {
@@ -115,6 +136,11 @@ func newEntryResponse(e audit.StoredEntry) entryResponse {
 		ChangedFields: e.ChangedFields,
 		RequestID:     e.RequestID,
 	}
+	// The specification requires an array, also for entries without changed
+	// fields.
+	if out.ChangedFields == nil {
+		out.ChangedFields = []string{}
+	}
 	if e.Resource.Type != "" {
 		out.Resource = &resourceResponse{Type: e.Resource.Type, ID: e.Resource.ID}
 	}
@@ -132,18 +158,24 @@ func parseQuery(r *http.Request) (int, *audit.Cursor, error) {
 	if err != nil {
 		return 0, nil, errors.New("query string is invalid")
 	}
+	// The messages do not repeat the parameter names, which the client chose.
 	for name, values := range query {
 		if name != "limit" && name != "cursor" {
-			return 0, nil, errors.New("unknown query parameter " + strconv.Quote(name))
+			return 0, nil, errors.New("unknown query parameter; use limit and cursor")
 		}
 		if len(values) != 1 {
-			return 0, nil, errors.New("query parameter " + strconv.Quote(name) + " must be given once")
+			return 0, nil, errors.New("query parameters must be given once")
 		}
 	}
 
 	size := defaultPageSize
 	if s, ok := query["limit"]; ok {
-		// The store checks the range, so that the bounds are defined once.
+		// One spelling per number: no sign and no leading zeros, which
+		// strconv.Atoi would accept. The store checks the range, so that the
+		// bounds are defined once.
+		if !limitFormat.MatchString(s[0]) {
+			return 0, nil, errInvalidLimit
+		}
 		n, err := strconv.Atoi(s[0])
 		if err != nil {
 			return 0, nil, errInvalidLimit

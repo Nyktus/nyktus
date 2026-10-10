@@ -12,9 +12,11 @@ Nyktus records security-relevant actions in an audit log in its database. The co
 
 Requests without valid credentials are not recorded, so that anonymous clients cannot fill the audit log. The access log records them. A failed sign-in for an unknown address is recorded without the address.
 
+Reads of the audit log and requests denied for a missing permission are recorded at most once per user, action and minute, so that a signed-in user cannot fill the audit log by repeating them. The access log records every one of them.
+
 ## Reading the audit log
 
-Administrators read the audit log through `GET /api/v1/audit-entries`. It returns entries from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`. Entries recorded meanwhile do not shift the following pages.
+Administrators read the audit log through `GET /api/v1/audit-entries`. Every read is recorded as `audit.read`, because the entries contain personal data. It returns entries from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`. Entries recorded meanwhile do not shift the following pages.
 
 Entries are ordered by the time they were written, not by the time their action was committed. An action that took long to complete can therefore appear behind entries you have already read. If you collect entries regularly, for example into a SIEM, read again from a few minutes before the newest entry you have and skip the identifiers you already know.
 
