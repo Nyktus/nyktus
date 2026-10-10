@@ -19,6 +19,10 @@ type fakePinger struct{ err error }
 
 func (f fakePinger) Ping(context.Context) error { return f.err }
 
+func deps(db Pinger) Deps {
+	return Deps{Logger: slog.New(slog.DiscardHandler), DB: db, Setup: http.NotFoundHandler()}
+}
+
 func TestHealthEndpoints(t *testing.T) {
 	t.Parallel()
 
@@ -37,7 +41,7 @@ func TestHealthEndpoints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			h := NewHandler(slog.New(slog.DiscardHandler), fakePinger{err: tt.dbErr}, nil)
+			h := NewHandler(deps(fakePinger{err: tt.dbErr}))
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, nil))
 			if w.Code != tt.status {
@@ -57,7 +61,7 @@ func TestRoutes_MatchSpecification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invalid specification: %v", err)
 	}
-	for _, problem := range spec.Compare(NewRouter(slog.New(slog.DiscardHandler), fakePinger{}).Routes()) {
+	for _, problem := range spec.Compare(NewRouter(deps(fakePinger{})).Routes()) {
 		t.Error(problem)
 	}
 }

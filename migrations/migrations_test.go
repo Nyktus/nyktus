@@ -140,6 +140,10 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"DELETE FROM users",
 		"SELECT count(*) FROM audit_entries",
 		"INSERT INTO audit_entries (action, outcome, actor_kind, auth_method, changed_fields) VALUES ('user.create', 'success', 'system', 'cli', '{}')",
+		"INSERT INTO setup_tokens (token_hash) VALUES (sha256('a'))",
+		"SELECT count(*) FROM setup_tokens WHERE expires_at > clock_timestamp()",
+		"BEGIN; LOCK TABLE setup_tokens IN EXCLUSIVE MODE; COMMIT",
+		"DELETE FROM setup_tokens",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -158,6 +162,9 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE audit_entries SET outcome = 'failure'",
 		"DELETE FROM audit_entries",
 		"TRUNCATE audit_entries",
+		"INSERT INTO setup_tokens (token_hash, expires_at) VALUES (sha256('b'), now() + interval '1 year')",
+		"UPDATE setup_tokens SET expires_at = now() + interval '1 year'",
+		"TRUNCATE setup_tokens",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -200,6 +207,9 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_table_privilege($1, 'public.audit_entries', 'TRUNCATE')",
 		"has_column_privilege($1, 'public.audit_entries', 'id', 'INSERT')",
 		"has_function_privilege($1, 'public.audit_entries_copy_actor()', 'EXECUTE')",
+		"has_any_column_privilege($1, 'public.setup_tokens', 'UPDATE')",
+		"has_table_privilege($1, 'public.setup_tokens', 'TRUNCATE')",
+		"has_column_privilege($1, 'public.setup_tokens', 'expires_at', 'INSERT')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

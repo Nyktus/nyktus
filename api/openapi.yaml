@@ -36,6 +36,8 @@ servers:
 tags:
   - name: health
     description: Liveness and readiness probes for orchestrators.
+  - name: setup
+    description: Creation of the first administrator of an installation.
 
 paths:
   /livez:
@@ -69,6 +71,48 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/setup:
+    post:
+      operationId: createFirstAdministrator
+      summary: Create the first administrator
+      description: |
+        Creates the first administrator, active and with the given password. The
+        request must carry a setup token. While no administrator exists, every
+        console process issues one when it starts and prints a setup URL that
+        contains the token in its fragment, such as
+        `https://nyktus.example.com/setup#token=...`. A token is valid for one
+        hour and can be used once.
+
+        Once an administrator exists, the setup is closed for good, also after a
+        restart. From then on, and for every request whose token is unknown,
+        expired or already used, the operation answers exactly like a route that
+        does not exist. Fields are validated only for a valid token.
+      tags: [setup]
+      x-access: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupRequest"
+      responses:
+        "201":
+          description: The administrator has been created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 components:
   schemas:
     Status:
@@ -79,6 +123,52 @@ components:
         status:
           type: string
           const: ok
+
+    SetupRequest:
+      type: object
+      additionalProperties: false
+      required: [token, email, display_name, password]
+      properties:
+        token:
+          type: string
+          description: The setup token from the fragment of the setup URL.
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Sign-in address. It is stored in lower case.
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Name shown in the console and the audit log. Printable characters without leading or trailing spaces.
+        password:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 128
+          description: Counted in Unicode code points after NFC normalization.
+
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, email, display_name, role, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [admin, editor, viewer]
+        status:
+          type: string
+          enum: [pending, active, deactivated]
+          description: A pending account has not set a password yet. A deactivated account cannot sign in.
 
     Error:
       type: object
@@ -102,6 +192,36 @@ components:
               description: Correlates the response with the server log.
 
   responses:
+    InvalidRequest:
+      description: The request body is malformed or a field is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: The route does not exist or is not available to the caller.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BodyTooLarge:
+      description: The request body exceeds the size limit of the operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnsupportedMediaType:
+      description: The request body is not application/json.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: The request failed on the server. The response carries a generic message and a request ID that correlates it with the server log.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Unavailable:
       description: A dependency, such as the database, is unreachable.
       content:

@@ -21,23 +21,37 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-// NewRouter registers the console routes.
-func NewRouter(logger *slog.Logger, db Pinger) *httpx.Router {
-	rt := httpx.NewRouter(logger, nil)
+// Deps are the dependencies of the console.
+type Deps struct {
+	Logger *slog.Logger
+	DB     Pinger
+	// Setup creates the first administrator.
+	Setup http.Handler
+	// TrustedProxies are the address ranges of reverse proxies whose
+	// X-Forwarded-For header determines the client address.
+	TrustedProxies []netip.Prefix
+}
+
+// NewRouter registers the console routes. It panics if a dependency is missing,
+// so that a wiring mistake stops the process at startup.
+func NewRouter(d Deps) *httpx.Router {
+	if d.Logger == nil || d.DB == nil || d.Setup == nil {
+		panic("console: router needs a logger, a database and a setup handler")
+	}
+	rt := httpx.NewRouter(d.Logger, nil)
 	rt.Handle(http.MethodGet, "/livez", httpx.Public, http.HandlerFunc(live))
-	rt.Handle(http.MethodGet, "/readyz", httpx.Public, ready(logger, db))
+	rt.Handle(http.MethodGet, "/readyz", httpx.Public, ready(d.Logger, d.DB))
+	rt.Handle(http.MethodPost, "/api/v1/setup", httpx.Public, d.Setup)
 	return rt
 }
 
 // NewHandler returns the console HTTP handler with the shared middleware.
-// trustedProxies are the address ranges of reverse proxies whose X-Forwarded-For
-// header determines the client address.
-func NewHandler(logger *slog.Logger, db Pinger, trustedProxies []netip.Prefix) http.Handler {
-	return httpx.Chain(NewRouter(logger, db),
+func NewHandler(d Deps) http.Handler {
+	return httpx.Chain(NewRouter(d),
 		httpx.RequestID,
-		httpx.ClientIP(trustedProxies),
-		httpx.AccessLog(logger),
-		httpx.Recover(logger),
+		httpx.ClientIP(d.TrustedProxies),
+		httpx.AccessLog(d.Logger),
+		httpx.Recover(d.Logger),
 	)
 }
 

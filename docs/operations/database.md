@@ -62,6 +62,8 @@ Creating a database owned by another role needs more than `CREATEROLE`: it requi
    NYKTUS_CONSOLE_DATABASE_URL='postgres://nyktus_console_login:...@db/nyktus' nyktus serve --roles=console
    ```
 
+   On the first start, the console prints a URL for creating the first administrator. See [First start](first-start.md).
+
 ## Privilege check
 
 Outside development, the server refuses to start if a role's login can bypass the privilege separation: if it is a superuser, can bypass row-level security, can create roles or databases, can start replication, is a member of `pg_read_all_data`, `pg_write_all_data`, `pg_read_server_files`, `pg_write_server_files` or `pg_execute_server_program`, or owns the database or the schema. Use the login roles from the setup above, not the owner.

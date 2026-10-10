@@ -7,10 +7,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
+	"regexp"
 	"strings"
 	"testing"
 
+	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/platform/config"
 	"nyktus.org/nyktus/internal/platform/dbtest"
 	"nyktus.org/nyktus/internal/platform/migrate"
@@ -125,5 +128,46 @@ func TestRun_MigrateAppliesEmbeddedMigrations(t *testing.T) {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("run %d: log does not contain %s: %s", i+1, want, stderr.String())
 		}
+	}
+}
+
+func TestAnnounceSetup_PrintsURLToStdoutAndKeepsTokenOutOfLog(t *testing.T) {
+	t.Parallel()
+
+	_, consoleURL := schematest.Console(t)
+	pool := schematest.Open(t, consoleURL)
+	svc := setup.NewService(pool)
+
+	var stdout, log bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&log, nil))
+	if err := announceSetup(t.Context(), svc, "https://nyktus.example.com", logger, &stdout); err != nil {
+		t.Fatalf("announceSetup() error = %v", err)
+	}
+
+	match := regexp.MustCompile(`https://nyktus\.example\.com/setup#token=([A-Za-z0-9_-]{43})\n`).FindStringSubmatch(stdout.String())
+	if match == nil {
+		t.Fatalf("stdout does not contain the setup URL:\n%s", stdout.String())
+	}
+	if valid, err := svc.Valid(t.Context(), match[1]); err != nil || !valid {
+		t.Errorf("printed token is not valid: %v, %v", valid, err)
+	}
+	if !strings.Contains(log.String(), `"msg":"console: setup pending"`) || !strings.Contains(log.String(), `"expires_at"`) {
+		t.Errorf("log does not record the pending setup: %s", log.String())
+	}
+	if strings.Contains(log.String(), match[1]) {
+		t.Errorf("log contains the setup token: %s", log.String())
+	}
+
+	if _, err := pool.Exec(t.Context(),
+		`INSERT INTO users (email, display_name, role, status) VALUES ('ada@example.com', 'Ada', 'admin', 'pending')`); err != nil {
+		t.Fatalf("create administrator: %v", err)
+	}
+	stdout.Reset()
+	log.Reset()
+	if err := announceSetup(t.Context(), svc, "https://nyktus.example.com", logger, &stdout); err != nil {
+		t.Fatalf("announceSetup() error = %v", err)
+	}
+	if stdout.Len() != 0 || log.Len() != 0 {
+		t.Errorf("announced a setup although an administrator exists: stdout %q, log %q", stdout.String(), log.String())
 	}
 }

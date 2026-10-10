@@ -126,11 +126,14 @@ func NewRouter(logger *slog.Logger, authz Authorizer) *Router {
 		panic("httpx: router needs a logger")
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", notFound)
+	mux.HandleFunc("/", NotFound)
 	return &Router{mux: mux, logger: logger, authz: authz}
 }
 
-func notFound(w http.ResponseWriter, r *http.Request) {
+// NotFound writes the response to a request that matches no route. A handler that
+// must not reveal that its route exists, such as a disabled endpoint, answers with
+// it as well, so that its response cannot be told apart from an unknown route.
+func NotFound(w http.ResponseWriter, r *http.Request) {
 	WriteError(w, r, http.StatusNotFound, CodeNotFound, "not found")
 }
 
@@ -223,7 +226,7 @@ func (rt *Router) Routes() []Route {
 // the JSON 404 instead.
 func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect || !canonical(r.URL.EscapedPath()) {
-		notFound(w, r)
+		NotFound(w, r)
 		return
 	}
 	rt.mux.ServeHTTP(w, r)

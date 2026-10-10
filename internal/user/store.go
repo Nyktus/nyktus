@@ -138,6 +138,18 @@ WHERE email = $1`, normalized))
 	return u, nil
 }
 
+// AdminExists reports whether an account with the role admin exists, in any
+// status. A deactivated administrator counts as well: otherwise deactivating the
+// last one would open the setup of a first administrator again.
+func (s *Store) AdminExists(ctx context.Context) (bool, error) {
+	var exists bool
+	err := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT FROM users WHERE role = $1)`, RoleAdmin).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check for administrator: %w", err)
+	}
+	return exists, nil
+}
+
 func scan(row pgx.Row) (User, error) {
 	var (
 		u    User

@@ -67,6 +67,8 @@ Fakes cannot find a mismatch between a `SELECT` list and a `Scan`, a missing ind
 
 - Never assert on elapsed time or use `time.Sleep` to order events. Use barriers, channels or explicit clock control.
 - To prove that a row lock is taken, hold the lock in one transaction and try `SELECT ... FOR UPDATE NOWAIT` from a second one. A lock inside a CTE must be tested by running the CTE body on its own, because PostgreSQL may never evaluate a CTE when another branch of the join is empty.
+- To prove that a table lock is taken, probe it from a second transaction with a `NOWAIT` mode that conflicts with the lock under test and with nothing else the first transaction does. Every `INSERT`, `UPDATE` and `DELETE` holds `ROW EXCLUSIVE`, so a probe in `EXCLUSIVE` mode would also fail without the lock under test. `ROW SHARE` conflicts only with `EXCLUSIVE` and `ACCESS EXCLUSIVE`.
+- A lock that must be taken before a check, such as "no administrator exists yet", is proven by ordering: hold the lock and change the checked state in one transaction, wait until the code under test is blocked on the lock (poll `pg_locks` for a waiter that is not granted), commit, and assert the outcome.
 - Run the full suite with `-race` in CI.
 
 ### Drift between curated data and code is tested

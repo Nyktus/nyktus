@@ -22,6 +22,13 @@ import (
 // name in the log is known to the code. The database rejects other formats.
 type Action string
 
+// Actions recorded in the audit log.
+const (
+	// ActionUserCreate records the creation of an account. The actor tells
+	// whether an administrator or the holder of the setup token created it.
+	ActionUserCreate Action = "user.create"
+)
+
 // Outcome is the result of an action.
 type Outcome string
 

@@ -197,6 +197,44 @@ func (r row) insert(t *testing.T, pool *pgxpool.Pool) error {
 	return err
 }
 
+func TestAdminExists_CountsAdministratorsInEveryStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		role   Role
+		status Status
+		want   bool
+	}{
+		{name: "editor", role: RoleEditor, status: StatusActive, want: false},
+		{name: "viewer", role: RoleViewer, status: StatusActive, want: false},
+		{name: "active admin", role: RoleAdmin, status: StatusActive, want: true},
+		{name: "pending admin", role: RoleAdmin, status: StatusPending, want: true},
+		{name: "deactivated admin", role: RoleAdmin, status: StatusDeactivated, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s, pool := newStore(t)
+			if exists, err := s.AdminExists(t.Context()); err != nil || exists {
+				t.Fatalf("AdminExists() without users = %v, %v; want false, nil", exists, err)
+			}
+			r := validRow()
+			r.role, r.status = string(tt.role), string(tt.status)
+			if tt.status != StatusPending {
+				r.hash = testHash
+			}
+			if err := r.insert(t, pool); err != nil {
+				t.Fatalf("insert user: %v", err)
+			}
+			if exists, err := s.AdminExists(t.Context()); err != nil || exists != tt.want {
+				t.Errorf("AdminExists() = %v, %v; want %v, nil", exists, err, tt.want)
+			}
+		})
+	}
+}
+
 // The schema is the last line of defense, so its constraints are tested directly,
 // as the console's database role.
 func TestSchema_RejectsInvalidUsers(t *testing.T) {

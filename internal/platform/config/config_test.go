@@ -37,7 +37,10 @@ func (f fakeSource) source() Source {
 func TestLoadServe_Defaults(t *testing.T) {
 	t.Parallel()
 
-	src := fakeSource{env: map[string]string{"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus"}}
+	src := fakeSource{env: map[string]string{
+		"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+	}}
 	cfg, err := LoadServe(src.source(), []Role{RoleConsole})
 	if err != nil {
 		t.Fatalf("LoadServe() error = %v", err)
@@ -69,7 +72,7 @@ func TestLoadServe_ReportsAllProblems(t *testing.T) {
 	if err == nil {
 		t.Fatal("LoadServe() returned no error")
 	}
-	for _, want := range []string{"NYKTUS_ENV", "NYKTUS_LOG_LEVEL", "NYKTUS_CONSOLE_ADDR", "NYKTUS_CONSOLE_DATABASE_URL"} {
+	for _, want := range []string{"NYKTUS_ENV", "NYKTUS_LOG_LEVEL", "NYKTUS_CONSOLE_ADDR", "NYKTUS_CONSOLE_URL", "NYKTUS_CONSOLE_DATABASE_URL"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not mention %s: %v", want, err)
 		}
@@ -85,6 +88,68 @@ func TestLoadServe_SkipsSettingsOfDisabledRoles(t *testing.T) {
 	}
 	if cfg.Has(RoleConsole) {
 		t.Error("Has(RoleConsole) = true without the role enabled")
+	}
+}
+
+func TestLoadServe_ConsoleURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		development bool
+		addr        string
+		value       string
+		want        string
+		err         string
+	}{
+		{name: "https", value: "https://nyktus.example.com", want: "https://nyktus.example.com"},
+		{name: "trailing slash", value: "https://nyktus.example.com/", want: "https://nyktus.example.com"},
+		{name: "port", value: "https://nyktus.example.com:8443", want: "https://nyktus.example.com:8443"},
+		{name: "IPv6 host", value: "https://[2001:db8::1]:8443", want: "https://[2001:db8::1]:8443"},
+		{name: "required in production", err: "NYKTUS_CONSOLE_URL is required"},
+		{name: "http in production", value: "http://nyktus.example.com", err: "must start with https://"},
+		{name: "http in development", development: true, value: "http://localhost:8080", want: "http://localhost:8080"},
+		{name: "other scheme", development: true, value: "ftp://nyktus.example.com", err: "must start with https://"},
+		{name: "no scheme", value: "nyktus.example.com", err: "must start with https://"},
+		{name: "no host", value: "https://", err: "must name a host"},
+		{name: "port without host", value: "https://:8443", err: "must name a host"},
+		{name: "user information", value: "https://admin@nyktus.example.com", err: "scheme, host and port only"},
+		{name: "path", value: "https://example.com/nyktus", err: "scheme, host and port only"},
+		{name: "query", value: "https://nyktus.example.com?a=b", err: "scheme, host and port only"},
+		{name: "empty query", value: "https://nyktus.example.com?", err: "scheme, host and port only"},
+		{name: "fragment", value: "https://nyktus.example.com#token=x", err: "scheme, host and port only"},
+		{name: "empty fragment", value: "https://nyktus.example.com#", err: "scheme, host and port only"},
+		{name: "invalid port", value: "https://nyktus.example.com:https", err: "is not a URL"},
+		{name: "development default", development: true, want: "http://127.0.0.1:8080"},
+		{name: "development default on all interfaces", development: true, addr: ":9000", want: "http://localhost:9000"},
+		{name: "development default on unspecified IPv6", development: true, addr: "[::]:9000", want: "http://localhost:9000"},
+		{name: "development default on IPv6 loopback", development: true, addr: "[::1]:9000", want: "http://[::1]:9000"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := map[string]string{"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus", "NYKTUS_CONSOLE_URL": tt.value}
+			if tt.development {
+				env["NYKTUS_ENV"] = "development"
+			}
+			if tt.addr != "" {
+				env["NYKTUS_CONSOLE_ADDR"] = tt.addr
+			}
+			cfg, err := LoadServe(fakeSource{env: env}.source(), []Role{RoleConsole})
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.err) {
+					t.Errorf("LoadServe() error = %v, want it to contain %q", err, tt.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadServe() error = %v", err)
+			}
+			if cfg.Console.URL != tt.want {
+				t.Errorf("Console.URL = %q, want %q", cfg.Console.URL, tt.want)
+			}
+		})
 	}
 }
 
