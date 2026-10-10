@@ -39,6 +39,14 @@ Each of these properties needs its own test, named after the property:
 - Unsigned or tampered catalog packages are rejected without explicit confirmation. Archives with traversal paths or oversized entries are rejected.
 - The SSRF guard blocks every reserved address range.
 
+### Checks are tested against violations
+
+A test that guards a rule, such as a linter configuration, the specification check or a validation, is only trusted after it has failed on a deliberate violation. Change the code or data so that the rule is broken, watch the test fail, and restore it. Mention this in the pull request.
+
+### Test what a real client receives
+
+`httptest.ResponseRecorder` records what the handler wrote, which can differ from what a client receives over `net/http`. It keeps the body of a `HEAD` response, for example, which a real server discards. Assert on status and headers for `HEAD`, and use a real server through `httptest.NewServer` when the transport matters.
+
 ### Fakes, not mocking frameworks
 
 Stores are interfaces, and tests use hand-written fakes backed by maps. Fakes can record calls when a test needs to assert on them. Generated mocks with expectation DSLs are not used: they are harder to read and couple tests to call order instead of behavior.

@@ -25,6 +25,7 @@ Security decisions are made in one place and reused, never repeated at every cal
 
 - Every route declares its authentication requirement and its required permission when it is registered. A route without a declaration must not start. Handler-level checks are defense in depth, not the primary control.
 - Access is resolved by one function that checks every precondition: account status, role and, for API keys, scopes. A new way to reach a resource must go through it.
+- An empty or unknown permission is never a wildcard. Routes that only need a signed-in caller declare that explicitly instead of passing an empty permission.
 - When a fix is needed for a class of bugs, fix the shared function and add a test for the class, not only the instance.
 
 ## Server roles
@@ -71,7 +72,7 @@ Every handler must satisfy the following:
 
 Every HTTP server sets `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout` and `IdleTimeout`, and a recover middleware turns panics into a logged `500` that still passes through the regular response middleware. If the response had already started, the panic is logged and the connection aborted, so a client never receives a truncated body that looks complete.
 
-Requests that match no route receive a JSON `404`, also when only the method differs. The default responses of `net/http` are not used: their plain-text bodies identify the server as written in Go, and the `Allow` header of a `405` lists the methods of a route.
+Requests that match no route receive a JSON `404`, also when only the method differs. The default responses of `net/http` are not used: their plain-text bodies identify the server as written in Go, and the `Allow` header of a `405` lists the methods of a route. The same applies to the redirects of `http.ServeMux` for unclean paths and subtree patterns, which would also answer before authorization runs.
 
 ## Authentication
 
@@ -255,7 +256,7 @@ Before requesting review, check every item that applies to your change:
 
 - [ ] Request bodies are size-limited and decoded strictly.
 - [ ] All input is validated at the boundary.
-- [ ] Every new route declares its authentication and permission. Permission is checked before the resource is loaded.
+- [ ] Every new route declares its authentication and permission. Permission is checked before the resource is loaded. The route and its `401`/`403` responses are documented in the OpenAPI specification.
 - [ ] Secrets are masked after creation and absent from logs and errors.
 - [ ] Trigger responses are identical for every outcome. Trigger code resolves single values only and never enumerates the inventory.
 - [ ] Health checks cannot create events, incidents or alerts.

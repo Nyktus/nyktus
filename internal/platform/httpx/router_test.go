@@ -53,7 +53,8 @@ func TestRouter_DeniedRequestsNeverReachTheHandler(t *testing.T) {
 		{name: "authorizer failure", authz: &fakeAuthorizer{err: errors.New("session store down")}, wantStatus: http.StatusInternalServerError, wantCode: CodeInternal},
 		{name: "authorizer returns no request", authz: &fakeAuthorizer{noRequest: true}, wantStatus: http.StatusInternalServerError, wantCode: CodeInternal},
 		// http.ServeMux answers HEAD with the GET route, so HEAD must be authorized too.
-		{name: "head on a get route", authz: &fakeAuthorizer{err: ErrUnauthenticated}, method: http.MethodHead, wantStatus: http.StatusUnauthorized, wantCode: CodeUnauthenticated},
+		// A real server sends no body for HEAD, so only status and headers are checked.
+		{name: "head on a get route", authz: &fakeAuthorizer{err: ErrUnauthenticated}, method: http.MethodHead, wantStatus: http.StatusUnauthorized},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -74,8 +75,10 @@ func TestRouter_DeniedRequestsNeverReachTheHandler(t *testing.T) {
 			if w.Code != tt.wantStatus {
 				t.Errorf("status = %d, want %d", w.Code, tt.wantStatus)
 			}
-			if got := decodeErrorResponse(t, w); got.Error.Code != tt.wantCode {
-				t.Errorf("code = %q, want %q", got.Error.Code, tt.wantCode)
+			if tt.wantCode != "" {
+				if got := decodeErrorResponse(t, w); got.Error.Code != tt.wantCode {
+					t.Errorf("code = %q, want %q", got.Error.Code, tt.wantCode)
+				}
 			}
 			wantChallenge := ""
 			if tt.wantStatus == http.StatusUnauthorized {
@@ -210,5 +213,71 @@ func TestAccess_Permission(t *testing.T) {
 	}
 	if perm, ok := Require("users:read").Permission(); !ok || perm != "users:read" {
 		t.Errorf("Require(users:read).Permission() = %q, %v", perm, ok)
+	}
+}
+
+func TestRouter_AnswersUncleanPathsAndConnectWithJSONNotFound(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct{ method, target string }{
+		{http.MethodGet, "//livez"},
+		{http.MethodGet, "/./livez"},
+		{http.MethodGet, "/x/../livez"},
+		{http.MethodGet, "/items//1"},
+		{http.MethodGet, "/items/1/"},
+		{http.MethodConnect, "/livez"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.target, func(t *testing.T) {
+			t.Parallel()
+
+			authz := &fakeAuthorizer{}
+			rt := NewRouter(discardLogger(), authz)
+			handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				t.Error("handler ran for a request that matches no clean route")
+			})
+			rt.Handle(http.MethodGet, "/livez", Public, handler)
+			rt.Handle(http.MethodGet, "/items/{id}", Require("items:read"), handler)
+
+			w := httptest.NewRecorder()
+			rt.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), tt.method, tt.target, nil))
+
+			if w.Code != http.StatusNotFound {
+				t.Errorf("status = %d, want 404", w.Code)
+			}
+			if got := decodeErrorResponse(t, w); got.Error.Code != CodeNotFound {
+				t.Errorf("code = %q, want %q", got.Error.Code, CodeNotFound)
+			}
+			if loc := w.Header().Get("Location"); loc != "" {
+				t.Errorf("Location = %q, want no redirect", loc)
+			}
+			if len(authz.calls) != 0 {
+				t.Errorf("authorizer calls = %v, want none", authz.calls)
+			}
+		})
+	}
+}
+
+func TestRouter_RejectsPatternsWithoutOpenAPIEquivalent(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{
+		"/", "/items/", "/assets/{file...}", "/{$}", "items", "example.com/items",
+		"/items//1", "/a/../b", "/items/{id}.json", "/items/{1id}",
+	} {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Handle() accepted path %q", path)
+				}
+			}()
+			NewRouter(discardLogger(), nil).Handle(http.MethodGet, path, Public, http.NotFoundHandler())
+		})
+	}
+
+	rt := NewRouter(discardLogger(), nil)
+	for _, path := range []string{"/livez", "/items/{id}", "/api/v1/users/{user_id}/api_keys"} {
+		rt.Handle(http.MethodGet, path, Public, http.NotFoundHandler())
 	}
 }

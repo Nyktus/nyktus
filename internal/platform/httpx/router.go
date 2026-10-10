@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	pathpkg "path"
 	"regexp"
 	"slices"
+	"strings"
 )
 
 // Permission names an action on a resource in the form "resource:action", for
@@ -132,12 +134,21 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 	WriteError(w, r, http.StatusNotFound, CodeNotFound, "not found")
 }
 
-// Handle registers h for method and path, using the pattern syntax of
-// http.ServeMux. As in http.ServeMux, a GET route also answers HEAD, with the same
-// access requirement. It panics if access is not declared, or if the route needs
-// authorization and the router has no Authorizer: the process then stops at
+// Handle registers h for method and path. A GET route also answers HEAD, with the
+// same access requirement, as in http.ServeMux.
+//
+// path consists of literal segments and {name} wildcards. The other pattern forms
+// of http.ServeMux are rejected: subtree patterns with a trailing slash or a
+// {name...} wildcard make the mux redirect requests before authorization runs,
+// host patterns bypass the path, and none of them has an OpenAPI equivalent.
+//
+// Handle panics on an invalid path, if access is not declared, or if the route
+// needs authorization and the router has no Authorizer: the process then stops at
 // startup instead of serving a route without an enforced authorization decision.
 func (rt *Router) Handle(method, path string, access Access, h http.Handler) {
+	if err := validatePath(path); err != nil {
+		panic(fmt.Sprintf("httpx: route %s %s: %v", method, path, err))
+	}
 	switch access.kind {
 	case accessPublic:
 	case accessAuthenticated, accessPermission:
@@ -150,6 +161,33 @@ func (rt *Router) Handle(method, path string, access Access, h http.Handler) {
 	}
 	rt.mux.Handle(method+" "+path, h)
 	rt.routes = append(rt.routes, Route{Method: method, Path: path, Access: access})
+}
+
+var wildcardSegment = regexp.MustCompile(`^\{[A-Za-z_][A-Za-z0-9_]*\}$`)
+
+func validatePath(path string) error {
+	if !strings.HasPrefix(path, "/") || path == "/" || strings.HasSuffix(path, "/") || !canonical(path) {
+		return errors.New("path must start with a slash, must not end with one and must be clean")
+	}
+	for segment := range strings.SplitSeq(path[1:], "/") {
+		if strings.ContainsAny(segment, "{}") && !wildcardSegment.MatchString(segment) {
+			return fmt.Errorf("segment %q must be a literal or a {name} wildcard", segment)
+		}
+	}
+	return nil
+}
+
+// canonical reports whether p is a clean absolute path, as http.ServeMux expects.
+// A trailing slash is kept, as the mux does.
+func canonical(p string) bool {
+	if !strings.HasPrefix(p, "/") {
+		return false
+	}
+	clean := pathpkg.Clean(p)
+	if strings.HasSuffix(p, "/") && clean != "/" {
+		clean += "/"
+	}
+	return clean == p
 }
 
 func (rt *Router) authorize(access Access, next http.Handler) http.Handler {
@@ -178,7 +216,15 @@ func (rt *Router) Routes() []Route {
 	return slices.Clone(rt.routes)
 }
 
-// ServeHTTP dispatches the request to the matching route.
+// ServeHTTP dispatches the request to the matching route. http.ServeMux answers
+// CONNECT requests and paths that are not clean, such as "/a//b" or "/a/../b",
+// with redirects or plain-text responses of its own, before any route and its
+// authorization run. Those responses identify net/http, so such requests receive
+// the JSON 404 instead.
 func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodConnect || !canonical(r.URL.EscapedPath()) {
+		notFound(w, r)
+		return
+	}
 	rt.mux.ServeHTTP(w, r)
 }

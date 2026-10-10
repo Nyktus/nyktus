@@ -9,10 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
+	"nyktus.org/nyktus/api"
 	"nyktus.org/nyktus/internal/platform/apispec"
 )
 
@@ -54,11 +53,7 @@ func TestHealthEndpoints(t *testing.T) {
 func TestRoutes_MatchSpecification(t *testing.T) {
 	t.Parallel()
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "api", "openapi.yaml"))
-	if err != nil {
-		t.Fatalf("read specification: %v", err)
-	}
-	spec, err := apispec.Parse(data)
+	spec, err := apispec.Parse(api.OpenAPI())
 	if err != nil {
 		t.Fatalf("invalid specification: %v", err)
 	}

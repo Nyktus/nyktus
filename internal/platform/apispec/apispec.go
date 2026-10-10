@@ -44,8 +44,8 @@ var (
 )
 
 type document struct {
-	OpenAPI string                          `yaml:"openapi"`
-	Paths   map[string]map[string]yaml.Node `yaml:"paths"`
+	OpenAPI string               `yaml:"openapi"`
+	Paths   map[string]yaml.Node `yaml:"paths"`
 }
 
 type operation struct {
@@ -73,7 +73,20 @@ func Parse(data []byte) (*Spec, error) {
 	)
 	// Sorted, so that problems are reported in a stable order.
 	for _, path := range slices.Sorted(maps.Keys(doc.Paths)) {
-		item := doc.Paths[path]
+		if strings.HasPrefix(path, "x-") {
+			continue
+		}
+		if !strings.HasPrefix(path, "/") {
+			errs = append(errs, fmt.Errorf("%s: path must start with a slash", path))
+			continue
+		}
+		var item map[string]yaml.Node
+		if node := doc.Paths[path]; node.Kind != 0 {
+			if err := node.Decode(&item); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", path, err))
+				continue
+			}
+		}
 		if _, ok := item["$ref"]; ok {
 			errs = append(errs, fmt.Errorf("%s: $ref path items are not supported; define the operations inline", path))
 			continue

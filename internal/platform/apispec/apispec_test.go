@@ -15,6 +15,7 @@ import (
 const validSpec = `
 openapi: 3.1.0
 paths:
+  x-generated: true
   /livez:
     get:
       operationId: getLiveness
@@ -132,6 +133,17 @@ paths:
 				"/null: path has no operations",
 				"/referenced: $ref path items are not supported",
 			},
+		},
+		{
+			name: "malformed paths",
+			spec: `
+openapi: 3.1.0
+paths:
+  users:
+    get: {operationId: a, x-access: public, responses: {"200": {description: ok}}}
+  /scalar: true
+`,
+			want: []string{"users: path must start with a slash", "/scalar: yaml: unmarshal errors"},
 		},
 		{
 			name: "misspelled method",
