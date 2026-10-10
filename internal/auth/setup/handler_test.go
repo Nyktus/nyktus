@@ -55,10 +55,16 @@ func (f *fakeService) Complete(_ context.Context, token string, admin Admin) (us
 }
 
 // fakeHasher validates like password.Hasher but does not hash, and counts calls.
-type fakeHasher struct{ calls int }
+type fakeHasher struct {
+	calls int
+	err   error
+}
 
 func (f *fakeHasher) Hash(_ context.Context, pw string) (string, error) {
 	f.calls++
+	if f.err != nil {
+		return "", f.err
+	}
 	if len([]rune(pw)) < password.MinLength {
 		return "", password.ErrTooShort
 	}
@@ -285,6 +291,18 @@ func TestHandler_HidesServiceErrors(t *testing.T) {
 				t.Errorf("response = %d %s, want a generic 500", w.Code, w.Body)
 			}
 		})
+	}
+}
+
+// A request that ran out of its deadline while it waited for a hashing slot is
+// answered as a busy server, not as a failure.
+func TestHandler_HashDeadlineAnswers503(t *testing.T) {
+	t.Parallel()
+
+	hasher := &fakeHasher{err: fmt.Errorf("wait for password hashing: %w", context.DeadlineExceeded)}
+	w := serve(t, &fakeService{}, hasher, "/api/v1/setup", "application/json", body(nil))
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") == "" {
+		t.Errorf("response = %d %v, want 503 with Retry-After", w.Code, w.Header())
 	}
 }
 

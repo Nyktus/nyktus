@@ -7,7 +7,9 @@
 package httpx
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -73,13 +75,26 @@ func WriteError(w http.ResponseWriter, r *http.Request, status int, code, messag
 
 // ServerError logs err as the failure of op and writes a generic 500 response.
 // The op names the flow and the failed step, for example "create honeytoken: insert".
+//
+// A request that ran out of its deadline, for example while it waited for a
+// password hashing slot, receives the 503 response of Unavailable instead: the
+// server is busy, and a retry can succeed.
 func ServerError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, op string, err error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		Unavailable(w, r, logger, op, err)
+		return
+	}
 	logger.ErrorContext(r.Context(), "http: request failed", slog.String("op", op), slog.Any("error", err))
 	WriteError(w, r, http.StatusInternalServerError, CodeInternal, "internal server error")
 }
 
-// Unavailable logs err as the failure of op and writes a generic 503 response.
+// retryAfterSeconds is the delay a 503 response suggests before a retry.
+const retryAfterSeconds = "5"
+
+// Unavailable logs err as the failure of op and writes a generic 503 response
+// that suggests a retry after a few seconds.
 func Unavailable(w http.ResponseWriter, r *http.Request, logger *slog.Logger, op string, err error) {
 	logger.WarnContext(r.Context(), "http: service unavailable", slog.String("op", op), slog.Any("error", err))
+	w.Header().Set("Retry-After", retryAfterSeconds)
 	WriteError(w, r, http.StatusServiceUnavailable, CodeUnavailable, "service temporarily unavailable")
 }
