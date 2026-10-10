@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
+	"sync"
 	"testing"
 )
 
@@ -54,6 +56,50 @@ func TestWithAttrs_DoesNotModifyParentContext(t *testing.T) {
 	if _, ok := record["b"]; ok {
 		t.Errorf("parent context received attribute of child context: %v", record)
 	}
+}
+
+// The access log receives the request context before the router authenticates the
+// request. Attributes added to the scope later must still reach its record.
+func TestScope_AttributesAddedLaterReachOuterRecords(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := New(&buf, slog.LevelInfo)
+	outer := WithScope(t.Context())
+	inner := WithAttrs(outer, slog.String("request_id", "abc"))
+	AddToScope(inner, slog.String("user_id", "u1"))
+
+	logger.InfoContext(outer, "test: message")
+	record := decodeRecord(t, &buf)
+	if record["user_id"] != "u1" {
+		t.Errorf("record = %v, want user_id from the scope", record)
+	}
+}
+
+func TestAddToScope_WithoutScopeDoesNothing(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	AddToScope(t.Context(), slog.String("user_id", "u1"))
+	New(&buf, slog.LevelInfo).InfoContext(t.Context(), "test: message")
+	if record := decodeRecord(t, &buf); record["user_id"] != nil {
+		t.Errorf("record = %v, want no user_id", record)
+	}
+}
+
+func TestScope_IsSafeForConcurrentUse(t *testing.T) {
+	t.Parallel()
+
+	ctx := WithScope(t.Context())
+	logger := New(io.Discard, slog.LevelInfo)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			AddToScope(ctx, slog.Int("n", 1))
+			logger.InfoContext(ctx, "test: message")
+		})
+	}
+	wg.Wait()
 }
 
 func TestNew_RespectsLevel(t *testing.T) {

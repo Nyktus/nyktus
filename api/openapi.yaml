@@ -112,6 +112,8 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
 
 components:
   schemas:
@@ -223,7 +225,12 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Unavailable:
-      description: A dependency, such as the database, is unreachable.
+      description: A dependency, such as the database, is unreachable, or the server is too busy to answer in time. The `Retry-After` header suggests when to retry.
+      headers:
+        Retry-After:
+          description: Seconds to wait before a retry.
+          schema:
+            type: integer
       content:
         application/json:
           schema:

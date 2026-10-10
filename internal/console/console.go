@@ -16,6 +16,10 @@ import (
 
 const readinessTimeout = 2 * time.Second
 
+// hashDeadline bounds requests that hash a password. They wait for a free hashing
+// slot, which takes long only while the server is overloaded.
+const hashDeadline = 10 * time.Second
+
 // Pinger reports whether the database is reachable.
 type Pinger interface {
 	Ping(ctx context.Context) error
@@ -41,7 +45,7 @@ func NewRouter(d Deps) *httpx.Router {
 	rt := httpx.NewRouter(d.Logger, nil)
 	rt.Handle(http.MethodGet, "/livez", httpx.Public, http.HandlerFunc(live))
 	rt.Handle(http.MethodGet, "/readyz", httpx.Public, ready(d.Logger, d.DB))
-	rt.Handle(http.MethodPost, "/api/v1/setup", httpx.Public, d.Setup)
+	rt.Handle(http.MethodPost, "/api/v1/setup", httpx.Public, httpx.Deadline(hashDeadline)(d.Setup))
 	return rt
 }
 

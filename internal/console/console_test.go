@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"nyktus.org/nyktus/api"
 	"nyktus.org/nyktus/internal/platform/apispec"
@@ -63,5 +64,24 @@ func TestRoutes_MatchSpecification(t *testing.T) {
 	}
 	for _, problem := range spec.Compare(NewRouter(deps(fakePinger{})).Routes()) {
 		t.Error(problem)
+	}
+}
+
+// Requests that hash a password wait for a free hashing slot and must not wait
+// longer than the deadline.
+func TestSetupRoute_HasDeadline(t *testing.T) {
+	t.Parallel()
+
+	var deadline time.Time
+	var ok bool
+	d := deps(fakePinger{})
+	d.Setup = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deadline, ok = r.Context().Deadline()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	before := time.Now()
+	NewHandler(d).ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/setup", nil))
+	if !ok || deadline.Before(before.Add(hashDeadline)) || deadline.After(time.Now().Add(hashDeadline)) {
+		t.Errorf("setup deadline = %v, %v; want %v after the request started", deadline, ok, hashDeadline)
 	}
 }

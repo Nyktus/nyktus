@@ -4,6 +4,7 @@
 package httpx
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"log/slog"
@@ -28,20 +29,23 @@ func Chain(h http.Handler, mw ...Middleware) http.Handler {
 
 // RequestID assigns each request a random ID, returns it in the X-Request-ID header,
 // stores it in the request context (see request.ID) and attaches it to every log
-// record of the request. An X-Request-ID sent by the
+// record of the request. It also opens the log scope of the request, to which later
+// steps, such as authentication, add attributes for the access log. An X-Request-ID sent by the
 // client is ignored, so that callers cannot forge or collide log correlation IDs.
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := rand.Text()
 		w.Header().Set("X-Request-ID", id)
 		ctx := request.WithID(r.Context(), id)
-		ctx = logging.WithAttrs(ctx, slog.String("request_id", id))
+		ctx = logging.WithScope(logging.WithAttrs(ctx, slog.String("request_id", id)))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 // AccessLog writes one record per request. It logs the matched route pattern instead
-// of the request path, so that values embedded in paths never reach the logs.
+// of the request path, so that values embedded in paths never reach the logs, and
+// the client address, so that rejected requests, which the audit log leaves out,
+// can be traced to their origin.
 // The router must receive the same *http.Request that AccessLog passes on, which
 // holds as long as no middleware between them replaces the request.
 func AccessLog(logger *slog.Logger) Middleware {
@@ -50,12 +54,16 @@ func AccessLog(logger *slog.Logger) Middleware {
 			start := time.Now()
 			rec := &statusRecorder{ResponseWriter: w}
 			next.ServeHTTP(rec, r)
-			logger.LogAttrs(r.Context(), slog.LevelInfo, "http: request",
+			attrs := []slog.Attr{
 				slog.String("method", r.Method),
 				slog.String("route", r.Pattern),
 				slog.Int("status", rec.Status()),
 				slog.Duration("duration", time.Since(start)),
-			)
+			}
+			if ip := request.ClientIP(r.Context()); ip.IsValid() {
+				attrs = append(attrs, slog.String("client_ip", ip.String()))
+			}
+			logger.LogAttrs(r.Context(), slog.LevelInfo, "http: request", attrs...)
 		})
 	}
 }
@@ -125,4 +133,21 @@ func (s *statusRecorder) Status() int {
 		return http.StatusOK
 	}
 	return s.status
+}
+
+// Deadline bounds the time a handler may take to d. Paths that hash passwords
+// wait for a free hashing slot, and without a deadline such a request would wait
+// until the client gave up. The write timeout of the server does not end the
+// context of a request.
+func Deadline(d time.Duration) Middleware {
+	if d <= 0 {
+		panic("httpx: deadline must be positive")
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx, cancel := context.WithTimeout(r.Context(), d)
+			defer cancel()
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }

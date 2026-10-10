@@ -74,7 +74,7 @@ Configuration is read from the environment once at startup, parsed into a typed 
 
 ## Logging
 
-Logging uses `log/slog` with JSON output. Request-scoped code uses the `...Context` variants so that request ID and actor are attached automatically.
+Logging uses `log/slog` with JSON output. Request-scoped code uses the `...Context` variants so that request ID and actor are attached automatically. Attributes that become known only after a middleware has passed the context on, such as the authenticated principal, are added with `logging.AddToScope`. The request ID middleware opens the scope, so the access log and the recover log record them as well.
 
 | Level | Use |
 |---|---|
