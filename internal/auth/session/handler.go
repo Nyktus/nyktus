@@ -50,8 +50,10 @@ func NewAuthorizer(svc *Service) *Authorizer {
 type sessionKey struct{}
 
 // Authorize implements httpx.Authorizer. A request denied for a missing
-// permission is recorded in the audit log; a request without valid credentials
-// is not, so that anonymous clients cannot fill the audit log.
+// permission is recorded in the audit log, at most once per user, permission and
+// audit.RepeatWindow, so that a signed-in user cannot fill the log by repeating
+// it. A request without valid credentials is not recorded, so that anonymous
+// clients cannot fill the audit log either. The access log records both.
 func (a *Authorizer) Authorize(r *http.Request, acc httpx.Access) (*http.Request, error) {
 	c, err := r.Cookie(CookieName)
 	if err != nil || c.Value == "" {
@@ -69,7 +71,7 @@ func (a *Authorizer) Authorize(r *http.Request, acc httpx.Access) (*http.Request
 	p := access.Principal{UserID: sess.User.ID, Role: sess.User.Role, Method: audit.AuthSession, SessionID: sess.ID}
 	logging.AddToScope(ctx, slog.String("user_id", p.UserID), slog.String("auth_method", string(p.Method)))
 	if perm, ok := acc.Permission(); ok && !access.Allowed(p.Role, perm) {
-		err := audit.NewStore(a.svc.db).Record(ctx, audit.Entry{
+		err := audit.NewStore(a.svc.db).RecordUnlessRepeated(ctx, audit.Entry{
 			Action:  access.DeniedAction(perm),
 			Outcome: audit.OutcomeDenied,
 			Actor:   p.Actor(),

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"nyktus.org/nyktus/internal/audit/auditapi"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
@@ -47,6 +48,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		SignIn:         http.HandlerFunc(h.SignIn),
 		Session:        http.HandlerFunc(h.Current),
 		SignOut:        http.HandlerFunc(h.SignOut),
+		AuditEntries:   auditapi.NewHandler(o.Logger, o.DB),
 		Origin:         o.Origin,
 		TrustedProxies: o.TrustedProxies,
 	}), nil

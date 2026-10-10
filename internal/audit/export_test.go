@@ -9,4 +9,5 @@ var Actions = []Action{
 	ActionUserCreate,
 	ActionSessionCreate,
 	ActionSessionDelete,
+	ActionAuditRead,
 }

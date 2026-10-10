@@ -16,8 +16,8 @@ The console writes one record with the message `http: request` per request:
 | `request_id` | The ID that the response carries in `X-Request-ID`. Every other record of the same request, and the audit log, carries it as well. |
 | `user_id`, `auth_method` | The account that sent the request and how it authenticated, such as `session`. Only for authenticated requests; every later record of the request carries them as well. |
 
-Requests without valid credentials, such as a failed setup attempt or a request without a session, are recorded only here, not in the audit log. The access log is the place to look for them.
+Requests without valid credentials, such as a failed setup attempt or a request without a session, are recorded only here, not in the [audit log](audit-log.md). The access log is the place to look for them.
 
 ## Personal data
 
-The access log contains client addresses and account identifiers, which are personal data. Keep it only as long as you need it to investigate incidents, and restrict access to it like access to the audit log.
+The access log contains client addresses and account identifiers, which are personal data. Keep it only as long as you need it to investigate incidents, and restrict access to it like access to the [audit log](audit-log.md).

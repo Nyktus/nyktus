@@ -31,6 +31,10 @@ const (
 	ActionSessionCreate Action = "session.create"
 	// ActionSessionDelete records a sign-out.
 	ActionSessionDelete Action = "session.delete"
+	// ActionAuditRead records a read of the audit log, which contains personal
+	// data. A request denied for lacking the permission audit:read has the same
+	// action.
+	ActionAuditRead Action = "audit.read"
 )
 
 // Outcome is the result of an action.

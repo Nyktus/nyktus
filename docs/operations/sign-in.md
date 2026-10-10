@@ -29,7 +29,7 @@ curl --fail-with-body https://nyktus.example.com/api/v1/session \
 - A failed sign-in never tells whether the account exists: unknown addresses, wrong passwords and accounts that may not sign in all receive the same answer.
 - Five failed sign-ins in a row lock the account for 15 minutes. Only a sign-in with the correct password learns about the lock, and when it ends. Failures during the lock do not extend it.
 - Anyone who can reach the sign-in can lock an account, including the only administrator, for 15 minutes at a time. Keep the console off the public internet and rate-limit sign-ins at the proxy to make this harder.
-- Every sign-in, successful or not, and every sign-out is recorded in the audit log with the client address. A failure for an unknown address does not record the address.
+- Every sign-in, successful or not, and every sign-out is recorded in the [audit log](audit-log.md) with the client address. A failure for an unknown address does not record the address.
 
 ## When the server is busy
 

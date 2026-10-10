@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"time"
 
 	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/platform/request"
@@ -35,6 +36,48 @@ func NewStore(q db.Querier) *Store {
 // so a rejected entry is a programming error, and the caller's action must fail
 // with it.
 func (s *Store) Record(ctx context.Context, e Entry) error {
+	_, err := s.db.Exec(ctx, `
+INSERT INTO audit_entries (action, outcome, actor_kind, auth_method, actor_user_id, api_key_id,
+	resource_type, resource_id, changed_fields, client_ip, request_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, args(e)...)
+	if err != nil {
+		return fmt.Errorf("record audit entry %s: %w", e.Action, err)
+	}
+	return nil
+}
+
+// RepeatWindow is the period in which RecordUnlessRepeated records an entry of a
+// user only once.
+const RepeatWindow = time.Minute
+
+// RecordUnlessRepeated appends e unless the same user has an entry with the same
+// action and outcome from the last RepeatWindow. It is meant for entries that a
+// signed-in user can cause at will, such as reads and denied requests, so that
+// repeating them cannot fill the append-only log. The access log still records
+// every request. e must have a user actor.
+//
+// The check runs in the database, so it holds across console processes.
+// Concurrent calls can each add an entry, which is accepted.
+func (s *Store) RecordUnlessRepeated(ctx context.Context, e Entry) error {
+	if e.Actor.UserID == "" {
+		return fmt.Errorf("record audit entry %s once per window: no user actor", e.Action)
+	}
+	_, err := s.db.Exec(ctx, `
+INSERT INTO audit_entries (action, outcome, actor_kind, auth_method, actor_user_id, api_key_id,
+	resource_type, resource_id, changed_fields, client_ip, request_id)
+SELECT $1, $2, $3, $4, $5::uuid, $6::uuid, $7, $8::uuid, $9::text[], $10::inet, $11
+WHERE NOT EXISTS (
+	SELECT FROM audit_entries
+	WHERE actor_user_id = $5::uuid AND action = $1 AND outcome = $2
+		AND occurred_at > clock_timestamp() - $12::interval
+)`, append(args(e), RepeatWindow)...)
+	if err != nil {
+		return fmt.Errorf("record audit entry %s: %w", e.Action, err)
+	}
+	return nil
+}
+
+func args(e Entry) []any {
 	fields := e.ChangedFields
 	if fields == nil {
 		fields = []string{}
@@ -46,17 +89,10 @@ func (s *Store) Record(ctx context.Context, e Entry) error {
 		addr := request.CanonicalAddr(e.ClientIP)
 		ip = &addr
 	}
-
-	_, err := s.db.Exec(ctx, `
-INSERT INTO audit_entries (action, outcome, actor_kind, auth_method, actor_user_id, api_key_id,
-	resource_type, resource_id, changed_fields, client_ip, request_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+	return []any{
 		e.Action, e.Outcome, e.Actor.Kind, e.Actor.Method, nullable(e.Actor.UserID), nullable(e.Actor.APIKeyID),
-		nullable(e.Resource.Type), nullable(e.Resource.ID), fields, ip, nullable(e.RequestID))
-	if err != nil {
-		return fmt.Errorf("record audit entry %s: %w", e.Action, err)
+		nullable(e.Resource.Type), nullable(e.Resource.ID), fields, ip, nullable(e.RequestID),
 	}
-	return nil
 }
 
 func nullable(s string) *string {
