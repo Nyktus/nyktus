@@ -4,7 +4,10 @@ go 1.26
 
 toolchain go1.26.9
 
-require github.com/jackc/pgx/v5 v5.11.0
+require (
+	github.com/jackc/pgx/v5 v5.11.0
+	go.yaml.in/yaml/v3 v3.0.5
+)
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect

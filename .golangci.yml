@@ -45,6 +45,17 @@ linters:
               desc: use crypto/rand for anything security-relevant, math/rand/v2 otherwise
             - pkg: log$
               desc: use log/slog through the logging package
+        # Test-only dependencies must never reach the binaries.
+        test-only:
+          list-mode: lax
+          files:
+            - "!$test"
+            - "!**/internal/platform/apispec/*.go"
+          deny:
+            - pkg: go.yaml.in/yaml
+              desc: the YAML parser is a test dependency
+            - pkg: nyktus.org/nyktus/internal/platform/apispec
+              desc: the specification checks are used by tests only
 
     exhaustive:
       default-signifies-exhaustive: true
