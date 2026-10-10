@@ -42,6 +42,8 @@ Code is formatted with `gofmt` and checked by the linters configured in the repo
 
 Timestamps are stored and compared in UTC. Code that depends on the current time receives a clock, so tests do not depend on the wall clock.
 
+Expiry of data in the database, such as of sessions, setup tokens and account locks, is evaluated in SQL against `clock_timestamp()`. Every console process then applies the same clock, and tests move the stored times instead of the clock.
+
 ### Configuration
 
 Configuration is read from the environment once at startup, parsed into a typed struct and validated in full. Components receive their configuration explicitly. No package reads environment variables on its own.

@@ -12,9 +12,6 @@ package setup
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -25,12 +22,10 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"nyktus.org/nyktus/internal/audit"
+	"nyktus.org/nyktus/internal/auth/token"
 	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/user"
 )
-
-// tokenBytes is the amount of randomness in a setup token.
-const tokenBytes = 32
 
 // Errors of Complete.
 var (
@@ -117,13 +112,13 @@ func (s *Service) Issue(ctx context.Context) (t Token, ok bool, err error) {
 			return fmt.Errorf("delete expired setup tokens: %w", err)
 		}
 
-		value, err := newToken()
+		value, err := token.New()
 		if err != nil {
 			return err
 		}
 		// The database sets the expiry.
 		err = tx.QueryRow(ctx, `INSERT INTO setup_tokens (token_hash) VALUES ($1) RETURNING expires_at`,
-			hash(value)).Scan(&t.ExpiresAt)
+			token.Hash(value)).Scan(&t.ExpiresAt)
 		if err != nil {
 			return fmt.Errorf("insert setup token: %w", err)
 		}
@@ -152,14 +147,14 @@ func (s *Service) Open(ctx context.Context) (bool, error) {
 	return !exists, nil
 }
 
-// Valid reports whether token is a valid setup token, without consuming it. It
+// Valid reports whether tok is a valid setup token, without consuming it. It
 // lets a caller reject a request before doing expensive work, such as hashing a
 // password. Complete checks the token again.
-func (s *Service) Valid(ctx context.Context, token string) (bool, error) {
+func (s *Service) Valid(ctx context.Context, tok string) (bool, error) {
 	var valid bool
 	err := s.db.QueryRow(ctx,
 		`SELECT EXISTS (SELECT FROM setup_tokens WHERE token_hash = $1 AND expires_at > clock_timestamp())`,
-		hash(token)).Scan(&valid)
+		token.Hash(tok)).Scan(&valid)
 	if err != nil {
 		return false, fmt.Errorf("look up setup token: %w", err)
 	}
@@ -174,7 +169,7 @@ type Admin struct {
 	PasswordHash string
 }
 
-// Complete consumes token and creates the first administrator, active and with
+// Complete consumes tok and creates the first administrator, active and with
 // the given password hash, together with its audit entry. It returns ErrClosed if
 // an administrator exists and ErrInvalidToken if the token is not valid. All
 // remaining setup tokens are removed.
@@ -182,7 +177,7 @@ type Admin struct {
 // Concurrent calls are serialized by a lock on the setup tokens, which is taken
 // before the check for an administrator. Two requests with tokens of different
 // console processes therefore never create two administrators.
-func (s *Service) Complete(ctx context.Context, token string, admin Admin) (user.User, error) {
+func (s *Service) Complete(ctx context.Context, tok string, admin Admin) (user.User, error) {
 	var created user.User
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		if err := lock(ctx, tx); err != nil {
@@ -199,7 +194,7 @@ func (s *Service) Complete(ctx context.Context, token string, admin Admin) (user
 		var consumed []byte
 		err = tx.QueryRow(ctx,
 			`DELETE FROM setup_tokens WHERE token_hash = $1 AND expires_at > clock_timestamp() RETURNING token_hash`,
-			hash(token)).Scan(&consumed)
+			token.Hash(tok)).Scan(&consumed)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrInvalidToken
 		}
@@ -249,21 +244,6 @@ func lock(ctx context.Context, tx pgx.Tx) error {
 		return fmt.Errorf("lock setup tokens: %w", err)
 	}
 	return nil
-}
-
-func newToken() (string, error) {
-	b := make([]byte, tokenBytes)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generate setup token: %w", err)
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-
-// hash returns the SHA-256 hash under which a token is stored. A fast hash is
-// enough, because a token carries 256 bits of randomness and cannot be guessed.
-func hash(token string) []byte {
-	sum := sha256.Sum256([]byte(token))
-	return sum[:]
 }
 
 // URL returns the address of the setup page for t. The token is placed in the

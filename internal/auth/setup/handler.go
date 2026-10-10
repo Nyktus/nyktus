@@ -68,14 +68,6 @@ func (request) LogValue() slog.Value {
 	return slog.StringValue("[redacted]")
 }
 
-type userResponse struct {
-	ID          string      `json:"id"`
-	Email       string      `json:"email"`
-	DisplayName string      `json:"display_name"`
-	Role        user.Role   `json:"role"`
-	Status      user.Status `json:"status"`
-}
-
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -145,11 +137,5 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.InfoContext(ctx, "setup: first administrator created", slog.Any("user", created))
-	httpx.WriteJSON(w, http.StatusCreated, userResponse{
-		ID:          created.ID,
-		Email:       created.Email,
-		DisplayName: created.DisplayName,
-		Role:        created.Role,
-		Status:      created.Status,
-	})
+	httpx.WriteJSON(w, http.StatusCreated, created.Response())
 }

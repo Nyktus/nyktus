@@ -29,6 +29,7 @@ paths:
     get:
       operationId: getUser
       x-access: users:read
+      security: [{session: []}]
       responses:
         "200": {description: ok}
         "401": {description: unauthenticated}
@@ -36,6 +37,7 @@ paths:
     delete:
       operationId: deleteUser
       x-access: users:write
+      security: [{session: []}]
       responses:
         "204": {description: deleted}
         "401": {description: unauthenticated}
@@ -44,6 +46,7 @@ paths:
     get:
       operationId: getMe
       x-access: authenticated
+      security: [{session: []}]
       responses:
         "200": {description: ok}
         "401": {description: unauthenticated}
@@ -109,14 +112,43 @@ paths:
 openapi: 3.1.0
 paths:
   /me:
-    get: {operationId: getMe, x-access: authenticated, responses: {"200": {description: ok}}}
+    get: {operationId: getMe, x-access: authenticated, security: [{session: []}], responses: {"200": {description: ok}}}
   /users:
-    get: {operationId: listUsers, x-access: users:read, responses: {"200": {description: ok}, "401": {description: no}}}
+    get: {operationId: listUsers, x-access: users:read, security: [{session: []}], responses: {"200": {description: ok}, "401": {description: no}}}
 `,
 			want: []string{
 				"GET /me: protected operation does not document response 401",
 				"GET /users: operation that requires users:read does not document response 403",
 			},
+		},
+		{
+			name: "security that does not match the access",
+			spec: `
+openapi: 3.1.0
+paths:
+  /open:
+    get: {operationId: open, x-access: public, security: [{session: []}], responses: {"200": {description: ok}}}
+  /me:
+    get: {operationId: getMe, x-access: authenticated, responses: {"200": {description: ok}, "401": {description: no}}}
+  /users:
+    get: {operationId: listUsers, x-access: users:read, security: [], responses: {"200": {description: ok}, "401": {description: no}, "403": {description: no}}}
+`,
+			want: []string{
+				"GET /open: public operation declares security requirements",
+				"GET /me: protected operation does not declare its security requirements",
+				"GET /users: protected operation does not declare its security requirements",
+			},
+		},
+		{
+			name: "document-wide security",
+			spec: `
+openapi: 3.1.0
+security: [{session: []}]
+paths:
+  /open:
+    get: {operationId: open, x-access: public, responses: {"200": {description: ok}}}
+`,
+			want: []string{"security must be declared per operation"},
 		},
 		{
 			name: "path items without operations",

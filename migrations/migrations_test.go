@@ -144,6 +144,12 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM setup_tokens WHERE expires_at > clock_timestamp()",
 		"BEGIN; LOCK TABLE setup_tokens IN EXCLUSIVE MODE; COMMIT",
 		"DELETE FROM setup_tokens",
+		"UPDATE users SET failed_logins = 1, locked_until = now()",
+		"INSERT INTO users (email, display_name, role, status) VALUES ('s@example.com', 'S', 'viewer', 'pending')",
+		"INSERT INTO sessions (token_hash, user_id) SELECT sha256('s'), id FROM users WHERE email = 's@example.com'",
+		"UPDATE sessions SET last_seen_at = clock_timestamp()",
+		"SELECT count(*) FROM sessions",
+		"DELETE FROM sessions",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -165,6 +171,14 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"INSERT INTO setup_tokens (token_hash, expires_at) VALUES (sha256('b'), now() + interval '1 year')",
 		"UPDATE setup_tokens SET expires_at = now() + interval '1 year'",
 		"TRUNCATE setup_tokens",
+		"INSERT INTO users (email, display_name, role, status, failed_logins) VALUES ('f@example.com', 'F', 'viewer', 'pending', 4)",
+		"INSERT INTO users (email, display_name, role, status, locked_until) VALUES ('l@example.com', 'L', 'viewer', 'pending', now())",
+		"INSERT INTO sessions (id, token_hash, user_id) SELECT gen_random_uuid(), sha256('t'), id FROM users LIMIT 1",
+		"INSERT INTO sessions (token_hash, user_id, created_at) SELECT sha256('u'), id, now() - interval '1 day' FROM users LIMIT 1",
+		"UPDATE sessions SET created_at = now()",
+		"UPDATE sessions SET user_id = user_id",
+		"UPDATE sessions SET token_hash = token_hash",
+		"TRUNCATE sessions",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -210,6 +224,11 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_any_column_privilege($1, 'public.setup_tokens', 'UPDATE')",
 		"has_table_privilege($1, 'public.setup_tokens', 'TRUNCATE')",
 		"has_column_privilege($1, 'public.setup_tokens', 'expires_at', 'INSERT')",
+		"has_table_privilege($1, 'public.sessions', 'TRUNCATE')",
+		"has_column_privilege($1, 'public.sessions', 'created_at', 'INSERT')",
+		"has_column_privilege($1, 'public.sessions', 'created_at', 'UPDATE')",
+		"has_column_privilege($1, 'public.sessions', 'token_hash', 'UPDATE')",
+		"has_column_privilege($1, 'public.users', 'failed_logins', 'INSERT')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

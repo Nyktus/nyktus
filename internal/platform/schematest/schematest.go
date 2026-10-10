@@ -36,7 +36,13 @@ func New(tb testing.TB) string {
 	if err != nil {
 		tb.Fatalf("load migrations: %v", err)
 	}
-	pool := Open(tb, dbURL)
+	// The pool is closed right away, so that parallel tests do not hold idle
+	// connections they no longer need.
+	pool, err := db.Open(tb.Context(), dbURL, db.Options{MaxConns: 1})
+	if err != nil {
+		tb.Fatalf("open database: %v", err)
+	}
+	defer pool.Close()
 	if _, err := migrate.Apply(tb.Context(), pool, all, slog.New(slog.DiscardHandler)); err != nil {
 		tb.Fatalf("apply migrations: %v", err)
 	}
@@ -53,11 +59,14 @@ func Console(tb testing.TB) (ownerURL, consoleURL string) {
 	return ownerURL, consoleURL
 }
 
-// Open connects to dbURL and closes the pool when the test ends.
+// Open connects to dbURL and closes the pool when the test ends. The pool holds
+// at most two connections, enough for a test that holds a transaction while the
+// code under test waits for it. Packages and their tests run in parallel, and
+// larger pools would exhaust the connections of the test server.
 func Open(tb testing.TB, dbURL string) *pgxpool.Pool {
 	tb.Helper()
 
-	pool, err := db.Open(tb.Context(), dbURL, db.Options{MaxConns: 4})
+	pool, err := db.Open(tb.Context(), dbURL, db.Options{MaxConns: 2})
 	if err != nil {
 		tb.Fatalf("open database: %v", err)
 	}

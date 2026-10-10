@@ -17,6 +17,7 @@ import (
 	"syscall"
 
 	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
 	"nyktus.org/nyktus/internal/platform/buildinfo"
@@ -169,23 +170,27 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 	}
 	logger.InfoContext(ctx, "console: listening", slog.String("addr", ln.Addr().String()))
 
+	setupService := setup.NewService(pool)
+	handler, err := console.New(ctx, console.Options{
+		Logger:         logger,
+		DB:             pool,
+		Setup:          setupService,
+		Hasher:         password.NewHasher(),
+		Sessions:       session.Config{IdleTimeout: cfg.Console.SessionIdleTimeout, MaxAge: cfg.Console.SessionMaxAge},
+		Origin:         cfg.Console.URL,
+		TrustedProxies: cfg.TrustedProxies,
+	})
+	if err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("console: %w", err)
+	}
 	// The setup token is issued only once the console can accept the request that
 	// uses it, so that a start that fails leaves no valid token behind.
-	setupService := setup.NewService(pool)
 	if err := announceSetup(ctx, setupService, cfg.Console.URL, logger, stdout); err != nil {
 		_ = ln.Close()
 		return fmt.Errorf("console: %w", err)
 	}
-
-	// One hasher for the process, so that its limit on concurrent hash operations
-	// bounds the memory of every path that hashes passwords together.
-	hasher := password.NewHasher()
-	srv := httpx.NewServer(console.NewHandler(console.Deps{
-		Logger:         logger,
-		DB:             pool,
-		Setup:          setup.NewHandler(logger, setupService, hasher),
-		TrustedProxies: cfg.TrustedProxies,
-	}), logger)
+	srv := httpx.NewServer(handler, logger)
 	if err := httpx.Serve(ctx, srv, ln); err != nil {
 		return fmt.Errorf("console: %w", err)
 	}

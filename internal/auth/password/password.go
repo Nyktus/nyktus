@@ -139,6 +139,15 @@ func (h *Hasher) Verify(ctx context.Context, password, encoded string) (bool, er
 	return subtle.ConstantTimeCompare(got, key) == 1, nil
 }
 
+// NeedsRehash reports whether encoded was created with other parameters than h
+// uses, or cannot be read. A caller that has just verified the password with the
+// stored hash then hashes it again, so that raised parameters reach every account
+// that signs in.
+func (h *Hasher) NeedsRehash(encoded string) bool {
+	p, _, _, err := decode(encoded)
+	return err != nil || p != h.params
+}
+
 // normalize applies NFC, so that the same password typed on systems that compose
 // characters differently yields the same hash. It reports false for input that
 // can never be a valid password: invalid UTF-8 or more than MaxLength code points.

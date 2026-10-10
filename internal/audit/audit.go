@@ -27,6 +27,10 @@ const (
 	// ActionUserCreate records the creation of an account. The actor tells
 	// whether an administrator or the holder of the setup token created it.
 	ActionUserCreate Action = "user.create"
+	// ActionSessionCreate records a sign-in, successful or not.
+	ActionSessionCreate Action = "session.create"
+	// ActionSessionDelete records a sign-out.
+	ActionSessionDelete Action = "session.delete"
 )
 
 // Outcome is the result of an action.

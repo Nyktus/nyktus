@@ -128,3 +128,12 @@ func TestRole_Valid(t *testing.T) {
 		}
 	}
 }
+
+func TestUser_ResponseLeavesOutThePasswordHash(t *testing.T) {
+	t.Parallel()
+
+	u := User{ID: "id", Email: "ada@example.com", DisplayName: "Ada", Role: RoleAdmin, Status: StatusActive, PasswordHash: "$argon2id$..."}
+	if got, want := u.Response(), (Response{ID: "id", Email: "ada@example.com", DisplayName: "Ada", Role: RoleAdmin, Status: StatusActive}); got != want {
+		t.Errorf("Response() = %+v, want %+v", got, want)
+	}
+}
