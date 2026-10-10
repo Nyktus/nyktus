@@ -24,7 +24,9 @@ func TestParseEmail(t *testing.T) {
 		{in: "jane@example.com", want: "jane@example.com"},
 		{in: "Jane.Doe+nyktus@Example.COM", want: "jane.doe+nyktus@example.com"},
 		{in: "jürgen@bücher.example", want: "jürgen@bücher.example"},
-		// Decomposed umlauts and upper case map to the same stored address.
+		// Upper case beyond ASCII and decomposed umlauts map to the same stored
+		// address.
+		{in: "J\u00dcRGEN@B\u00dcCHER.EXAMPLE", want: "j\u00fcrgen@b\u00fccher.example"},
 		{in: "Ju\u0308rgen@Bu\u0308cher.example", want: "j\u00fcrgen@b\u00fccher.example"},
 		{in: "admin@localhost", want: "admin@localhost"},
 		{in: longest, want: longest},

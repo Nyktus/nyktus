@@ -16,7 +16,9 @@ Role names are global to a PostgreSQL cluster. Run one Nyktus instance per clust
 
 ## Setup
 
-Run the following as a superuser or a role with `CREATEROLE`. Choose your own passwords.
+Run the following as a superuser, such as `postgres`. Choose your own passwords.
+
+Creating a database owned by another role needs more than `CREATEROLE`: it requires `CREATEDB` and, since PostgreSQL 16, the right to `SET ROLE` to the owner. If a superuser is not available for the whole setup, step 1 alone runs with a role that has only `CREATEROLE`.
 
 1. Create the group roles with [`deploy/postgres/roles.sql`](../../deploy/postgres/roles.sql). The script can run any number of times. Run it again after an upgrade that adds a server role.
 
