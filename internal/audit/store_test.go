@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"reflect"
 	"regexp"
@@ -21,6 +23,7 @@ import (
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/platform/db"
+	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/platform/schematest"
 	"nyktus.org/nyktus/internal/user"
 )
@@ -71,6 +74,22 @@ func systemEntry() audit.Entry {
 		Outcome: audit.OutcomeSuccess,
 		Actor:   audit.Actor{Kind: audit.ActorSystem, Method: audit.AuthCLI},
 	}
+}
+
+// requestID returns an ID from the request ID middleware. The schema checks its
+// format, so a change of the generator must fail here instead of failing every
+// audited action.
+func requestID(t *testing.T) string {
+	t.Helper()
+	var id string
+	h := httpx.RequestID(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		id = httpx.RequestIDFrom(r.Context())
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
+	if id == "" {
+		t.Fatal("the middleware assigned no request ID")
+	}
+	return id
 }
 
 // row is an entry as stored, read as the console's database role.
@@ -138,27 +157,14 @@ func TestRecord_StoresEntryOfUser(t *testing.T) {
 	actorID := createUser(t, pool, "jane@example.com", "Jane Doe")
 	resourceID := createUser(t, pool, "john@example.com", "John Doe")
 	e := userEntry(actorID, resourceID)
-
-	var (
-		r       row
-		txStart time.Time
-	)
-	err := pgx.BeginFunc(t.Context(), pool, func(tx pgx.Tx) error {
-		if err := audit.NewStore(tx).Record(t.Context(), e); err != nil {
-			return err
-		}
-		r = readEntry(t, tx)
-		return tx.QueryRow(t.Context(), "SELECT now()").Scan(&txStart)
-	})
-	if err != nil {
+	e.RequestID = requestID(t)
+	if err := audit.NewStore(pool).Record(t.Context(), e); err != nil {
 		t.Fatalf("Record() error = %v", err)
 	}
 
+	r := readEntry(t, pool)
 	if !uuidFormat.MatchString(r.ID) {
 		t.Errorf("id = %q, want a random UUID", r.ID)
-	}
-	if !r.OccurredAt.Equal(txStart) {
-		t.Errorf("occurred_at = %v, want the start of the transaction %v", r.OccurredAt, txStart)
 	}
 	if r.Action != "user.update" || r.Outcome != "success" || r.ActorKind != "user" || r.AuthMethod != "session" {
 		t.Errorf("action, outcome, actor = %s, %s, %s/%s, want user.update, success, user/session",
@@ -179,6 +185,68 @@ func TestRecord_StoresEntryOfUser(t *testing.T) {
 	}
 	if deref(r.ClientIP) != "192.0.2.10" || deref(r.RequestID) != e.RequestID {
 		t.Errorf("client_ip, request_id = %s, %s, want 192.0.2.10, %s", deref(r.ClientIP), deref(r.RequestID), e.RequestID)
+	}
+}
+
+// Entries take the time of the write, so the entries of one transaction keep
+// their order. Every statement is a round trip to the database, which takes far
+// longer than the microsecond resolution of a timestamp.
+func TestRecord_OrdersEntriesOfOneTransaction(t *testing.T) {
+	t.Parallel()
+
+	_, pool := newStore(t)
+	var (
+		entries               []row
+		txStart, beforeCommit time.Time
+	)
+	err := pgx.BeginFunc(t.Context(), pool, func(tx pgx.Tx) error {
+		s := audit.NewStore(tx)
+		for _, action := range []audit.Action{"user.create", "user.update"} {
+			e := systemEntry()
+			e.Action = action
+			if err := s.Record(t.Context(), e); err != nil {
+				return err
+			}
+		}
+		entries = readEntries(t, tx)
+		return tx.QueryRow(t.Context(), "SELECT now(), clock_timestamp()").Scan(&txStart, &beforeCommit)
+	})
+	if err != nil {
+		t.Fatalf("transaction error = %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+	first, second := entries[0], entries[1]
+	if first.Action != "user.create" || !first.OccurredAt.After(txStart) ||
+		!second.OccurredAt.After(first.OccurredAt) || second.OccurredAt.After(beforeCommit) {
+		t.Errorf("transaction started at %v; entries %s at %v, %s at %v; want ascending times of the writes",
+			txStart, first.Action, first.OccurredAt, second.Action, second.OccurredAt)
+	}
+}
+
+// Every outcome of the code is accepted by the schema.
+func TestRecord_StoresEveryOutcome(t *testing.T) {
+	t.Parallel()
+
+	s, pool := newStore(t)
+	outcomes := []audit.Outcome{audit.OutcomeSuccess, audit.OutcomeFailure, audit.OutcomeDenied}
+	for _, outcome := range outcomes {
+		e := systemEntry()
+		e.Outcome = outcome
+		if err := s.Record(t.Context(), e); err != nil {
+			t.Errorf("Record() with outcome %s: error = %v, want nil", outcome, err)
+		}
+	}
+
+	var got []string
+	for _, r := range readEntries(t, pool) {
+		got = append(got, r.Outcome)
+	}
+	slices.Sort(got)
+	if want := []string{"denied", "failure", "success"}; !slices.Equal(got, want) {
+		t.Errorf("outcomes = %v, want %v", got, want)
 	}
 }
 

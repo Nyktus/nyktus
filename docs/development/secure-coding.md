@@ -46,7 +46,6 @@ Trigger endpoints receive requests for honeytokens. Their responses must not tel
 - **Errors stay internal.** Database or queue failures are logged and answered with the same response as success.
 - **No fingerprints.** Trigger responses must not carry product names, version information, `Server` or `X-Powered-By` headers, or any header that only Nyktus would send.
 - **Small bodies.** Request bodies on trigger endpoints are limited to 64 KiB.
-- **Client IP.** The socket address is authoritative unless it lies within the configured trusted proxy ranges. Only then is `X-Forwarded-For` evaluated, from right to left: addresses within the trusted ranges are skipped, and the first other address is the client. A chain of proxies works without counting hops. A fixed hop count is not used, because it trusts the header even when a client bypasses the proxy. `X-Real-IP` is ignored.
 - **Atomic recording.** An event and the job that processes it are written in one transaction. A recorded event without a corresponding job must be impossible.
 
 ### Health endpoints
@@ -72,6 +71,8 @@ Every handler must satisfy the following:
 8. **Audit.** Security-relevant writes create an audit log entry (see [Logging and audit](#logging-and-audit)).
 
 Every HTTP server sets `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout` and `IdleTimeout`, and a recover middleware turns panics into a logged `500` that still passes through the regular response middleware. If the response had already started, the panic is logged and the connection aborted, so a client never receives a truncated body that looks complete.
+
+**Client IP.** Every server, including the trigger endpoints, takes the client address from the socket unless the socket address lies within the configured trusted proxy ranges. Only then is `X-Forwarded-For` evaluated, from right to left: addresses within the trusted ranges are skipped, and the first other address is the client. A chain of proxies works without counting hops. A fixed hop count is not used, because it trusts the header even when a client bypasses the proxy. `X-Real-IP` is ignored.
 
 Requests that match no route receive a JSON `404`, also when only the method differs. The default responses of `net/http` are not used: their plain-text bodies identify the server as written in Go, and the `Allow` header of a `405` lists the methods of a route. The same applies to the redirects of `http.ServeMux` for unclean paths and subtree patterns, which would also answer before authorization runs.
 

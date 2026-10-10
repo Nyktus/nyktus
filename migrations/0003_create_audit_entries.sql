@@ -28,7 +28,9 @@ CREATE FUNCTION public.audit_field_names_valid(names text[]) RETURNS boolean
 
 CREATE TABLE public.audit_entries (
 	id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-	occurred_at        timestamptz NOT NULL DEFAULT now(),
+	-- The time of the write, not the start of the transaction, so that the
+	-- entries of one transaction keep their order.
+	occurred_at        timestamptz NOT NULL DEFAULT clock_timestamp(),
 	action             text NOT NULL,
 	outcome            text NOT NULL,
 	actor_kind         text NOT NULL,
