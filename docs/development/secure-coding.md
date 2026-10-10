@@ -35,6 +35,7 @@ The server binary runs one or more roles (`console`, `trigger`, `dns`, `worker`)
 - The `trigger` and `dns` roles have no `SELECT` privilege on any table. They resolve exactly one trigger value at a time through a dedicated database function that returns only what the response and the event need, and they insert events and jobs. They cannot list honeytokens or honeypots, and they cannot read alert channels, users or audit data. A compromised internet-facing host can test a value it already found, but never obtain the inventory.
 - Trigger code depends on narrow interfaces for resolving trigger values and recording events, never on the full store.
 - No role runs with `SUPERUSER` or `BYPASSRLS`. Migrations run with a separate owner role, never with an application role.
+- The operator creates one group role per server role, such as `nyktus_console`, before the first migration. Migrations grant privileges to these group roles but never create roles, so the owner role needs no `CREATEROLE`. A migration that needs a group role checks that it exists and stops with a clear error otherwise.
 - The server refuses to start outside development if a role's database user is a superuser, can bypass row-level security, can create roles or databases, can start replication, is a member of `pg_read_all_data`, `pg_write_all_data`, `pg_read_server_files`, `pg_write_server_files` or `pg_execute_server_program`, or owns the database or the schema.
 
 ## Trigger endpoints
@@ -87,8 +88,10 @@ There is no public registration.
 
 ### Passwords
 
-- Hash with Argon2id (memory 64 MiB, iterations 3, parallelism 4) and a random salt per hash.
-- Accept passwords from 12 to 128 characters. The upper bound protects the hashing step from denial of service.
+- Hash with Argon2id (memory 64 MiB, iterations 3, parallelism 4) and a random salt per hash. Hashes are stored in the PHC string format, and verification reads the parameters from the stored hash, so the parameters can be raised without invalidating existing passwords.
+- Accept passwords from 12 to 128 characters, counted as Unicode code points after NFC normalization. Reject invalid UTF-8. Normalization makes the same password typed on different systems produce the same hash. The upper bound protects the hashing step from denial of service.
+- Limit the number of concurrent hash operations. Each one allocates the full Argon2id memory, so parallel login attempts could otherwise exhaust the memory of the server. A rate limit at the reverse proxy is no substitute, because it applies per client.
+- The database accepts only encoded Argon2id hashes in the password column, so a plain-text password can never be stored by mistake.
 - Login must take the same time whether or not the account exists: verify against a precomputed dummy hash when no user is found.
 
 ### Account enumeration
