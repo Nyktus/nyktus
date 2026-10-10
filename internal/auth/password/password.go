@@ -51,8 +51,8 @@ type params struct {
 	memory      uint32
 	iterations  uint32
 	parallelism uint8
-	saltLength  int
-	keyLength   int
+	saltLength  uint32
+	keyLength   uint32
 }
 
 // defaultParams follow the secure coding guidelines.
@@ -65,6 +65,7 @@ func defaultParams() params {
 const (
 	maxMemory     = 1024 * 1024
 	maxIterations = 64
+	minKeyLength  = 16
 	maxKeyLength  = 64
 	minSaltLength = 8
 	maxSaltLength = 64
@@ -155,8 +156,7 @@ func (h *Hasher) derive(ctx context.Context, password string, salt []byte, p par
 		return nil, fmt.Errorf("wait for password hashing: %w", ctx.Err())
 	}
 	defer func() { <-h.slots }()
-	//nolint:gosec // G115: keyLength is bounded by maxKeyLength.
-	return argon2.IDKey([]byte(password), salt, p.iterations, p.memory, p.parallelism, uint32(p.keyLength)), nil
+	return argon2.IDKey([]byte(password), salt, p.iterations, p.memory, p.parallelism, p.keyLength), nil
 }
 
 func encode(p params, salt, key []byte) string {
@@ -202,20 +202,28 @@ func decode(encoded string) (params, []byte, []byte, error) {
 
 	enc := base64.RawStdEncoding.Strict()
 	salt, err := enc.DecodeString(fields[4])
-	if err != nil || len(salt) < minSaltLength || len(salt) > maxSaltLength {
-		return p, nil, nil, fmt.Errorf("%w: invalid salt", ErrMalformedHash)
+	if err != nil {
+		return p, nil, nil, fmt.Errorf("%w: invalid salt: %w", ErrMalformedHash, err)
+	}
+	saltLength := len(salt)
+	if saltLength < minSaltLength || saltLength > maxSaltLength {
+		return p, nil, nil, fmt.Errorf("%w: salt of %d bytes", ErrMalformedHash, saltLength)
 	}
 	key, err := enc.DecodeString(fields[5])
-	if err != nil || len(key) < 16 || len(key) > maxKeyLength {
-		return p, nil, nil, fmt.Errorf("%w: invalid key", ErrMalformedHash)
+	if err != nil {
+		return p, nil, nil, fmt.Errorf("%w: invalid key: %w", ErrMalformedHash, err)
+	}
+	keyLength := len(key)
+	if keyLength < minKeyLength || keyLength > maxKeyLength {
+		return p, nil, nil, fmt.Errorf("%w: key of %d bytes", ErrMalformedHash, keyLength)
 	}
 
 	p = params{
 		memory:      uint32(m),
 		iterations:  uint32(t),
 		parallelism: uint8(par),
-		saltLength:  len(salt),
-		keyLength:   len(key),
+		saltLength:  uint32(saltLength),
+		keyLength:   uint32(keyLength),
 	}
 	return p, salt, key, nil
 }

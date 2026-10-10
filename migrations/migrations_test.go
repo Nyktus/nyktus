@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -74,6 +75,26 @@ func TestApply_FailsWithoutConsoleRole(t *testing.T) {
 	}
 	if table != nil {
 		t.Error("the failed migration left the users table behind")
+	}
+}
+
+func TestApply_FailsWithoutUTF8Encoding(t *testing.T) {
+	t.Parallel()
+
+	dbURL := dbtest.New(t)
+	u, err := url.Parse(dbURL)
+	if err != nil {
+		t.Fatalf("parse database url: %v", err)
+	}
+	name := pgx.Identifier{strings.TrimPrefix(u.Path, "/") + "_ascii"}.Sanitize()
+	dbtest.Exec(t, dbURL, "CREATE DATABASE "+name+" ENCODING 'SQL_ASCII' TEMPLATE template0 LOCALE 'C'")
+	t.Cleanup(func() { dbtest.Exec(t, dbURL, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)") })
+	dbtest.GroupRole(t, schematest.ConsoleRole)
+
+	u.Path = "/" + strings.TrimPrefix(u.Path, "/") + "_ascii"
+	err = apply(t, u.String(), load(t))
+	if want := "database encoding is SQL_ASCII, but Nyktus requires UTF8"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("Apply() error = %v, want it to contain %q", err, want)
 	}
 }
 

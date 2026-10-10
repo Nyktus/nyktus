@@ -28,8 +28,10 @@ Run the following as a superuser or a role with `CREATEROLE`. Choose your own pa
 
    ```sql
    CREATE ROLE nyktus_owner LOGIN PASSWORD '...';
-   CREATE DATABASE nyktus OWNER nyktus_owner;
+   CREATE DATABASE nyktus OWNER nyktus_owner ENCODING 'UTF8';
    ```
+
+   The database must use the `UTF8` encoding; migrations stop otherwise. If the default encoding of your cluster differs, add `TEMPLATE template0` to the statement.
 
    The `public` schema of a new database belongs to the database owner. In a cluster that was upgraded from PostgreSQL 14 or earlier, the template database can still assign it to the bootstrap superuser. Transfer it explicitly in that case:
 
@@ -43,6 +45,8 @@ Run the following as a superuser or a role with `CREATEROLE`. Choose your own pa
    ```sql
    CREATE ROLE nyktus_console_login LOGIN PASSWORD '...' IN ROLE nyktus_console;
    ```
+
+   The login role receives its privileges by inheriting them from the group role. Do not create it with `NOINHERIT`.
 
 4. Apply the migrations as the owner:
 

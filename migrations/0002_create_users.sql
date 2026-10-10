@@ -13,6 +13,17 @@ BEGIN
 END
 $$;
 
+-- Addresses are stored in NFC normalization, which the schema checks with IS NFC
+-- NORMALIZED. PostgreSQL normalizes only in UTF8 databases, so another encoding
+-- would let every insert fail later.
+DO $$
+BEGIN
+	IF current_setting('server_encoding') <> 'UTF8' THEN
+		RAISE EXCEPTION 'database encoding is %, but Nyktus requires UTF8', current_setting('server_encoding');
+	END IF;
+END
+$$;
+
 CREATE TABLE public.users (
 	-- Random identifiers reveal neither the number of accounts nor the order in
 	-- which they were created.
@@ -25,15 +36,16 @@ CREATE TABLE public.users (
 	created_at    timestamptz NOT NULL DEFAULT now(),
 	updated_at    timestamptz NOT NULL DEFAULT now(),
 
-	-- The application validates addresses and stores them in lower case, so the
-	-- unique constraint is case-insensitive. The checks are deliberately simple and
-	-- independent of the database locale; they reject what the application never
-	-- writes.
+	-- The application validates addresses and stores them in lower case and NFC,
+	-- so the unique constraint covers every spelling of an address. The checks are
+	-- deliberately simple and independent of the database locale; they reject what
+	-- the application never writes.
 	CONSTRAINT users_email_key UNIQUE (email),
 	CONSTRAINT users_email_check CHECK (
 		octet_length(email) <= 254
 		AND email ~ '^[^@]+@[^@]+$'
 		AND email !~ '[\x01-\x20\x7f"A-Z]'
+		AND email IS NFC NORMALIZED
 	),
 	CONSTRAINT users_display_name_check CHECK (
 		char_length(display_name) BETWEEN 1 AND 100

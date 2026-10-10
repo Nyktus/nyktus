@@ -6,11 +6,14 @@ package user
 
 import (
 	"errors"
+	"log/slog"
 	"net/mail"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Role determines what a user may do in the console.
@@ -61,6 +64,16 @@ type User struct {
 	UpdatedAt    time.Time
 }
 
+// LogValue keeps the password hash and the address out of logs. A hash allows
+// offline guessing of the password, and the address is personal data.
+func (u User) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("id", u.ID),
+		slog.String("role", string(u.Role)),
+		slog.String("status", string(u.Status)),
+	)
+}
+
 // Limits for account fields. An email address is limited by the length of a path
 // in SMTP (RFC 5321).
 const (
@@ -76,12 +89,13 @@ var (
 )
 
 // ParseEmail accepts a single bare address, such as "jane@example.com", and
-// returns it in lower case. Display names, comments, quoted local parts and
-// whitespace are rejected.
+// returns it in lower case and NFC normalization. Display names, comments,
+// quoted local parts and whitespace are rejected.
 //
-// Addresses are compared in lower case. Mail systems treat the local part as
-// case-insensitive in practice, and two accounts that differ only in case would
-// be indistinguishable to their owners.
+// The address is the sign-in name, so every spelling of the same address must
+// map to one account. Mail systems treat the local part as case-insensitive in
+// practice, and the same non-ASCII address can arrive precomposed or decomposed
+// depending on the client.
 func ParseEmail(s string) (string, error) {
 	if strings.ContainsAny(s, "\" ") || !printable(s) {
 		return "", ErrInvalidEmail
@@ -90,12 +104,13 @@ func ParseEmail(s string) (string, error) {
 	if err != nil || addr.Name != "" || addr.Address != s || strings.Count(s, "@") != 1 {
 		return "", ErrInvalidEmail
 	}
-	// Lowercasing can change the length in bytes, so the limit applies afterwards.
-	lower := strings.ToLower(s)
-	if len(lower) > MaxEmailLength {
+	// Lowercasing and normalization can change the length in bytes, so the limit
+	// applies afterwards.
+	normalized := norm.NFC.String(strings.ToLower(s))
+	if len(normalized) > MaxEmailLength {
 		return "", ErrInvalidEmail
 	}
-	return lower, nil
+	return normalized, nil
 }
 
 // ParseDisplayName accepts a name of 1 to MaxDisplayNameLength printable

@@ -81,10 +81,12 @@ Requests that match no route receive a JSON `404`, also when only the method dif
 
 There is no public registration.
 
-- **First start.** While no administrator exists, the server generates a setup URL containing a one-time token on every start and prints it to standard output. The setup page creates the first administrator with a name and password and accepts only that token. Without it, whoever reaches a fresh instance first could claim it.
+- **First start.** While no administrator exists, the server generates a setup URL containing a one-time token on every start and prints it to standard output. The setup page creates the first administrator with an email address, a display name and a password, and accepts only that token. Without it, whoever reaches a fresh instance first could claim it.
 - Once an administrator exists, the setup endpoint is permanently disabled and returns `404`, including after restarts.
 - **Further accounts** are created by administrators in the console or just in time through OpenID Connect. Creating an account yields a single-use, expiring activation link through which the user sets their own password. The link is shown to the administrator once and can additionally be sent by email when a mail server is configured.
 - Administrators never set or see another user's password.
+
+Local accounts sign in with their email address and password. The display name is shown in the console and the audit log and plays no part in authentication. Addresses are compared in lower case and NFC normalization, so every spelling of an address maps to one account.
 
 ### Passwords
 
@@ -224,7 +226,7 @@ The sensor runs inside the monitored network and talks to attackers directly.
 ## Logging and audit
 
 - Logs are structured (`log/slog`, JSON). Request-scoped logs use the `...Context` variants so that request ID and actor are attached automatically.
-- Never log passwords, session tokens, API keys, secrets, one-time codes or complete request bodies. Attacker-controlled values are logged as structured attributes, never concatenated into the message.
+- Never log passwords, session tokens, API keys, secrets, one-time codes or complete request bodies. Types that carry such values or password hashes implement `slog.LogValuer` and omit them, so that logging the whole value cannot leak them. Attacker-controlled values are logged as structured attributes, never concatenated into the message.
 - The audit log records every security-relevant write and every authentication event with the actor and the authentication method, including the API key identifier where applicable. For updates it records the names of changed fields, not their values, so the audit log does not become a second copy of the inventory.
 
 ## Web console

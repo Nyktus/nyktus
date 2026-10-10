@@ -4,7 +4,9 @@
 package user
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 )
@@ -22,6 +24,8 @@ func TestParseEmail(t *testing.T) {
 		{in: "jane@example.com", want: "jane@example.com"},
 		{in: "Jane.Doe+nyktus@Example.COM", want: "jane.doe+nyktus@example.com"},
 		{in: "jürgen@bücher.example", want: "jürgen@bücher.example"},
+		// Decomposed umlauts and upper case map to the same stored address.
+		{in: "Ju\u0308rgen@Bu\u0308cher.example", want: "j\u00fcrgen@b\u00fccher.example"},
 		{in: "admin@localhost", want: "admin@localhost"},
 		{in: longest, want: longest},
 		{in: longest + "x", wantErr: true},
@@ -83,6 +87,28 @@ func TestParseDisplayName(t *testing.T) {
 		case !tt.valid && !errors.Is(err, ErrInvalidDisplayName):
 			t.Errorf("ParseDisplayName(%q) = %q, %v, want ErrInvalidDisplayName", tt.in, got, err)
 		}
+	}
+}
+
+func TestUser_LogValueOmitsHashAndAddress(t *testing.T) {
+	t.Parallel()
+
+	u := User{
+		ID:           "7a1e0e4c-2f8b-4f7e-9a51-1f0a3c4d5e6f",
+		Email:        "jane@example.com",
+		Role:         RoleAdmin,
+		Status:       StatusActive,
+		PasswordHash: "$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHRzYWx0$a2V5a2V5a2V5a2V5a2V5a2V5",
+	}
+	var buf bytes.Buffer
+	slog.New(slog.NewJSONHandler(&buf, nil)).Info("test", slog.Any("user", u))
+
+	out := buf.String()
+	if strings.Contains(out, "argon2id") || strings.Contains(out, u.Email) {
+		t.Errorf("log record contains the hash or the address: %s", out)
+	}
+	if !strings.Contains(out, u.ID) || !strings.Contains(out, `"role":"admin"`) {
+		t.Errorf("log record lacks the ID or the role: %s", out)
 	}
 }
 

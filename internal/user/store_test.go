@@ -104,6 +104,22 @@ func TestCreate_RejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestCreate_RejectsTakenEmailInOtherNormalization(t *testing.T) {
+	t.Parallel()
+
+	s, _ := newStore(t)
+	if _, err := s.Create(t.Context(), NewUser{Email: "j\u00fcrgen@example.com", DisplayName: "J\u00fcrgen", Role: RoleViewer}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	_, err := s.Create(t.Context(), NewUser{Email: "ju\u0308rgen@example.com", DisplayName: "Other", Role: RoleViewer})
+	if !errors.Is(err, ErrEmailTaken) {
+		t.Errorf("Create() with the decomposed address error = %v, want ErrEmailTaken", err)
+	}
+	if _, err := s.GetByEmail(t.Context(), "ju\u0308rgen@example.com"); err != nil {
+		t.Errorf("GetByEmail() with the decomposed address error = %v, want the account", err)
+	}
+}
+
 func TestCreate_DatabaseRejectsPlainTextPassword(t *testing.T) {
 	t.Parallel()
 
@@ -141,9 +157,11 @@ func TestGetByEmail(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	got, err := s.GetByEmail(t.Context(), "Jane@EXAMPLE.com")
-	if err != nil || got != created {
-		t.Errorf("GetByEmail() = %+v, %v, want %+v", got, err, created)
+	for _, email := range []string{"Jane@EXAMPLE.com", "jane@example.com"} {
+		got, err := s.GetByEmail(t.Context(), email)
+		if err != nil || got != created {
+			t.Errorf("GetByEmail(%q) = %+v, %v, want %+v", email, got, err, created)
+		}
 	}
 	for _, email := range []string{"joe@example.com", "jane", "Jane <jane@example.com>", ""} {
 		if _, err := s.GetByEmail(t.Context(), email); !errors.Is(err, ErrNotFound) {
@@ -186,6 +204,7 @@ func TestSchema_RejectsInvalidUsers(t *testing.T) {
 		{name: "email with two at signs", modify: func(r *row) { r.email = "jane@home@example.com" }, constraint: "users_email_check"},
 		{name: "email with space", modify: func(r *row) { r.email = "jane doe@example.com" }, constraint: "users_email_check"},
 		{name: "email with quote", modify: func(r *row) { r.email = `"jane"@example.com` }, constraint: "users_email_check"},
+		{name: "decomposed email", modify: func(r *row) { r.email = "ju\u0308rgen@example.com" }, constraint: "users_email_check"},
 		{name: "email with control character", modify: func(r *row) { r.email = "jane\t@example.com" }, constraint: "users_email_check"},
 		{
 			name:       "email too long",
