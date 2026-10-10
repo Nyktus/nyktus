@@ -34,7 +34,8 @@ func deps(db Pinger) Deps {
 	return Deps{
 		Logger: slog.New(slog.DiscardHandler), DB: db, Setup: http.NotFoundHandler(),
 		Authorizer: denyAll{}, SignIn: http.NotFoundHandler(), Session: http.NotFoundHandler(), SignOut: http.NotFoundHandler(),
-		Origin: "https://nyktus.example.com",
+		AuditEntries: http.NotFoundHandler(),
+		Origin:       "https://nyktus.example.com",
 	}
 }
 

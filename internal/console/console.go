@@ -35,6 +35,8 @@ type Deps struct {
 	Authorizer httpx.Authorizer
 	// SignIn, Session and SignOut serve the session of the caller.
 	SignIn, Session, SignOut http.Handler
+	// AuditEntries lists the audit log.
+	AuditEntries http.Handler
 	// Origin is the origin under which users reach the console, such as
 	// "https://nyktus.example.com". Requests that change state must come from it.
 	Origin string
@@ -47,7 +49,7 @@ type Deps struct {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil {
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.AuditEntries == nil {
 		panic("console: router needs a logger, a database, an authorizer and the setup and session handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
@@ -57,6 +59,7 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPost, "/api/v1/session", httpx.Public, httpx.Deadline(hashDeadline)(d.SignIn))
 	rt.Handle(http.MethodGet, "/api/v1/session", httpx.Authenticated, d.Session)
 	rt.Handle(http.MethodDelete, "/api/v1/session", httpx.Authenticated, d.SignOut)
+	rt.Handle(http.MethodGet, "/api/v1/audit-entries", httpx.Require("audit:read"), d.AuditEntries)
 	return rt
 }
 

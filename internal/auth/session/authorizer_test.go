@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/platform/httpx"
@@ -95,5 +96,29 @@ SELECT count(*) FROM audit_entries WHERE action = 'test.read' AND outcome = 'den
 	}
 	if named != 2 {
 		t.Errorf("%d access log records name the principal, want 2 (denied and allowed):\n%s", named, logs.String())
+	}
+}
+
+// A denied request is recorded with an action derived from the permission. Every
+// permission that a role grants, and that a route can therefore require, must
+// yield an action that the database accepts.
+func TestDeniedActions_OfEveryPermissionAreAccepted(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDB(t)
+	store := audit.NewStore(d.console)
+	perms := access.Permissions()
+	if len(perms) == 0 {
+		t.Fatal("no role grants a permission")
+	}
+	for _, perm := range perms {
+		err := store.Record(t.Context(), audit.Entry{
+			Action:  access.DeniedAction(perm),
+			Outcome: audit.OutcomeDenied,
+			Actor:   audit.Actor{Kind: audit.ActorSystem, Method: audit.AuthNone},
+		})
+		if err != nil {
+			t.Errorf("record denial of %s: %v", perm, err)
+		}
 	}
 }

@@ -21,7 +21,7 @@ import (
 // grants lists the permissions of each role. A permission appears here when the
 // first route that requires it is added.
 var grants = map[user.Role][]httpx.Permission{
-	user.RoleAdmin:  {},
+	user.RoleAdmin:  {"audit:read"},
 	user.RoleEditor: {},
 	user.RoleViewer: {},
 }

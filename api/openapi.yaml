@@ -44,6 +44,8 @@ tags:
     description: Creation of the first administrator of an installation.
   - name: session
     description: Sign-in, the session of the caller and sign-out.
+  - name: audit
+    description: The audit log of security-relevant actions.
 
 paths:
   /livez:
@@ -228,6 +230,54 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/audit-entries:
+    get:
+      operationId: listAuditEntries
+      summary: List audit entries
+      description: |
+        Returns audit entries from the newest to the oldest, a page at a time. To
+        read the next page, pass the `next_cursor` of a response as `cursor`.
+        Entries recorded meanwhile do not shift the following pages.
+      tags: [audit]
+      x-access: audit:read
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: limit
+          in: query
+          description: Number of entries per page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A page of entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEntryPage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: The caller may not read the audit log.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -319,6 +369,90 @@ components:
           type: string
           enum: [pending, active, deactivated]
           description: A pending account has not set a password yet. A deactivated account cannot sign in.
+
+    AuditEntryPage:
+      type: object
+      additionalProperties: false
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEntry"
+        next_cursor:
+          type: string
+          description: Cursor of the next page. Absent on the last page.
+
+    AuditEntry:
+      type: object
+      additionalProperties: false
+      required: [id, occurred_at, action, outcome, actor, changed_fields]
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+        action:
+          type: string
+          description: What was done, in the form `resource.verb`, such as `session.create`. A denied request names the permission it lacked, such as `audit.read`.
+          examples: [session.create]
+        outcome:
+          type: string
+          enum: [success, failure, denied]
+        actor:
+          $ref: "#/components/schemas/AuditActor"
+        resource:
+          $ref: "#/components/schemas/AuditResource"
+        changed_fields:
+          type: array
+          description: Names of the fields that an update changed, never their values.
+          items:
+            type: string
+        client_ip:
+          type: string
+          description: Address of the client, if the action came from one.
+        request_id:
+          type: string
+          description: Links the entry to the log records of its request.
+
+    AuditActor:
+      type: object
+      additionalProperties: false
+      required: [kind, auth_method]
+      properties:
+        kind:
+          type: string
+          enum: [user, setup, system, anonymous]
+        auth_method:
+          type: string
+          enum: [password, oidc, session, api_key, setup_token, cli, none]
+        user_id:
+          type: string
+          format: uuid
+          description: Absent once the account has been deleted.
+        email:
+          type: string
+          description: Address of the account when the entry was written.
+        display_name:
+          type: string
+          description: Display name of the account when the entry was written.
+        api_key_id:
+          type: string
+          format: uuid
+
+    AuditResource:
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          examples: [user]
+        id:
+          type: string
+          format: uuid
 
     Error:
       type: object
