@@ -44,6 +44,7 @@ Roles communicate only through PostgreSQL and use separate database roles with l
 ## Repository layout
 
 ```
+api/                OpenAPI specification of the console API
 cmd/nyktus/         server binary
 cmd/nyktus-sensor/  honeypot sensor for monitored networks
 internal/           application packages, organized by domain

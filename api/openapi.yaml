@@ -1,0 +1,110 @@
+# SPDX-FileCopyrightText: The Nyktus Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# This specification is the contract of the console HTTP interface. It is written
+# by hand and kept in sync with the router by a test: every operation must exist in
+# the router with the same method, path and access requirement, and vice versa.
+#
+# Every operation declares who may call it in x-access:
+#   public         no authentication
+#   authenticated  any signed-in user or API key, regardless of permissions
+#   resource:action
+#                  a principal that holds this permission
+
+openapi: 3.1.0
+
+info:
+  title: Nyktus API
+  summary: Console API of the Nyktus deception platform.
+  description: |
+    API routes live under `/api/v1`. Health endpoints for orchestrators live at the
+    root.
+
+    Every GET operation also answers HEAD with the same access requirement and
+    without a body.
+
+    Every error response uses the same envelope. Server errors carry a generic
+    message and a request ID that correlates them with the server log.
+  version: 0.0.0
+  license:
+    name: AGPL-3.0-or-later
+    identifier: AGPL-3.0-or-later
+
+servers:
+  - url: /
+
+tags:
+  - name: health
+    description: Liveness and readiness probes for orchestrators.
+
+paths:
+  /livez:
+    get:
+      operationId: getLiveness
+      summary: Report that the process is running
+      description: Checks no dependencies, so that an orchestrator does not restart the process while the database is down.
+      tags: [health]
+      x-access: public
+      responses:
+        "200":
+          description: The process is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  /readyz:
+    get:
+      operationId: getReadiness
+      summary: Report whether the console can serve requests
+      tags: [health]
+      x-access: public
+      responses:
+        "200":
+          description: The console is ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+components:
+  schemas:
+    Status:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable, machine-readable error code.
+              examples: [invalid_request]
+            message:
+              type: string
+              description: Human-readable description without internal details.
+            request_id:
+              type: string
+              description: Correlates the response with the server log.
+
+  responses:
+    Unavailable:
+      description: A dependency, such as the database, is unreachable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

@@ -4,11 +4,11 @@ These guidelines describe how code in Nyktus is written. They complement the [se
 
 ## Principles
 
-- **Simple over clever.** Choose the most direct solution that is correct. Introduce an abstraction when a second real use exists, not in anticipation of one.
+- **Simple over clever.** Choose the most direct solution that is correct. Introduce an abstraction when a second real use exists, not in anticipation of one. Security enforcement points, such as the authorization hook of the router, are the exception: they exist before their first user, so that no feature can be added without passing through them.
 - **Explicit over implicit.** No hidden control flow, no global mutable state, no `init()` side effects.
 - **Delete rather than disable.** Unused code, feature flags for hypothetical needs and commented-out code are removed. Version control remembers.
 - **One way to do a thing.** When a helper exists for a concern (error responses, outbound HTTP, pagination), use it. Do not add a second one.
-- **Fail fast at startup.** Invalid configuration, unrenderable templates and an inconsistent catalog stop the process before it accepts traffic.
+- **Fail fast at startup.** Invalid configuration, unrenderable templates and an inconsistent catalog stop the process before it accepts traffic. Constructors reject missing required dependencies, such as a nil logger, and invalid declarations, such as a malformed route, with a panic at wiring time instead of failing the first request.
 
 ## Go
 
@@ -53,7 +53,23 @@ Configuration is read from the environment once at startup, parsed into a typed 
 
 - Request and response types are explicit structs. Database models are never serialized directly.
 - Errors use one response envelope. `5xx` responses go through the shared helper, which logs the error with request context and returns a generic message.
-- The OpenAPI specification is the contract. A change to an endpoint updates the specification in the same pull request.
+- API routes live under `/api/v1`. Health endpoints for orchestrators live at the root.
+- Route paths consist of literal segments and `{name}` wildcards only. The router rejects subtree patterns (trailing slash, `{name...}`), `{$}` and host patterns: `http.ServeMux` answers them with redirects before authorization runs, and they have no OpenAPI equivalent. Requests with unclean paths (`//`, `/./`, `/../`) and `CONNECT` requests receive the JSON `404` instead of the mux's redirects.
+- A `GET` route also answers `HEAD` with the same access, as `http.ServeMux` does. `HEAD` is not documented separately.
+
+### OpenAPI specification
+
+- `api/openapi.yaml` is the contract. It is written by hand; there is no generated server code, because it would bypass the access declarations of the router. A change to an endpoint updates the specification in the same pull request. Code loads it through the `api` package, never through a relative file path.
+- Every operation declares its access in `x-access`: `public`, `authenticated` or a permission in the form `resource:action`. `httpx.Permission.Valid` is the only definition of that format.
+- Operations that are not public document `401` explicitly, and operations that require a permission also document `403`. Ranges such as `4XX` and `default` do not count, so that every denial is visible in the specification.
+- Operations are defined inline. `$ref` path items are not supported. Specification extensions (`x-...`) are allowed on the paths object and on path items.
+- A test compares method, path and access of every operation with the router, in both directions. It covers the attack surface, not response bodies; those are covered by handler tests.
+
+### Authorization
+
+- Routes are registered with `httpx.Public`, `httpx.Authenticated` or `httpx.Require(permission)`. Routes that are not public pass through the authorizer before the handler runs, so permission checks happen in one place.
+- The authorizer only decides. It returns the request with the principal, `ErrUnauthenticated`, `ErrForbidden` or another error. The router writes the `401` (with a `WWW-Authenticate` challenge), `403` or generic `500` response, so a denied request can never go unanswered.
+- Recording denied requests is the authorizer's job, because only it knows the principal. It writes them to the audit log; the access log records the status of every request.
 
 ## Logging
 

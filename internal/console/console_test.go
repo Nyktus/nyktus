@@ -11,7 +11,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"nyktus.org/nyktus/internal/platform/httpx"
+	"nyktus.org/nyktus/api"
+	"nyktus.org/nyktus/internal/platform/apispec"
 )
 
 type fakePinger struct{ err error }
@@ -46,29 +47,17 @@ func TestHealthEndpoints(t *testing.T) {
 	}
 }
 
-// TestRoutes_DeclareAccess lists every console route with its access requirement.
-// A new route makes this test fail until it is added here, so that every change to
-// the attack surface is visible in review.
-func TestRoutes_DeclareAccess(t *testing.T) {
+// TestRoutes_MatchSpecification keeps the router and the OpenAPI specification in
+// sync. Every route, and the access it requires, is documented in the
+// specification, so every change to the attack surface is visible in review.
+func TestRoutes_MatchSpecification(t *testing.T) {
 	t.Parallel()
 
-	want := map[string]httpx.Access{
-		"GET /livez":  httpx.Public,
-		"GET /readyz": httpx.Public,
+	spec, err := apispec.Parse(api.OpenAPI())
+	if err != nil {
+		t.Fatalf("invalid specification: %v", err)
 	}
-	routes := NewRouter(slog.New(slog.DiscardHandler), fakePinger{}).Routes()
-	if len(routes) != len(want) {
-		t.Errorf("router has %d routes, want %d: %+v", len(routes), len(want), routes)
-	}
-	for _, r := range routes {
-		key := r.Method + " " + r.Path
-		access, ok := want[key]
-		if !ok {
-			t.Errorf("route %s is not listed in this test", key)
-			continue
-		}
-		if r.Access != access {
-			t.Errorf("route %s has access %v, want %v", key, r.Access, access)
-		}
+	for _, problem := range spec.Compare(NewRouter(slog.New(slog.DiscardHandler), fakePinger{}).Routes()) {
+		t.Error(problem)
 	}
 }
