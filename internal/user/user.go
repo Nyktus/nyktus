@@ -86,6 +86,9 @@ var (
 	ErrInvalidEmail       = errors.New("invalid email address")
 	ErrInvalidDisplayName = errors.New("invalid display name")
 	ErrInvalidRole        = errors.New("invalid role")
+	// ErrInvalidPasswordHash is returned for a password hash that is not an
+	// encoded Argon2id hash, such as a plain-text password passed by mistake.
+	ErrInvalidPasswordHash = errors.New("invalid password hash")
 )
 
 // ParseEmail accepts a single bare address, such as "jane@example.com", and

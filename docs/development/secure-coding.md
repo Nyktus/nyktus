@@ -162,6 +162,7 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 - Map database errors to sentinel errors in the store layer and compare with `errors.Is`. Detect constraint violations by SQLSTATE (`23505` for unique violations), never by message text.
 - Invariants that span several statements run in one transaction. Where concurrent requests can race, take the row lock explicitly and prove it with a test (see the [testing guidelines](testing.md)).
 - The schema is the last line of defense: use `NOT NULL`, `CHECK`, foreign keys and unique constraints for every invariant the database can express.
+- The schema is the last line of defense, not the first. PostgreSQL writes the complete failing row of a constraint violation to its server log, so a row with a secret, a password hash or a plain-text password passed by mistake would end up there. Stores validate every field before they write such a row.
 - Connection pools have explicit upper limits.
 
 ## Outbound requests

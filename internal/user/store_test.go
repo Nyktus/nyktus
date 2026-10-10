@@ -120,12 +120,21 @@ func TestCreate_RejectsTakenEmailInOtherNormalization(t *testing.T) {
 	}
 }
 
-func TestCreate_DatabaseRejectsPlainTextPassword(t *testing.T) {
+// A plain-text password must never reach the database: PostgreSQL would write
+// the failing row of the constraint violation to its server log.
+func TestCreate_RejectsPlainTextPasswordBeforeTheDatabase(t *testing.T) {
 	t.Parallel()
 
-	s, _ := newStore(t)
+	s, pool := newStore(t)
 	_, err := s.Create(t.Context(), NewUser{Email: "jane@example.com", DisplayName: "Jane", Role: RoleViewer, PasswordHash: "correct horse battery staple"})
-	wantConstraint(t, err, "users_password_hash_check")
+	var pgErr *pgconn.PgError
+	if !errors.Is(err, ErrInvalidPasswordHash) || errors.As(err, &pgErr) {
+		t.Errorf("Create() error = %v, want ErrInvalidPasswordHash without a database error", err)
+	}
+	var n int
+	if err := pool.QueryRow(t.Context(), "SELECT count(*) FROM users").Scan(&n); err != nil || n != 0 {
+		t.Errorf("users = %d, %v, want none", n, err)
+	}
 }
 
 func TestGet(t *testing.T) {

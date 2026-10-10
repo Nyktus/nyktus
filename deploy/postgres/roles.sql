@@ -11,7 +11,7 @@
 -- Role names are global to the PostgreSQL cluster. Run one Nyktus instance per
 -- cluster.
 --
---   psql --dbname=nyktus --file=roles.sql
+--   psql --file=roles.sql
 
 -- Group role of the console. The login role of the console is a member of it.
 DO $$

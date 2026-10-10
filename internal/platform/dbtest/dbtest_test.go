@@ -53,34 +53,41 @@ func TestGroupRole_ConcurrentCreationSucceeds(t *testing.T) {
 	if err := second.QueryRow(ctx, "SELECT pg_backend_pid()").Scan(&secondPID); err != nil {
 		t.Fatalf("query backend pid: %v", err)
 	}
-	done := make(chan error, 1)
+	// The goroutine owns the second connection until it is done. It ends before
+	// the test does, also when the test fails early, because the connection must
+	// not be closed while it is in use.
+	secondCtx, cancelSecond := context.WithCancel(ctx)
+	var secondErr error
+	finished := make(chan struct{})
 	go func() {
-		_, err := second.Exec(ctx, groupRoleStatement(name))
-		done <- err
+		defer close(finished)
+		_, secondErr = second.Exec(secondCtx, groupRoleStatement(name))
+	}()
+	defer func() {
+		cancelSecond()
+		<-finished
 	}()
 
 	waitUntilBlocked(t, tx, secondPID)
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatalf("commit first transaction: %v", err)
 	}
-	if err := <-done; err != nil {
-		t.Errorf("concurrent GroupRole statement error = %v, want nil", err)
+	<-finished
+	if secondErr != nil {
+		t.Errorf("concurrent GroupRole statement error = %v, want nil", secondErr)
 	}
 }
 
 // waitUntilBlocked returns once the backend pid waits for a lock held by another
 // session. It polls the lock state instead of sleeping for a fixed time, so the
 // test does not depend on timing.
-func waitUntilBlocked(t *testing.T, q interface {
-	QueryRow(context.Context, string, ...any) pgx.Row
-}, pid uint32,
-) {
+func waitUntilBlocked(t *testing.T, tx pgx.Tx, pid uint32) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	for {
 		var blocked bool
-		if err := q.QueryRow(ctx, "SELECT cardinality(pg_blocking_pids($1)) > 0", pid).Scan(&blocked); err != nil {
+		if err := tx.QueryRow(ctx, "SELECT cardinality(pg_blocking_pids($1)) > 0", pid).Scan(&blocked); err != nil {
 			t.Fatalf("query blocking pids: %v", err)
 		}
 		if blocked {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -50,7 +51,11 @@ type NewUser struct {
 }
 
 // Create validates nu and stores a new account. It returns ErrEmailTaken if
-// another account uses the same address, in any case.
+// another account uses the same address, in any spelling.
+//
+// Every field is validated before the insert, although the schema checks the
+// same rules. PostgreSQL writes the complete failing row of a constraint
+// violation to its server log, which would include a password or a hash.
 func (s *Store) Create(ctx context.Context, nu NewUser) (User, error) {
 	email, err := ParseEmail(nu.Email)
 	if err != nil {
@@ -66,6 +71,11 @@ func (s *Store) Create(ctx context.Context, nu NewUser) (User, error) {
 	status := StatusPending
 	var hash *string
 	if nu.PasswordHash != "" {
+		// The full format is the password package's concern. The prefix is enough
+		// to keep a plain-text password away from the database and its log.
+		if !strings.HasPrefix(nu.PasswordHash, "$argon2id$") {
+			return User{}, ErrInvalidPasswordHash
+		}
 		status = StatusActive
 		hash = &nu.PasswordHash
 	}
