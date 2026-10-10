@@ -69,7 +69,7 @@ Configuration is read from the environment once at startup, parsed into a typed 
 
 - Routes are registered with `httpx.Public`, `httpx.Authenticated` or `httpx.Require(permission)`. Routes that are not public pass through the authorizer before the handler runs, so permission checks happen in one place.
 - The authorizer only decides. It returns the request with the principal, `ErrUnauthenticated`, `ErrForbidden` or another error. The router writes the `401` (with a `WWW-Authenticate` challenge), `403` or generic `500` response, so a denied request can never go unanswered.
-- Recording denied requests is the authorizer's job, because only it knows the principal. It writes them to the audit log; the access log records the status of every request.
+- Recording denied requests is the authorizer's job, because only it knows the principal. It writes requests denied with `403` to the audit log; the access log records the status of every request, including `401`.
 
 ## Logging
 
@@ -113,7 +113,9 @@ Every source file starts with a license header:
 - Schema changes are numbered migrations in `migrations/`, named `NNNN_description.sql` and applied by `nyktus migrate` with the database owner role. Migrations are forward-only and run in a transaction each.
 - A released migration is never edited. The runner stores a checksum of every applied migration and refuses to run when one has changed.
 - Grants for the per-role database users live in migrations, next to the tables they cover. They go to the group role of the server role, such as `nyktus_console`, never to a login role.
+- A migration revokes all privileges on a new table or function before it grants any. Default privileges set by an operator, for example for a monitoring role, would otherwise widen the grants of a server role without notice.
 - Columns that the database generates, such as identifiers and creation times, are excluded from the column-level `INSERT` and `UPDATE` grants, so an application role cannot forge them.
+- Stores run their queries on a `db.Querier`, which a connection pool and a transaction both implement. A caller combines several stores in one transaction with `pgx.BeginFunc`, for example an action and its audit entry.
 - Primary keys are random UUIDs from `gen_random_uuid()`. Sequential identifiers would reveal the number of accounts or decoys and the order in which they were created.
 - Constraints that a store maps to an error or that tests assert on carry explicit names, such as `users_email_key`. Stores map violations by SQLSTATE and constraint name, never by message text. Primary keys of database-generated identifiers keep the default name, because no caller can violate them.
 - `GRANT` and `REVOKE` only warn when the executing role lacks the privilege to change a grant. A migration that changes privileges therefore verifies the result and raises an exception if it does not hold.

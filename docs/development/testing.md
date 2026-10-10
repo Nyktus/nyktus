@@ -36,6 +36,7 @@ Each of these properties needs its own test, named after the property:
 - Generated artifacts contain no product name, attribution or metadata that identifies Nyktus.
 - Every registered route declares its authentication and permission. The test enumerates the router, so a new route without a declaration fails the build.
 - Denied requests are rejected before the resource is loaded.
+- The console can add and read audit entries but never change or delete them.
 - Read-only roles and API keys without a write scope cannot write. A demoted user's keys lose the corresponding permissions.
 - Unsigned or tampered catalog packages are rejected without explicit confirmation. Archives with traversal paths or oversized entries are rejected.
 - The SSRF guard blocks every reserved address range.

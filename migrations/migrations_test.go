@@ -138,6 +138,8 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"INSERT INTO users (email, display_name, role, status) VALUES ('a@example.com', 'A', 'viewer', 'pending')",
 		"UPDATE users SET display_name = 'B', updated_at = now()",
 		"DELETE FROM users",
+		"SELECT count(*) FROM audit_entries",
+		"INSERT INTO audit_entries (action, outcome, actor_kind, auth_method, changed_fields) VALUES ('user.create', 'success', 'system', 'cli', '{}')",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -153,6 +155,9 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE users SET id = gen_random_uuid()",
 		"UPDATE users SET created_at = now()",
 		"TRUNCATE users",
+		"UPDATE audit_entries SET outcome = 'failure'",
+		"DELETE FROM audit_entries",
+		"TRUNCATE audit_entries",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -161,6 +166,40 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
 			t.Errorf("%s: error = %v, want insufficient_privilege", statement, err)
 		}
+	}
+}
+
+// An operator may have set default privileges for the owner, for example to grant
+// a monitoring role read access. Such defaults must not widen the privileges of
+// the console on the append-only audit log.
+func TestApply_IgnoresDefaultPrivilegesOnAuditLog(t *testing.T) {
+	t.Parallel()
+
+	dbURL := dbtest.New(t)
+	dbtest.GroupRole(t, schematest.ConsoleRole)
+	console := pgx.Identifier{schematest.ConsoleRole}.Sanitize()
+	dbtest.Exec(t, dbURL,
+		"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "+console,
+		"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO "+console,
+	)
+	if err := apply(t, dbURL, load(t)); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	var update, del, truncate, insertID, executeTrigger bool
+	err := schematest.Open(t, dbURL).QueryRow(t.Context(), `
+SELECT has_any_column_privilege($1, 'public.audit_entries', 'UPDATE'),
+	has_table_privilege($1, 'public.audit_entries', 'DELETE'),
+	has_table_privilege($1, 'public.audit_entries', 'TRUNCATE'),
+	has_column_privilege($1, 'public.audit_entries', 'id', 'INSERT'),
+	has_function_privilege($1, 'public.audit_entries_copy_actor()', 'EXECUTE')`,
+		schematest.ConsoleRole).Scan(&update, &del, &truncate, &insertID, &executeTrigger)
+	if err != nil {
+		t.Fatalf("query privileges: %v", err)
+	}
+	if update || del || truncate || insertID || executeTrigger {
+		t.Errorf("console privileges: update=%v delete=%v truncate=%v insert id=%v execute trigger=%v, want none",
+			update, del, truncate, insertID, executeTrigger)
 	}
 }
 
