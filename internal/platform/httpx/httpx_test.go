@@ -148,7 +148,7 @@ func TestAccessLog_LogsRoutePatternInsteadOfPath(t *testing.T) {
 
 	var logs bytes.Buffer
 	logger := logging.New(&logs, slog.LevelInfo)
-	rt := NewRouter(slog.New(slog.DiscardHandler), nil)
+	rt := NewRouter(discardLogger(), nil)
 	rt.Handle(http.MethodGet, "/items/{id}", Public, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
@@ -200,7 +200,7 @@ func TestRecover_TurnsPanicInto500(t *testing.T) {
 func TestRecover_PassesAbortHandlerOn(t *testing.T) {
 	t.Parallel()
 
-	h := Recover(slog.New(slog.DiscardHandler))(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	h := Recover(discardLogger())(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		panic(http.ErrAbortHandler)
 	}))
 	defer func() {
@@ -238,13 +238,13 @@ func TestRouter_RejectsRouteWithoutAccessDeclaration(t *testing.T) {
 			t.Error("Handle() accepted a route without access declaration")
 		}
 	}()
-	NewRouter(slog.New(slog.DiscardHandler), nil).Handle(http.MethodGet, "/", Access{}, http.NotFoundHandler())
+	NewRouter(discardLogger(), nil).Handle(http.MethodGet, "/", Access{}, http.NotFoundHandler())
 }
 
 func TestRouter_RecordsRoutesAndDispatchesByMethod(t *testing.T) {
 	t.Parallel()
 
-	rt := NewRouter(slog.New(slog.DiscardHandler), nil)
+	rt := NewRouter(discardLogger(), nil)
 	rt.Handle(http.MethodGet, "/a", Public, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -263,7 +263,7 @@ func TestRouter_RecordsRoutesAndDispatchesByMethod(t *testing.T) {
 func TestRouter_AnswersUnmatchedRequestsWithJSONNotFound(t *testing.T) {
 	t.Parallel()
 
-	rt := NewRouter(slog.New(slog.DiscardHandler), nil)
+	rt := NewRouter(discardLogger(), nil)
 	rt.Handle(http.MethodGet, "/a", Public, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -296,7 +296,7 @@ func TestServe_ShutsDownWhenContextIsCancelled(t *testing.T) {
 	}
 	srv := NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
-	}), slog.New(slog.DiscardHandler))
+	}), discardLogger())
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -338,7 +338,7 @@ func TestServe_ClosesConnectionsAfterShutdownTimeout(t *testing.T) {
 		defer close(handlerDone)
 		close(started)
 		<-r.Context().Done()
-	}), slog.New(slog.DiscardHandler))
+	}), discardLogger())
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)

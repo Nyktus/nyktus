@@ -95,7 +95,7 @@ func Parse(data []byte) (*Spec, error) {
 				continue
 			}
 			o := Operation{Method: method, Path: path, OperationID: op.OperationID, Access: op.Access}
-			errs = append(errs, validate(o, op, ids)...)
+			errs = append(errs, validate(o.key(), op, ids)...)
 			spec.Operations = append(spec.Operations, o)
 		}
 		if operations == 0 {
@@ -108,21 +108,33 @@ func Parse(data []byte) (*Spec, error) {
 	return &spec, nil
 }
 
-func validate(o Operation, op operation, ids map[string]string) []error {
+func validate(key string, op operation, ids map[string]string) []error {
 	var errs []error
-	switch other, seen := ids[o.OperationID]; {
-	case o.OperationID == "":
-		errs = append(errs, fmt.Errorf("%s: operationId is missing", o.key()))
+	switch other, seen := ids[op.OperationID]; {
+	case op.OperationID == "":
+		errs = append(errs, fmt.Errorf("%s: operationId is missing", key))
 	case seen:
-		errs = append(errs, fmt.Errorf("%s: operationId %q is already used by %s", o.key(), o.OperationID, other))
+		errs = append(errs, fmt.Errorf("%s: operationId %q is already used by %s", key, op.OperationID, other))
 	default:
-		ids[o.OperationID] = o.key()
+		ids[op.OperationID] = key
 	}
-	if !validAccess(o.Access) {
-		errs = append(errs, fmt.Errorf("%s: x-access %q must be public, authenticated or resource:action", o.key(), o.Access))
-	}
+
 	if len(op.Responses) == 0 {
-		errs = append(errs, fmt.Errorf("%s: no responses are documented", o.key()))
+		errs = append(errs, fmt.Errorf("%s: no responses are documented", key))
+	}
+	// Protected operations document how they are denied, so that clients and the
+	// published documentation see the authentication surface the router enforces.
+	switch {
+	case !validAccess(op.Access):
+		errs = append(errs, fmt.Errorf("%s: x-access %q must be public, authenticated or resource:action", key, op.Access))
+	case op.Access == httpx.Public.String():
+	default:
+		if _, ok := op.Responses["401"]; !ok {
+			errs = append(errs, fmt.Errorf("%s: protected operation does not document response 401", key))
+		}
+		if _, ok := op.Responses["403"]; !ok && op.Access != httpx.Authenticated.String() {
+			errs = append(errs, fmt.Errorf("%s: operation that requires %s does not document response 403", key, op.Access))
+		}
 	}
 	return errs
 }
@@ -145,7 +157,7 @@ func (s *Spec) Compare(routes []httpx.Route) []string {
 	var problems []string
 	routed := make(map[string]bool, len(routes))
 	for _, r := range routes {
-		key := r.Method + " " + r.Path
+		key := Operation{Method: r.Method, Path: r.Path}.key()
 		routed[key] = true
 		o, ok := documented[key]
 		switch {

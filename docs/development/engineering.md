@@ -55,8 +55,8 @@ Configuration is read from the environment once at startup, parsed into a typed 
 - Errors use one response envelope. `5xx` responses go through the shared helper, which logs the error with request context and returns a generic message.
 - API routes live under `/api/v1`. Health endpoints for orchestrators live at the root.
 - The OpenAPI specification in `api/openapi.yaml` is the contract. It is written by hand; there is no generated server code, because it would bypass the access declarations of the router. A change to an endpoint updates the specification in the same pull request.
-- Every operation in the specification declares its access in `x-access`: `public`, `authenticated` or a permission in the form `resource:action`. A test compares method, path and access of every operation with the router, in both directions. A `GET` route also answers `HEAD` with the same access, as `http.ServeMux` does; `HEAD` is not documented separately.
-- Routes are registered with `httpx.Public`, `httpx.Authenticated` or `httpx.Require(permission)`. Routes that are not public pass through the authorizer before the handler runs, so permission checks happen in one place.
+- Every operation in the specification declares its access in `x-access`: `public`, `authenticated` or a permission in the form `resource:action`. Operations that are not public document `401`, and operations that require a permission also document `403`. A test compares method, path and access of every operation with the router, in both directions. A `GET` route also answers `HEAD` with the same access, as `http.ServeMux` does; `HEAD` is not documented separately.
+- Routes are registered with `httpx.Public`, `httpx.Authenticated` or `httpx.Require(permission)`. Routes that are not public pass through the authorizer before the handler runs, so permission checks happen in one place. The authorizer only decides; the router writes the `401` (with a `WWW-Authenticate` challenge), `403` or `500` response.
 
 ## Logging
 

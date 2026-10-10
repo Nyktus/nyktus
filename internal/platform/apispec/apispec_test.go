@@ -30,17 +30,22 @@ paths:
       x-access: users:read
       responses:
         "200": {description: ok}
+        "401": {description: unauthenticated}
+        "403": {description: forbidden}
     delete:
       operationId: deleteUser
       x-access: users:write
       responses:
         "204": {description: deleted}
+        "401": {description: unauthenticated}
+        "403": {description: forbidden}
   /api/v1/me:
     get:
       operationId: getMe
       x-access: authenticated
       responses:
         "200": {description: ok}
+        "401": {description: unauthenticated}
 `
 
 func TestParse_ReadsOperations(t *testing.T) {
@@ -96,6 +101,21 @@ paths:
     get: {operationId: same, x-access: public, responses: {"200": {description: ok}}}
 `,
 			want: []string{`GET /a: x-access "admin" must be`, `GET /b: operationId "same" is already used by GET /a`},
+		},
+		{
+			name: "protected operations without denial responses",
+			spec: `
+openapi: 3.1.0
+paths:
+  /me:
+    get: {operationId: getMe, x-access: authenticated, responses: {"200": {description: ok}}}
+  /users:
+    get: {operationId: listUsers, x-access: users:read, responses: {"200": {description: ok}, "401": {description: no}}}
+`,
+			want: []string{
+				"GET /me: protected operation does not document response 401",
+				"GET /users: operation that requires users:read does not document response 403",
+			},
 		},
 		{
 			name: "path items without operations",

@@ -53,7 +53,7 @@ func TestRouter_DeniedRequestsNeverReachTheHandler(t *testing.T) {
 		{name: "authorizer failure", authz: &fakeAuthorizer{err: errors.New("session store down")}, wantStatus: http.StatusInternalServerError, wantCode: CodeInternal},
 		{name: "authorizer returns no request", authz: &fakeAuthorizer{noRequest: true}, wantStatus: http.StatusInternalServerError, wantCode: CodeInternal},
 		// http.ServeMux answers HEAD with the GET route, so HEAD must be authorized too.
-		{name: "head on a get route", authz: &fakeAuthorizer{err: ErrUnauthenticated}, method: http.MethodHead, wantStatus: http.StatusUnauthorized},
+		{name: "head on a get route", authz: &fakeAuthorizer{err: ErrUnauthenticated}, method: http.MethodHead, wantStatus: http.StatusUnauthorized, wantCode: CodeUnauthenticated},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -74,10 +74,15 @@ func TestRouter_DeniedRequestsNeverReachTheHandler(t *testing.T) {
 			if w.Code != tt.wantStatus {
 				t.Errorf("status = %d, want %d", w.Code, tt.wantStatus)
 			}
-			if tt.wantCode != "" {
-				if got := decodeErrorResponse(t, w); got.Error.Code != tt.wantCode {
-					t.Errorf("code = %q, want %q", got.Error.Code, tt.wantCode)
-				}
+			if got := decodeErrorResponse(t, w); got.Error.Code != tt.wantCode {
+				t.Errorf("code = %q, want %q", got.Error.Code, tt.wantCode)
+			}
+			wantChallenge := ""
+			if tt.wantStatus == http.StatusUnauthorized {
+				wantChallenge = "Bearer"
+			}
+			if got := w.Header().Get("WWW-Authenticate"); got != wantChallenge {
+				t.Errorf("WWW-Authenticate = %q, want %q", got, wantChallenge)
 			}
 			if strings.Contains(w.Body.String(), "session store down") {
 				t.Errorf("response leaks the authorizer error: %s", w.Body.String())
@@ -151,6 +156,17 @@ func TestRouter_RejectsProtectedRouteWithoutAuthorizer(t *testing.T) {
 			NewRouter(discardLogger(), nil).Handle(http.MethodGet, "/me", access, http.NotFoundHandler())
 		})
 	}
+}
+
+func TestNewRouter_RequiresLogger(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if recover() == nil {
+			t.Error("NewRouter() accepted a nil logger")
+		}
+	}()
+	NewRouter(nil, &fakeAuthorizer{})
 }
 
 func TestRequire_RejectsMalformedPermissions(t *testing.T) {

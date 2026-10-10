@@ -110,13 +110,19 @@ type Router struct {
 }
 
 // NewRouter returns a router without routes. authz may be nil as long as only
-// public routes are registered. logger receives authorization failures.
+// public routes are registered. logger receives unexpected authorizer errors; denied
+// requests are recorded by the Authorizer, which knows the principal. NewRouter
+// panics if logger is nil, so that a wiring mistake stops the process at startup
+// instead of failing the first protected request.
 //
 // Requests that match no route receive a JSON 404, also when only the method
 // differs. This replaces the plain-text responses of http.ServeMux, which identify
 // the server as written in Go, and its 405 responses, whose Allow header lists the
 // methods of a route.
 func NewRouter(logger *slog.Logger, authz Authorizer) *Router {
+	if logger == nil {
+		panic("httpx: router needs a logger")
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", notFound)
 	return &Router{mux: mux, logger: logger, authz: authz}
@@ -151,6 +157,9 @@ func (rt *Router) authorize(access Access, next http.Handler) http.Handler {
 		authorized, err := rt.authz.Authorize(r, access)
 		switch {
 		case errors.Is(err, ErrUnauthenticated):
+			// RFC 9110 requires a challenge on every 401. Bearer is the scheme of API
+			// keys; browser sessions ignore the header.
+			w.Header().Set("WWW-Authenticate", "Bearer")
 			WriteError(w, r, http.StatusUnauthorized, CodeUnauthenticated, "authentication required")
 		case errors.Is(err, ErrForbidden):
 			WriteError(w, r, http.StatusForbidden, CodeForbidden, "permission denied")
