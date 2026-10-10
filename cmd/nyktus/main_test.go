@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"nyktus.org/nyktus/internal/platform/config"
 	"nyktus.org/nyktus/internal/platform/dbtest"
 	"nyktus.org/nyktus/internal/platform/migrate"
+	"nyktus.org/nyktus/internal/platform/schematest"
 	"nyktus.org/nyktus/migrations"
 )
 
@@ -109,8 +111,13 @@ func TestEmbeddedMigrationsAreValid(t *testing.T) {
 func TestRun_MigrateAppliesEmbeddedMigrations(t *testing.T) {
 	t.Parallel()
 
+	all, err := migrate.Load(migrations.FS)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
 	env := map[string]string{"NYKTUS_DATABASE_URL": dbtest.New(t)}
-	for i, want := range []string{`"applied":1`, `"applied":0`} {
+	dbtest.GroupRole(t, schematest.ConsoleRole)
+	for i, want := range []string{fmt.Sprintf(`"applied":%d`, len(all)), `"applied":0`} {
 		var stderr bytes.Buffer
 		if code := run(t.Context(), []string{"migrate"}, source(env), &bytes.Buffer{}, &stderr); code != exitOK {
 			t.Fatalf("run %d: migrate exit code = %d; stderr: %s", i+1, code, stderr.String())

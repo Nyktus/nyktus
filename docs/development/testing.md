@@ -27,6 +27,7 @@ Each of these properties needs its own test, named after the property:
 - Trigger responses are identical for valid, unknown, disabled and failing tokens, apart from an operator-configured redirect target.
 - The trigger database role cannot select from any table and resolves only single values through the lookup function.
 - The server refuses database roles with privileges beyond their grants, with one case for every privilege the check covers.
+- The database role of every server role passes that check after all migrations and has no privileges beyond its grants.
 - Migrations leave PUBLIC without privileges on the schema, and fail when they cannot achieve that.
 - An event is never stored without its processing job.
 - Login and password reset return identical status codes and bodies for existing and unknown accounts, and for accounts rejected by the local login policy.
@@ -57,7 +58,9 @@ Fakes cannot find a mismatch between a `SELECT` list and a `Scan`, a missing ind
 
 - `dbtest.New` creates an empty database for each test and drops it afterwards, so tests and packages run in parallel without shared state.
 - Database tests run when `NYKTUS_TEST_DATABASE_URL` points to a server that allows creating databases. `make db-up` starts one, `make test-db` runs the suite against it. Without the variable the tests are skipped; CI sets `NYKTUS_REQUIRE_DB_TESTS=1`, which turns a skip into a failure.
-- Constraint and permission behavior is tested with the same database roles that production uses, one per server role.
+- Constraint and permission behavior is tested with the same database roles that production uses, one per server role. `schematest.Console` returns a migrated database and a login role that is a member of `nyktus_console`, as the console connects in production. Store tests use it instead of the superuser, so a missing grant fails the test.
+- Group roles are global to the server and shared by all tests. `dbtest.GroupRole` creates one idempotently and safely under concurrency; tests never drop them. A test that needs a missing role uses a unique name instead.
+- `dbtest` and `schematest` are for tests only. The linter rejects them in other code.
 
 ### Concurrency is tested deterministically
 

@@ -51,11 +51,16 @@ linters:
           files:
             - "!$test"
             - "!**/internal/platform/apispec/*.go"
+            - "!**/internal/platform/schematest/*.go"
           deny:
             - pkg: go.yaml.in/yaml
               desc: the YAML parser is a test dependency
             - pkg: nyktus.org/nyktus/internal/platform/apispec
               desc: the specification checks are used by tests only
+            - pkg: nyktus.org/nyktus/internal/platform/dbtest
+              desc: test databases are for tests only
+            - pkg: nyktus.org/nyktus/internal/platform/schematest
+              desc: test databases are for tests only
 
     exhaustive:
       default-signifies-exhaustive: true
