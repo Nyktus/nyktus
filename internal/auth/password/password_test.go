@@ -260,3 +260,37 @@ func TestNewHasher_RejectsInvalidConcurrency(t *testing.T) {
 	}()
 	newHasher(cheapParams(), 0)
 }
+
+func TestNeedsRehash(t *testing.T) {
+	t.Parallel()
+
+	h := cheapHasher()
+	current, err := h.Hash(t.Context(), validPassword)
+	if err != nil {
+		t.Fatalf("Hash() error = %v", err)
+	}
+	older := params{memory: 32, iterations: 1, parallelism: 1, saltLength: 16, keyLength: 32}
+	stale, err := newHasher(older, 1).Hash(t.Context(), validPassword)
+	if err != nil {
+		t.Fatalf("Hash() error = %v", err)
+	}
+	longerKey, err := newHasher(params{memory: 64, iterations: 1, parallelism: 1, saltLength: 16, keyLength: 64}, 1).Hash(t.Context(), validPassword)
+	if err != nil {
+		t.Fatalf("Hash() error = %v", err)
+	}
+
+	for name, tt := range map[string]struct {
+		encoded string
+		want    bool
+	}{
+		"current parameters": {current, false},
+		"other memory":       {stale, true},
+		"other key length":   {longerKey, true},
+		"malformed hash":     {"$argon2id$v=19$m=64", true},
+		"default parameters": {strings.Replace(current, "m=64,t=1,p=1", "m=65536,t=3,p=4", 1), true},
+	} {
+		if got := h.NeedsRehash(tt.encoded); got != tt.want {
+			t.Errorf("NeedsRehash(%s) = %v, want %v", name, got, tt.want)
+		}
+	}
+}

@@ -7,4 +7,6 @@ package audit
 // it complete, so that the store test writes every action to the database.
 var Actions = []Action{
 	ActionUserCreate,
+	ActionSessionCreate,
+	ActionSessionDelete,
 }

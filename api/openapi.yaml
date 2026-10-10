@@ -25,6 +25,10 @@ info:
 
     Every error response uses the same envelope. Server errors carry a generic
     message and a request ID that correlates them with the server log.
+
+    Browsers authenticate with a session cookie, which `POST /api/v1/session`
+    sets. Requests that change state and carry an `Origin` header must come from
+    the origin of the console, otherwise they receive `403`.
   version: 0.0.0
   license:
     name: AGPL-3.0-or-later
@@ -38,6 +42,8 @@ tags:
     description: Liveness and readiness probes for orchestrators.
   - name: setup
     description: Creation of the first administrator of an installation.
+  - name: session
+    description: Sign-in, the session of the caller and sign-out.
 
 paths:
   /livez:
@@ -104,6 +110,8 @@ paths:
                 $ref: "#/components/schemas/User"
         "400":
           $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
         "404":
           $ref: "#/components/responses/NotFound"
         "413":
@@ -115,7 +123,119 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/session:
+    post:
+      operationId: signIn
+      summary: Sign in with email address and password
+      description: |
+        Starts a session and sets the session cookie. A session cookie that the
+        request already carries ends its session.
+
+        Every rejected sign-in receives the same `401`, whether the address is
+        unknown, the password is wrong or the account may not sign in. Five failed
+        sign-ins in a row lock the account for 15 minutes. Only a request with the
+        correct password learns that the account is locked, through `403` with the
+        code `account_locked`.
+      tags: [session]
+      x-access: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignInRequest"
+      responses:
+        "200":
+          description: Signed in. The response sets the session cookie.
+          headers:
+            Set-Cookie:
+              description: The session cookie `__Host-nyktus_session`, with `Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          description: The email address or the password is wrong, or the account may not sign in.
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: The password is correct, but the account is locked (`account_locked`), or the request comes from another origin.
+          headers:
+            Retry-After:
+              description: Seconds until the lock ends. Only sent for a locked account.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    get:
+      operationId: getSession
+      summary: Return the session of the caller
+      description: Returns the signed-in user and when the session ends. A request extends the session up to its maximum age.
+      tags: [session]
+      x-access: authenticated
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The session of the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: signOut
+      summary: Sign out
+      description: Ends the session of the caller and clears the session cookie.
+      tags: [session]
+      x-access: authenticated
+      security:
+        - sessionCookie: []
+      responses:
+        "204":
+          description: Signed out.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-nyktus_session
+      description: Session token set by `POST /api/v1/session`.
+
   schemas:
     Status:
       type: object
@@ -150,6 +270,34 @@ components:
           minLength: 12
           maxLength: 128
           description: Counted in Unicode code points after NFC normalization.
+
+    SignInRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          description: Sign-in address, in any case.
+        password:
+          type: string
+          format: password
+
+    Session:
+      type: object
+      additionalProperties: false
+      required: [user, idle_expires_at, expires_at]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        idle_expires_at:
+          type: string
+          format: date-time
+          description: When the session ends unless it is used before.
+        expires_at:
+          type: string
+          format: date-time
+          description: When the session ends at the latest.
 
     User:
       type: object
@@ -194,6 +342,22 @@ components:
               description: Correlates the response with the server log.
 
   responses:
+    Unauthenticated:
+      description: The request carries no valid session.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CrossOrigin:
+      description: The request changes state and comes from another origin than the console.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     InvalidRequest:
       description: The request body is malformed or a field is invalid.
       content:

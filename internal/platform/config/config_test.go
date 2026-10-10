@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeSource struct {
@@ -148,6 +149,53 @@ func TestLoadServe_ConsoleURL(t *testing.T) {
 			}
 			if cfg.Console.URL != tt.want {
 				t.Errorf("Console.URL = %q, want %q", cfg.Console.URL, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadServe_SessionDurations(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		idle, maxAge string
+		wantIdle     time.Duration
+		wantMaxAge   time.Duration
+		err          string
+	}{
+		{name: "defaults", wantIdle: time.Hour, wantMaxAge: 12 * time.Hour},
+		{name: "custom", idle: "30m", maxAge: "8h", wantIdle: 30 * time.Minute, wantMaxAge: 8 * time.Hour},
+		{name: "equal", idle: "2h", maxAge: "2h", wantIdle: 2 * time.Hour, wantMaxAge: 2 * time.Hour},
+		{name: "idle too short", idle: "4m", err: "NYKTUS_SESSION_IDLE_TIMEOUT: must be between 5m0s and 24h0m0s"},
+		{name: "idle too long", idle: "25h", err: "NYKTUS_SESSION_IDLE_TIMEOUT: must be between"},
+		{name: "max age below idle", idle: "2h", maxAge: "1h", err: "NYKTUS_SESSION_MAX_AGE: must be between 2h0m0s and 720h0m0s"},
+		{name: "max age too long", maxAge: "721h", err: "NYKTUS_SESSION_MAX_AGE: must be between"},
+		{name: "no unit", idle: "60", err: "NYKTUS_SESSION_IDLE_TIMEOUT: \"60\" is not a duration"},
+		{name: "negative", maxAge: "-1h", err: "NYKTUS_SESSION_MAX_AGE: must be between"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := map[string]string{
+				"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+				"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+				"NYKTUS_SESSION_IDLE_TIMEOUT": tt.idle,
+				"NYKTUS_SESSION_MAX_AGE":      tt.maxAge,
+			}
+			cfg, err := LoadServe(fakeSource{env: env}.source(), []Role{RoleConsole})
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.err) {
+					t.Errorf("LoadServe() error = %v, want it to contain %q", err, tt.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadServe() error = %v", err)
+			}
+			if cfg.Console.SessionIdleTimeout != tt.wantIdle || cfg.Console.SessionMaxAge != tt.wantMaxAge {
+				t.Errorf("durations = %v, %v; want %v, %v", cfg.Console.SessionIdleTimeout, cfg.Console.SessionMaxAge, tt.wantIdle, tt.wantMaxAge)
 			}
 		})
 	}

@@ -9,19 +9,33 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
 	"nyktus.org/nyktus/api"
+	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/platform/apispec"
+	"nyktus.org/nyktus/internal/platform/httpx"
 )
 
 type fakePinger struct{ err error }
 
 func (f fakePinger) Ping(context.Context) error { return f.err }
 
+// denyAll authenticates no request.
+type denyAll struct{}
+
+func (denyAll) Authorize(*http.Request, httpx.Access) (*http.Request, error) {
+	return nil, httpx.ErrUnauthenticated
+}
+
 func deps(db Pinger) Deps {
-	return Deps{Logger: slog.New(slog.DiscardHandler), DB: db, Setup: http.NotFoundHandler()}
+	return Deps{
+		Logger: slog.New(slog.DiscardHandler), DB: db, Setup: http.NotFoundHandler(),
+		Authorizer: denyAll{}, SignIn: http.NotFoundHandler(), Session: http.NotFoundHandler(), SignOut: http.NotFoundHandler(),
+		Origin: "https://nyktus.example.com",
+	}
 }
 
 func TestHealthEndpoints(t *testing.T) {
@@ -83,5 +97,18 @@ func TestSetupRoute_HasDeadline(t *testing.T) {
 	NewHandler(d).ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/setup", nil))
 	if !ok || deadline.Before(before.Add(hashDeadline)) || deadline.After(time.Now().Add(hashDeadline)) {
 		t.Errorf("setup deadline = %v, %v; want %v after the request started", deadline, ok, hashDeadline)
+	}
+}
+
+// A route that requires a permission no role grants could never be used. The
+// grants and the routes are maintained in two places, so they are compared.
+func TestRoutes_RequireOnlyGrantedPermissions(t *testing.T) {
+	t.Parallel()
+
+	granted := access.Permissions()
+	for _, route := range NewRouter(deps(fakePinger{})).Routes() {
+		if perm, ok := route.Access.Permission(); ok && !slices.Contains(granted, perm) {
+			t.Errorf("route %s %s requires %s, which no role grants", route.Method, route.Path, perm)
+		}
 	}
 }

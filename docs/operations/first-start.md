@@ -45,7 +45,7 @@ A new installation has no accounts. The first administrator is created through a
    rm setup.json
    ```
 
-   A successful request answers with `201 Created` and the new account. The administrator is active and signs in with the email address and the password.
+   A successful request answers with `201 Created` and the new account. The administrator is active and [signs in](sign-in.md) with the email address and the password.
 
 The password must have between 12 and 128 characters. The email address is stored in lower case.
 

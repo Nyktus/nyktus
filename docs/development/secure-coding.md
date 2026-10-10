@@ -119,8 +119,10 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 ### Sessions
 
 - Sessions are server-side. The client holds an opaque token of at least 32 bytes from `crypto/rand`, and the database stores only its SHA-256 hash.
-- The session cookie is `HttpOnly`, `Secure`, `SameSite=Strict` and has a narrow `Path`. Session tokens are never stored in `localStorage` or `sessionStorage`.
+- The session cookie is `HttpOnly`, `Secure` and `SameSite=Strict` and carries the `__Host-` prefix, so that browsers accept it only with `Path=/` and without `Domain`, and a page on another subdomain can neither set nor replace it. A narrower path would rule out the prefix and is no security boundary within one origin. Session tokens are never stored in `localStorage` or `sessionStorage`.
+- `SameSite=Strict` does not stop requests from other subdomains of the same site. Requests that change state and carry an `Origin` header must therefore come from the origin of the console, otherwise they are rejected with `403`. Clients other than browsers send no `Origin` header and are not affected.
 - Sessions have a sliding idle timeout and an absolute maximum lifetime.
+- The authorizer reads the session and the account with every request, so a deactivated account or a changed role takes effect with the next request.
 - Sessions are revoked immediately on logout, password change, second-factor removal, role change and account deactivation.
 - Every successful login issues a new session token. A token that existed before authentication is never promoted to an authenticated session.
 

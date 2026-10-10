@@ -64,6 +64,21 @@ type User struct {
 	UpdatedAt    time.Time
 }
 
+// Response is the representation of an account in API responses. It leaves out
+// the password hash and every other field that a client has no use for.
+type Response struct {
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	Role        Role   `json:"role"`
+	Status      Status `json:"status"`
+}
+
+// Response returns the representation of u in API responses.
+func (u User) Response() Response {
+	return Response{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Role: u.Role, Status: u.Status}
+}
+
 // LogValue keeps the password hash and the address out of logs. A hash allows
 // offline guessing of the password, and the address is personal data.
 func (u User) LogValue() slog.Value {

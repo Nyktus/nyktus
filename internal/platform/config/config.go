@@ -15,6 +15,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"nyktus.org/nyktus/internal/platform/logging"
 )
@@ -106,7 +107,19 @@ type Console struct {
 	// console hands out, such as the setup URL, start with it.
 	URL         string
 	DatabaseURL Secret
+	// SessionIdleTimeout ends a session after this long without a request.
+	SessionIdleTimeout time.Duration
+	// SessionMaxAge ends a session this long after sign-in, however active it is.
+	SessionMaxAge time.Duration
 }
+
+// Limits of the session durations. A session must be able to outlast a short
+// pause, and must end within a month at the latest.
+const (
+	minSessionIdleTimeout = 5 * time.Minute
+	maxSessionIdleTimeout = 24 * time.Hour
+	maxSessionMaxAge      = 30 * 24 * time.Hour
+)
 
 // Serve is the configuration of the serve command.
 type Serve struct {
@@ -139,7 +152,11 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 			Addr:        addr,
 			URL:         r.consoleURL("CONSOLE_URL", cfg.Environment, addr),
 			DatabaseURL: r.requiredSecret("CONSOLE_DATABASE_URL"),
+			SessionIdleTimeout: r.duration("SESSION_IDLE_TIMEOUT", time.Hour,
+				minSessionIdleTimeout, maxSessionIdleTimeout),
 		}
+		cfg.Console.SessionMaxAge = r.duration("SESSION_MAX_AGE", 12*time.Hour,
+			max(cfg.Console.SessionIdleTimeout, minSessionIdleTimeout), maxSessionMaxAge)
 	}
 	return cfg, r.err()
 }
@@ -198,6 +215,25 @@ func (r *reader) addr(name, fallback string) string {
 		r.fail("%s%s: %w", prefix, name, err)
 	}
 	return addr
+}
+
+// duration reads a duration in the notation of Go, such as "90m" or "12h", within
+// [lowest, highest].
+func (r *reader) duration(name string, fallback, lowest, highest time.Duration) time.Duration {
+	value := r.get(name)
+	if value == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(value)
+	switch {
+	case err != nil:
+		r.fail("%s%s: %q is not a duration such as 90m or 12h", prefix, name, value)
+	case d < lowest || d > highest:
+		r.fail("%s%s: must be between %v and %v, got %v", prefix, name, lowest, highest, d)
+	default:
+		return d
+	}
+	return fallback
 }
 
 // consoleURL reads the external address of the console. It is required outside

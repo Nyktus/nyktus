@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -148,6 +149,99 @@ func (s *Store) AdminExists(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("check for administrator: %w", err)
 	}
 	return exists, nil
+}
+
+// Lockout of accounts after failed sign-ins. The schema allows at most
+// MaxFailedLogins-1 counted failures, because the last one locks the account and
+// starts the count again.
+const (
+	MaxFailedLogins = 5
+	LockDuration    = 15 * time.Minute
+)
+
+// RecordFailedLogin counts a failed sign-in of the account id. The failure that
+// reaches MaxFailedLogins locks the account for LockDuration and starts the count
+// again. Failures while the account is locked neither count nor extend the lock,
+// so that an attacker cannot keep an account locked for longer than LockDuration
+// after the last lock.
+//
+// The count is updated in one statement, which holds the row lock, so concurrent
+// failures are never lost.
+func (s *Store) RecordFailedLogin(ctx context.Context, id string) error {
+	_, err := s.db.Exec(ctx, `
+UPDATE users SET
+	failed_logins = CASE
+		WHEN locked_until > clock_timestamp() THEN failed_logins
+		WHEN failed_logins + 1 >= $2 THEN 0
+		ELSE failed_logins + 1
+	END,
+	locked_until = CASE
+		WHEN locked_until > clock_timestamp() THEN locked_until
+		WHEN failed_logins + 1 >= $2 THEN clock_timestamp() + $3::interval
+		ELSE locked_until
+	END
+WHERE id = $1`, id, MaxFailedLogins, LockDuration)
+	if err != nil {
+		return fmt.Errorf("record failed login of user %s: %w", id, err)
+	}
+	return nil
+}
+
+// SignInState is what a sign-in needs to know about an account.
+type SignInState struct {
+	Status Status
+	// RetryAfter is the time until the lock of the account ends, or zero if the
+	// account is not locked.
+	RetryAfter time.Duration
+}
+
+// LockForSignIn locks the row of the account id until the end of the
+// transaction and returns its state, so that a sign-in decides on the current
+// state and no concurrent failure can lock the account in between.
+func (s *Store) LockForSignIn(ctx context.Context, id string) (SignInState, error) {
+	var (
+		state   SignInState
+		seconds float64
+	)
+	err := s.db.QueryRow(ctx, `
+SELECT status, coalesce(greatest(extract(epoch FROM locked_until - clock_timestamp()), 0), 0)
+FROM users
+WHERE id = $1
+FOR UPDATE`, id).Scan(&state.Status, &seconds)
+	var pgErr *pgconn.PgError
+	if errors.Is(err, pgx.ErrNoRows) || (errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation) {
+		return SignInState{}, ErrNotFound
+	}
+	if err != nil {
+		return SignInState{}, fmt.Errorf("lock user %s for sign-in: %w", id, err)
+	}
+	state.RetryAfter = time.Duration(seconds * float64(time.Second))
+	return state, nil
+}
+
+// CompleteSignIn records a successful sign-in of the account id: the count of
+// failures starts again. If passwordHash is set, it replaces the stored hash, for
+// example after the hashing parameters were raised.
+func (s *Store) CompleteSignIn(ctx context.Context, id, passwordHash string) error {
+	var hash *string
+	if passwordHash != "" {
+		// As in Create: a plain-text password must never reach the database.
+		if !strings.HasPrefix(passwordHash, "$argon2id$") {
+			return ErrInvalidPasswordHash
+		}
+		hash = &passwordHash
+	}
+	_, err := s.db.Exec(ctx, `
+UPDATE users SET
+	failed_logins = 0,
+	locked_until = NULL,
+	password_hash = coalesce($2, password_hash),
+	updated_at = CASE WHEN $2::text IS NULL THEN updated_at ELSE clock_timestamp() END
+WHERE id = $1`, id, hash)
+	if err != nil {
+		return fmt.Errorf("complete sign-in of user %s: %w", id, err)
+	}
+	return nil
 }
 
 func scan(row pgx.Row) (User, error) {

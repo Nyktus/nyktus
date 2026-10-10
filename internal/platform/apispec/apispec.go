@@ -44,19 +44,22 @@ var (
 )
 
 type document struct {
-	OpenAPI string               `yaml:"openapi"`
-	Paths   map[string]yaml.Node `yaml:"paths"`
+	OpenAPI  string               `yaml:"openapi"`
+	Paths    map[string]yaml.Node `yaml:"paths"`
+	Security *[]map[string]any    `yaml:"security"`
 }
 
 type operation struct {
-	OperationID string         `yaml:"operationId"`
-	Access      string         `yaml:"x-access"`
-	Responses   map[string]any `yaml:"responses"`
+	OperationID string            `yaml:"operationId"`
+	Access      string            `yaml:"x-access"`
+	Responses   map[string]any    `yaml:"responses"`
+	Security    *[]map[string]any `yaml:"security"`
 }
 
 // Parse reads an OpenAPI 3.1 document and validates the properties the project
 // relies on: every operation has a unique operationId, at least one response and a
-// valid x-access declaration. All problems are reported together.
+// valid x-access declaration, and declares security requirements if and only if
+// it is not public. All problems are reported together.
 func Parse(data []byte) (*Spec, error) {
 	var doc document
 	if err := yaml.Unmarshal(data, &doc); err != nil {
@@ -71,6 +74,12 @@ func Parse(data []byte) (*Spec, error) {
 		errs []error
 		ids  = make(map[string]string)
 	)
+	// A default would apply to operations that do not mention security, so that
+	// an operation could look protected in the published documentation while the
+	// router serves it publicly, or the other way round.
+	if doc.Security != nil {
+		errs = append(errs, errors.New("security must be declared per operation, not for the whole document"))
+	}
 	// Sorted, so that problems are reported in a stable order.
 	for _, path := range slices.Sorted(maps.Keys(doc.Paths)) {
 		if strings.HasPrefix(path, "x-") {
@@ -141,7 +150,13 @@ func validate(key string, op operation, ids map[string]string) []error {
 	case !validAccess(op.Access):
 		errs = append(errs, fmt.Errorf("%s: x-access %q must be public, authenticated or resource:action", key, op.Access))
 	case op.Access == httpx.Public.String():
+		if op.Security != nil && len(*op.Security) > 0 {
+			errs = append(errs, fmt.Errorf("%s: public operation declares security requirements", key))
+		}
 	default:
+		if op.Security == nil || len(*op.Security) == 0 {
+			errs = append(errs, fmt.Errorf("%s: protected operation does not declare its security requirements", key))
+		}
 		if _, ok := op.Responses["401"]; !ok {
 			errs = append(errs, fmt.Errorf("%s: protected operation does not document response 401", key))
 		}

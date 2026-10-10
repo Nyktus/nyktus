@@ -12,8 +12,10 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
 )
@@ -29,12 +31,19 @@ func startConsole(t *testing.T, d testDB) (srv *httptest.Server, tok setup.Token
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
-	srv = httptest.NewServer(console.NewHandler(console.Deps{
+	h, err := console.New(t.Context(), console.Options{
 		Logger:         logger,
 		DB:             d.console,
-		Setup:          setup.NewHandler(logger, svc, password.NewHasher()),
+		Setup:          svc,
+		Hasher:         password.NewHasher(),
+		Sessions:       session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour},
+		Origin:         "https://nyktus.example.com",
 		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
-	}))
+	})
+	if err != nil {
+		t.Fatalf("console.New() error = %v", err)
+	}
+	srv = httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return srv, tok, issued
 }
