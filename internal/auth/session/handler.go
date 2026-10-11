@@ -14,6 +14,7 @@ import (
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/platform/logging"
 	"nyktus.org/nyktus/internal/user"
@@ -27,10 +28,11 @@ const CookieName = "__Host-nyktus_session"
 // maxBodyBytes bounds a sign-in request.
 const maxBodyBytes = 8 << 10
 
-// Error codes of the sign-in.
+// Error codes of the sign-in and the change of password.
 const (
 	codeRejected      = "invalid_credentials"
 	codeAccountLocked = "account_locked"
+	codeWrongPassword = "wrong_password"
 )
 
 // Authorizer authenticates requests with the session cookie and checks the
@@ -142,14 +144,19 @@ func (h *Handler) SignIn(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusUnauthorized, codeRejected, "invalid email address or password")
 		return
 	case errors.As(err, &locked):
-		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(locked.RetryAfter.Seconds()))))
-		httpx.WriteError(w, r, http.StatusForbidden, codeAccountLocked, "the account is locked after too many failed sign-ins; try again later")
+		writeLocked(w, r, locked)
 		return
 	case err != nil:
 		httpx.ServerError(w, r, h.logger, "session: sign in", err)
 		return
 	}
 
+	h.setCookie(w, tok)
+	h.logger.InfoContext(r.Context(), "session: signed in", slog.Any("session", sess))
+	httpx.WriteJSON(w, http.StatusOK, newSessionResponse(sess))
+}
+
+func (h *Handler) setCookie(w http.ResponseWriter, tok string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    tok,
@@ -159,8 +166,66 @@ func (h *Handler) SignIn(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
-	h.logger.InfoContext(r.Context(), "session: signed in", slog.Any("session", sess))
-	httpx.WriteJSON(w, http.StatusOK, newSessionResponse(sess))
+}
+
+func writeLocked(w http.ResponseWriter, r *http.Request, locked *LockedError) {
+	w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(locked.RetryAfter.Seconds()))))
+	httpx.WriteError(w, r, http.StatusForbidden, codeAccountLocked, "the account is locked after too many failed sign-ins; try again later")
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// LogValue keeps the passwords out of logs.
+func (changePasswordRequest) LogValue() slog.Value {
+	return slog.StringValue("[redacted]")
+}
+
+// ChangePassword handles PUT /api/v1/session/password. Only a session may change
+// the password, so that a leaked API key cannot take over the account. The
+// response replaces the session cookie.
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	p, ok := access.PrincipalFrom(r.Context())
+	if !ok {
+		httpx.ServerError(w, r, h.logger, "session: change password", errors.New("no principal in the request context"))
+		return
+	}
+	if p.Method != audit.AuthSession || p.SessionID == "" {
+		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "only a signed-in session can change the password")
+		return
+	}
+	var req changePasswordRequest
+	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
+		return
+	}
+	// The new password is checked first, because the check costs no hash.
+	if err := password.Validate(req.NewPassword); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "new_password: "+err.Error())
+		return
+	}
+	sess, tok, err := h.svc.ChangePassword(r.Context(), p, req.CurrentPassword, req.NewPassword)
+	var locked *LockedError
+	switch {
+	case errors.Is(err, ErrWrongPassword):
+		httpx.WriteError(w, r, http.StatusForbidden, codeWrongPassword, "the current password is wrong")
+		return
+	case errors.As(err, &locked):
+		writeLocked(w, r, locked)
+		return
+	case errors.Is(err, ErrNoSession):
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		httpx.WriteError(w, r, http.StatusUnauthorized, httpx.CodeUnauthenticated, "authentication required")
+		return
+	case err != nil:
+		httpx.ServerError(w, r, h.logger, "session: change password", err)
+		return
+	}
+	h.setCookie(w, tok)
+	h.logger.InfoContext(r.Context(), "session: password changed", slog.Any("session", sess))
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Current handles GET /api/v1/session.

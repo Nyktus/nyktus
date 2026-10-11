@@ -244,6 +244,32 @@ RETURNING `+userColumns, id, StatusActive, passwordHash, StatusPending))
 	return u, nil
 }
 
+// SetPassword replaces the password of the active account id and ends a lock
+// after failed sign-ins: whoever sets the password has proven access to the
+// account. It returns ErrNotFound if no active account has the ID.
+func (s *Store) SetPassword(ctx context.Context, id, passwordHash string) (User, error) {
+	// As in Create: a plain-text password must never reach the database.
+	if !strings.HasPrefix(passwordHash, "$argon2id$") {
+		return User{}, ErrInvalidPasswordHash
+	}
+	u, err := scan(s.db.QueryRow(ctx, `
+UPDATE users SET
+	password_hash = $2,
+	failed_logins = 0,
+	locked_until = NULL,
+	updated_at = clock_timestamp()
+WHERE id = $1 AND status = $3
+RETURNING `+userColumns, id, passwordHash, StatusActive))
+	var pgErr *pgconn.PgError
+	if errors.Is(err, pgx.ErrNoRows) || (errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation) {
+		return User{}, ErrNotFound
+	}
+	if err != nil {
+		return User{}, fmt.Errorf("set password of user %s: %w", id, err)
+	}
+	return u, nil
+}
+
 // lockActiveAdmins locks the active administrators until the end of the
 // transaction and returns their IDs. They are locked in the order of their IDs,
 // so that concurrent changes wait for each other instead of deadlocking. A

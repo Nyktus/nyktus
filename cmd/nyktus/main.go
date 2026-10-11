@@ -34,6 +34,7 @@ const usage = `Usage: nyktus <command> [flags]
 Commands:
   serve     run the server roles
   migrate   apply pending database migrations
+  admin     administer accounts when no administrator can sign in
   version   print the version
 
 Run "nyktus <command> -h" for the flags of a command.
@@ -69,6 +70,8 @@ func run(ctx context.Context, args []string, src config.Source, stdout, stderr i
 		err = serve(ctx, rest, src, stdout, stderr)
 	case "migrate":
 		err = runMigrate(ctx, rest, src, stderr)
+	case "admin":
+		err = runAdmin(ctx, rest, src, stdout, stderr)
 	case "version":
 		_, _ = fmt.Fprintln(stdout, buildinfo.Version())
 	case "help", "-h", "--help":

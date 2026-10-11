@@ -121,7 +121,8 @@ func TestVerify(t *testing.T) {
 	}
 }
 
-func TestHash_LengthIsCountedInCodePointsAfterNFC(t *testing.T) {
+// Validate applies the same rules as Hash, without hashing.
+func TestHashAndValidate_LengthIsCountedInCodePointsAfterNFC(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -148,6 +149,9 @@ func TestHash_LengthIsCountedInCodePointsAfterNFC(t *testing.T) {
 			_, err := h.Hash(t.Context(), tt.password)
 			if !errors.Is(err, tt.want) {
 				t.Errorf("Hash() error = %v, want %v", err, tt.want)
+			}
+			if err := Validate(tt.password); !errors.Is(err, tt.want) {
+				t.Errorf("Validate() error = %v, want %v", err, tt.want)
 			}
 		})
 	}

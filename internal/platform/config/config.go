@@ -141,6 +141,15 @@ type Migrate struct {
 	DatabaseURL Secret
 }
 
+// Admin is the configuration of the admin commands. They work on the database
+// with the role of the console, which holds every privilege they need, and
+// print links that start with the address of the console.
+type Admin struct {
+	Common
+	ConsoleURL  string
+	DatabaseURL Secret
+}
+
 // LoadServe reads the configuration for the given roles. Settings of roles that are
 // not enabled are neither read nor required.
 func LoadServe(src Source, roles []Role) (Serve, error) {
@@ -158,6 +167,16 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 		cfg.Console.SessionMaxAge = r.duration("SESSION_MAX_AGE", 12*time.Hour,
 			max(cfg.Console.SessionIdleTimeout, minSessionIdleTimeout), maxSessionMaxAge)
 	}
+	return cfg, r.err()
+}
+
+// LoadAdmin reads the configuration of the admin commands from the settings of
+// the console, so that they need no configuration of their own.
+func LoadAdmin(src Source) (Admin, error) {
+	r := reader{src: src}
+	cfg := Admin{Common: r.common()}
+	cfg.ConsoleURL = r.consoleURL("CONSOLE_URL", cfg.Environment, r.addr("CONSOLE_ADDR", "127.0.0.1:8080"))
+	cfg.DatabaseURL = r.requiredSecret("CONSOLE_DATABASE_URL")
 	return cfg, r.err()
 }
 

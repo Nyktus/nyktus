@@ -30,10 +30,14 @@ Settings of a server role are only read when the role runs. A process started wi
 | Variable | Default | Description |
 |---|---|---|
 | `NYKTUS_CONSOLE_ADDR` | `127.0.0.1:8080` | Address and port the console listens on. |
-| `NYKTUS_CONSOLE_URL` | required; in development `http://` and the listen address | Address under which users reach the console, usually through your reverse proxy, such as `https://nyktus.example.com`. Links that the console hands out, such as the [setup URL](first-start.md) and [activation links](users.md), start with it. Scheme, host and port only: `https` is required, `http` is allowed in development. |
+| `NYKTUS_CONSOLE_URL` | required; in development `http://` and the listen address | Address under which users reach the console, usually through your reverse proxy, such as `https://nyktus.example.com`. Links that the console hands out, such as the [setup URL](first-start.md) and [activation and password reset links](users.md), start with it. Scheme, host and port only: `https` is required, `http` is allowed in development. |
 | `NYKTUS_CONSOLE_DATABASE_URL` | required, secret | Connection URL of the console's login role. See [Database setup](database.md). |
 | `NYKTUS_SESSION_IDLE_TIMEOUT` | `1h` | A session ends after this long without a request. Between `5m` and `24h`. See [Sign-in and sessions](sign-in.md). |
 | `NYKTUS_SESSION_MAX_AGE` | `12h` | A session ends this long after sign-in, however active it is. Between the idle timeout and `720h` (30 days). |
+
+## `nyktus admin`
+
+The admin commands, such as [`nyktus admin reset-password`](users.md#when-no-administrator-can-sign-in), use the settings of the console: `NYKTUS_CONSOLE_DATABASE_URL` and `NYKTUS_CONSOLE_URL`, and `NYKTUS_CONSOLE_ADDR` for the default of the URL in development.
 
 ## Client addresses
 

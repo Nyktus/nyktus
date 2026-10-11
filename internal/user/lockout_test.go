@@ -226,3 +226,62 @@ func TestCompleteSignIn_ResetsCountAndReplacesHash(t *testing.T) {
 		t.Errorf("CompleteSignIn() with plain text error = %v, want ErrInvalidPasswordHash", err)
 	}
 }
+
+// Setting the password proves access to the account, so it ends a lock.
+func TestSetPassword_ReplacesTheHashAndEndsTheLock(t *testing.T) {
+	t.Parallel()
+
+	s, owner, id := lockoutUser(t)
+	fail(t, s, id, MaxFailedLogins)
+	// A lock starts the count again; counted failures are set directly, so that
+	// the test sees both reset.
+	if _, err := owner.Exec(t.Context(), `UPDATE users SET failed_logins = 3 WHERE id = $1`, id); err != nil {
+		t.Fatalf("set failures: %v", err)
+	}
+	if l := readLockout(t, owner, id); !l.locked || l.failures != 3 {
+		t.Fatalf("lockout = %+v, want locked with counted failures", l)
+	}
+
+	newHash := strings.Replace(testHash, "t=3", "t=4", 1)
+	u, err := s.SetPassword(t.Context(), id, newHash)
+	if err != nil {
+		t.Fatalf("SetPassword() error = %v", err)
+	}
+	if u.PasswordHash != newHash {
+		t.Errorf("PasswordHash = %q, want the new hash", u.PasswordHash)
+	}
+	if l := readLockout(t, owner, id); l.locked || l.failures != 0 {
+		t.Errorf("lockout = %+v, want none", l)
+	}
+}
+
+func TestSetPassword_RequiresAnActiveAccountAndAHash(t *testing.T) {
+	t.Parallel()
+
+	s, owner, id := lockoutUser(t)
+	pending, err := s.Create(t.Context(), NewUser{Email: "pending@example.com", DisplayName: "P", Role: RoleViewer})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	deactivated, err := s.Create(t.Context(), NewUser{Email: "gone@example.com", DisplayName: "G", Role: RoleViewer, PasswordHash: testHash})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := owner.Exec(t.Context(), `UPDATE users SET status = 'deactivated' WHERE id = $1`, deactivated.ID); err != nil {
+		t.Fatalf("deactivate: %v", err)
+	}
+
+	for name, target := range map[string]string{
+		"pending":     pending.ID,
+		"deactivated": deactivated.ID,
+		"unknown":     "00000000-0000-4000-8000-000000000000",
+		"malformed":   "not-a-uuid",
+	} {
+		if _, err := s.SetPassword(t.Context(), target, testHash); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s: SetPassword() error = %v, want ErrNotFound", name, err)
+		}
+	}
+	if _, err := s.SetPassword(t.Context(), id, "correct horse battery"); !errors.Is(err, ErrInvalidPasswordHash) {
+		t.Errorf("plain text: SetPassword() error = %v, want ErrInvalidPasswordHash", err)
+	}
+}

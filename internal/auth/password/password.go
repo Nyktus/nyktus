@@ -95,9 +95,15 @@ func newHasher(p params, concurrency int) *Hasher {
 	return &Hasher{params: p, slots: make(chan struct{}, concurrency)}
 }
 
-// Hash validates password and returns its encoded hash. It waits for a free slot
-// and returns the context's error if the context ends first.
-func (h *Hasher) Hash(ctx context.Context, password string) (string, error) {
+// Validate reports whether password may be set: ErrInvalidUTF8, ErrTooLong or
+// ErrTooShort if not. It costs no hash, so a caller can reject a password before
+// other expensive work.
+func Validate(password string) error {
+	_, err := validate(password)
+	return err
+}
+
+func validate(password string) (string, error) {
 	if !utf8.ValidString(password) {
 		return "", ErrInvalidUTF8
 	}
@@ -107,6 +113,16 @@ func (h *Hasher) Hash(ctx context.Context, password string) (string, error) {
 		return "", ErrTooLong
 	case utf8.RuneCountInString(normalized) < MinLength:
 		return "", ErrTooShort
+	}
+	return normalized, nil
+}
+
+// Hash validates password and returns its encoded hash. It waits for a free slot
+// and returns the context's error if the context ends first.
+func (h *Hasher) Hash(ctx context.Context, password string) (string, error) {
+	normalized, err := validate(password)
+	if err != nil {
+		return "", err
 	}
 
 	salt := make([]byte, h.params.saltLength)

@@ -9,6 +9,11 @@
 // link, once, and passes it on. Whoever opens the link sets the password, which
 // the administrator therefore never knows. A link expires and works once.
 //
+// A user who forgot their password receives a password reset link the same
+// way, from an administrator or, if no administrator can sign in, from the
+// command line. Setting a new password through the link ends every session of
+// the account and a lock after failed sign-ins.
+//
 // At least one active administrator always remains. Changes that would remove
 // the last one are rejected, and administrators cannot demote, deactivate or
 // delete their own account.
@@ -40,9 +45,15 @@ var (
 	// ErrNotPending means that an activation link was requested for an account
 	// that is not pending.
 	ErrNotPending = errors.New("account is not pending")
-	// ErrInvalidToken means that an activation token is unknown, expired or
-	// already used.
-	ErrInvalidToken = errors.New("invalid activation token")
+	// ErrNotActive means that a password reset link was requested for an
+	// account that is not active.
+	ErrNotActive = errors.New("account is not active")
+	// ErrNotAdmin means that the command line requested a password reset link
+	// for an account that is not an administrator.
+	ErrNotAdmin = errors.New("account is not an administrator")
+	// ErrInvalidToken means that the token of a link is unknown, expired, used
+	// or issued for another purpose.
+	ErrInvalidToken = errors.New("invalid link token")
 )
 
 // resourceType names accounts in the audit log.
@@ -70,9 +81,9 @@ func NewService(d DB, consoleURL string) *Service {
 	return &Service{db: d, consoleURL: consoleURL}
 }
 
-// Link is an activation link.
+// Link is an activation or password reset link.
 type Link struct {
-	// URL contains the activation token. It is shown once, to the administrator
+	// URL contains the token. It is shown once, to the administrator
 	// who requested it, and never stored.
 	URL       string
 	ExpiresAt time.Time
@@ -85,7 +96,7 @@ func (l Link) LogValue() slog.Value {
 
 // String keeps the URL out of formatted output, such as an error message.
 func (l Link) String() string {
-	return "activation link expiring at " + l.ExpiresAt.UTC().Format(time.RFC3339)
+	return "link expiring at " + l.ExpiresAt.UTC().Format(time.RFC3339)
 }
 
 // GoString keeps the URL out of %#v.
@@ -145,10 +156,10 @@ func (s *Service) Create(ctx context.Context, p access.Principal, na NewAccount)
 		if err != nil {
 			return err
 		}
-		if err := record(ctx, tx, p, audit.ActionUserCreate, created.ID, nil); err != nil {
+		if err := record(ctx, tx, p.Actor(), audit.ActionUserCreate, created.ID, nil); err != nil {
 			return err
 		}
-		link, err = s.issue(ctx, tx, p, created.ID, activation)
+		link, err = s.issue(ctx, tx, p.Actor(), created.ID, activation)
 		return err
 	})
 	if err != nil {
@@ -187,7 +198,7 @@ func (s *Service) Update(ctx context.Context, p access.Principal, id string, c u
 				return err
 			}
 		}
-		return record(ctx, tx, p, audit.ActionUserUpdate, id, changed)
+		return record(ctx, tx, p.Actor(), audit.ActionUserUpdate, id, changed)
 	})
 	if err != nil {
 		return user.User{}, wrap("update user", err)
@@ -205,7 +216,7 @@ func (s *Service) Delete(ctx context.Context, p access.Principal, id string) err
 		if err := user.NewStore(tx).Delete(ctx, id); err != nil {
 			return err
 		}
-		return record(ctx, tx, p, audit.ActionUserDelete, id, nil)
+		return record(ctx, tx, p.Actor(), audit.ActionUserDelete, id, nil)
 	})
 	return wrap("delete user", err)
 }
@@ -225,7 +236,7 @@ func (s *Service) IssueLink(ctx context.Context, p access.Principal, id string) 
 		if u.Status != user.StatusPending {
 			return ErrNotPending
 		}
-		link, err = s.issue(ctx, tx, p, id, activation)
+		link, err = s.issue(ctx, tx, p.Actor(), id, activation)
 		return err
 	})
 	if err != nil {
@@ -249,9 +260,72 @@ type purpose struct {
 // account.
 var activation = purpose{name: "activation", action: audit.ActionActivationLinkCreate, page: "/activate"}
 
+// passwordReset lets the holder of a link set a new password for an active
+// account.
+var passwordReset = purpose{name: "password_reset", action: audit.ActionPasswordResetLinkCreate, page: "/reset-password"}
+
+// IssueResetLink issues a password reset link for the active account id, which
+// may be locked. The previous link of the account stops working. Issuing the
+// link changes nothing else: the password and the sessions stay valid until the
+// link is used. It returns ErrNotActive if the account is not active.
+func (s *Service) IssueResetLink(ctx context.Context, p access.Principal, id string) (Link, error) {
+	var link Link
+	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		// The lock keeps the account active until the link exists. A concurrent
+		// deactivation, which removes the link, waits until then.
+		u, err := user.NewStore(tx).Lock(ctx, id)
+		if err != nil {
+			return err
+		}
+		if u.Status != user.StatusActive {
+			return ErrNotActive
+		}
+		link, err = s.issue(ctx, tx, p.Actor(), id, passwordReset)
+		return err
+	})
+	if err != nil {
+		return Link{}, wrap("issue password reset link", err)
+	}
+	return link, nil
+}
+
+// IssueAdminResetLink issues a password reset link for the active administrator
+// with the address email, on behalf of the command line, so that an operator
+// can regain access when no administrator can sign in. Other accounts are reset
+// by an administrator. It returns user.ErrNotFound if no account has the
+// address, ErrNotAdmin if the account is no administrator and ErrNotActive if
+// it is not active.
+func (s *Service) IssueAdminResetLink(ctx context.Context, email string) (Link, error) {
+	var link Link
+	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		users := user.NewStore(tx)
+		found, err := users.GetByEmail(ctx, email)
+		if err != nil {
+			return err
+		}
+		// Role and status are checked under the lock, as in IssueResetLink.
+		u, err := users.Lock(ctx, found.ID)
+		if err != nil {
+			return err
+		}
+		switch {
+		case u.Role != user.RoleAdmin:
+			return ErrNotAdmin
+		case u.Status != user.StatusActive:
+			return ErrNotActive
+		}
+		link, err = s.issue(ctx, tx, audit.Actor{Kind: audit.ActorSystem, Method: audit.AuthCLI}, u.ID, passwordReset)
+		return err
+	})
+	if err != nil {
+		return Link{}, wrap("issue password reset link", err)
+	}
+	return link, nil
+}
+
 // issue replaces the link of the account id with a new one for pu and records
 // it.
-func (s *Service) issue(ctx context.Context, tx pgx.Tx, p access.Principal, id string, pu purpose) (Link, error) {
+func (s *Service) issue(ctx context.Context, tx pgx.Tx, actor audit.Actor, id string, pu purpose) (Link, error) {
 	if err := deleteLink(ctx, tx, id); err != nil {
 		return Link{}, err
 	}
@@ -266,7 +340,7 @@ func (s *Service) issue(ctx context.Context, tx pgx.Tx, p access.Principal, id s
 	if err != nil {
 		return Link{}, fmt.Errorf("insert account link: %w", err)
 	}
-	if err := record(ctx, tx, p, pu.action, id, nil); err != nil {
+	if err := record(ctx, tx, actor, pu.action, id, nil); err != nil {
 		return Link{}, err
 	}
 	return Link{URL: linkURL(s.consoleURL, pu, value), ExpiresAt: expiresAt.UTC()}, nil
@@ -284,13 +358,9 @@ func linkURL(consoleURL string, pu purpose, tok string) string {
 	return consoleURL + pu.page + "#token=" + tok
 }
 
-// Valid reports whether tok is a valid activation token, without consuming it.
-// It lets a caller reject a request before hashing a password. Activate checks
-// the token again.
-func (s *Service) Valid(ctx context.Context, tok string) (bool, error) {
-	return s.valid(ctx, tok, activation)
-}
-
+// valid reports whether tok is a valid token of a link for pu, without
+// consuming it. It lets a caller reject a request before hashing a password. The
+// consumption checks the token again.
 func (s *Service) valid(ctx context.Context, tok string, pu purpose) (bool, error) {
 	var valid bool
 	err := s.db.QueryRow(ctx,
@@ -331,6 +401,41 @@ func (s *Service) Activate(ctx context.Context, tok, passwordHash string) (user.
 		return user.User{}, wrap("activate user", err)
 	}
 	return activated, nil
+}
+
+// ResetPassword consumes tok and replaces the password of its active account.
+// Every session of the account ends, and so does a lock after failed sign-ins.
+// The holder of the token acts as the user of the account. It returns
+// ErrInvalidToken if the token is not valid.
+func (s *Service) ResetPassword(ctx context.Context, tok, passwordHash string) (user.User, error) {
+	var reset user.User
+	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		id, err := consume(ctx, tx, tok, passwordReset)
+		if err != nil {
+			return err
+		}
+		reset, err = user.NewStore(tx).SetPassword(ctx, id, passwordHash)
+		if errors.Is(err, user.ErrNotFound) {
+			// A change of status removes the link, so this means a bug.
+			return ErrInvalidToken
+		}
+		if err != nil {
+			return err
+		}
+		if err := session.RevokeAll(ctx, tx, id); err != nil {
+			return err
+		}
+		return audit.NewStore(tx).Record(ctx, audit.Entry{
+			Action:   audit.ActionUserPasswordReset,
+			Outcome:  audit.OutcomeSuccess,
+			Actor:    audit.Actor{Kind: audit.ActorUser, Method: audit.AuthPasswordResetToken, UserID: id},
+			Resource: audit.Resource{Type: resourceType, ID: id},
+		}.WithRequest(ctx))
+	})
+	if err != nil {
+		return user.User{}, wrap("reset password", err)
+	}
+	return reset, nil
 }
 
 // consume deletes the link tok, issued for pu, and returns its account, which
@@ -380,11 +485,11 @@ func deleteLink(ctx context.Context, q db.Querier, id string) error {
 	return nil
 }
 
-func record(ctx context.Context, q db.Querier, p access.Principal, action audit.Action, id string, changed []string) error {
+func record(ctx context.Context, q db.Querier, actor audit.Actor, action audit.Action, id string, changed []string) error {
 	return audit.NewStore(q).Record(ctx, audit.Entry{
 		Action:        action,
 		Outcome:       audit.OutcomeSuccess,
-		Actor:         p.Actor(),
+		Actor:         actor,
 		Resource:      audit.Resource{Type: resourceType, ID: id},
 		ChangedFields: changed,
 	}.WithRequest(ctx))

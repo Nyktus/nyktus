@@ -35,12 +35,22 @@ const (
 	// ActionUserActivate records that a user set their password through an
 	// activation link.
 	ActionUserActivate Action = "user.activate"
+	// ActionUserPasswordChange records an attempt of a signed-in user to change
+	// their own password, successful or not.
+	ActionUserPasswordChange Action = "user.password_change"
+	// ActionUserPasswordReset records that a user set a new password through a
+	// password reset link.
+	ActionUserPasswordReset Action = "user.password_reset"
 	// ActionUsersRead records a read of accounts, which contain personal data. A
 	// request denied for lacking the permission users:read has the same action.
 	ActionUsersRead Action = "users.read"
 	// ActionActivationLinkCreate records an activation link issued for an
 	// account. The resource is the account.
 	ActionActivationLinkCreate Action = "activation_link.create"
+	// ActionPasswordResetLinkCreate records a password reset link issued for an
+	// account, by an administrator or the command line. The resource is the
+	// account.
+	ActionPasswordResetLinkCreate Action = "password_reset_link.create"
 	// ActionSessionCreate records a sign-in, successful or not.
 	ActionSessionCreate Action = "session.create"
 	// ActionSessionDelete records a sign-out.

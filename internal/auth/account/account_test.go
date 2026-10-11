@@ -238,6 +238,7 @@ func TestUsers_DeniedRequestsAreRejectedBeforeTheLookup(t *testing.T) {
 				{http.MethodPatch, "/api/v1/users/" + id, map[string]string{"role": "admin"}},
 				{http.MethodDelete, "/api/v1/users/" + id, nil},
 				{http.MethodPost, "/api/v1/users/" + id + "/activation-link", nil},
+				{http.MethodPost, "/api/v1/users/" + id + "/password-reset-link", nil},
 			} {
 				r := e.do(t, op.method, op.path, cookie, op.body)
 				if r.status != http.StatusForbidden || r.code() != "forbidden" {
@@ -253,7 +254,7 @@ func TestUsers_DeniedRequestsAreRejectedBeforeTheLookup(t *testing.T) {
 		t.Error("a denied request changed or deleted the existing account")
 	}
 	if n := e.count(t, `SELECT count(*) FROM account_links`); n != 0 {
-		t.Error("a denied request issued an activation link")
+		t.Error("a denied request issued a link")
 	}
 	if n := e.count(t, `SELECT count(*) FROM audit_entries WHERE outcome = 'denied' AND action IN ('users.read', 'users.write')`); n != 4 {
 		t.Errorf("denied entries = %d, want one per role and permission", n)
@@ -746,7 +747,7 @@ SELECT EXISTS (SELECT FROM pg_stat_activity WHERE datname = current_database() A
 		}
 		select {
 		case r := <-done:
-			t.Fatalf("the activation completed without waiting for the account: status %d", r.status)
+			t.Fatalf("the request completed without waiting for the account: status %d", r.status)
 		default:
 		}
 	}

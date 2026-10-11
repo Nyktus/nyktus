@@ -232,6 +232,67 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/session/password:
+    put:
+      operationId: changePassword
+      summary: Change the password of the caller
+      description: |
+        Replaces the password of the signed-in user, who must give the current
+        password. Every session of the account ends; the response sets a new
+        session cookie in place of the one of the request, so the caller stays
+        signed in. A lock after failed sign-ins ends as well.
+
+        A wrong current password receives `403` with the code `wrong_password`
+        and counts as a failed sign-in: five in a row lock the account for 15
+        minutes. Only a request with the correct current password learns that the
+        account is locked, through `403` with the code `account_locked`. Every
+        attempt is recorded in the audit log as `user.password_change`.
+
+        Only a session can change the password.
+      tags: [session]
+      x-access: authenticated
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "204":
+          description: The password is changed. The response sets the new session cookie.
+          headers:
+            Set-Cookie:
+              description: The session cookie `__Host-nyktus_session`, with `Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/`.
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            The current password is wrong (`wrong_password`), the current password is correct but
+            the account is locked (`account_locked`), or the request comes from another origin.
+          headers:
+            Retry-After:
+              description: Seconds until the lock ends. Only sent for a locked account.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
   /api/v1/audit-entries:
     get:
       operationId: listAuditEntries
@@ -528,6 +589,48 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/users/{id}/password-reset-link:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: createPasswordResetLink
+      summary: Create a password reset link
+      description: |
+        Returns a password reset link for an active account, also a locked one,
+        to pass on to its user. The previous link of the account stops working.
+        The link is shown only in this response.
+
+        Creating the link changes nothing else: the password and the sessions of
+        the account stay valid until the link is used.
+      tags: [users]
+      x-access: users:write
+      security:
+        - sessionCookie: []
+      responses:
+        "201":
+          description: The new password reset link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordResetLink"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
   /api/v1/activation:
     post:
       operationId: activateUser
@@ -552,6 +655,51 @@ paths:
       responses:
         "200":
           description: The account is active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/password-reset:
+    post:
+      operationId: resetPassword
+      summary: Reset a password
+      description: |
+        Sets a new password for an active account. The request must carry the
+        token from the fragment of the password reset link, such as
+        `https://nyktus.example.com/reset-password#token=...`. Every session of
+        the account ends, and so does a lock after failed sign-ins. The reset
+        does not sign in.
+
+        For every request whose token is unknown, expired, already used or
+        issued as an activation link, the operation answers with the same
+        status, headers and body as a route that does not exist. The password
+        is validated only for a valid token.
+      tags: [users]
+      x-access: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequest"
+      responses:
+        "200":
+          description: The password is set.
           content:
             application/json:
               schema:
@@ -831,6 +979,46 @@ components:
           maxLength: 128
           description: Counted in Unicode code points after NFC normalization.
 
+    PasswordResetLink:
+      type: object
+      additionalProperties: false
+      required: [url, expires_at]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: The password reset link. It is shown only once.
+        expires_at:
+          type: string
+          format: date-time
+
+    PasswordResetRequest:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token:
+          type: string
+          description: The token from the fragment of the password reset link.
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+          description: Counted in Unicode code points after NFC normalization.
+
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+          minLength: 12
+          maxLength: 128
+          description: Counted in Unicode code points after NFC normalization.
+
     Error:
       type: object
       additionalProperties: false
@@ -899,7 +1087,8 @@ components:
         `email_taken` (another account uses the address), `last_active_admin` (no active
         administrator would remain), `own_account` (administrators cannot demote, deactivate or
         delete their own account) or `invalid_state` (the account cannot take the requested status
-        or receive an activation link).
+        or receive the requested link: an activation link only for a pending account, a password
+        reset link only for an active one).
       content:
         application/json:
           schema:

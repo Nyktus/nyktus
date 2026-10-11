@@ -246,6 +246,30 @@ func TestLoadServe_TrustedProxies(t *testing.T) {
 	}
 }
 
+func TestLoadAdmin_ReadsTheSettingsOfTheConsole(t *testing.T) {
+	t.Parallel()
+
+	src := fakeSource{env: map[string]string{
+		"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+		"NYKTUS_DATABASE_URL":         "postgres://owner@db/nyktus",
+	}}
+	cfg, err := LoadAdmin(src.source())
+	if err != nil {
+		t.Fatalf("LoadAdmin() error = %v", err)
+	}
+	if cfg.DatabaseURL.Value() != "postgres://console@db/nyktus" || cfg.ConsoleURL != "https://nyktus.example.com" {
+		t.Errorf("LoadAdmin() = %+v, want the database and address of the console", cfg)
+	}
+
+	_, err = LoadAdmin(fakeSource{env: map[string]string{"NYKTUS_DATABASE_URL": "postgres://owner@db/nyktus"}}.source())
+	for _, want := range []string{"NYKTUS_CONSOLE_URL", "NYKTUS_CONSOLE_DATABASE_URL"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("LoadAdmin() without console settings: error = %v, want it to name %s", err, want)
+		}
+	}
+}
+
 func TestLoadMigrate_SecretFromFile(t *testing.T) {
 	t.Parallel()
 
