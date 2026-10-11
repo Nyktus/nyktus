@@ -33,8 +33,9 @@ type Deps struct {
 	Setup http.Handler
 	// Authorizer authenticates requests to routes that are not public.
 	Authorizer httpx.Authorizer
-	// SignIn, Session and SignOut serve the session of the caller.
-	SignIn, Session, SignOut http.Handler
+	// SignIn, Session and SignOut serve the session of the caller, and
+	// ChangePassword the password of its account.
+	SignIn, Session, SignOut, ChangePassword http.Handler
 	// AuditEntries lists the audit log.
 	AuditEntries http.Handler
 	// Accounts manages accounts and activates them.
@@ -47,21 +48,22 @@ type Deps struct {
 	TrustedProxies []netip.Prefix
 }
 
-// Accounts are the handlers of the management and activation of accounts.
+// Accounts are the handlers of the management and activation of accounts and
+// of the reset of passwords.
 type Accounts struct {
-	List, Get, Create, Update, Delete, IssueLink, Activate http.Handler
+	List, Get, Create, Update, Delete, IssueLink, Activate, IssueResetLink, ResetPassword http.Handler
 }
 
 func (a Accounts) complete() bool {
 	return a.List != nil && a.Get != nil && a.Create != nil && a.Update != nil &&
-		a.Delete != nil && a.IssueLink != nil && a.Activate != nil
+		a.Delete != nil && a.IssueLink != nil && a.Activate != nil && a.IssueResetLink != nil && a.ResetPassword != nil
 }
 
 // NewRouter registers the console routes. It panics if a dependency is missing,
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.AuditEntries == nil || !d.Accounts.complete() {
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || d.AuditEntries == nil || !d.Accounts.complete() {
 		panic("console: router needs a logger, a database, an authorizer and the setup, session, audit and account handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
@@ -71,6 +73,7 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPost, "/api/v1/session", httpx.Public, httpx.Deadline(hashDeadline)(d.SignIn))
 	rt.Handle(http.MethodGet, "/api/v1/session", httpx.Authenticated, d.Session)
 	rt.Handle(http.MethodDelete, "/api/v1/session", httpx.Authenticated, d.SignOut)
+	rt.Handle(http.MethodPut, "/api/v1/session/password", httpx.Authenticated, httpx.Deadline(hashDeadline)(d.ChangePassword))
 	rt.Handle(http.MethodGet, "/api/v1/audit-entries", httpx.Require("audit:read"), d.AuditEntries)
 	rt.Handle(http.MethodGet, "/api/v1/users", httpx.Require("users:read"), d.Accounts.List)
 	rt.Handle(http.MethodPost, "/api/v1/users", httpx.Require("users:write"), d.Accounts.Create)
@@ -79,6 +82,8 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodDelete, "/api/v1/users/{id}", httpx.Require("users:write"), d.Accounts.Delete)
 	rt.Handle(http.MethodPost, "/api/v1/users/{id}/activation-link", httpx.Require("users:write"), d.Accounts.IssueLink)
 	rt.Handle(http.MethodPost, "/api/v1/activation", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.Activate))
+	rt.Handle(http.MethodPost, "/api/v1/users/{id}/password-reset-link", httpx.Require("users:write"), d.Accounts.IssueResetLink)
+	rt.Handle(http.MethodPost, "/api/v1/password-reset", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.ResetPassword))
 	return rt
 }
 

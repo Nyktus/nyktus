@@ -40,9 +40,9 @@ type PasswordHasher interface {
 	Hash(ctx context.Context, password string) (string, error)
 }
 
-// Handler serves the management of accounts and their activation. The routes
-// of the management must require the permissions users:read and users:write;
-// the activation is public.
+// Handler serves the management of accounts, their activation and the reset of
+// passwords. The routes of the management must require the permissions
+// users:read and users:write; activation and password reset are public.
 type Handler struct {
 	logger *slog.Logger
 	svc    *Service
@@ -249,59 +249,91 @@ func (h *Handler) IssueLink(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, newLinkResponse(link))
 }
 
-type activateRequest struct {
+// IssueResetLink serves POST /api/v1/users/{id}/password-reset-link.
+func (h *Handler) IssueResetLink(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.principal(w, r)
+	if !ok {
+		return
+	}
+	link, err := h.svc.IssueResetLink(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		h.writeError(w, r, "account: issue password reset link", err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, newLinkResponse(link))
+}
+
+type linkRequest struct {
 	Token    string `json:"token"`
 	Password string `json:"password"`
 }
 
 // LogValue keeps the token and the password out of logs.
-func (activateRequest) LogValue() slog.Value {
+func (linkRequest) LogValue() slog.Value {
 	return slog.StringValue("[redacted]")
 }
 
 // Activate serves POST /api/v1/activation.
-//
-// An unknown, expired or used token receives the same response as a route that
-// does not exist, and is not recorded in the audit log, so that anonymous clients
-// cannot fill it. The password is validated and hashed only for a valid token, so
-// that a caller without one learns no validation rules and cannot make the server
-// do expensive work.
 func (h *Handler) Activate(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	var req activateRequest
-	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
-		return
+	if u, ok := h.redeem(w, r, activation, h.svc.Activate, "account: activate user"); ok {
+		h.logger.InfoContext(r.Context(), "account: user activated", slog.Any("user", u))
+		httpx.WriteJSON(w, http.StatusOK, u.Response())
 	}
-	valid, err := h.svc.Valid(ctx, req.Token)
+}
+
+// ResetPassword serves POST /api/v1/password-reset.
+func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	if u, ok := h.redeem(w, r, passwordReset, h.svc.ResetPassword, "account: reset password"); ok {
+		h.logger.InfoContext(r.Context(), "account: password reset", slog.Any("user", u))
+		httpx.WriteJSON(w, http.StatusOK, u.Response())
+	}
+}
+
+// redeem sets a password through a link for pu with set and returns the
+// account. If it reports false, it has written the error response; op names the
+// action in a server error.
+//
+// An unknown, expired or used token, or one issued for another purpose,
+// receives the same response as a route that does not exist, and is not
+// recorded in the audit log, so that anonymous clients cannot fill it. The
+// password is validated and hashed only for a valid token, so that a caller
+// without one learns no validation rules and cannot make the server do
+// expensive work.
+func (h *Handler) redeem(w http.ResponseWriter, r *http.Request, pu purpose, set func(ctx context.Context, tok, passwordHash string) (user.User, error), op string) (user.User, bool) {
+	ctx := r.Context()
+	var req linkRequest
+	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
+		return user.User{}, false
+	}
+	valid, err := h.svc.valid(ctx, req.Token, pu)
 	if err != nil {
-		httpx.ServerError(w, r, h.logger, "account: look up activation token", err)
-		return
+		httpx.ServerError(w, r, h.logger, "account: look up link", err)
+		return user.User{}, false
 	}
 	if !valid {
 		httpx.NotFound(w, r)
-		return
+		return user.User{}, false
 	}
 	hash, err := h.hasher.Hash(ctx, req.Password)
 	switch {
 	case errors.Is(err, password.ErrTooShort), errors.Is(err, password.ErrTooLong), errors.Is(err, password.ErrInvalidUTF8):
 		invalid(w, r, err.Error())
-		return
+		return user.User{}, false
 	case err != nil:
 		httpx.ServerError(w, r, h.logger, "account: hash password", err)
-		return
+		return user.User{}, false
 	}
-	activated, err := h.svc.Activate(ctx, req.Token, hash)
+	u, err := set(ctx, req.Token, hash)
 	if errors.Is(err, ErrInvalidToken) {
 		// The token has been used or has expired since it was checked.
 		httpx.NotFound(w, r)
-		return
+		return user.User{}, false
 	}
 	if err != nil {
-		httpx.ServerError(w, r, h.logger, "account: activate user", err)
-		return
+		httpx.ServerError(w, r, h.logger, op, err)
+		return user.User{}, false
 	}
-	h.logger.InfoContext(ctx, "account: user activated", slog.Any("user", activated))
-	httpx.WriteJSON(w, http.StatusOK, activated.Response())
+	return u, true
 }
 
 var (
@@ -343,6 +375,8 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, 
 		httpx.WriteError(w, r, http.StatusConflict, CodeInvalidState, "a pending account becomes active through its activation link")
 	case errors.Is(err, ErrNotPending):
 		httpx.WriteError(w, r, http.StatusConflict, CodeInvalidState, "only a pending account can receive an activation link")
+	case errors.Is(err, ErrNotActive):
+		httpx.WriteError(w, r, http.StatusConflict, CodeInvalidState, "only an active account can receive a password reset link")
 	default:
 		httpx.ServerError(w, r, h.logger, op, err)
 	}

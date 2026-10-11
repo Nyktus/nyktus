@@ -38,6 +38,9 @@ var (
 	ErrInvalidCredentials = errors.New("invalid email address or password")
 	// ErrNoSession means that a token belongs to no valid session.
 	ErrNoSession = errors.New("no valid session")
+	// ErrWrongPassword means that the current password given for a change of
+	// password is wrong.
+	ErrWrongPassword = errors.New("current password is wrong")
 )
 
 // LockedError means that the password was correct, but the account is locked
@@ -200,12 +203,16 @@ func (s *Service) SignIn(ctx context.Context, email, password, previous string) 
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		users := user.NewStore(tx)
 		// The state is read again under the row lock, so that a lock set by a
-		// concurrent failure since the password was checked is respected.
+		// concurrent failure since the password was checked is respected, and
+		// a password replaced in the meantime, such as by a reset, no longer
+		// signs in.
 		state, err := users.LockForSignIn(ctx, u.ID)
 		if err != nil {
 			return err
 		}
 		switch {
+		case state.PasswordHash != u.PasswordHash:
+			outcome = ErrInvalidCredentials
 		case state.RetryAfter > 0:
 			outcome = &LockedError{RetryAfter: state.RetryAfter}
 		case state.Status != user.StatusActive:
@@ -306,6 +313,113 @@ func (s *Service) SignOut(ctx context.Context, p access.Principal) error {
 		return fmt.Errorf("sign out: %w", err)
 	}
 	return nil
+}
+
+// ChangePassword replaces the password of the signed-in principal p, who must
+// give the current password, with next. The caller validates next with
+// password.Validate; it is hashed only after the current password is verified.
+// It ends every session of the account and returns a new session that replaces
+// the session of p, with its token, so that the user stays signed in while the
+// old token stops working. An open password reset link of the account stops
+// working as well.
+//
+// A wrong current password counts as a failed sign-in and returns
+// ErrWrongPassword, so that a taken-over session cannot guess the password more
+// often than the sign-in can. As with a sign-in, a lock after failed sign-ins is
+// revealed only with the correct password, as a *LockedError. Every attempt is
+// recorded in the audit log.
+func (s *Service) ChangePassword(ctx context.Context, p access.Principal, current, next string) (Session, string, error) {
+	u, err := user.NewStore(s.db).Get(ctx, p.UserID)
+	if errors.Is(err, user.ErrNotFound) {
+		// The account was deleted since the request was authenticated.
+		return Session{}, "", ErrNoSession
+	}
+	if err != nil {
+		return Session{}, "", err
+	}
+	ok, err := s.hasher.Verify(ctx, current, u.PasswordHash)
+	if err != nil {
+		return Session{}, "", fmt.Errorf("verify password: %w", err)
+	}
+	if !ok {
+		err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+			if err := user.NewStore(tx).RecordFailedLogin(ctx, u.ID); err != nil {
+				return err
+			}
+			return audit.NewStore(tx).Record(ctx, passwordChangeEntry(ctx, audit.OutcomeFailure, p))
+		})
+		if err != nil {
+			return Session{}, "", fmt.Errorf("record failed change of password: %w", err)
+		}
+		return Session{}, "", ErrWrongPassword
+	}
+
+	newHash, err := s.hasher.Hash(ctx, next)
+	if err != nil {
+		return Session{}, "", fmt.Errorf("hash password: %w", err)
+	}
+	tok, err := token.New()
+	if err != nil {
+		return Session{}, "", err
+	}
+	var (
+		sess    Session
+		outcome error
+	)
+	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		users := user.NewStore(tx)
+		// As in SignIn, the state is read again under the row lock. A password
+		// replaced since it was verified is no longer the current password.
+		state, err := users.LockForSignIn(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		switch {
+		case state.Status != user.StatusActive:
+			// The account was deactivated since the request was authenticated.
+			outcome = ErrNoSession
+			return nil
+		case state.PasswordHash != u.PasswordHash:
+			outcome = ErrWrongPassword
+			return audit.NewStore(tx).Record(ctx, passwordChangeEntry(ctx, audit.OutcomeFailure, p))
+		case state.RetryAfter > 0:
+			outcome = &LockedError{RetryAfter: state.RetryAfter}
+			return audit.NewStore(tx).Record(ctx, passwordChangeEntry(ctx, audit.OutcomeFailure, p))
+		}
+		changed, err := users.SetPassword(ctx, u.ID, newHash)
+		if err != nil {
+			return err
+		}
+		if err := RevokeAll(ctx, tx, u.ID); err != nil {
+			return err
+		}
+		var createdAt, lastSeenAt time.Time
+		err = tx.QueryRow(ctx, `
+INSERT INTO sessions (token_hash, user_id) VALUES ($1, $2)
+RETURNING id, created_at, last_seen_at`, token.Hash(tok), u.ID).Scan(&sess.ID, &createdAt, &lastSeenAt)
+		if err != nil {
+			return fmt.Errorf("insert session: %w", err)
+		}
+		sess.User = changed
+		sess.IdleExpiresAt, sess.ExpiresAt = s.expiries(createdAt, lastSeenAt)
+		return audit.NewStore(tx).Record(ctx, passwordChangeEntry(ctx, audit.OutcomeSuccess, p))
+	})
+	if err != nil {
+		return Session{}, "", fmt.Errorf("change password: %w", err)
+	}
+	if outcome != nil {
+		return Session{}, "", outcome
+	}
+	return sess, tok, nil
+}
+
+func passwordChangeEntry(ctx context.Context, outcome audit.Outcome, p access.Principal) audit.Entry {
+	return audit.Entry{
+		Action:   audit.ActionUserPasswordChange,
+		Outcome:  outcome,
+		Actor:    p.Actor(),
+		Resource: audit.Resource{Type: "user", ID: p.UserID},
+	}.WithRequest(ctx)
 }
 
 // RevokeAll ends every session of the account userID. It runs on q, so that a

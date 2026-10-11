@@ -34,11 +34,11 @@ func deps(db Pinger) Deps {
 	return Deps{
 		Logger: slog.New(slog.DiscardHandler), DB: db, Setup: http.NotFoundHandler(),
 		Authorizer: denyAll{}, SignIn: http.NotFoundHandler(), Session: http.NotFoundHandler(), SignOut: http.NotFoundHandler(),
-		AuditEntries: http.NotFoundHandler(),
+		ChangePassword: http.NotFoundHandler(), AuditEntries: http.NotFoundHandler(),
 		Accounts: Accounts{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
 			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(), IssueLink: http.NotFoundHandler(),
-			Activate: http.NotFoundHandler(),
+			Activate: http.NotFoundHandler(), IssueResetLink: http.NotFoundHandler(), ResetPassword: http.NotFoundHandler(),
 		},
 		Origin: "https://nyktus.example.com",
 	}

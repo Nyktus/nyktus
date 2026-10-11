@@ -190,6 +190,10 @@ WHERE id = $1`, id, MaxFailedLogins, LockDuration)
 // SignInState is what a sign-in needs to know about an account.
 type SignInState struct {
 	Status Status
+	// PasswordHash is the current hash. A caller that verified a password
+	// before taking the lock compares it with the hash it verified against, so
+	// that a password replaced in the meantime no longer counts.
+	PasswordHash string
 	// RetryAfter is the time until the lock of the account ends, or zero if the
 	// account is not locked.
 	RetryAfter time.Duration
@@ -204,10 +208,10 @@ func (s *Store) LockForSignIn(ctx context.Context, id string) (SignInState, erro
 		seconds float64
 	)
 	err := s.db.QueryRow(ctx, `
-SELECT status, coalesce(greatest(extract(epoch FROM locked_until - clock_timestamp()), 0), 0)
+SELECT status, coalesce(password_hash, ''), coalesce(greatest(extract(epoch FROM locked_until - clock_timestamp()), 0), 0)
 FROM users
 WHERE id = $1
-FOR UPDATE`, id).Scan(&state.Status, &seconds)
+FOR UPDATE`, id).Scan(&state.Status, &state.PasswordHash, &seconds)
 	var pgErr *pgconn.PgError
 	if errors.Is(err, pgx.ErrNoRows) || (errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation) {
 		return SignInState{}, ErrNotFound

@@ -96,6 +96,7 @@ Local accounts sign in with their email address and password. The display name i
 - Limit the number of concurrent hash operations. Each one allocates the full Argon2id memory, so parallel login attempts could otherwise exhaust the memory of the server. A rate limit at the reverse proxy is no substitute, because it applies per client.
 - The database accepts only encoded Argon2id hashes in the password column, so a plain-text password can never be stored by mistake.
 - Login must take the same time whether or not the account exists: verify against a precomputed dummy hash when no user is found.
+- A password is verified before the account is locked, because hashing must not hold a row lock. Whatever the verification permits, such as a new session or a new password, therefore checks under the lock that the stored hash is still the one that was verified. Otherwise a sign-in racing a password reset starts a session that the reset should have prevented.
 
 ### Account enumeration
 
