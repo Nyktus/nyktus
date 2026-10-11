@@ -31,6 +31,7 @@ import (
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/auth/secondfactor"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/token"
 	"nyktus.org/nyktus/internal/platform/db"
@@ -42,6 +43,10 @@ var (
 	// ErrOwnAccount means that an administrator tried to demote, deactivate or
 	// delete their own account.
 	ErrOwnAccount = errors.New("administrators cannot demote, deactivate or delete their own account")
+	// ErrOwnSecondFactor means that an administrator tried to remove their own
+	// second factor through the management of accounts, which asks for neither
+	// the password nor a code.
+	ErrOwnSecondFactor = errors.New("administrators remove their own second factor with their password and a code")
 	// ErrNotPending means that an activation link was requested for an account
 	// that is not pending.
 	ErrNotPending = errors.New("account is not pending")
@@ -168,42 +173,112 @@ func (s *Service) Create(ctx context.Context, p access.Principal, na NewAccount)
 	return created, link, nil
 }
 
+// Change describes changes to an account: those of user.Change and the removal
+// of its TOTP factor.
+type Change struct {
+	user.Change
+	// RemoveTOTP removes the TOTP factor and the recovery codes of the account,
+	// for a user who lost both.
+	RemoveTOTP bool
+}
+
 // Update applies c to the account id, as user.Store.Update does, and records
 // the changed fields. A change of role or status ends the sessions of the
-// account, and a change of status removes its activation link. It returns
-// ErrOwnAccount if an administrator demotes or deactivates their own account.
-func (s *Service) Update(ctx context.Context, p access.Principal, id string, c user.Change) (user.User, error) {
+// account, and a change of status removes its activation link. Removing the
+// TOTP factor ends the sessions as well and is recorded on its own. It returns
+// ErrOwnAccount if an administrator demotes or deactivates their own account and
+// ErrOwnSecondFactor if they remove their own second factor.
+func (s *Service) Update(ctx context.Context, p access.Principal, id string, c Change) (user.User, error) {
 	// The principal is an active administrator, as the permission to manage
 	// accounts requires, so any other role or status removes one.
 	if id == p.UserID && ((c.Role != nil && *c.Role != user.RoleAdmin) || (c.Status != nil && *c.Status != user.StatusActive)) {
 		return user.User{}, ErrOwnAccount
 	}
+	if id == p.UserID && c.RemoveTOTP {
+		return user.User{}, ErrOwnSecondFactor
+	}
 	var updated user.User
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		// Without a change of the account itself, the store only locks it, so
+		// that the factor is removed under the same lock as any other change.
 		var (
 			changed []string
 			err     error
 		)
-		updated, changed, err = user.NewStore(tx).Update(ctx, id, c)
-		if err != nil || len(changed) == 0 {
+		updated, changed, err = user.NewStore(tx).Update(ctx, id, c.Change)
+		if err != nil {
 			return err
 		}
-		if slices.Contains(changed, user.FieldRole) || slices.Contains(changed, user.FieldStatus) {
-			if err := session.RevokeAll(ctx, tx, id); err != nil {
+		if len(changed) > 0 {
+			if slices.Contains(changed, user.FieldRole) || slices.Contains(changed, user.FieldStatus) {
+				if err := session.RevokeAll(ctx, tx, id); err != nil {
+					return err
+				}
+			}
+			if slices.Contains(changed, user.FieldStatus) {
+				if err := deleteLink(ctx, tx, id); err != nil {
+					return err
+				}
+			}
+			if err := record(ctx, tx, p.Actor(), audit.ActionUserUpdate, id, changed); err != nil {
 				return err
 			}
 		}
-		if slices.Contains(changed, user.FieldStatus) {
-			if err := deleteLink(ctx, tx, id); err != nil {
+		if c.RemoveTOTP {
+			removed, err := removeTOTP(ctx, tx, p.Actor(), id)
+			if err != nil {
 				return err
 			}
+			if removed {
+				updated.TOTPEnabled = false
+			}
 		}
-		return record(ctx, tx, p.Actor(), audit.ActionUserUpdate, id, changed)
+		return nil
 	})
 	if err != nil {
 		return user.User{}, wrap("update user", err)
 	}
 	return updated, nil
+}
+
+// removeTOTP removes the second factor of the account id, which the caller has
+// locked, and reports whether it had a confirmed one. Every session of the
+// account ends, because it may have begun with the factor that is now gone, and
+// so does every sign-in that waits for it.
+func removeTOTP(ctx context.Context, tx pgx.Tx, actor audit.Actor, id string) (bool, error) {
+	removed, err := secondfactor.Remove(ctx, tx, id)
+	if err != nil || !removed {
+		return false, err
+	}
+	if err := session.RevokeAll(ctx, tx, id); err != nil {
+		return false, err
+	}
+	return true, record(ctx, tx, actor, audit.ActionUserTOTPDisable, id, nil)
+}
+
+// RemoveAdminTOTP removes the TOTP factor of the active administrator with the
+// address email, on behalf of the command line, so that an operator can regain
+// access when the administrator lost the authenticator and the recovery codes
+// and no other administrator can sign in. It returns user.ErrNotFound if no
+// account has the address, ErrNotAdmin if the account is no administrator,
+// ErrNotActive if it is not active and secondfactor.ErrNotEnabled if it has no
+// factor.
+func (s *Service) RemoveAdminTOTP(ctx context.Context, email string) error {
+	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		u, err := s.lockActiveAdmin(ctx, tx, email)
+		if err != nil {
+			return err
+		}
+		removed, err := removeTOTP(ctx, tx, audit.Actor{Kind: audit.ActorSystem, Method: audit.AuthCLI}, u.ID)
+		if err != nil {
+			return err
+		}
+		if !removed {
+			return secondfactor.ErrNotEnabled
+		}
+		return nil
+	})
+	return wrap("remove TOTP factor", err)
 }
 
 // Delete deletes the account id with its sessions and activation link. It
@@ -298,21 +373,9 @@ func (s *Service) IssueResetLink(ctx context.Context, p access.Principal, id str
 func (s *Service) IssueAdminResetLink(ctx context.Context, email string) (Link, error) {
 	var link Link
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
-		users := user.NewStore(tx)
-		found, err := users.GetByEmail(ctx, email)
+		u, err := s.lockActiveAdmin(ctx, tx, email)
 		if err != nil {
 			return err
-		}
-		// Role and status are checked under the lock, as in IssueResetLink.
-		u, err := users.Lock(ctx, found.ID)
-		if err != nil {
-			return err
-		}
-		switch {
-		case u.Role != user.RoleAdmin:
-			return ErrNotAdmin
-		case u.Status != user.StatusActive:
-			return ErrNotActive
 		}
 		link, err = s.issue(ctx, tx, audit.Actor{Kind: audit.ActorSystem, Method: audit.AuthCLI}, u.ID, passwordReset)
 		return err
@@ -321,6 +384,28 @@ func (s *Service) IssueAdminResetLink(ctx context.Context, email string) (Link, 
 		return Link{}, wrap("issue password reset link", err)
 	}
 	return link, nil
+}
+
+// lockActiveAdmin locks the account with the address email and returns it if it
+// is an active administrator. Role and status are checked under the lock, as in
+// IssueResetLink.
+func (s *Service) lockActiveAdmin(ctx context.Context, tx pgx.Tx, email string) (user.User, error) {
+	users := user.NewStore(tx)
+	found, err := users.GetByEmail(ctx, email)
+	if err != nil {
+		return user.User{}, err
+	}
+	u, err := users.Lock(ctx, found.ID)
+	if err != nil {
+		return user.User{}, err
+	}
+	switch {
+	case u.Role != user.RoleAdmin:
+		return user.User{}, ErrNotAdmin
+	case u.Status != user.StatusActive:
+		return user.User{}, ErrNotActive
+	}
+	return u, nil
 }
 
 // issue replaces the link of the account id with a new one for pu and records

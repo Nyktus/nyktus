@@ -263,6 +263,8 @@ func TestRecord_StoresEveryKindOfActor(t *testing.T) {
 		{Kind: audit.ActorUser, Method: audit.AuthAPIKey, UserID: userID, APIKeyID: keyID},
 		{Kind: audit.ActorUser, Method: audit.AuthActivationToken, UserID: userID},
 		{Kind: audit.ActorUser, Method: audit.AuthPasswordResetToken, UserID: userID},
+		{Kind: audit.ActorUser, Method: audit.AuthTOTP, UserID: userID},
+		{Kind: audit.ActorUser, Method: audit.AuthRecoveryCode, UserID: userID},
 		{Kind: audit.ActorSetup, Method: audit.AuthSetupToken},
 		{Kind: audit.ActorSystem, Method: audit.AuthCLI},
 		{Kind: audit.ActorSystem, Method: audit.AuthNone},
@@ -454,6 +456,21 @@ func TestRecord_RejectsInvalidEntries(t *testing.T) {
 			name: "anonymous with password reset token",
 			modify: func(e *audit.Entry) {
 				e.Actor = audit.Actor{Kind: audit.ActorAnonymous, Method: audit.AuthPasswordResetToken}
+			},
+			constraint: "audit_entries_actor_check",
+		},
+		{
+			// The second step of a sign-in always belongs to a known account.
+			name: "anonymous with TOTP",
+			modify: func(e *audit.Entry) {
+				e.Actor = audit.Actor{Kind: audit.ActorAnonymous, Method: audit.AuthTOTP}
+			},
+			constraint: "audit_entries_actor_check",
+		},
+		{
+			name: "anonymous with recovery code",
+			modify: func(e *audit.Entry) {
+				e.Actor = audit.Actor{Kind: audit.ActorAnonymous, Method: audit.AuthRecoveryCode}
 			},
 			constraint: "audit_entries_actor_check",
 		},

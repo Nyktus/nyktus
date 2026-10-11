@@ -41,6 +41,18 @@ const (
 	// ActionUserPasswordReset records that a user set a new password through a
 	// password reset link.
 	ActionUserPasswordReset Action = "user.password_reset"
+	// ActionUserTOTPEnroll records the start of the setup of a TOTP factor,
+	// successful or not, by the user of the account.
+	ActionUserTOTPEnroll Action = "user.totp_enroll"
+	// ActionUserTOTPEnable records that a user confirmed a TOTP factor with a
+	// first code, successfully or not.
+	ActionUserTOTPEnable Action = "user.totp_enable"
+	// ActionUserTOTPDisable records the removal of the TOTP factor of an
+	// account, by its user, an administrator or the command line.
+	ActionUserTOTPDisable Action = "user.totp_disable"
+	// ActionUserRecoveryCodesCreate records an attempt of a user to replace their
+	// recovery codes, successful or not.
+	ActionUserRecoveryCodesCreate Action = "user.recovery_codes_create"
 	// ActionUsersRead records a read of accounts, which contain personal data. A
 	// request denied for lacking the permission users:read has the same action.
 	ActionUsersRead Action = "users.read"
@@ -51,8 +63,12 @@ const (
 	// account, by an administrator or the command line. The resource is the
 	// account.
 	ActionPasswordResetLinkCreate Action = "password_reset_link.create"
-	// ActionSessionCreate records a sign-in, successful or not.
+	// ActionSessionCreate records a sign-in, successful or not. With a second
+	// factor, it records the second step, with the method of the factor.
 	ActionSessionCreate Action = "session.create"
+	// ActionSignInChallengeCreate records that a correct password started a
+	// sign-in that waits for the second factor.
+	ActionSignInChallengeCreate Action = "sign_in_challenge.create"
 	// ActionSessionDelete records a sign-out.
 	ActionSessionDelete Action = "session.delete"
 	// ActionAuditRead records a read of the audit log, which contains personal
@@ -108,7 +124,11 @@ const (
 	// AuthPasswordResetToken is used by a user who sets a new password through a
 	// password reset link.
 	AuthPasswordResetToken AuthMethod = "password_reset_token"
-	AuthCLI                AuthMethod = "cli"
+	// AuthTOTP and AuthRecoveryCode are used in the second step of a sign-in,
+	// which always belongs to a known account.
+	AuthTOTP         AuthMethod = "totp"
+	AuthRecoveryCode AuthMethod = "recovery_code"
+	AuthCLI          AuthMethod = "cli"
 	// AuthNone is used by background jobs, which act without authenticating.
 	AuthNone AuthMethod = "none"
 )

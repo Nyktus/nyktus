@@ -78,7 +78,9 @@ func TestSpecification_MatchesCode(t *testing.T) {
 	if got := spec.Components.Schemas["UpdateUserRequest"].Properties["status"].Enum; !sameSet(got, statuses) {
 		t.Errorf("UpdateUserRequest.status = %v, want %v", got, statuses)
 	}
-	fields := []string{user.FieldDisplayName, user.FieldRole, user.FieldStatus}
+	// totp_enabled removes the second factor, which is not a field of the
+	// account.
+	fields := []string{user.FieldDisplayName, user.FieldRole, user.FieldStatus, "totp_enabled"}
 	var props []string
 	for name := range spec.Components.Schemas["UpdateUserRequest"].Properties {
 		props = append(props, name)

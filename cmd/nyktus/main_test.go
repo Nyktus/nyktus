@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/platform/config"
@@ -221,5 +223,44 @@ func TestRun_FailedStartIssuesNoSetupToken(t *testing.T) {
 	}
 	if tokens != 0 {
 		t.Errorf("%d setup tokens issued by a failed start, want none", tokens)
+	}
+}
+
+// A secret encrypted with a key that the configuration no longer lists could
+// never be decrypted, and its user could not sign in. The console refuses to
+// start instead, before it accepts requests or issues a setup token.
+func TestRun_RefusesToStartWithoutTheKeyOfStoredSecrets(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, consoleURL := schematest.Console(t)
+	owner := schematest.Open(t, ownerURL)
+	var id string
+	if err := owner.QueryRow(t.Context(), `
+INSERT INTO users (email, display_name, role, status) VALUES ('ada@example.com', 'Ada', 'viewer', 'pending') RETURNING id`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	// The secret names key 7.
+	if _, err := owner.Exec(t.Context(), `INSERT INTO totp_factors (user_id, secret) VALUES ($1, decode('07' || repeat('00', 48), 'hex'))`, id); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{
+		"NYKTUS_CONSOLE_DATABASE_URL": consoleURL,
+		"NYKTUS_CONSOLE_ADDR":         "127.0.0.1:0",
+		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+		"NYKTUS_ENCRYPTION_KEYS":      testKeys(t),
+	}
+	// A console that starts anyway serves until the deadline, and the test
+	// fails instead of hanging.
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	if code := run(ctx, []string{"serve", "--roles=console"}, source(env), &stdout, &stderr); code != exitFailure {
+		t.Fatalf("exit code = %d, want %d; stderr: %s", code, exitFailure, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "key ID 7, which is not configured") {
+		t.Errorf("stderr = %q, want it to name the missing key", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want no setup URL", stdout.String())
 	}
 }

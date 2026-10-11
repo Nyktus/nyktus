@@ -16,6 +16,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
+	"nyktus.org/nyktus/internal/platform/secretbox"
 )
 
 // Options configure the console.
@@ -28,6 +29,8 @@ type Options struct {
 	// that its limit on concurrent hash operations bounds every path together.
 	Hasher   *password.Hasher
 	Sessions session.Config
+	// Keys encrypt the secrets of second factors.
+	Keys *secretbox.Keyring
 	// ConsoleURL is the address under which users reach the console, such as
 	// "https://nyktus.example.com". Requests that change state must come from
 	// this origin, and activation and password reset links start with it.
@@ -38,7 +41,7 @@ type Options struct {
 // New wires the console and returns its HTTP handler. It computes the dummy
 // password hash of the sign-in, so it takes as long as one password hash.
 func New(ctx context.Context, o Options) (http.Handler, error) {
-	sessions, err := session.NewService(ctx, o.DB, o.Hasher, o.Sessions)
+	sessions, err := session.NewService(ctx, o.DB, o.Hasher, o.Keys, o.Sessions)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +56,14 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		Session:        http.HandlerFunc(h.Current),
 		SignOut:        http.HandlerFunc(h.SignOut),
 		ChangePassword: http.HandlerFunc(h.ChangePassword),
-		AuditEntries:   auditapi.NewHandler(o.Logger, o.DB),
+		SecondFactor: SecondFactor{
+			CompleteSignIn:       http.HandlerFunc(h.CompleteSignIn),
+			Begin:                http.HandlerFunc(h.BeginTOTP),
+			Confirm:              http.HandlerFunc(h.ConfirmTOTP),
+			ReplaceRecoveryCodes: http.HandlerFunc(h.ReplaceRecoveryCodes),
+			Remove:               http.HandlerFunc(h.RemoveTOTP),
+		},
+		AuditEntries: auditapi.NewHandler(o.Logger, o.DB),
 		Accounts: Accounts{
 			List:           http.HandlerFunc(a.List),
 			Get:            http.HandlerFunc(a.Get),

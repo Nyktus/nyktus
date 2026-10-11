@@ -88,7 +88,7 @@ func (s *Store) Create(ctx context.Context, nu NewUser) (User, error) {
 	u, err := scan(s.db.QueryRow(ctx, `
 INSERT INTO users (email, display_name, role, status, password_hash)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, email, display_name, role, status, password_hash, created_at, updated_at`,
+RETURNING `+userColumns,
 		email, name, nu.Role, status, hash))
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation && pgErr.ConstraintName == "users_email_key" {
@@ -103,7 +103,7 @@ RETURNING id, email, display_name, role, status, password_hash, created_at, upda
 // Get returns the account with the given ID.
 func (s *Store) Get(ctx context.Context, id string) (User, error) {
 	u, err := scan(s.db.QueryRow(ctx, `
-SELECT id, email, display_name, role, status, password_hash, created_at, updated_at
+SELECT `+userColumns+`
 FROM users
 WHERE id = $1`, id))
 	var pgErr *pgconn.PgError
@@ -125,7 +125,7 @@ func (s *Store) GetByEmail(ctx context.Context, email string) (User, error) {
 		return User{}, ErrNotFound
 	}
 	u, err := scan(s.db.QueryRow(ctx, `
-SELECT id, email, display_name, role, status, password_hash, created_at, updated_at
+SELECT `+userColumns+`
 FROM users
 WHERE email = $1`, normalized))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -248,12 +248,28 @@ WHERE id = $1`, id, hash)
 	return nil
 }
 
+// RehashPassword replaces the hash of the account id with passwordHash, which
+// hashes the same password with raised parameters. Unlike CompleteSignIn, it
+// leaves the count of failed sign-ins alone, for a sign-in that still waits for
+// its second factor.
+func (s *Store) RehashPassword(ctx context.Context, id, passwordHash string) error {
+	// As in Create: a plain-text password must never reach the database.
+	if !strings.HasPrefix(passwordHash, "$argon2id$") {
+		return ErrInvalidPasswordHash
+	}
+	_, err := s.db.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = clock_timestamp() WHERE id = $1`, id, passwordHash)
+	if err != nil {
+		return fmt.Errorf("rehash password of user %s: %w", id, err)
+	}
+	return nil
+}
+
 func scan(row pgx.Row) (User, error) {
 	var (
 		u    User
 		hash *string
 	)
-	err := row.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.Status, &hash, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.Status, &hash, &u.CreatedAt, &u.UpdatedAt, &u.TOTPEnabled)
 	if err != nil {
 		return User{}, err
 	}

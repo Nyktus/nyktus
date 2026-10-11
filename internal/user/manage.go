@@ -41,7 +41,10 @@ type Cursor struct {
 	ID        string
 }
 
-const userColumns = `id, email, display_name, role, status, password_hash, created_at, updated_at`
+// userColumns are the columns that scan reads, in its order. Whether the account
+// has a confirmed TOTP factor is part of the account as clients see it.
+const userColumns = `id, email, display_name, role, status, password_hash, created_at, updated_at,
+	EXISTS (SELECT FROM totp_factors AS f WHERE f.user_id = users.id AND f.confirmed_at IS NOT NULL)`
 
 const (
 	listNewest = `SELECT ` + userColumns + ` FROM users

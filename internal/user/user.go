@@ -62,6 +62,9 @@ type User struct {
 	PasswordHash string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	// TOTPEnabled reports whether the account has a confirmed TOTP factor, so
+	// that signing in takes a code in addition to the password.
+	TOTPEnabled bool
 }
 
 // Response is the representation of an account in API responses. It leaves out
@@ -72,11 +75,12 @@ type Response struct {
 	DisplayName string `json:"display_name"`
 	Role        Role   `json:"role"`
 	Status      Status `json:"status"`
+	TOTPEnabled bool   `json:"totp_enabled"`
 }
 
 // Response returns the representation of u in API responses.
 func (u User) Response() Response {
-	return Response{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Role: u.Role, Status: u.Status}
+	return Response{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Role: u.Role, Status: u.Status, TOTPEnabled: u.TOTPEnabled}
 }
 
 // LogValue keeps the password hash and the address out of logs. A hash allows

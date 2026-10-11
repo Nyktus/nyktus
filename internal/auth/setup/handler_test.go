@@ -134,7 +134,7 @@ func TestHandler_CreatesAdministrator(t *testing.T) {
 	}
 	want := map[string]any{
 		"id": "00000000-0000-4000-8000-000000000001", "email": "admin@example.com",
-		"display_name": "Ada Admin", "role": "admin", "status": "active",
+		"display_name": "Ada Admin", "role": "admin", "status": "active", "totp_enabled": false,
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("response = %v, want %v", got, want)

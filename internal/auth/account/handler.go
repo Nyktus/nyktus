@@ -187,6 +187,7 @@ type updateRequest struct {
 	DisplayName field[string]      `json:"display_name"`
 	Role        field[user.Role]   `json:"role"`
 	Status      field[user.Status] `json:"status"`
+	TOTPEnabled field[bool]        `json:"totp_enabled"`
 }
 
 // Update serves PATCH /api/v1/users/{id}.
@@ -199,10 +200,16 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
-	c := user.Change{DisplayName: req.DisplayName.ptr(), Role: req.Role.ptr(), Status: req.Status.ptr()}
+	c := Change{
+		Change:     user.Change{DisplayName: req.DisplayName.ptr(), Role: req.Role.ptr(), Status: req.Status.ptr()},
+		RemoveTOTP: req.TOTPEnabled.set,
+	}
 	switch {
-	case c.DisplayName == nil && c.Role == nil && c.Status == nil:
-		invalid(w, r, "request must change display_name, role or status")
+	case c.DisplayName == nil && c.Role == nil && c.Status == nil && !c.RemoveTOTP:
+		invalid(w, r, "request must change display_name, role, status or totp_enabled")
+		return
+	case req.TOTPEnabled.set && req.TOTPEnabled.value:
+		invalid(w, r, "totp_enabled can only be false; users enable their second factor themselves")
 		return
 	case c.DisplayName != nil && !validDisplayName(*c.DisplayName):
 		invalid(w, r, displayNameRule)
@@ -371,6 +378,8 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, 
 		httpx.WriteError(w, r, http.StatusConflict, CodeLastActiveAdmin, "at least one active administrator must remain")
 	case errors.Is(err, ErrOwnAccount):
 		httpx.WriteError(w, r, http.StatusConflict, CodeOwnAccount, "administrators cannot demote, deactivate or delete their own account")
+	case errors.Is(err, ErrOwnSecondFactor):
+		httpx.WriteError(w, r, http.StatusConflict, CodeOwnAccount, "remove your own second factor with DELETE /api/v1/session/totp")
 	case errors.Is(err, user.ErrInvalidTransition):
 		httpx.WriteError(w, r, http.StatusConflict, CodeInvalidState, "a pending account becomes active through its activation link")
 	case errors.Is(err, ErrNotPending):

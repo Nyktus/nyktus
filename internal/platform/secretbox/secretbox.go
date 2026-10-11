@@ -113,6 +113,13 @@ func newAEAD(key []byte) (cipher.AEAD, error) {
 // CurrentKeyID returns the ID of the key that seals new values.
 func (k *Keyring) CurrentKeyID() byte { return k.ids[0] }
 
+// Has reports whether the keyring holds the key id, so that a caller can check
+// at startup that every stored value can still be opened.
+func (k *Keyring) Has(id byte) bool {
+	_, ok := k.aeads[id]
+	return ok
+}
+
 // Seal encrypts plaintext with the current key, bound to aad, which must not be
 // empty: without it, a value copied into the record of another owner would
 // still open.

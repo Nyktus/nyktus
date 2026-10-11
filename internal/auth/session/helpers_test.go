@@ -22,6 +22,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 )
 
 const (
@@ -96,6 +97,7 @@ func startConsole(t *testing.T, d testDB) *httptest.Server {
 		Setup:          setup.NewService(d.console),
 		Hasher:         hasher,
 		Sessions:       testSessions,
+		Keys:           secretboxtest.Keyring(t),
 		ConsoleURL:     origin,
 		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
 	})
@@ -113,6 +115,8 @@ type response struct {
 	body   map[string]any
 	// cookie is the session cookie that the response sets, if any.
 	cookie *http.Cookie
+	// challenge is the challenge cookie that the response sets, if any.
+	challenge *http.Cookie
 }
 
 // send makes a request. The session cookie is sent by hand, because a cookie jar
@@ -153,8 +157,11 @@ func send(t *testing.T, srv *httptest.Server, method, path, body string, cookie 
 		}
 	}
 	for _, c := range resp.Cookies() {
-		if c.Name == session.CookieName {
+		switch c.Name {
+		case session.CookieName:
 			r.cookie = c
+		case session.ChallengeCookieName:
+			r.challenge = c
 		}
 	}
 	return r

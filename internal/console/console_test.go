@@ -35,6 +35,10 @@ func deps(db Pinger) Deps {
 		Logger: slog.New(slog.DiscardHandler), DB: db, Setup: http.NotFoundHandler(),
 		Authorizer: denyAll{}, SignIn: http.NotFoundHandler(), Session: http.NotFoundHandler(), SignOut: http.NotFoundHandler(),
 		ChangePassword: http.NotFoundHandler(), AuditEntries: http.NotFoundHandler(),
+		SecondFactor: SecondFactor{
+			CompleteSignIn: http.NotFoundHandler(), Begin: http.NotFoundHandler(), Confirm: http.NotFoundHandler(),
+			ReplaceRecoveryCodes: http.NotFoundHandler(), Remove: http.NotFoundHandler(),
+		},
 		Accounts: Accounts{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
 			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(), IssueLink: http.NotFoundHandler(),

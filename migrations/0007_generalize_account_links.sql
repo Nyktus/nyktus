@@ -28,11 +28,14 @@ ALTER TABLE public.account_links ALTER COLUMN purpose DROP DEFAULT;
 -- expires_at keeps its default of 72 hours for both purposes: both links travel
 -- the same way and carry the same risk.
 
--- The holder of a password reset link acts as the user of the account.
+-- The holder of a password reset link acts as the user of the account. The second
+-- step of a sign-in authenticates with a TOTP code or a recovery code; it always
+-- belongs to a known account, because only the correct password starts it.
 ALTER TABLE public.audit_entries DROP CONSTRAINT audit_entries_actor_check;
 ALTER TABLE public.audit_entries ADD CONSTRAINT audit_entries_actor_check CHECK (
 	CASE actor_kind
-		WHEN 'user' THEN auth_method IN ('password', 'oidc', 'session', 'api_key', 'activation_token', 'password_reset_token')
+		WHEN 'user' THEN auth_method IN ('password', 'oidc', 'session', 'api_key', 'activation_token', 'password_reset_token',
+				'totp', 'recovery_code')
 			AND actor_email IS NOT NULL AND actor_display_name IS NOT NULL
 		WHEN 'setup' THEN auth_method = 'setup_token'
 			AND actor_user_id IS NULL AND actor_email IS NULL AND actor_display_name IS NULL

@@ -135,6 +135,11 @@ paths:
         Starts a session and sets the session cookie. A session cookie that the
         request already carries ends its session.
 
+        For an account with a TOTP factor, the correct password does not start a
+        session: the response is `202` with a challenge cookie, and
+        `POST /api/v1/session/second-factor` completes the sign-in with a code.
+        The count of failed sign-ins starts again only then.
+
         Every rejected sign-in receives the same `401`, whether the address is
         unknown, the password is wrong or the account may not sign in. Five failed
         sign-ins in a row lock the account for 15 minutes. Only a request with the
@@ -160,6 +165,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Session"
+        "202":
+          description: The password is correct, and the account has a second factor. The response sets the challenge cookie.
+          headers:
+            Set-Cookie:
+              description: The challenge cookie `__Host-nyktus_challenge`, with `Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/`. It is valid for five minutes.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecondFactorChallenge"
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
@@ -285,6 +301,271 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/session/second-factor:
+    post:
+      operationId: completeSignIn
+      summary: Complete a sign-in with the second factor
+      description: |
+        Completes a sign-in that the password started, with a code of the
+        authenticator app or a recovery code, and starts a session. The challenge
+        comes from the cookie that `POST /api/v1/session` set. Each recovery code
+        works once. A code is accepted for 30 seconds before and after its own
+        period, and only once.
+
+        A wrong code receives `401` with the code `invalid_code` and counts as a
+        failed sign-in; the challenge stays valid, so that the user can enter the
+        code again. Five failures in a row, with the password or a code, lock the
+        account for 15 minutes; the challenge then ends, and the response is
+        `403` with the code `account_locked`. A missing, expired or used
+        challenge receives `401` with the code `invalid_challenge`: the user
+        signs in again. So does a challenge of an account whose password or
+        second factor changed meanwhile.
+      tags: [session]
+      x-access: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SecondFactorProof"
+      responses:
+        "200":
+          description: Signed in. The response sets the session cookie and clears the challenge cookie.
+          headers:
+            Set-Cookie:
+              description: The session cookie `__Host-nyktus_session` and the cleared challenge cookie.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          description: The challenge is not valid (`invalid_challenge`), or the code is wrong (`invalid_code`).
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: The account is locked (`account_locked`), or the request comes from another origin.
+          headers:
+            Retry-After:
+              description: Seconds until the lock ends. Only sent for a locked account.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/session/totp:
+    post:
+      operationId: beginTOTPSetup
+      summary: Start the setup of a TOTP factor
+      description: |
+        Creates a new TOTP secret for the account of the caller, who confirms
+        the request with their password. The response contains the secret and
+        the `otpauth` URI for an authenticator app; they are shown only once.
+        The factor protects the sign-in only after
+        `POST /api/v1/session/totp/confirmation`, which must follow within ten
+        minutes. A new setup replaces one that was not confirmed.
+
+        A wrong password receives `403` with the code `wrong_password` and
+        counts as a failed sign-in. An account that already has a factor
+        receives `409` with the code `totp_enabled`. Only a session can manage
+        the second factor.
+      tags: [session]
+      x-access: authenticated
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordConfirmation"
+      responses:
+        "201":
+          description: The unconfirmed factor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TOTPSetup"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/SecondFactorForbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: removeTOTP
+      summary: Remove the TOTP factor of the caller
+      description: |
+        Removes the TOTP factor and the recovery codes of the account of the
+        caller, who confirms with their password and a code or a recovery code.
+        Every session of the account ends; the response sets a new session
+        cookie in place of the one of the request.
+
+        A wrong password receives `403` with the code `wrong_password`, a wrong
+        code `403` with the code `wrong_code`; both count as a failed sign-in.
+        An account without a factor receives `409` with the code
+        `totp_not_enabled`. A user who lost their authenticator and their
+        recovery codes asks an administrator to remove the factor.
+      tags: [session]
+      x-access: authenticated
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SecondFactorConfirmation"
+      responses:
+        "204":
+          description: The factor is removed. The response sets the new session cookie.
+          headers:
+            Set-Cookie:
+              description: The session cookie `__Host-nyktus_session`.
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/SecondFactorForbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/session/totp/confirmation:
+    post:
+      operationId: confirmTOTP
+      summary: Confirm the TOTP factor with a first code
+      description: |
+        Confirms the factor that `POST /api/v1/session/totp` created with a code
+        of the authenticator app. From then on, signing in takes a code. The
+        response contains ten recovery codes, which are shown only once. Every
+        other session of the account ends, because it began without the second
+        factor; the response sets a new session cookie in place of the one of
+        the request.
+
+        A wrong code receives `403` with the code `wrong_code`. Without a setup,
+        or after ten minutes, the response is `409` with the code
+        `no_totp_setup`.
+      tags: [session]
+      x-access: authenticated
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TOTPCode"
+      responses:
+        "200":
+          description: The factor is enabled. The response sets the new session cookie.
+          headers:
+            Set-Cookie:
+              description: The session cookie `__Host-nyktus_session`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryCodes"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/SecondFactorForbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/session/totp/recovery-codes:
+    post:
+      operationId: replaceRecoveryCodes
+      summary: Replace the recovery codes of the caller
+      description: |
+        Replaces the recovery codes of the account of the caller with ten new
+        ones, which are shown only once. The caller confirms with their password
+        and a code or a recovery code, as for removing the factor.
+      tags: [session]
+      x-access: authenticated
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SecondFactorConfirmation"
+      responses:
+        "200":
+          description: The new recovery codes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryCodes"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/SecondFactorForbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "413":
           $ref: "#/components/responses/BodyTooLarge"
         "415":
@@ -474,9 +755,9 @@ paths:
       operationId: updateUser
       summary: Change an account
       description: |
-        Changes the display name, the role or the status of an account. Members
-        that are left out stay unchanged. All changes take effect together or
-        not at all.
+        Changes the display name, the role or the status of an account, or
+        removes its TOTP factor. Members that are left out stay unchanged. All
+        changes take effect together or not at all.
 
         - A change of role or status ends every session of the account.
         - `status: deactivated` blocks the sign-in and removes an open activation
@@ -486,6 +767,10 @@ paths:
           its activation link.
         - At least one active administrator must remain, and administrators
           cannot demote or deactivate their own account (`409`).
+        - `totp_enabled: false` removes the TOTP factor and the recovery codes,
+          for a user who lost both, and ends every session of the account. The
+          audit log records it as `user.totp_disable`. Administrators remove
+          their own factor with `DELETE /api/v1/session/totp` (`409`).
 
         The audit log records the names of the changed fields, not their values.
       tags: [users]
@@ -794,7 +1079,7 @@ components:
     User:
       type: object
       additionalProperties: false
-      required: [id, email, display_name, role, status]
+      required: [id, email, display_name, role, status, totp_enabled]
       properties:
         id:
           type: string
@@ -811,6 +1096,9 @@ components:
           type: string
           enum: [pending, active, deactivated]
           description: A pending account has not set a password yet. A deactivated account cannot sign in.
+        totp_enabled:
+          type: boolean
+          description: Whether signing in takes a code of a TOTP factor in addition to the password.
 
     AuditEntryPage:
       type: object
@@ -942,6 +1230,10 @@ components:
         status:
           type: string
           enum: [active, deactivated]
+        totp_enabled:
+          type: boolean
+          const: false
+          description: Removes the TOTP factor. A factor is enabled only by its user.
 
     CreatedUser:
       type: object
@@ -1020,6 +1312,92 @@ components:
           maxLength: 128
           description: Counted in Unicode code points after NFC normalization.
 
+    SecondFactorChallenge:
+      type: object
+      additionalProperties: false
+      required: [second_factor, expires_at]
+      properties:
+        second_factor:
+          type: string
+          enum: [totp]
+        expires_at:
+          type: string
+          format: date-time
+          description: When the challenge ends. The user then signs in again.
+
+    SecondFactorProof:
+      type: object
+      additionalProperties: false
+      description: Exactly one of `code` and `recovery_code`.
+      properties:
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          description: The current code of the authenticator app.
+        recovery_code:
+          type: string
+          description: A recovery code, such as `abcd-efgh-ijkl-mnop`. Case, hyphens and spaces do not matter.
+
+    SecondFactorConfirmation:
+      type: object
+      additionalProperties: false
+      required: [password]
+      description: The password and exactly one of `code` and `recovery_code`.
+      properties:
+        password:
+          type: string
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+        recovery_code:
+          type: string
+
+    PasswordConfirmation:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password:
+          type: string
+
+    TOTPCode:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+
+    TOTPSetup:
+      type: object
+      additionalProperties: false
+      required: [secret, uri, expires_at]
+      properties:
+        secret:
+          type: string
+          description: The secret in base32, for typing it into an authenticator app.
+        uri:
+          type: string
+          description: The `otpauth://totp/` URI of the factor, usually shown as a QR code. It contains the secret.
+        expires_at:
+          type: string
+          format: date-time
+          description: The factor must be confirmed before this time.
+
+    RecoveryCodes:
+      type: object
+      additionalProperties: false
+      required: [recovery_codes]
+      properties:
+        recovery_codes:
+          type: array
+          minItems: 10
+          maxItems: 10
+          items:
+            type: string
+            pattern: "^[a-z2-7]{4}-[a-z2-7]{4}-[a-z2-7]{4}-[a-z2-7]{4}$"
+
     Error:
       type: object
       additionalProperties: false
@@ -1048,6 +1426,20 @@ components:
         WWW-Authenticate:
           schema:
             type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    SecondFactorForbidden:
+      description: |
+        The password is wrong (`wrong_password`), the code is wrong (`wrong_code`), the password is
+        correct but the account is locked (`account_locked`), the request is not made with a session
+        (`forbidden`), or the request comes from another origin.
+      headers:
+        Retry-After:
+          description: Seconds until the lock ends. Only sent for a locked account.
+          schema:
+            type: integer
       content:
         application/json:
           schema:
@@ -1087,9 +1479,11 @@ components:
         The request conflicts with the state of the accounts. The error code names the conflict:
         `email_taken` (another account uses the address), `last_active_admin` (no active
         administrator would remain), `own_account` (administrators cannot demote, deactivate or
-        delete their own account) or `invalid_state` (the account cannot take the requested status
-        or receive the requested link: an activation link only for a pending account, a password
-        reset link only for an active one).
+        delete their own account, or remove their own second factor through it), `invalid_state`
+        (the account cannot take the requested status or receive the requested link: an activation
+        link only for a pending account, a password reset link only for an active one),
+        `totp_enabled` (the account already has a TOTP factor), `totp_not_enabled` (it has none) or
+        `no_totp_setup` (no setup of a TOTP factor waits for confirmation, or it expired).
       content:
         application/json:
           schema:

@@ -15,6 +15,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 	"nyktus.org/nyktus/internal/user"
 )
 
@@ -194,7 +195,7 @@ func resetDuring(t *testing.T, d testDB, id string) *session.Service {
 		t.Fatalf("Hash() error = %v", err)
 	}
 	racing := &racingHasher{Hasher: hasher}
-	svc, err := session.NewService(t.Context(), d.console, racing, testSessions)
+	svc, err := session.NewService(t.Context(), d.console, racing, secretboxtest.Keyring(t), testSessions)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -216,7 +217,7 @@ func TestSignIn_RejectsAPasswordReplacedDuringVerification(t *testing.T) {
 	id := createUser(t, d, "ada@example.com", "admin", "active", testPassword)
 	svc := resetDuring(t, d, id)
 
-	_, _, err := svc.SignIn(t.Context(), "ada@example.com", testPassword, "")
+	_, err := svc.SignIn(t.Context(), "ada@example.com", testPassword, "")
 	if !errors.Is(err, session.ErrInvalidCredentials) {
 		t.Errorf("SignIn() error = %v, want ErrInvalidCredentials", err)
 	}

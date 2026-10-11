@@ -28,6 +28,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 )
 
 const testPassword = "correct horse battery"
@@ -49,6 +50,7 @@ func newEnv(t *testing.T) env {
 		Setup:      setup.NewService(pool),
 		Hasher:     hasher,
 		Sessions:   session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour},
+		Keys:       secretboxtest.Keyring(t),
 		ConsoleURL: "https://nyktus.example.com",
 	})
 	if err != nil {

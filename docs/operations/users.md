@@ -62,7 +62,7 @@ The activation does not sign in, and it ends a lock after failed sign-ins that s
 
 ## Changing an account
 
-`PATCH /api/v1/users/<id>` changes the display name, the role or the status, alone or together:
+`PATCH /api/v1/users/<id>` changes the display name, the role or the status, or removes the second factor, alone or together:
 
 ```sh
 curl --fail-with-body --request PATCH https://nyktus.example.com/api/v1/users/<id> \
@@ -74,6 +74,9 @@ curl --fail-with-body --request PATCH https://nyktus.example.com/api/v1/users/<i
 - **Role.** A new role ends every session of the account and applies immediately.
 - **Deactivating** (`"status": "deactivated"`) blocks the sign-in, ends every session and removes an open activation or password reset link. The password is kept.
 - **Reactivating** (`"status": "active"`) lets the user sign in again with their password and ends a lock after failed sign-ins. An account that never set a password returns to `pending` and needs a new activation link.
+- **Second factor** (`"totp_enabled": false`), see [Removing a second factor](#removing-a-second-factor).
+
+The field `totp_enabled` of an account tells whether it has a [second factor](sign-in.md#second-factor).
 
 `DELETE /api/v1/users/<id>` deletes an account with its sessions and its open link. Entries of the account in the [audit log](audit-log.md) keep a copy of its address and display name.
 
@@ -106,7 +109,22 @@ rm reset.json
 
 The reset ends every session of the account and a lock after failed sign-ins. It does not sign in. An unknown, expired or used token receives `404`, and so does the token of an activation link.
 
+A reset leaves the second factor in place: whoever gets hold of the link still needs a code. If the user lost the second factor as well, remove it too.
+
 An administrator can reset the password of another administrator and then act as that administrator. The audit log shows who created the link.
+
+## Removing a second factor
+
+A user who lost both the authenticator and the recovery codes cannot sign in. An administrator removes the factor:
+
+```sh
+curl --fail-with-body --request PATCH https://nyktus.example.com/api/v1/users/<id> \
+  --header 'Content-Type: application/json' \
+  --data '{"totp_enabled": false}' \
+  --cookie cookies.txt
+```
+
+The removal deletes the factor and the recovery codes and ends every session of the account. The user then signs in with the password alone and should set up a new factor right away. Make sure that the request really comes from the user, for example by calling them back: the factor protects against someone who knows the password. Administrators remove their own factor themselves, with their password and a code, see [Sign-in and sessions](sign-in.md#recovery-codes-and-removal). Only users enable a factor; `"totp_enabled": true` is rejected.
 
 ## When no administrator can sign in
 
@@ -118,13 +136,21 @@ nyktus admin reset-password ada@example.com
 
 The command reads the configuration of the console (`NYKTUS_CONSOLE_DATABASE_URL` and `NYKTUS_CONSOLE_URL`) and prints the link on standard output. It works only for active administrators; other accounts are reset by an administrator. The link follows the rules above. The audit log records the command line as the creator of the link.
 
+If the administrator lost the second factor and the recovery codes, remove the factor on the server as well:
+
+```sh
+nyktus admin remove-totp ada@example.com
+```
+
+It removes the factor and the recovery codes of an active administrator and ends every session of the account, with the same configuration and rules as `reset-password`. It does not need the encryption keys. The audit log records the command line as the actor.
+
 ## At least one administrator
 
 At least one active administrator always remains. Nyktus rejects every change that would demote, deactivate or delete the last one, also when two administrators try it at the same time. Administrators cannot demote, deactivate or delete their own account; another administrator has to do it. To hand over the installation, create an account for the new administrator, and let the new administrator remove the old account.
 
 ## Audit
 
-The audit log records every creation, change, deletion, new activation link and activation of an account, every new password reset link, whether from an administrator or the command line, and every password reset and change. Changes name the changed fields, not their values. Reads of accounts are recorded at most once per administrator and minute, because accounts contain personal data.
+The audit log records every creation, change, deletion, new activation link and activation of an account, every new password reset link, whether from an administrator or the command line, every password reset and change, and every removal of a second factor (`user.totp_disable`). Changes name the changed fields, not their values. Reads of accounts are recorded at most once per administrator and minute, because accounts contain personal data.
 
 ## Reverse proxy
 

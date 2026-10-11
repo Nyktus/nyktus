@@ -36,6 +36,8 @@ type Deps struct {
 	// SignIn, Session and SignOut serve the session of the caller, and
 	// ChangePassword the password of its account.
 	SignIn, Session, SignOut, ChangePassword http.Handler
+	// SecondFactor completes sign-ins and manages the second factor.
+	SecondFactor SecondFactor
 	// AuditEntries lists the audit log.
 	AuditEntries http.Handler
 	// Accounts manages accounts and activates them.
@@ -54,6 +56,16 @@ type Accounts struct {
 	List, Get, Create, Update, Delete, IssueLink, Activate, IssueResetLink, ResetPassword http.Handler
 }
 
+// SecondFactor are the handlers of the second step of a sign-in and of the
+// management of the TOTP factor of the caller.
+type SecondFactor struct {
+	CompleteSignIn, Begin, Confirm, ReplaceRecoveryCodes, Remove http.Handler
+}
+
+func (f SecondFactor) complete() bool {
+	return f.CompleteSignIn != nil && f.Begin != nil && f.Confirm != nil && f.ReplaceRecoveryCodes != nil && f.Remove != nil
+}
+
 func (a Accounts) complete() bool {
 	return a.List != nil && a.Get != nil && a.Create != nil && a.Update != nil &&
 		a.Delete != nil && a.IssueLink != nil && a.Activate != nil && a.IssueResetLink != nil && a.ResetPassword != nil
@@ -63,7 +75,7 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || d.AuditEntries == nil || !d.Accounts.complete() {
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || d.AuditEntries == nil || !d.Accounts.complete() {
 		panic("console: router needs a logger, a database, an authorizer and the setup, session, audit and account handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
@@ -74,6 +86,12 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/api/v1/session", httpx.Authenticated, d.Session)
 	rt.Handle(http.MethodDelete, "/api/v1/session", httpx.Authenticated, d.SignOut)
 	rt.Handle(http.MethodPut, "/api/v1/session/password", httpx.Authenticated, httpx.Deadline(hashDeadline)(d.ChangePassword))
+	rt.Handle(http.MethodPost, "/api/v1/session/second-factor", httpx.Public, d.SecondFactor.CompleteSignIn)
+	rt.Handle(http.MethodPost, "/api/v1/session/totp", httpx.Authenticated, httpx.Deadline(hashDeadline)(d.SecondFactor.Begin))
+	rt.Handle(http.MethodDelete, "/api/v1/session/totp", httpx.Authenticated, httpx.Deadline(hashDeadline)(d.SecondFactor.Remove))
+	rt.Handle(http.MethodPost, "/api/v1/session/totp/confirmation", httpx.Authenticated, d.SecondFactor.Confirm)
+	rt.Handle(http.MethodPost, "/api/v1/session/totp/recovery-codes", httpx.Authenticated,
+		httpx.Deadline(hashDeadline)(d.SecondFactor.ReplaceRecoveryCodes))
 	rt.Handle(http.MethodGet, "/api/v1/audit-entries", httpx.Require("audit:read"), d.AuditEntries)
 	rt.Handle(http.MethodGet, "/api/v1/users", httpx.Require("users:read"), d.Accounts.List)
 	rt.Handle(http.MethodPost, "/api/v1/users", httpx.Require("users:write"), d.Accounts.Create)
