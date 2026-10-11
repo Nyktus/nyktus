@@ -240,7 +240,8 @@ paths:
         Replaces the password of the signed-in user, who must give the current
         password. Every session of the account ends; the response sets a new
         session cookie in place of the one of the request, so the caller stays
-        signed in. A lock after failed sign-ins ends as well.
+        signed in. The count of failed sign-ins starts again, and an open
+        password reset link of the account stops working.
 
         A wrong current password receives `403` with the code `wrong_password`
         and counts as a failed sign-in: five in a row lock the account for 15

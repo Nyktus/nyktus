@@ -318,10 +318,10 @@ func (s *Service) SignOut(ctx context.Context, p access.Principal) error {
 // ChangePassword replaces the password of the signed-in principal p, who must
 // give the current password, with next. The caller validates next with
 // password.Validate; it is hashed only after the current password is verified.
-// It ends every
-// session of the account and returns a new session that replaces the session of
-// p, with its token, so that the user stays signed in while the old token stops
-// working.
+// It ends every session of the account and returns a new session that replaces
+// the session of p, with its token, so that the user stays signed in while the
+// old token stops working. An open password reset link of the account stops
+// working as well.
 //
 // A wrong current password counts as a failed sign-in and returns
 // ErrWrongPassword, so that a taken-over session cannot guess the password more

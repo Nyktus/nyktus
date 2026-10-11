@@ -246,7 +246,10 @@ RETURNING `+userColumns, id, StatusActive, passwordHash, StatusPending))
 
 // SetPassword replaces the password of the active account id and ends a lock
 // after failed sign-ins: whoever sets the password has proven access to the
-// account. It returns ErrNotFound if no active account has the ID.
+// account. It also removes an open password reset link, which the new password
+// makes moot and which would otherwise stay usable, for example from the chat
+// it was passed on in. It returns ErrNotFound if no active account has the ID.
+// It must run in a transaction, so that both changes take effect together.
 func (s *Store) SetPassword(ctx context.Context, id, passwordHash string) (User, error) {
 	// As in Create: a plain-text password must never reach the database.
 	if !strings.HasPrefix(passwordHash, "$argon2id$") {
@@ -266,6 +269,9 @@ RETURNING `+userColumns, id, passwordHash, StatusActive))
 	}
 	if err != nil {
 		return User{}, fmt.Errorf("set password of user %s: %w", id, err)
+	}
+	if _, err := s.db.Exec(ctx, `DELETE FROM account_links WHERE user_id = $1`, id); err != nil {
+		return User{}, fmt.Errorf("delete account link of user %s: %w", id, err)
 	}
 	return u, nil
 }

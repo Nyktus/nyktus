@@ -242,3 +242,27 @@ func TestResetPassword_LocksTheAccountBeforeTheLink(t *testing.T) {
 		t.Errorf("reset: status %d, body %s; want 200", r.status, r.raw)
 	}
 }
+
+// A password reset link is moot once the user has set a password by other
+// means. It must not stay usable, for example from a chat history, after the
+// user changed the password themselves.
+func TestChangePassword_RemovesAnOpenPasswordResetLink(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t)
+	_, cookie := e.signIn(t, "ada@example.com", "admin")
+	janeID, janeCookie := e.signIn(t, "jane@example.com", "viewer")
+	tok := e.issueReset(t, cookie, janeID)
+
+	r := e.do(t, http.MethodPut, "/api/v1/session/password", janeCookie,
+		map[string]string{"current_password": testPassword, "new_password": "jane remembered it after all"})
+	if r.status != http.StatusNoContent {
+		t.Fatalf("change password: status %d, body %s", r.status, r.raw)
+	}
+	if r := e.reset(t, tok, "the password of whoever found the link"); r.status != http.StatusNotFound {
+		t.Errorf("reset link after the change: status %d, want 404", r.status)
+	}
+	if n := e.count(t, `SELECT count(*) FROM account_links WHERE user_id = $1`, janeID); n != 0 {
+		t.Errorf("account links = %d, want none", n)
+	}
+}

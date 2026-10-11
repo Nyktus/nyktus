@@ -93,6 +93,7 @@ curl --fail-with-body --request POST \
 - Only active accounts receive a reset link, also accounts that are locked after failed sign-ins.
 - The link follows the rules of the activation link: it is shown once, valid for 72 hours and works once, and you pass it on over a channel you trust. A new link replaces the previous one. An account has at most one open link.
 - **Creating the link changes nothing else.** The current password and the sessions stay valid until the link is used. To lock someone out at once, deactivate the account.
+- If the user changes the password themselves before using the link, the link stops working.
 
 The user sets the new password with the token from the link, in a file as for the activation:
 

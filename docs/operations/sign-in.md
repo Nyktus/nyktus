@@ -41,6 +41,7 @@ rm password.json
 ```
 
 - The change ends every session of the account. The answer sets a new session cookie for the session that made the change, so the user stays signed in.
+- An open password reset link of the account stops working.
 - A wrong current password receives `403` with the code `wrong_password` and counts as a failed sign-in. While the account is locked, the change is refused; only a request with the correct current password learns about the lock.
 - Only a session can change the password.
 
