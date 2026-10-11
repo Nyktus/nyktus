@@ -56,10 +56,13 @@ CREATE TABLE public.audit_entries (
 	),
 	CONSTRAINT audit_entries_outcome_check CHECK (outcome IN ('success', 'failure', 'denied')),
 	-- An API key acts for the user who owns it, so its entries name that user and
-	-- the key. The command line and background jobs act as the system.
+	-- the key. A user who activates their account authenticates with the token of
+	-- the activation link, before they have a password; requests with an invalid
+	-- token are not recorded, so anonymous actors never use that method. The
+	-- command line and background jobs act as the system.
 	CONSTRAINT audit_entries_actor_check CHECK (
 		CASE actor_kind
-			WHEN 'user' THEN auth_method IN ('password', 'oidc', 'session', 'api_key')
+			WHEN 'user' THEN auth_method IN ('password', 'oidc', 'session', 'api_key', 'activation_token')
 				AND actor_email IS NOT NULL AND actor_display_name IS NOT NULL
 			WHEN 'setup' THEN auth_method = 'setup_token'
 				AND actor_user_id IS NULL AND actor_email IS NULL AND actor_display_name IS NULL
@@ -87,6 +90,11 @@ CREATE TABLE public.audit_entries (
 -- Deleting a user sets the reference of every entry to NULL, which would scan
 -- the whole table without this index.
 CREATE INDEX audit_entries_actor_user_id_idx ON public.audit_entries (actor_user_id);
+
+-- The console lists entries from the newest to the oldest, a page at a time,
+-- continuing after the last entry of the previous page. The identifier makes the
+-- order total for entries with the same time.
+CREATE INDEX audit_entries_occurred_at_id_idx ON public.audit_entries (occurred_at DESC, id DESC);
 
 -- The copies of the actor's address and display name are taken from the account,
 -- not from the application, so they always match the account at the time of the
