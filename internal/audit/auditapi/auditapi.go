@@ -7,14 +7,9 @@
 package auditapi
 
 import (
-	"encoding/base64"
 	"errors"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"regexp"
-	"strconv"
-	"strings"
 	"time"
 
 	"nyktus.org/nyktus/internal/audit"
@@ -25,10 +20,6 @@ import (
 
 // defaultPageSize is the page size if the request names none.
 const defaultPageSize = 50
-
-var limitFormat = regexp.MustCompile(`^[1-9][0-9]{0,8}$`)
-
-var uuidFormat = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 type handler struct {
 	logger *slog.Logger
@@ -80,16 +71,15 @@ type listResponse struct {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	size, after, err := parseQuery(r)
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, err.Error())
+	q, ok := httpx.DecodeListQuery(w, r, defaultPageSize, audit.MaxPageSize)
+	if !ok {
 		return
 	}
-	entries, next, err := h.store.List(r.Context(), size, after)
-	if errors.Is(err, audit.ErrInvalidPageSize) {
-		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, errInvalidLimit.Error())
-		return
+	var after *audit.Cursor
+	if q.After != nil {
+		after = &audit.Cursor{OccurredAt: q.After.Time, ID: q.After.ID}
 	}
+	entries, next, err := h.store.List(r.Context(), q.Limit, after)
 	if err != nil {
 		httpx.ServerError(w, r, h.logger, "audit: list entries", err)
 		return
@@ -114,7 +104,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp.Entries = append(resp.Entries, newEntryResponse(e))
 	}
 	if next != nil {
-		resp.NextCursor = encodeCursor(*next)
+		resp.NextCursor = httpx.EncodeCursor(httpx.Cursor{Time: next.OccurredAt, ID: next.ID})
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
@@ -148,74 +138,4 @@ func newEntryResponse(e audit.StoredEntry) entryResponse {
 		out.ClientIP = e.ClientIP.String()
 	}
 	return out
-}
-
-// parseQuery reads the page size and the cursor. Unknown and repeated parameters
-// are rejected, as unknown fields of a request body are, and so is a query that
-// cannot be parsed, which url.URL.Query would silently drop.
-func parseQuery(r *http.Request) (int, *audit.Cursor, error) {
-	query, err := url.ParseQuery(r.URL.RawQuery)
-	if err != nil {
-		return 0, nil, errors.New("query string is invalid")
-	}
-	// The messages do not repeat the parameter names, which the client chose.
-	for name, values := range query {
-		if name != "limit" && name != "cursor" {
-			return 0, nil, errors.New("unknown query parameter; use limit and cursor")
-		}
-		if len(values) != 1 {
-			return 0, nil, errors.New("query parameters must be given once")
-		}
-	}
-
-	size := defaultPageSize
-	if s, ok := query["limit"]; ok {
-		// One spelling per number: no sign and no leading zeros, which
-		// strconv.Atoi would accept. The store checks the range, so that the
-		// bounds are defined once.
-		if !limitFormat.MatchString(s[0]) {
-			return 0, nil, errInvalidLimit
-		}
-		n, err := strconv.Atoi(s[0])
-		if err != nil {
-			return 0, nil, errInvalidLimit
-		}
-		size = n
-	}
-	var after *audit.Cursor
-	if s, ok := query["cursor"]; ok {
-		c, err := decodeCursor(s[0])
-		if err != nil {
-			return 0, nil, err
-		}
-		after = &c
-	}
-	return size, after, nil
-}
-
-var (
-	errInvalidCursor = errors.New("cursor is invalid; use the next_cursor of a previous response")
-	errInvalidLimit  = errors.New("limit must be a number from 1 to " + strconv.Itoa(audit.MaxPageSize))
-)
-
-// A cursor is opaque to clients. It encodes the time and the identifier of the
-// last entry of a page, which the next page continues after.
-func encodeCursor(c audit.Cursor) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(c.OccurredAt.UTC().Format(time.RFC3339Nano) + "|" + c.ID))
-}
-
-func decodeCursor(s string) (audit.Cursor, error) {
-	raw, err := base64.RawURLEncoding.Strict().DecodeString(s)
-	if err != nil {
-		return audit.Cursor{}, errInvalidCursor
-	}
-	at, id, ok := strings.Cut(string(raw), "|")
-	if !ok || !uuidFormat.MatchString(id) {
-		return audit.Cursor{}, errInvalidCursor
-	}
-	t, err := time.Parse(time.RFC3339Nano, at)
-	if err != nil {
-		return audit.Cursor{}, errInvalidCursor
-	}
-	return audit.Cursor{OccurredAt: t, ID: id}, nil
 }
