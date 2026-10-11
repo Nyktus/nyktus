@@ -6,6 +6,7 @@ A new installation has no accounts. The first administrator is created through a
 
 1. Set up the database and apply the migrations as described in [Database setup](database.md).
 2. Set `NYKTUS_CONSOLE_URL` to the address under which users reach the console, such as `https://nyktus.example.com`. The setup URL starts with it. See [Configuration](configuration.md).
+3. Generate the [encryption keys](configuration.md#encryption-keys) and set `NYKTUS_ENCRYPTION_KEYS` or `NYKTUS_ENCRYPTION_KEYS_FILE`.
 
 ## Create the first administrator
 

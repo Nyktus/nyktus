@@ -82,6 +82,22 @@ func TestOpen_RejectsOtherAssociatedData(t *testing.T) {
 	}
 }
 
+func TestSealOpen_RequireAssociatedData(t *testing.T) {
+	t.Parallel()
+
+	k := parse(t, randomEntry(t, 1))
+	if _, err := k.Seal([]byte("secret"), nil); !errors.Is(err, secretbox.ErrNoAssociatedData) {
+		t.Errorf("Seal() without associated data error = %v, want ErrNoAssociatedData", err)
+	}
+	sealed, err := k.Seal([]byte("secret"), []byte("totp:alice"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := k.Open(sealed, []byte{}); !errors.Is(err, secretbox.ErrNoAssociatedData) {
+		t.Errorf("Open() without associated data error = %v, want ErrNoAssociatedData", err)
+	}
+}
+
 func TestOpen_RejectsAlteredValues(t *testing.T) {
 	t.Parallel()
 

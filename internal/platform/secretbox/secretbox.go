@@ -27,7 +27,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -43,6 +42,8 @@ var (
 	// ErrInvalid means that a value is malformed, was altered, or belongs to
 	// other associated data.
 	ErrInvalid = errors.New("secretbox: value cannot be opened")
+	// ErrNoAssociatedData means that a caller passed no associated data.
+	ErrNoAssociatedData = errors.New("secretbox: associated data is required")
 )
 
 // Keyring seals and opens values. It is safe for concurrent use.
@@ -106,11 +107,13 @@ func newAEAD(key []byte) (cipher.AEAD, error) {
 // CurrentKeyID returns the ID of the key that seals new values.
 func (k *Keyring) CurrentKeyID() byte { return k.ids[0] }
 
-// KeyIDs returns the IDs of every key, the current one first.
-func (k *Keyring) KeyIDs() []byte { return slices.Clone(k.ids) }
-
-// Seal encrypts plaintext with the current key, bound to aad.
+// Seal encrypts plaintext with the current key, bound to aad, which must not be
+// empty: without it, a value copied into the record of another owner would
+// still open.
 func (k *Keyring) Seal(plaintext, aad []byte) ([]byte, error) {
+	if len(aad) == 0 {
+		return nil, ErrNoAssociatedData
+	}
 	id := k.CurrentKeyID()
 	aead := k.aeads[id]
 	// A random nonce is safe for far more values than a server ever seals
@@ -129,6 +132,9 @@ func (k *Keyring) Seal(plaintext, aad []byte) ([]byte, error) {
 // ErrInvalid if the value is malformed, altered or bound to other associated
 // data.
 func (k *Keyring) Open(sealed, aad []byte) ([]byte, error) {
+	if len(aad) == 0 {
+		return nil, ErrNoAssociatedData
+	}
 	if len(sealed) == 0 {
 		return nil, ErrInvalid
 	}
