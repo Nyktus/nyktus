@@ -41,6 +41,9 @@ CREATE TABLE public.audit_entries (
 	actor_user_id      uuid CONSTRAINT audit_entries_actor_user_id_fkey REFERENCES public.users (id) ON DELETE SET NULL,
 	actor_email        text,
 	actor_display_name text,
+	-- Keys are deleted when they are revoked and with their user, so there is no
+	-- foreign key: the entry that created a key names it with the same
+	-- identifier as a resource.
 	api_key_id         uuid,
 	-- Resources can be deleted while their entries remain, so there is no foreign
 	-- key. Names are never copied: the audit log must not reveal the inventory.
@@ -88,8 +91,11 @@ CREATE TABLE public.audit_entries (
 );
 
 -- Deleting a user sets the reference of every entry to NULL, which would scan
--- the whole table without this index.
-CREATE INDEX audit_entries_actor_user_id_idx ON public.audit_entries (actor_user_id);
+-- the whole table without this index. Entries that are recorded at most once
+-- per window look for a recent entry of the same user, action and outcome, and
+-- must not read every entry the user ever caused: an integration that polls
+-- the audit log adds one every minute.
+CREATE INDEX audit_entries_actor_user_id_idx ON public.audit_entries (actor_user_id, action, outcome, occurred_at);
 
 -- The console lists entries from the newest to the oldest, a page at a time,
 -- continuing after the last entry of the previous page. The identifier makes the

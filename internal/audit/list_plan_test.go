@@ -20,6 +20,36 @@ import (
 func TestList_CursorIsAnIndexConditionInTheGenericPlan(t *testing.T) {
 	t.Parallel()
 
+	text := genericPlan(t, "list_after", listAfter,
+		"EXECUTE list_after('2026-10-10T12:00:00Z', '00000000-0000-4000-8000-000000000000', 51)")
+	if !strings.Contains(text, "audit_entries_occurred_at_id_idx") || !strings.Contains(text, "Index Cond: (ROW(occurred_at, id) < ROW(") {
+		t.Errorf("generic plan does not seek into the index with the cursor:\n%s", text)
+	}
+}
+
+// The check for a recent entry of the same kind must seek into the index by
+// time, also with the generic plan, instead of reading every entry the user
+// ever caused: an integration that polls the audit log adds one every minute.
+func TestRecordUnlessRepeated_WindowIsAnIndexConditionInTheGenericPlan(t *testing.T) {
+	t.Parallel()
+
+	text := genericPlan(t, "insert_unless_repeated", insertUnlessRepeated, `
+EXECUTE insert_unless_repeated('audit.read', 'success', 'user', 'session', '00000000-0000-4000-8000-000000000000',
+	NULL, NULL, NULL, '{}', NULL, NULL, '1 minute')`)
+	var seeks bool
+	for line := range strings.SplitSeq(text, "\n") {
+		line = strings.TrimSpace(line)
+		seeks = seeks || (strings.HasPrefix(line, "Index Cond: ") && strings.Contains(line, "(occurred_at > (statement_timestamp() - "))
+	}
+	if !strings.Contains(text, "audit_entries_actor_user_id_idx") || !seeks {
+		t.Errorf("generic plan does not seek into the index by time:\n%s", text)
+	}
+}
+
+// genericPlan prepares query as name and returns the generic plan of explain,
+// an EXECUTE of it.
+func genericPlan(t *testing.T, name, query, explain string) string {
+	t.Helper()
 	ownerURL, _ := schematest.Console(t)
 	// A connection of its own, closed afterwards: the settings and the prepared
 	// statement below must not reach a connection that other queries reuse.
@@ -33,13 +63,13 @@ func TestList_CursorIsAnIndexConditionInTheGenericPlan(t *testing.T) {
 		"SET plan_cache_mode = force_generic_plan",
 		// The test table is tiny; without this, a sequential scan would win.
 		"SET enable_seqscan = off",
-		"PREPARE list_after AS " + listAfter,
+		"PREPARE " + name + " AS " + query,
 	} {
 		if _, err := conn.Exec(t.Context(), statement); err != nil {
 			t.Fatalf("%s: %v", statement, err)
 		}
 	}
-	rows, err := conn.Query(t.Context(), "EXPLAIN EXECUTE list_after('2026-10-10T12:00:00Z', '00000000-0000-4000-8000-000000000000', 51)")
+	rows, err := conn.Query(t.Context(), "EXPLAIN "+explain)
 	if err != nil {
 		t.Fatalf("explain: %v", err)
 	}
@@ -54,8 +84,5 @@ func TestList_CursorIsAnIndexConditionInTheGenericPlan(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("read plan: %v", err)
 	}
-	text := strings.Join(plan, "\n")
-	if !strings.Contains(text, "audit_entries_occurred_at_id_idx") || !strings.Contains(text, "Index Cond: (ROW(occurred_at, id) < ROW(") {
-		t.Errorf("generic plan does not seek into the index with the cursor:\n%s", text)
-	}
+	return strings.Join(plan, "\n")
 }

@@ -25,6 +25,10 @@ type Operation struct {
 	Path        string
 	OperationID string
 	Access      string
+	// Schemes names the security schemes that the operation admits, sorted.
+	Schemes []string
+	// Statuses lists the documented response statuses, sorted.
+	Statuses []string
 }
 
 func (o Operation) key() string { return o.Method + " " + o.Path }
@@ -116,7 +120,20 @@ func Parse(data []byte) (*Spec, error) {
 				errs = append(errs, fmt.Errorf("%s %s: %w", method, path, err))
 				continue
 			}
-			o := Operation{Method: method, Path: path, OperationID: op.OperationID, Access: op.Access}
+			o := Operation{
+				Method: method, Path: path, OperationID: op.OperationID, Access: op.Access,
+				Statuses: slices.Sorted(maps.Keys(op.Responses)),
+			}
+			if op.Security != nil {
+				for _, requirement := range *op.Security {
+					for name := range requirement {
+						if !slices.Contains(o.Schemes, name) {
+							o.Schemes = append(o.Schemes, name)
+						}
+					}
+				}
+				slices.Sort(o.Schemes)
+			}
 			errs = append(errs, validate(o.key(), op, ids)...)
 			spec.Operations = append(spec.Operations, o)
 		}
@@ -156,6 +173,18 @@ func validate(key string, op operation, ids map[string]string) []error {
 	default:
 		if op.Security == nil || len(*op.Security) == 0 {
 			errs = append(errs, fmt.Errorf("%s: protected operation does not declare its security requirements", key))
+		}
+		// Each credential authenticates a request on its own. A requirement with
+		// several schemes would demand all of them together, which the router
+		// never does, and the schemes of an operation would no longer say which
+		// credentials it admits.
+		if op.Security != nil {
+			for _, requirement := range *op.Security {
+				if len(requirement) != 1 {
+					errs = append(errs, fmt.Errorf("%s: each security requirement must name exactly one scheme", key))
+					break
+				}
+			}
 		}
 		if _, ok := op.Responses["401"]; !ok {
 			errs = append(errs, fmt.Errorf("%s: protected operation does not document response 401", key))

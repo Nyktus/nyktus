@@ -163,6 +163,10 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"DELETE FROM recovery_codes",
 		"SELECT count(*) FROM totp_factors",
 		"DELETE FROM totp_factors",
+		"INSERT INTO api_keys (user_id, name, secret_hash, scopes, expires_at) SELECT id, 'k', sha256('k'), '{audit:read}', clock_timestamp() + interval '1 day' FROM users WHERE email = 's@example.com'",
+		"UPDATE api_keys SET last_used_at = clock_timestamp()",
+		"SELECT count(*) FROM api_keys",
+		"DELETE FROM api_keys",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -211,6 +215,16 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"TRUNCATE totp_factors",
 		"UPDATE recovery_codes SET code_hash = code_hash",
 		"TRUNCATE recovery_codes",
+		"INSERT INTO api_keys (id, user_id, name, secret_hash, scopes, expires_at) SELECT gen_random_uuid(), id, 'k', sha256('k'), '{audit:read}', now() + interval '1 day' FROM users LIMIT 1",
+		"INSERT INTO api_keys (user_id, name, secret_hash, scopes, expires_at, created_at) SELECT id, 'k', sha256('k'), '{audit:read}', now() + interval '1 day', now() FROM users LIMIT 1",
+		"INSERT INTO api_keys (user_id, name, secret_hash, scopes, expires_at, last_used_at) SELECT id, 'k', sha256('k'), '{audit:read}', now() + interval '1 day', now() FROM users LIMIT 1",
+		"UPDATE api_keys SET scopes = '{users:write}'",
+		"UPDATE api_keys SET expires_at = now() + interval '10 years'",
+		"UPDATE api_keys SET secret_hash = secret_hash",
+		"UPDATE api_keys SET user_id = user_id",
+		"UPDATE api_keys SET name = name",
+		"UPDATE api_keys SET created_at = now()",
+		"TRUNCATE api_keys",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -278,6 +292,12 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_column_privilege($1, 'public.totp_factors', 'created_at', 'UPDATE')",
 		"has_any_column_privilege($1, 'public.recovery_codes', 'UPDATE')",
 		"has_table_privilege($1, 'public.recovery_codes', 'TRUNCATE')",
+		"has_table_privilege($1, 'public.api_keys', 'TRUNCATE')",
+		"has_table_privilege($1, 'public.api_keys', 'REFERENCES')",
+		"has_column_privilege($1, 'public.api_keys', 'created_at', 'INSERT')",
+		"has_column_privilege($1, 'public.api_keys', 'scopes', 'UPDATE')",
+		"has_column_privilege($1, 'public.api_keys', 'expires_at', 'UPDATE')",
+		"has_column_privilege($1, 'public.api_keys', 'secret_hash', 'UPDATE')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

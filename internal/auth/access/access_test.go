@@ -4,6 +4,8 @@
 package access
 
 import (
+	"reflect"
+	"slices"
 	"testing"
 
 	"nyktus.org/nyktus/internal/audit"
@@ -43,6 +45,49 @@ func TestGrants_CoverEveryRoleWithValidPermissions(t *testing.T) {
 	}
 }
 
+// A scope grants nothing beyond a role, so a scope that no role grants could
+// never be used.
+func TestKeyScopes_AreGrantedPermissions(t *testing.T) {
+	t.Parallel()
+
+	scopes := KeyScopes()
+	if len(scopes) == 0 {
+		t.Fatal("API keys may carry no scope")
+	}
+	for _, s := range scopes {
+		if !slices.Contains(Permissions(), s) {
+			t.Errorf("API keys may carry %s, which no role grants", s)
+		}
+	}
+}
+
+// A key holds the intersection of its scopes, the scopes that keys may carry
+// and the role of its user.
+func TestPrincipal_AllowedForAPIKeyIsTheIntersection(t *testing.T) {
+	t.Parallel()
+
+	key := func(role user.Role, scopes ...httpx.Permission) Principal {
+		return Principal{UserID: "u1", Role: role, Method: audit.AuthAPIKey, APIKeyID: "k1", Scopes: scopes}
+	}
+	for _, tt := range []struct {
+		name string
+		p    Principal
+		perm httpx.Permission
+		want bool
+	}{
+		{"scope and role", key(user.RoleAdmin, "audit:read"), "audit:read", true},
+		{"scope without role", key(user.RoleViewer, "audit:read"), "audit:read", false},
+		{"role without scope", key(user.RoleAdmin, "audit:read"), "users:read", false},
+		{"no scopes", key(user.RoleAdmin), "audit:read", false},
+		{"scope that keys may not carry", key(user.RoleAdmin, "users:write"), "users:write", false},
+		{"session ignores scopes", Principal{Role: user.RoleAdmin, Method: audit.AuthSession, SessionID: "s1"}, "users:write", true},
+	} {
+		if got := tt.p.Allowed(tt.perm); got != tt.want {
+			t.Errorf("%s: Allowed(%s) = %v, want %v", tt.name, tt.perm, got, tt.want)
+		}
+	}
+}
+
 func TestPrincipal_ContextAndActor(t *testing.T) {
 	t.Parallel()
 
@@ -51,11 +96,15 @@ func TestPrincipal_ContextAndActor(t *testing.T) {
 	}
 	p := Principal{UserID: "u1", Role: user.RoleViewer, Method: audit.AuthSession, SessionID: "s1"}
 	got, ok := PrincipalFrom(WithPrincipal(t.Context(), p))
-	if !ok || got != p {
+	if !ok || !reflect.DeepEqual(got, p) {
 		t.Errorf("PrincipalFrom() = %+v, %v; want %+v", got, ok, p)
 	}
 	if a := p.Actor(); a != (audit.Actor{Kind: audit.ActorUser, Method: audit.AuthSession, UserID: "u1"}) {
 		t.Errorf("Actor() = %+v", a)
+	}
+	k := Principal{UserID: "u1", Role: user.RoleAdmin, Method: audit.AuthAPIKey, APIKeyID: "k1", Scopes: []httpx.Permission{"audit:read"}}
+	if a := k.Actor(); a != (audit.Actor{Kind: audit.ActorUser, Method: audit.AuthAPIKey, UserID: "u1", APIKeyID: "k1"}) {
+		t.Errorf("Actor() of an API key = %+v", a)
 	}
 }
 

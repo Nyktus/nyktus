@@ -17,6 +17,7 @@ curl --fail-with-body https://nyktus.example.com/api/v1/session \
 - The cookie `__Host-nyktus_session` is `Secure`, `HttpOnly` and `SameSite=Strict`. The console must therefore be reached over HTTPS. Browsers also accept the cookie on `http://localhost` and `http://127.0.0.1` during development.
 - The database stores only a hash of the session token. Signing in again ends the session that the browser held before.
 - Changing or resetting the password, enabling or removing the second factor, deactivating the account or changing its role ends its sessions. See [Managing accounts](users.md).
+- Integrations use [API keys](api-keys.md) instead of sessions.
 
 ## Reverse proxy
 

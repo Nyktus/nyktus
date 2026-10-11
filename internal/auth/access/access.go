@@ -26,6 +26,16 @@ var grants = map[user.Role][]httpx.Permission{
 	user.RoleViewer: {},
 }
 
+// keyScopes lists the permissions that an API key may carry as scopes. Keys do
+// not manage accounts, not even by reading them: a leaked key with users:write
+// could take over every account through password reset links.
+var keyScopes = []httpx.Permission{"audit:read"}
+
+// KeyScopes returns the permissions that an API key may carry as scopes.
+func KeyScopes() []httpx.Permission {
+	return slices.Clone(keyScopes)
+}
+
 // Allowed reports whether role grants perm.
 func Allowed(role user.Role, perm httpx.Permission) bool {
 	return slices.Contains(grants[role], perm)
@@ -53,11 +63,25 @@ type Principal struct {
 	Method audit.AuthMethod
 	// SessionID identifies the session, if the principal authenticated with one.
 	SessionID string
+	// APIKeyID identifies the API key, if the principal authenticated with one.
+	APIKeyID string
+	// Scopes are the scopes of the API key. They restrict the role, never
+	// extend it.
+	Scopes []httpx.Permission
 }
 
-// Allowed reports whether p holds perm.
+// Allowed reports whether p holds perm. An API key holds the intersection of
+// its scopes and the current role of its user, and only scopes that keys may
+// carry, so that demoting the user restricts the key immediately and a scope
+// that keys may no longer carry grants nothing.
 func (p Principal) Allowed(perm httpx.Permission) bool {
-	return Allowed(p.Role, perm)
+	if !Allowed(p.Role, perm) {
+		return false
+	}
+	if p.Method != audit.AuthAPIKey {
+		return true
+	}
+	return slices.Contains(p.Scopes, perm) && slices.Contains(keyScopes, perm)
 }
 
 // HasSession reports whether p signed in with a session, as opposed to another
@@ -68,7 +92,7 @@ func (p Principal) HasSession() bool {
 
 // Actor returns the principal as the actor of an audit entry.
 func (p Principal) Actor() audit.Actor {
-	return audit.Actor{Kind: audit.ActorUser, Method: p.Method, UserID: p.UserID}
+	return audit.Actor{Kind: audit.ActorUser, Method: p.Method, UserID: p.UserID, APIKeyID: p.APIKeyID}
 }
 
 type principalKey struct{}

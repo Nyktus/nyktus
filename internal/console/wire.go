@@ -64,6 +64,11 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			ReplaceRecoveryCodes: http.HandlerFunc(h.ReplaceRecoveryCodes),
 			Remove:               http.HandlerFunc(h.RemoveTOTP),
 		},
+		APIKeys: APIKeys{
+			List:   http.HandlerFunc(h.ListAPIKeys),
+			Create: http.HandlerFunc(h.CreateAPIKey),
+			Revoke: http.HandlerFunc(h.RevokeAPIKey),
+		},
 		AuditEntries: auditapi.NewHandler(o.Logger, o.DB),
 		Accounts: Accounts{
 			List:           http.HandlerFunc(a.List),
@@ -75,6 +80,8 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Activate:       http.HandlerFunc(a.Activate),
 			IssueResetLink: http.HandlerFunc(a.IssueResetLink),
 			ResetPassword:  http.HandlerFunc(a.ResetPassword),
+			ListAPIKeys:    http.HandlerFunc(a.ListAPIKeys),
+			RevokeAPIKey:   http.HandlerFunc(a.RevokeAPIKey),
 		},
 		Origin:         o.ConsoleURL,
 		TrustedProxies: o.TrustedProxies,

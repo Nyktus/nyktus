@@ -186,3 +186,84 @@ BEGIN
 	END IF;
 END
 $$;
+
+-- API keys let integrations call the API on behalf of their user. As with
+-- sessions, the database stores only the SHA-256 hash of the secret; the key
+-- itself also carries the identifier, which looks the key up, so that the
+-- secret is compared in the application in constant time. A key acts with the
+-- intersection of its scopes and the current role of its user, so the scopes
+-- are only checked for their form here. Revoking a key deletes it.
+CREATE FUNCTION public.api_key_scopes_valid(scopes text[]) RETURNS boolean
+	LANGUAGE sql IMMUTABLE STRICT
+	SET search_path = ''
+	RETURN cardinality(scopes) BETWEEN 1 AND 16
+		AND array_ndims(scopes) = 1
+		AND NOT EXISTS (
+			SELECT FROM unnest(scopes) AS s (scope)
+			WHERE s.scope IS NULL OR char_length(s.scope) > 64 OR s.scope !~ '^[a-z][a-z_]*:[a-z][a-z_]*$'
+		)
+		AND cardinality(scopes) = (SELECT count(DISTINCT s.scope) FROM unnest(scopes) AS s (scope));
+
+CREATE TABLE public.api_keys (
+	id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	-- Deleting a user deletes their keys; deactivating one deletes them in the
+	-- application, so that reactivating the account does not revive them.
+	user_id      uuid NOT NULL CONSTRAINT api_keys_user_id_fkey REFERENCES public.users (id) ON DELETE CASCADE,
+	name         text NOT NULL,
+	secret_hash  bytea NOT NULL,
+	scopes       text[] NOT NULL,
+	created_at   timestamptz NOT NULL DEFAULT clock_timestamp(),
+	expires_at   timestamptz NOT NULL,
+	last_used_at timestamptz,
+
+	CONSTRAINT api_keys_name_check CHECK (char_length(name) BETWEEN 1 AND 64),
+	CONSTRAINT api_keys_secret_hash_check CHECK (octet_length(secret_hash) = 32),
+	CONSTRAINT api_keys_scopes_check CHECK (public.api_key_scopes_valid(scopes)),
+	-- Every key expires within a year. The difference of two times is immutable,
+	-- unlike the sum of a time and an interval, which depends on the time zone.
+	CONSTRAINT api_keys_expires_at_check CHECK (expires_at > created_at AND expires_at - created_at <= interval '365 days'),
+	CONSTRAINT api_keys_last_used_at_check CHECK (last_used_at >= created_at)
+);
+
+-- Keys are listed and counted per user, and deleted with the user.
+CREATE INDEX api_keys_user_id_idx ON public.api_keys (user_id);
+
+REVOKE ALL ON public.api_keys FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.api_key_scopes_valid(text[]) FROM PUBLIC, nyktus_console;
+
+-- The console evaluates the check of the scopes when it inserts. It issues,
+-- lists and deletes keys and records their last use; it cannot change the
+-- secret, the scopes, the owner or the expiry of a key, and identifiers and
+-- creation times come from the database.
+GRANT EXECUTE ON FUNCTION public.api_key_scopes_valid(text[]) TO nyktus_console;
+GRANT SELECT, DELETE ON public.api_keys TO nyktus_console;
+GRANT INSERT (user_id, name, secret_hash, scopes, expires_at) ON public.api_keys TO nyktus_console;
+GRANT UPDATE (last_used_at) ON public.api_keys TO nyktus_console;
+
+DO $$
+BEGIN
+	IF NOT has_table_privilege('nyktus_console', 'public.api_keys', 'SELECT')
+		OR NOT has_table_privilege('nyktus_console', 'public.api_keys', 'DELETE')
+		OR NOT has_function_privilege('nyktus_console', 'public.api_key_scopes_valid(text[])', 'EXECUTE')
+		OR NOT has_column_privilege('nyktus_console', 'public.api_keys', 'last_used_at', 'UPDATE')
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['user_id', 'name', 'secret_hash', 'scopes', 'expires_at']) AS c (name)
+			WHERE NOT has_column_privilege('nyktus_console', 'public.api_keys', c.name, 'INSERT')
+		) THEN
+		RAISE EXCEPTION 'nyktus_console lacks privileges on public.api_keys; run migrations as the owner of the schema';
+	END IF;
+
+	IF has_table_privilege('nyktus_console', 'public.api_keys', 'INSERT, UPDATE, TRUNCATE, REFERENCES, TRIGGER')
+		OR has_any_column_privilege('nyktus_console', 'public.api_keys', 'REFERENCES')
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['id', 'created_at', 'last_used_at']) AS c (name)
+			WHERE has_column_privilege('nyktus_console', 'public.api_keys', c.name, 'INSERT')
+		)
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['id', 'user_id', 'name', 'secret_hash', 'scopes', 'created_at', 'expires_at']) AS c (name)
+			WHERE has_column_privilege('nyktus_console', 'public.api_keys', c.name, 'UPDATE')
+		) THEN
+		RAISE EXCEPTION 'nyktus_console has more privileges on public.api_keys than granted; check the default privileges of the owner';
+	END IF;
+END
+$$;

@@ -69,6 +69,20 @@ func TestRecordUnlessRepeated_RecordsOncePerUserActionOutcomeAndWindow(t *testin
 	if n := count(); n != 6 {
 		t.Errorf("%d entries after the window, want 6", n)
 	}
+
+	// Each API key of the user is recorded on its own, apart from the session.
+	keyEntry := func(keyID string) audit.Entry {
+		e := entry(ada, audit.ActionAuditRead, audit.OutcomeDenied)
+		e.Actor.Method, e.Actor.APIKeyID = audit.AuthAPIKey, keyID
+		return e
+	}
+	record(keyEntry("00000000-0000-4000-8000-00000000000a"))
+	record(keyEntry("00000000-0000-4000-8000-00000000000a"))
+	record(keyEntry("00000000-0000-4000-8000-00000000000b"))
+	record(entry(ada, audit.ActionAuditRead, audit.OutcomeDenied))
+	if n := count(); n != 8 {
+		t.Errorf("%d entries after requests through two keys, want 8", n)
+	}
 }
 
 func TestRecordUnlessRepeated_RequiresAUser(t *testing.T) {
