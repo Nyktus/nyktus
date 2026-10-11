@@ -24,6 +24,7 @@ Settings of a server role are only read when the role runs. A process started wi
 | Variable | Default | Description |
 |---|---|---|
 | `NYKTUS_TRUSTED_PROXIES` | empty | Comma-separated address ranges of your reverse proxies in CIDR notation, such as `10.0.0.0/8,2001:db8::/48`. A single address stands for itself. See [Client addresses](#client-addresses). |
+| `NYKTUS_ENCRYPTION_KEYS` | required with the role `console`, secret, also in development | Keys that encrypt secrets stored in the database. See [Encryption keys](#encryption-keys). |
 
 ### Role `console`
 
@@ -34,7 +35,6 @@ Settings of a server role are only read when the role runs. A process started wi
 | `NYKTUS_CONSOLE_DATABASE_URL` | required, secret | Connection URL of the console's login role. See [Database setup](database.md). |
 | `NYKTUS_SESSION_IDLE_TIMEOUT` | `1h` | A session ends after this long without a request. Between `5m` and `24h`. See [Sign-in and sessions](sign-in.md). |
 | `NYKTUS_SESSION_MAX_AGE` | `12h` | A session ends this long after sign-in, however active it is. Between the idle timeout and `720h` (30 days). |
-| `NYKTUS_ENCRYPTION_KEYS` | required, secret, also in development | Keys that encrypt secrets stored in the database. See [Encryption keys](#encryption-keys). |
 
 ## `nyktus admin`
 
@@ -52,7 +52,7 @@ echo "1:$(openssl rand -base64 32)"
 
 The keys are required in development as well. Nyktus neither derives a key from another secret nor generates one at startup, because either would make the stored secrets unreadable once that secret or the process changes.
 
-To replace a key, put a new key with an unused ID first and keep the old one behind it, such as `2:<new key>,1:<old key>`. The first key encrypts new values; every listed key decrypts. Remove the old key only when no stored value uses it any more.
+To replace a key, put a new key with an unused ID first and keep the old one behind it, such as `2:<new key>,1:<old key>`. The first key encrypts new values; every listed key decrypts. Keep the old key listed: a value encrypted with a key that is no longer listed cannot be decrypted.
 
 ## Client addresses
 

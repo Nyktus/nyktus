@@ -236,8 +236,8 @@ func TestLoadServe_EncryptionKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadServe() error = %v", err)
 	}
-	if cfg.Console.EncryptionKeys == nil || cfg.Console.EncryptionKeys.CurrentKeyID() != 1 {
-		t.Errorf("EncryptionKeys = %v, want the keyring with key 1", cfg.Console.EncryptionKeys)
+	if cfg.EncryptionKeys == nil || cfg.EncryptionKeys.CurrentKeyID() != 1 {
+		t.Errorf("EncryptionKeys = %v, want the keyring with key 1", cfg.EncryptionKeys)
 	}
 
 	// Development needs the keys as well: a generated key would make the stored
@@ -258,6 +258,11 @@ func TestLoadServe_EncryptionKeys(t *testing.T) {
 	}
 	if _, err := LoadServe(src.source(), []Role{RoleConsole}); err != nil {
 		t.Errorf("LoadServe() with keys from a file error = %v", err)
+	}
+	src.files["/run/secrets/keys"] = "1:c2hvcnQ="
+	_, err = LoadServe(src.source(), []Role{RoleConsole})
+	if err == nil || !strings.Contains(err.Error(), "NYKTUS_ENCRYPTION_KEYS_FILE: key 1: must be 32 bytes") {
+		t.Errorf("LoadServe() with a short key from a file error = %v, want it to name the file variable", err)
 	}
 }
 

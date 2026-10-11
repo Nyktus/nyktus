@@ -114,7 +114,8 @@ func TestOpen_RejectsAlteredValues(t *testing.T) {
 			t.Fatalf("Open() with byte %d altered error = %v, want ErrInvalid", i, err)
 		}
 	}
-	for _, short := range [][]byte{nil, {}, sealed[:1], sealed[:len(sealed)-1], sealed[:29]} {
+	// A short value is malformed even if its first byte names no known key.
+	for _, short := range [][]byte{nil, {}, sealed[:1], sealed[:len(sealed)-1], sealed[:29], {0x05}} {
 		if _, err := k.Open(short, aad); !errors.Is(err, secretbox.ErrInvalid) {
 			t.Errorf("Open(%d bytes) error = %v, want ErrInvalid", len(short), err)
 		}

@@ -34,6 +34,12 @@ import (
 // KeySize is the length of a key in bytes, which selects AES-256.
 const KeySize = 32
 
+// Nonce size and tag size of AES-GCM as created by cipher.NewGCM.
+const (
+	nonceSize = 12
+	overhead  = 16
+)
+
 // Errors of opening a sealed value.
 var (
 	// ErrUnknownKey means that a value was sealed with a key that the keyring
@@ -135,15 +141,14 @@ func (k *Keyring) Open(sealed, aad []byte) ([]byte, error) {
 	if len(aad) == 0 {
 		return nil, ErrNoAssociatedData
 	}
-	if len(sealed) == 0 {
+	// Every key has the same nonce size and overhead, so a value too short for
+	// any of them is malformed, whichever key it names.
+	if len(sealed) < 1+nonceSize+overhead {
 		return nil, ErrInvalid
 	}
 	aead, ok := k.aeads[sealed[0]]
 	if !ok {
 		return nil, ErrUnknownKey
-	}
-	if len(sealed) < 1+aead.NonceSize()+aead.Overhead() {
-		return nil, ErrInvalid
 	}
 	nonce, ciphertext := sealed[1:1+aead.NonceSize()], sealed[1+aead.NonceSize():]
 	plaintext, err := aead.Open(nil, nonce, ciphertext, aad)

@@ -112,9 +112,6 @@ type Console struct {
 	SessionIdleTimeout time.Duration
 	// SessionMaxAge ends a session this long after sign-in, however active it is.
 	SessionMaxAge time.Duration
-	// EncryptionKeys encrypt the secrets that the console stores and must read
-	// back, such as the secrets of second factors.
-	EncryptionKeys *secretbox.Keyring
 }
 
 // Limits of the session durations. A session must be able to outlast a short
@@ -133,6 +130,11 @@ type Serve struct {
 	// X-Forwarded-For header is believed. Empty means that only the socket
 	// address counts.
 	TrustedProxies []netip.Prefix
+	// EncryptionKeys encrypt the secrets that the instance stores and must read
+	// back, such as the secrets of second factors. They belong to the instance,
+	// not to a role, because every role that reads such a secret needs the same
+	// keys. They are read only if an enabled role uses them.
+	EncryptionKeys *secretbox.Keyring
 	Console        Console
 }
 
@@ -167,10 +169,10 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 			DatabaseURL: r.requiredSecret("CONSOLE_DATABASE_URL"),
 			SessionIdleTimeout: r.duration("SESSION_IDLE_TIMEOUT", time.Hour,
 				minSessionIdleTimeout, maxSessionIdleTimeout),
-			EncryptionKeys: r.keyring("ENCRYPTION_KEYS"),
 		}
 		cfg.Console.SessionMaxAge = r.duration("SESSION_MAX_AGE", 12*time.Hour,
 			max(cfg.Console.SessionIdleTimeout, minSessionIdleTimeout), maxSessionMaxAge)
+		cfg.EncryptionKeys = r.keyring("ENCRYPTION_KEYS")
 	}
 	return cfg, r.err()
 }
@@ -361,7 +363,12 @@ func (r *reader) keyring(name string) *secretbox.Keyring {
 	}
 	k, err := secretbox.ParseKeyring(value.Value())
 	if err != nil {
-		r.fail("%s%s: %w", prefix, name, err)
+		// The error names the variable that the operator set.
+		source := prefix + name
+		if strings.TrimSpace(r.src.Getenv(source+"_FILE")) != "" {
+			source += "_FILE"
+		}
+		r.fail("%s: %w", source, err)
 		return nil
 	}
 	return k
