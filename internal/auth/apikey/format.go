@@ -82,13 +82,6 @@ func parse(key string) (id string, secret []byte, ok bool) {
 	return uuidString(data[:idSize]), data[idSize:], true
 }
 
-// validID reports whether id is a UUID in the canonical form of PostgreSQL. A
-// malformed identifier would abort the transaction of a query.
-func validID(id string) bool {
-	_, err := uuidBytes(id)
-	return err == nil
-}
-
 func uuidBytes(id string) ([]byte, error) {
 	if len(id) != 36 || id[8] != '-' || id[13] != '-' || id[18] != '-' || id[23] != '-' {
 		return nil, fmt.Errorf("invalid key ID %q", id)

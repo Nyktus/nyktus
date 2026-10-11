@@ -36,8 +36,8 @@ info:
     the origin of the console, otherwise they receive `403`.
 
     Integrations authenticate with an API key in the header
-    `Authorization: Bearer <key>`. A request that carries the header
-    authenticates with it alone, and a key holds the intersection of its scopes
+    `Authorization: Bearer <key>`. A request with a bearer token authenticates
+    with it alone, and a key holds the intersection of its scopes
     and the current role of its user. Operations that do not list `bearerKey`
     reject keys with `403`.
   version: 0.0.0
@@ -635,8 +635,9 @@ paths:
         (`409`, code `too_many_api_keys`).
 
         A wrong password receives `403` with the code `wrong_password` and
-        counts as a failed sign-in. Every attempt is recorded in the audit log
-        as `api_key.create`. Only a session can create API keys.
+        counts as a failed sign-in. New keys, wrong passwords and requests of a
+        locked account are recorded in the audit log as `api_key.create`. Only
+        a session can create API keys.
       tags: [api-keys]
       x-access: authenticated
       security:
@@ -733,7 +734,8 @@ paths:
         identifier, which makes the order total, not chronological.
 
         Entries contain personal data, so reads are recorded in the audit log as
-        `audit.read`, at most once per user and minute.
+        `audit.read`, at most once per user and minute, and separately for
+        each API key.
       tags: [audit]
       x-access: audit:read
       security:

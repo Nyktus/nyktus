@@ -201,6 +201,11 @@ func TestAPIKey_InvalidKeysAreUnauthenticated(t *testing.T) {
 	// expires after the last one of ada is created.
 	d.exec(t, `UPDATE api_keys SET created_at = clock_timestamp() - interval '2 days', expires_at = clock_timestamp() WHERE id = $1`, expiredID)
 	leakedID, leaked := createKey(t, srv, bobCookie)
+	for _, path := range []string{"/api/v1/users/not-a-uuid/api-keys/" + leakedID, "/api/v1/users/" + bob + "/api-keys/not-a-uuid"} {
+		if r := send(t, srv, http.MethodDelete, path, "", c, nil); r.status != http.StatusNotFound {
+			t.Errorf("DELETE %s: status %d, want 404", path, r.status)
+		}
+	}
 	if r := send(t, srv, http.MethodDelete, "/api/v1/users/"+bob+"/api-keys/"+leakedID, "", c, nil); r.status != http.StatusNoContent {
 		t.Fatalf("revoke the key of another account: status %d", r.status)
 	}
@@ -222,8 +227,7 @@ func TestAPIKey_InvalidKeysAreUnauthenticated(t *testing.T) {
 		"revoked by an admin": bearer(leaked),
 		"deactivated account": bearer(deactivated),
 		"malformed":           bearer("nyk_secret"),
-		"other scheme":        {"Authorization": "Basic " + expired},
-		"empty":               {"Authorization": ""},
+		"no token":            {"Authorization": "Bearer"},
 	} {
 		r := send(t, srv, http.MethodGet, "/api/v1/audit-entries", "", nil, header)
 		if r.status != http.StatusUnauthorized || r.header.Get("WWW-Authenticate") != "Bearer" {
@@ -235,8 +239,8 @@ func TestAPIKey_InvalidKeysAreUnauthenticated(t *testing.T) {
 	}
 }
 
-// A request with the Authorization header authenticates with it alone, also
-// when it carries a valid session cookie.
+// A request with a bearer token authenticates with it alone, also when it
+// carries a valid session cookie.
 func TestAPIKey_HeaderTakesPrecedenceOverTheCookie(t *testing.T) {
 	t.Parallel()
 
@@ -251,6 +255,15 @@ func TestAPIKey_HeaderTakesPrecedenceOverTheCookie(t *testing.T) {
 	}
 	if r := send(t, srv, http.MethodGet, "/api/v1/users", "", c, bearer(key)); r.status != http.StatusForbidden {
 		t.Errorf("key without users:read with a valid cookie: status %d, want 403", r.status)
+	}
+	// Credentials of another scheme, such as those of a reverse proxy with basic
+	// authentication, leave the session in charge.
+	if r := send(t, srv, http.MethodGet, "/api/v1/users", "", c, map[string]string{"Authorization": "Basic YWRhOnB3"}); r.status != http.StatusOK {
+		t.Errorf("basic credentials with a valid cookie: status %d, want 200", r.status)
+	}
+	// RFC 6750 allows more than one space after the scheme.
+	if r := send(t, srv, http.MethodGet, "/api/v1/audit-entries", "", nil, map[string]string{"Authorization": "Bearer   " + key}); r.status != http.StatusOK {
+		t.Errorf("key after several spaces: status %d, want 200", r.status)
 	}
 }
 

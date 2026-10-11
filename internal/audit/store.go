@@ -50,8 +50,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, args(e)...)
 // user only once.
 const RepeatWindow = time.Minute
 
-// RecordUnlessRepeated appends e unless the same user has an entry with the same
-// action and outcome from the last RepeatWindow. It is meant for entries that a
+// RecordUnlessRepeated appends e unless the same user, through the same API key
+// or without one, has an entry with the same action and outcome from the last
+// RepeatWindow. Each key is recorded on its own, so that the requests of a
+// leaked key cannot hide behind those of another key or a session. It is meant for entries that a
 // signed-in user can cause at will, such as reads and denied requests, so that
 // repeating them cannot fill the append-only log. The access log still records
 // every request. e must have a user actor.
@@ -68,7 +70,7 @@ INSERT INTO audit_entries (action, outcome, actor_kind, auth_method, actor_user_
 SELECT $1, $2, $3, $4, $5::uuid, $6::uuid, $7, $8::uuid, $9::text[], $10::inet, $11
 WHERE NOT EXISTS (
 	SELECT FROM audit_entries
-	WHERE actor_user_id = $5::uuid AND action = $1 AND outcome = $2
+	WHERE actor_user_id = $5::uuid AND api_key_id IS NOT DISTINCT FROM $6::uuid AND action = $1 AND outcome = $2
 		AND occurred_at > clock_timestamp() - $12::interval
 )`, append(args(e), RepeatWindow)...)
 	if err != nil {

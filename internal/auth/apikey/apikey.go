@@ -64,7 +64,10 @@ var (
 )
 
 // SQLSTATE codes mapped by the store.
-const checkViolation = "23514"
+const (
+	checkViolation            = "23514"
+	invalidTextRepresentation = "22P02"
+)
 
 // Key describes an API key without its secret.
 type Key struct {
@@ -219,10 +222,12 @@ ORDER BY created_at DESC, id DESC`, userID)
 // Delete revokes the key id of the user userID. It returns ErrNotFound if the
 // user has no such key.
 func (s *Store) Delete(ctx context.Context, userID, id string) error {
-	if !validID(id) {
+	tag, err := s.db.Exec(ctx, `DELETE FROM api_keys WHERE id = $1 AND user_id = $2`, id, userID)
+	var pgErr *pgconn.PgError
+	// An identifier that is not a UUID cannot belong to a key or a user.
+	if errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation {
 		return ErrNotFound
 	}
-	tag, err := s.db.Exec(ctx, `DELETE FROM api_keys WHERE id = $1 AND user_id = $2`, id, userID)
 	if err != nil {
 		return fmt.Errorf("delete API key: %w", err)
 	}

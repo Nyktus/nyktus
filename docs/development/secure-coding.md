@@ -161,7 +161,7 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 - The scopes that keys may carry are a list of their own in `internal/auth/access`, a subset of the permissions. Keys do not manage accounts, because a key with `users:write` could take over every account through password reset links. The database checks only the form of a scope, as with audit actions; the authorizer grants nothing beyond the list.
 - Keys are created, listed and revoked only with a session, and creating one requires the password, because a key outlives the session. Routes that change how the account authenticates, such as its password, its second factor, its session or its keys, declare `SessionOnly()` and reject keys with `403`.
 - A key of an account that is not active does not authenticate, and deactivating an account deletes its keys, so that reactivating it does not revive them. A change of password keeps the keys; they are visible to the user and to administrators, who can revoke them.
-- A request with an `Authorization` header authenticates with it alone, and every invalid key receives the same `401` as a request without credentials, without an audit entry.
+- A request with a bearer token authenticates with it alone; other schemes in the `Authorization` header are ignored, so that a reverse proxy with basic authentication does not lock out sessions. Every invalid key receives the same `401` as a request without credentials, without an audit entry.
 - Sensors do not use API keys. They authenticate with their own per-honeypot secret.
 
 ## Authorization
@@ -247,7 +247,7 @@ The sensor runs inside the monitored network and talks to attackers directly.
 - The audit log is append-only for the application. The console's database role can insert and read entries, but never update or delete them.
 - Entries keep a copy of the actor's address and display name, taken from the account by the database, so they stay readable after the account is deleted.
 - Requests without valid credentials are not audited, so anonymous clients cannot flood the audit log; the access log records them. Requests denied for a missing permission are audited.
-- Entries that a signed-in user can cause at will without changing anything, such as denied requests and reads of personal data, are recorded at most once per user, action, outcome and minute (`audit.Store.RecordUnlessRepeated`). Writes, sign-ins and sign-outs are always recorded. A failed sign-in for an unknown account does not record the submitted address, which is attacker input and sometimes holds a mistyped password.
+- Entries that a signed-in user can cause at will without changing anything, such as denied requests and reads of personal data, are recorded at most once per user, API key, action, outcome and minute (`audit.Store.RecordUnlessRepeated`). Each key counts on its own, so that the requests of a leaked key cannot hide behind those of another key or a session. Writes, sign-ins and sign-outs are always recorded. A failed sign-in for an unknown account does not record the submitted address, which is attacker input and sometimes holds a mistyped password.
 
 ## Web console
 

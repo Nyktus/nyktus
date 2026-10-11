@@ -41,7 +41,7 @@ curl --fail-with-body https://nyktus.example.com/api/v1/audit-entries \
   --header "Authorization: Bearer $NYKTUS_API_KEY"
 ```
 
-- A request with the header authenticates with the key alone, even if it carries a session cookie.
+- A request with a bearer token authenticates with the key alone, even if it carries a session cookie. Other schemes, such as the Basic credentials of a reverse proxy, are ignored.
 - An expired, revoked or unknown key, and a key of a deactivated account, receives `401`, like a request without credentials.
 - The key holds a permission only if its scopes and the current role of its user both grant it. Demoting the user restricts the key with the next request.
 - Keys cannot sign the user out, change the password or the second factor, or manage keys. Those requests receive `403`.
@@ -63,4 +63,4 @@ Deactivating an account revokes all of its keys, and reactivating it does not br
 
 ## Audit
 
-Every request made with a key is recorded in the [audit log](audit-log.md) like a request of its user, with the method `api_key` and the identifier of the key. The creation of a key, successful or not, is recorded as `api_key.create`, a revocation by the user or an administrator as `api_key.revoke`. Requests with an invalid key are not recorded; the [access log](logs.md) records them.
+Every request made with a key is recorded in the [audit log](audit-log.md) like a request of its user, with the method `api_key` and the identifier of the key. The creation of a key and every attempt with a wrong password or for a locked account are recorded as `api_key.create`, a revocation by the user or an administrator as `api_key.revoke`. Requests with an invalid key are not recorded; the [access log](logs.md) records them.

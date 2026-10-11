@@ -50,10 +50,12 @@ func (a *Authorizer) Authorize(r *http.Request, acc httpx.Access) (*http.Request
 		p   access.Principal
 		err error
 	)
-	// A request that carries the header authenticates with it alone. The
-	// session cookie is then ignored, so that a request has one principal.
-	if values := r.Header.Values("Authorization"); len(values) > 0 {
-		p, err = a.authenticateKey(ctx, values)
+	// A request with a bearer token authenticates with it alone. The session
+	// cookie is then ignored, so that a request has one principal. Other
+	// schemes, such as Basic credentials that a reverse proxy passes on, are
+	// not meant for the console and are ignored.
+	if key, ok := bearerToken(r.Header.Values("Authorization")); ok {
+		p, err = a.authenticateKey(ctx, key)
 	} else {
 		p, ctx, err = a.authenticateSession(ctx, r)
 	}
@@ -88,12 +90,28 @@ func (a *Authorizer) authenticateSession(ctx context.Context, r *http.Request) (
 	return p, session.NewContext(ctx, sess), nil
 }
 
-// authenticateKey authenticates the values of the Authorization header, which
-// must be exactly one bearer token (RFC 6750) that is a valid API key. Every
-// failure is the same ErrUnauthenticated, without an audit entry.
-func (a *Authorizer) authenticateKey(ctx context.Context, values []string) (access.Principal, error) {
-	scheme, key, ok := strings.Cut(values[0], " ")
-	if len(values) != 1 || !ok || !strings.EqualFold(scheme, "Bearer") || key == "" {
+// bearerToken returns the token of a bearer credential (RFC 6750) among the
+// values of the Authorization header. ok reports whether there is one; key is
+// empty if the header is ambiguous, with more than one value, or the token is
+// missing.
+func bearerToken(values []string) (key string, ok bool) {
+	for _, v := range values {
+		scheme, token, _ := strings.Cut(v, " ")
+		if strings.EqualFold(scheme, "Bearer") {
+			ok = true
+			key = strings.TrimLeft(token, " ")
+		}
+	}
+	if len(values) != 1 {
+		key = ""
+	}
+	return key, ok
+}
+
+// authenticateKey authenticates the API key key. Every failure is the same
+// ErrUnauthenticated, without an audit entry.
+func (a *Authorizer) authenticateKey(ctx context.Context, key string) (access.Principal, error) {
+	if key == "" {
 		return access.Principal{}, httpx.ErrUnauthenticated
 	}
 	k, u, err := apikey.NewStore(a.db).Authenticate(ctx, key)

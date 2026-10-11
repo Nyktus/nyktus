@@ -34,3 +34,29 @@ func TestCheck_SessionOnlyRejectsOtherCredentials(t *testing.T) {
 		t.Errorf("authenticated route with an API key: error = %v, want nil", err)
 	}
 }
+
+func TestBearerToken(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		values []string
+		key    string
+		ok     bool
+	}{
+		{nil, "", false},
+		{[]string{"Bearer nyk_a"}, "nyk_a", true},
+		{[]string{"bearer nyk_a"}, "nyk_a", true},
+		{[]string{"Bearer   nyk_a"}, "nyk_a", true},
+		{[]string{"Bearer"}, "", true},
+		{[]string{"Bearer "}, "", true},
+		{[]string{"Bearer nyk_a", "Bearer nyk_b"}, "", true},
+		{[]string{"Basic YWRhOnB3", "Bearer nyk_a"}, "", true},
+		{[]string{"Basic YWRhOnB3"}, "", false},
+		{[]string{""}, "", false},
+		{[]string{"Bearernyk_a"}, "", false},
+	} {
+		if key, ok := bearerToken(tt.values); key != tt.key || ok != tt.ok {
+			t.Errorf("bearerToken(%q) = %q, %v; want %q, %v", tt.values, key, ok, tt.key, tt.ok)
+		}
+	}
+}

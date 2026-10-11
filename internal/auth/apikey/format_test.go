@@ -78,9 +78,6 @@ func TestFormat_RejectsMalformedIDs(t *testing.T) {
 		if _, err := format(id, make([]byte, secretSize)); err == nil {
 			t.Errorf("format(%q) accepted the ID", id)
 		}
-		if validID(id) {
-			t.Errorf("validID(%q) = true", id)
-		}
 	}
 }
 

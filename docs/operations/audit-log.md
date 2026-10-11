@@ -12,7 +12,7 @@ Nyktus records security-relevant actions in an audit log in its database. The co
 
 Requests without valid credentials are not recorded, so that anonymous clients cannot fill the audit log. The access log records them. A failed sign-in for an unknown address is recorded without the address.
 
-Reads of the audit log and requests denied for a missing permission are recorded at most once per user, action and minute, so that a signed-in user cannot fill the audit log by repeating them. The access log records every one of them.
+Reads of the audit log and requests denied for a missing permission are recorded at most once per user, action and minute, and separately for each [API key](api-keys.md), so that a signed-in user cannot fill the audit log by repeating them. The access log records every one of them.
 
 ## Reading the audit log
 

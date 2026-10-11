@@ -71,9 +71,9 @@ const (
 	ActionSignInChallengeCreate Action = "sign_in_challenge.create"
 	// ActionSessionDelete records a sign-out.
 	ActionSessionDelete Action = "session.delete"
-	// ActionAPIKeyCreate records an attempt of a user to issue an API key,
-	// successful or not. The resource is the key, or the account if the
-	// password was wrong.
+	// ActionAPIKeyCreate records a new API key, and an attempt to issue one with
+	// a wrong password or for a locked account. The resource is the key, or the
+	// account if the attempt failed.
 	ActionAPIKeyCreate Action = "api_key.create"
 	// ActionAPIKeyRevoke records the revocation of an API key, by its user or an
 	// administrator. The resource is the key.

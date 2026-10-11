@@ -20,8 +20,10 @@ import (
 // password. The caller validates the name and the scopes of spec.
 //
 // As with a change of password, a wrong password counts as a failed sign-in and
-// returns ErrWrongPassword, a lock is revealed only with the correct password as
-// a *LockedError, and every attempt is recorded in the audit log. It returns
+// returns ErrWrongPassword, and a lock is revealed only with the correct
+// password as a *LockedError. Both are recorded in the audit log, as is every
+// new key; a request rejected for its fields or the limit of keys is not,
+// because it proves nothing about the credentials. It returns
 // ErrNoSession if the session of p ended since the request was authenticated.
 func (s *Service) CreateAPIKey(ctx context.Context, p access.Principal, password string, spec apikey.Spec) (apikey.Key, string, error) {
 	u, err := s.verifyCurrentPassword(ctx, p, password, audit.ActionAPIKeyCreate)

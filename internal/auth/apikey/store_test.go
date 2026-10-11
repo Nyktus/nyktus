@@ -110,15 +110,20 @@ func TestStore_CreateAuthenticateListAndDelete(t *testing.T) {
 		t.Errorf("List() of another user = %+v, %v; want none", keys, err)
 	}
 
-	for _, keyID := range []string{"not-a-uuid", "00000000-0000-4000-8000-000000000000"} {
-		if err := store.Delete(t.Context(), id, keyID); !errors.Is(err, apikey.ErrNotFound) {
-			t.Errorf("Delete(%s) error = %v, want ErrNotFound", keyID, err)
+	for _, ids := range [][2]string{
+		{id, "not-a-uuid"},
+		{"not-a-uuid", k.ID},
+		{id, "00000000-0000-4000-8000-000000000000"},
+	} {
+		if err := store.Delete(t.Context(), ids[0], ids[1]); !errors.Is(err, apikey.ErrNotFound) {
+			t.Errorf("Delete(%s, %s) error = %v, want ErrNotFound", ids[0], ids[1], err)
 		}
 	}
 	if err := store.Delete(t.Context(), createUser(t, d, "eve@example.com"), k.ID); !errors.Is(err, apikey.ErrNotFound) {
 		t.Errorf("Delete() by another user: error = %v, want ErrNotFound", err)
 	}
-	if err := store.Delete(t.Context(), id, k.ID); err != nil {
+	// PostgreSQL accepts an identifier in uppercase, as clients may send it.
+	if err := store.Delete(t.Context(), strings.ToUpper(id), strings.ToUpper(k.ID)); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 	if _, _, err := store.Authenticate(t.Context(), key); !errors.Is(err, apikey.ErrInvalidKey) {
