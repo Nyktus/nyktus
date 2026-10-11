@@ -154,14 +154,14 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 
 ### API keys
 
+- Keys belong to the team, not to the administrator who created them. Only administrators create, list and revoke them. A key outlives changes to the account of its creator, including its deletion; it ends only when it expires or is revoked.
 - Keys have a fixed, recognizable prefix so that secret scanners can detect leaked keys.
 - Keys are stored as a SHA-256 hash. Lookup uses a non-secret key identifier, and the comparison is constant-time.
-- Keys carry scopes in the form `resource:action`, for example `incidents:read` or `honeytokens:write`. The effective permission is the intersection of the key's scopes and the current role of its owner, evaluated on every request. Demoting a user restricts their keys immediately.
-- Every key has an expiry date, at most a year after its creation. Keys record their last use, and every write made with a key is attributable to that key in the audit log.
-- The scopes that keys may carry are a list of their own in `internal/auth/access`, a subset of the permissions. Keys do not manage accounts, because a key with `users:write` could take over every account through password reset links. The database checks only the form of a scope, as with audit actions; the authorizer grants nothing beyond the list.
-- Keys are created, listed and revoked only with a session, and creating one requires the password, because a key outlives the session. Routes that change how the account authenticates, such as its password, its second factor, its session or its keys, declare `SessionOnly()` and reject keys with `403`.
+- Keys carry scopes in the form `resource:action`, for example `incidents:read` or `honeytokens:write`. A key holds its scopes and nothing else, independent of any role.
+- The scopes that keys may carry are a list of their own in `internal/auth/access`, a subset of the permissions. Keys never manage accounts or keys: a key with `users:write` could take over every account through password reset links, and one with `api_keys:write` could issue itself a successor. The database checks only the form of a scope, as with audit actions; the authorizer grants nothing beyond the list.
+- Every key has an expiry date, at most three years after its creation, which the administrator chooses. Keys record their last use. In the audit log, a key is an actor of its own, with its identifier and a copy of its name.
+- Keys are managed only with a session, and creating one requires the password of the administrator, because a key outlives the session. The creations are serialized under the lock of the active administrators, so that the limit of keys holds. Routes that change how an account authenticates, its session or the keys declare `SessionOnly()` and reject keys with `403`.
 - Authenticated routes that are not session-only admit keys, and the specification lists `bearerKey` exactly for the routes that a key can reach; a test compares both with the router and the scopes that keys may carry.
-- A key of an account that is not active does not authenticate, and deactivating an account deletes its keys, so that reactivating it does not revive them. A change of password keeps the keys; they are visible to the user and to administrators, who can revoke them.
 - A request with an API key, a bearer token with the key prefix, authenticates with it alone; other credentials in the `Authorization` header are ignored, so that a reverse proxy with basic authentication or an identity-aware proxy does not lock out sessions. Every invalid key receives the same `401` as a request without credentials, without an audit entry.
 - Sensors do not use API keys. They authenticate with their own per-honeypot secret.
 

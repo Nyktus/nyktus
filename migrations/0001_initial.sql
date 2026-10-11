@@ -262,9 +262,9 @@ CREATE TABLE public.audit_entries (
 	actor_user_id      uuid CONSTRAINT audit_entries_actor_user_id_fkey REFERENCES public.users (id) ON DELETE SET NULL,
 	actor_email        text,
 	actor_display_name text,
-	-- Keys are deleted when they are revoked and with their user, so there is no
-	-- foreign key: the entry that created a key names it with the same
-	-- identifier as a resource.
+	-- Keys are deleted when they are revoked, so there is no foreign key. Their
+	-- entries stay readable through the copy of the name of the key, which the
+	-- trigger below takes from the key when the entry is written.
 	api_key_id         uuid,
 	-- Resources can be deleted while their entries remain, so there is no foreign
 	-- key. Names are never copied: the audit log must not reveal the inventory.
@@ -279,19 +279,21 @@ CREATE TABLE public.audit_entries (
 		char_length(action) <= 64 AND action ~ '^[a-z][a-z_]*\.[a-z][a-z_]*$'
 	),
 	CONSTRAINT audit_entries_outcome_check CHECK (outcome IN ('success', 'failure', 'denied')),
-	-- An API key acts for the user who owns it, so its entries name that user and
-	-- the key. A user who activates their account or resets their password
-	-- authenticates with the token of the link, before they have a new password;
-	-- requests with an invalid token are not recorded, so anonymous actors never
-	-- use those methods. The second step of a sign-in authenticates with a TOTP
-	-- code or a recovery code; it always belongs to a known account, because only
-	-- the correct password starts it. The command line and background jobs act
-	-- as the system.
+	-- An API key belongs to the team, not to a user, so it is an actor of its own,
+	-- named by the copy of its name. A user who activates their account or
+	-- resets their password authenticates with the token of the link, before
+	-- they have a new password; requests with an invalid token are not recorded,
+	-- so anonymous actors never use those methods. The second step of a sign-in
+	-- authenticates with a TOTP code or a recovery code; it always belongs to a
+	-- known account, because only the correct password starts it. The command
+	-- line and background jobs act as the system.
 	CONSTRAINT audit_entries_actor_check CHECK (
 		CASE actor_kind
-			WHEN 'user' THEN auth_method IN ('password', 'oidc', 'session', 'api_key', 'activation_token', 'password_reset_token',
+			WHEN 'user' THEN auth_method IN ('password', 'oidc', 'session', 'activation_token', 'password_reset_token',
 					'totp', 'recovery_code')
 				AND actor_email IS NOT NULL AND actor_display_name IS NOT NULL
+			WHEN 'api_key' THEN auth_method = 'api_key'
+				AND actor_user_id IS NULL AND actor_email IS NULL AND actor_display_name IS NOT NULL
 			WHEN 'setup' THEN auth_method = 'setup_token'
 				AND actor_user_id IS NULL AND actor_email IS NULL AND actor_display_name IS NULL
 			WHEN 'system' THEN auth_method IN ('cli', 'none')
@@ -322,15 +324,19 @@ CREATE TABLE public.audit_entries (
 -- the audit log adds one every minute.
 CREATE INDEX audit_entries_actor_user_id_idx ON public.audit_entries (actor_user_id, action, outcome, occurred_at);
 
+-- The same lookup for the entries of an API key, which polls more than anyone.
+CREATE INDEX audit_entries_api_key_id_idx ON public.audit_entries (api_key_id, action, outcome, occurred_at);
+
 -- The console lists entries from the newest to the oldest, a page at a time,
 -- continuing after the last entry of the previous page. The identifier makes the
 -- order total for entries with the same time.
 CREATE INDEX audit_entries_occurred_at_id_idx ON public.audit_entries (occurred_at DESC, id DESC);
 
 -- The copies of the actor's address and display name are taken from the account,
--- not from the application, so they always match the account at the time of the
--- entry. Without an account, they are NULL, and the actor check rejects an entry
--- of a user that does not exist.
+-- or the name of an API key from the key, not from the application, so they
+-- always match the actor at the time of the entry. Without an account or key,
+-- they are NULL, and the actor check rejects an entry of an actor that does not
+-- exist.
 CREATE FUNCTION public.audit_entries_copy_actor() RETURNS trigger
 	LANGUAGE plpgsql
 	SET search_path = ''
@@ -342,6 +348,10 @@ BEGIN
 		SELECT u.email, u.display_name INTO NEW.actor_email, NEW.actor_display_name
 		FROM public.users AS u
 		WHERE u.id = NEW.actor_user_id;
+	ELSIF NEW.actor_kind = 'api_key' AND NEW.api_key_id IS NOT NULL THEN
+		SELECT k.name INTO NEW.actor_display_name
+		FROM public.api_keys AS k
+		WHERE k.id = NEW.api_key_id;
 	END IF;
 	RETURN NEW;
 END
@@ -616,12 +626,13 @@ BEGIN
 END
 $$;
 
--- API keys let integrations call the API on behalf of their user. As with
+-- API keys let integrations call the API. They belong to the team, not to the
+-- administrator who created them, and act with their scopes alone. As with
 -- sessions, the database stores only the SHA-256 hash of the secret; the key
 -- itself also carries the identifier, which looks the key up, so that the
--- secret is compared in the application in constant time. A key acts with the
--- intersection of its scopes and the current role of its user, so the scopes
--- are only checked for their form here. Revoking a key deletes it.
+-- secret is compared in the application in constant time. The application
+-- decides which scopes keys may carry, so they are only checked for their form
+-- here. Revoking a key deletes it.
 CREATE FUNCTION public.api_key_scopes_valid(scopes text[]) RETURNS boolean
 	LANGUAGE sql IMMUTABLE STRICT
 	SET search_path = ''
@@ -635,9 +646,8 @@ CREATE FUNCTION public.api_key_scopes_valid(scopes text[]) RETURNS boolean
 
 CREATE TABLE public.api_keys (
 	id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-	-- Deleting a user deletes their keys; deactivating one deletes them in the
-	-- application, so that reactivating the account does not revive them.
-	user_id      uuid NOT NULL CONSTRAINT api_keys_user_id_fkey REFERENCES public.users (id) ON DELETE CASCADE,
+	-- The administrator who created the key. The key outlives the account.
+	created_by   uuid CONSTRAINT api_keys_created_by_fkey REFERENCES public.users (id) ON DELETE SET NULL,
 	name         text NOT NULL,
 	secret_hash  bytea NOT NULL,
 	scopes       text[] NOT NULL,
@@ -648,25 +658,27 @@ CREATE TABLE public.api_keys (
 	CONSTRAINT api_keys_name_check CHECK (char_length(name) BETWEEN 1 AND 64),
 	CONSTRAINT api_keys_secret_hash_check CHECK (octet_length(secret_hash) = 32),
 	CONSTRAINT api_keys_scopes_check CHECK (public.api_key_scopes_valid(scopes)),
-	-- Every key expires within a year. The difference of two times is immutable,
-	-- unlike the sum of a time and an interval, which depends on the time zone.
-	CONSTRAINT api_keys_expires_at_check CHECK (expires_at > created_at AND expires_at - created_at <= interval '365 days'),
+	-- Every key expires within three years. The difference of two times is
+	-- immutable, unlike the sum of a time and an interval, which depends on the
+	-- time zone.
+	CONSTRAINT api_keys_expires_at_check CHECK (expires_at > created_at AND expires_at - created_at <= interval '1096 days'),
 	CONSTRAINT api_keys_last_used_at_check CHECK (last_used_at >= created_at)
 );
 
--- Keys are listed and counted per user, and deleted with the user.
-CREATE INDEX api_keys_user_id_idx ON public.api_keys (user_id);
+-- Deleting a user sets the reference of their keys to NULL, which would scan
+-- the table without this index.
+CREATE INDEX api_keys_created_by_idx ON public.api_keys (created_by);
 
 REVOKE ALL ON public.api_keys FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.api_key_scopes_valid(text[]) FROM PUBLIC, nyktus_console;
 
 -- The console evaluates the check of the scopes when it inserts. It issues,
 -- lists and deletes keys and records their last use; it cannot change the
--- secret, the scopes, the owner or the expiry of a key, and identifiers and
+-- secret, the scopes, the creator or the expiry of a key, and identifiers and
 -- creation times come from the database.
 GRANT EXECUTE ON FUNCTION public.api_key_scopes_valid(text[]) TO nyktus_console;
 GRANT SELECT, DELETE ON public.api_keys TO nyktus_console;
-GRANT INSERT (user_id, name, secret_hash, scopes, expires_at) ON public.api_keys TO nyktus_console;
+GRANT INSERT (created_by, name, secret_hash, scopes, expires_at) ON public.api_keys TO nyktus_console;
 GRANT UPDATE (last_used_at) ON public.api_keys TO nyktus_console;
 
 DO $$
@@ -676,7 +688,7 @@ BEGIN
 		OR NOT has_function_privilege('nyktus_console', 'public.api_key_scopes_valid(text[])', 'EXECUTE')
 		OR NOT has_column_privilege('nyktus_console', 'public.api_keys', 'last_used_at', 'UPDATE')
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['user_id', 'name', 'secret_hash', 'scopes', 'expires_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['created_by', 'name', 'secret_hash', 'scopes', 'expires_at']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.api_keys', c.name, 'INSERT')
 		) THEN
 		RAISE EXCEPTION 'nyktus_console lacks privileges on public.api_keys; run migrations as the owner of the schema';
@@ -689,7 +701,7 @@ BEGIN
 			WHERE has_column_privilege('nyktus_console', 'public.api_keys', c.name, 'INSERT')
 		)
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['id', 'user_id', 'name', 'secret_hash', 'scopes', 'created_at', 'expires_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['id', 'created_by', 'name', 'secret_hash', 'scopes', 'created_at', 'expires_at']) AS c (name)
 			WHERE has_column_privilege('nyktus_console', 'public.api_keys', c.name, 'UPDATE')
 		) THEN
 		RAISE EXCEPTION 'nyktus_console has more privileges on public.api_keys than granted; check the default privileges of the owner';

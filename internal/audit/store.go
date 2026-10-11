@@ -50,40 +50,55 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, args(e)...)
 // user only once.
 const RepeatWindow = time.Minute
 
-// RecordUnlessRepeated appends e unless the same user, through the same API key
-// or without one, has an entry with the same action and outcome from the last
-// RepeatWindow. Each key is recorded on its own, so that the requests of a
-// leaked key cannot hide behind those of another key or a session. It is meant
-// for entries that a signed-in user can cause at will, such as reads and denied
-// requests, so that repeating them cannot fill the append-only log. The access log still records
-// every request. e must have a user actor.
+// RecordUnlessRepeated appends e unless the same user or API key has an entry
+// with the same action and outcome from the last RepeatWindow. Each key counts
+// on its own, so that the requests of a leaked key cannot hide behind those of
+// another key or a user. It is meant for entries that a signed-in user or a key
+// can cause at will, such as reads and denied requests, so that repeating them
+// cannot fill the append-only log. The access log still records every request.
+// e must have a user or an API key as its actor.
 //
 // The check runs in the database, so it holds across console processes.
 // Concurrent calls can each add an entry, which is accepted.
 func (s *Store) RecordUnlessRepeated(ctx context.Context, e Entry) error {
-	if e.Actor.UserID == "" {
-		return fmt.Errorf("record audit entry %s once per window: no user actor", e.Action)
+	query := insertUnlessRepeatedByUser
+	switch {
+	case e.Actor.Kind == ActorUser && e.Actor.UserID != "":
+	case e.Actor.Kind == ActorAPIKey && e.Actor.APIKeyID != "":
+		query = insertUnlessRepeatedByKey
+	default:
+		return fmt.Errorf("record audit entry %s once per window: no user or API key actor", e.Action)
 	}
-	_, err := s.db.Exec(ctx, insertUnlessRepeated, append(args(e), RepeatWindow)...)
+	_, err := s.db.Exec(ctx, query, append(args(e), RepeatWindow)...)
 	if err != nil {
 		return fmt.Errorf("record audit entry %s: %w", e.Action, err)
 	}
 	return nil
 }
 
-// insertUnlessRepeated inserts an entry unless the user has a recent one of the
-// same kind. The window starts at statement_timestamp(), which is stable within
-// the statement, unlike clock_timestamp(), so that the lookup can seek into the
-// index by time instead of reading every entry of the user.
-const insertUnlessRepeated = `
+// insertUnlessRepeatedByUser and insertUnlessRepeatedByKey insert an entry
+// unless its actor has a recent one of the same kind. The window starts at
+// statement_timestamp(), which is stable within the statement, unlike
+// clock_timestamp(), so that the lookup can seek into the index by time instead
+// of reading every entry of the actor. A condition that applies only to some
+// actors would keep the generic plan from using the index, so each kind of
+// actor has its own statement.
+const (
+	insertUnlessRepeatedByUser = insertUnlessRepeated + `
+	WHERE actor_user_id = $5::uuid AND action = $1 AND outcome = $2
+		AND occurred_at > statement_timestamp() - $12::interval
+)`
+	insertUnlessRepeatedByKey = insertUnlessRepeated + `
+	WHERE api_key_id = $6::uuid AND action = $1 AND outcome = $2
+		AND occurred_at > statement_timestamp() - $12::interval
+)`
+	insertUnlessRepeated = `
 INSERT INTO audit_entries (action, outcome, actor_kind, auth_method, actor_user_id, api_key_id,
 	resource_type, resource_id, changed_fields, client_ip, request_id)
 SELECT $1, $2, $3, $4, $5::uuid, $6::uuid, $7, $8::uuid, $9::text[], $10::inet, $11
 WHERE NOT EXISTS (
-	SELECT FROM audit_entries
-	WHERE actor_user_id = $5::uuid AND api_key_id IS NOT DISTINCT FROM $6::uuid AND action = $1 AND outcome = $2
-		AND occurred_at > statement_timestamp() - $12::interval
-)`
+	SELECT FROM audit_entries`
+)
 
 func args(e Entry) []any {
 	fields := e.ChangedFields

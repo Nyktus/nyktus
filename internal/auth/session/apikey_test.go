@@ -15,11 +15,11 @@ import (
 	"nyktus.org/nyktus/internal/auth/apikey"
 )
 
-// createKey creates an API key of the signed-in user of cookie with the scope
-// audit:read and returns its identifier and the key.
+// createKey creates an API key of the team with the scope audit:read, as the
+// administrator signed in with cookie, and returns its identifier and the key.
 func createKey(t *testing.T, srv *httptest.Server, cookie *http.Cookie) (id, key string) {
 	t.Helper()
-	r := send(t, srv, http.MethodPost, "/api/v1/session/api-keys", keyBody("SIEM export", "audit:read", testPassword), cookie, nil)
+	r := send(t, srv, http.MethodPost, "/api/v1/api-keys", keyBody("SIEM export", "audit:read", testPassword, 30*24*time.Hour), cookie, nil)
 	id, _ = r.body["id"].(string)
 	key, _ = r.body["key"].(string)
 	if r.status != http.StatusCreated || id == "" || !strings.HasPrefix(key, apikey.Prefix) {
@@ -28,10 +28,10 @@ func createKey(t *testing.T, srv *httptest.Server, cookie *http.Cookie) (id, key
 	return id, key
 }
 
-func keyBody(name, scope, pw string) string {
+func keyBody(name, scope, pw string, lifetime time.Duration) string {
 	b, err := json.Marshal(map[string]any{
 		"name": name, "scopes": []string{scope}, "password": pw,
-		"expires_at": time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
+		"expires_at": time.Now().Add(lifetime).Format(time.RFC3339),
 	})
 	if err != nil {
 		panic(err)
@@ -43,46 +43,6 @@ func bearer(key string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + key}
 }
 
-func TestAPIKey_IsShownOnceAndActsForItsUser(t *testing.T) {
-	t.Parallel()
-
-	d := newTestDB(t)
-	ada := createUser(t, d, "ada@example.com", "admin", "active", testPassword)
-	srv := startConsole(t, d)
-	c := mustSignIn(t, srv)
-	id, key := createKey(t, srv, c)
-
-	list := send(t, srv, http.MethodGet, "/api/v1/session/api-keys", "", c, nil)
-	keys, _ := list.body["api_keys"].([]any)
-	if list.status != http.StatusOK || len(keys) != 1 || strings.Contains(mustJSON(t, list.body), key) {
-		t.Fatalf("list: %d %v, want the key without its secret", list.status, list.body)
-	}
-
-	if r := send(t, srv, http.MethodGet, "/api/v1/audit-entries", "", nil, bearer(key)); r.status != http.StatusOK {
-		t.Fatalf("read the audit log with the key: %d %v", r.status, r.body)
-	}
-	if n := d.count(t, `SELECT count(*) FROM api_keys WHERE id = $1 AND last_used_at IS NOT NULL`, id); n != 1 {
-		t.Error("the use of the key is not recorded")
-	}
-	// Every action names the key; creating it names the session.
-	if n := d.count(t, `
-SELECT count(*) FROM audit_entries WHERE action = 'audit.read' AND outcome = 'success'
-	AND auth_method = 'api_key' AND api_key_id = $1 AND actor_user_id = $2`, id, ada); n != 1 {
-		t.Errorf("%d reads through the key recorded, want 1", n)
-	}
-	if n := d.count(t, `
-SELECT count(*) FROM audit_entries WHERE action = 'api_key.create' AND outcome = 'success'
-	AND auth_method = 'session' AND resource_type = 'api_key' AND resource_id = $1`, id); n != 1 {
-		t.Errorf("%d creations recorded, want 1", n)
-	}
-
-	// An administrator sees the keys of an account.
-	r := send(t, srv, http.MethodGet, "/api/v1/users/"+ada+"/api-keys", "", c, nil)
-	if keys, _ := r.body["api_keys"].([]any); r.status != http.StatusOK || len(keys) != 1 {
-		t.Errorf("list the keys of the account: %d %v", r.status, r.body)
-	}
-}
-
 func mustJSON(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)
@@ -92,65 +52,117 @@ func mustJSON(t *testing.T, v any) string {
 	return string(b)
 }
 
-// A key holds the intersection of its scopes and the current role of its user,
-// evaluated with every request.
-func TestAPIKey_HoldsTheIntersectionOfScopesAndTheCurrentRole(t *testing.T) {
+// A key belongs to the team: it acts on its own, in the audit log too, and
+// outlives the administrator who created it.
+func TestAPIKey_IsShownOnceAndActsForTheTeam(t *testing.T) {
 	t.Parallel()
 
 	d := newTestDB(t)
 	ada := createUser(t, d, "ada@example.com", "admin", "active", testPassword)
-	// Another administrator remains when ada is demoted.
 	createUser(t, d, "bob@example.com", "admin", "active", testPassword)
 	srv := startConsole(t, d)
-	id, key := createKey(t, srv, mustSignIn(t, srv))
+	c := mustSignIn(t, srv)
+	id, key := createKey(t, srv, c)
 
-	// The role grants users:read, the key does not carry it.
-	if r := send(t, srv, http.MethodGet, "/api/v1/users", "", nil, bearer(key)); r.status != http.StatusForbidden {
-		t.Errorf("route beyond the scopes: status %d, want 403", r.status)
+	list := send(t, srv, http.MethodGet, "/api/v1/api-keys", "", c, nil)
+	keys, _ := list.body["api_keys"].([]any)
+	if list.status != http.StatusOK || len(keys) != 1 || strings.Contains(mustJSON(t, list.body), key) ||
+		keys[0].(map[string]any)["created_by"] != ada {
+		t.Fatalf("list: %d %v, want the key with its creator and without its secret", list.status, list.body)
+	}
+
+	if r := send(t, srv, http.MethodGet, "/api/v1/audit-entries", "", nil, bearer(key)); r.status != http.StatusOK {
+		t.Fatalf("read the audit log with the key: %d %v", r.status, r.body)
+	}
+	if n := d.count(t, `SELECT count(*) FROM api_keys WHERE id = $1 AND last_used_at IS NOT NULL`, id); n != 1 {
+		t.Error("the use of the key is not recorded")
 	}
 	if n := d.count(t, `
-SELECT count(*) FROM audit_entries WHERE action = 'users.read' AND outcome = 'denied' AND api_key_id = $1`, id); n != 1 {
-		t.Errorf("%d denials recorded with the key, want 1", n)
+SELECT count(*) FROM audit_entries WHERE action = 'audit.read' AND outcome = 'success' AND actor_kind = 'api_key'
+	AND auth_method = 'api_key' AND api_key_id = $1 AND actor_user_id IS NULL AND actor_display_name = 'SIEM export'`, id); n != 1 {
+		t.Errorf("%d reads through the key recorded, want 1", n)
+	}
+	if n := d.count(t, `
+SELECT count(*) FROM audit_entries WHERE action = 'api_key.create' AND outcome = 'success' AND actor_user_id = $1
+	AND auth_method = 'session' AND resource_type = 'api_key' AND resource_id = $2`, ada, id); n != 1 {
+		t.Errorf("%d creations recorded, want 1", n)
 	}
 
+	// Demoting, deactivating or deleting the creator leaves the key working.
 	d.exec(t, `UPDATE users SET role = 'viewer' WHERE id = $1`, ada)
-	if r := send(t, srv, http.MethodGet, "/api/v1/audit-entries", "", nil, bearer(key)); r.status != http.StatusForbidden {
-		t.Errorf("after demotion: status %d, want 403", r.status)
-	}
-	d.exec(t, `UPDATE users SET role = 'admin' WHERE id = $1`, ada)
+	d.exec(t, `UPDATE users SET status = 'deactivated' WHERE id = $1`, ada)
+	d.exec(t, `DELETE FROM users WHERE id = $1`, ada)
 	if r := send(t, srv, http.MethodGet, "/api/v1/audit-entries", "", nil, bearer(key)); r.status != http.StatusOK {
-		t.Errorf("after promotion: status %d, want 200", r.status)
+		t.Errorf("after deleting the creator: status %d, want 200", r.status)
 	}
 }
 
-// Keys can carry only scopes that keys may carry and the role grants.
-func TestAPIKey_CreateRejectsScopesBeyondKeysAndRole(t *testing.T) {
+// A key holds its scopes and nothing else.
+func TestAPIKey_HoldsOnlyItsScopes(t *testing.T) {
 	t.Parallel()
 
 	d := newTestDB(t)
 	createUser(t, d, "ada@example.com", "admin", "active", testPassword)
+	srv := startConsole(t, d)
+	id, key := createKey(t, srv, mustSignIn(t, srv))
+
+	if r := send(t, srv, http.MethodGet, "/api/v1/users", "", nil, bearer(key)); r.status != http.StatusForbidden {
+		t.Errorf("route beyond the scopes: status %d, want 403", r.status)
+	}
+	if n := d.count(t, `
+SELECT count(*) FROM audit_entries WHERE action = 'users.read' AND outcome = 'denied' AND actor_kind = 'api_key' AND api_key_id = $1`, id); n != 1 {
+		t.Errorf("%d denials recorded for the key, want 1", n)
+	}
+}
+
+// Only administrators manage keys, and keys carry only scopes that keys may
+// carry, for at most three years.
+func TestAPIKey_ManagedByAdministratorsWithinTheLimits(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDB(t)
+	createUser(t, d, "ada@example.com", "admin", "active", testPassword)
+	createUser(t, d, "uma@example.com", "user", "active", testPassword)
 	createUser(t, d, "vic@example.com", "viewer", "active", testPassword)
 	srv := startConsole(t, d)
 	admin := mustSignIn(t, srv)
-	viewer := signIn(t, srv, "vic@example.com", testPassword, nil).cookie
+
+	for _, email := range []string{"uma@example.com", "vic@example.com"} {
+		c := signIn(t, srv, email, testPassword, nil).cookie
+		for _, tt := range []struct{ method, path, body string }{
+			{http.MethodGet, "/api/v1/api-keys", ""},
+			{http.MethodPost, "/api/v1/api-keys", keyBody("k", "audit:read", testPassword, time.Hour)},
+			{http.MethodDelete, "/api/v1/api-keys/00000000-0000-4000-8000-000000000000", ""},
+		} {
+			if r := send(t, srv, tt.method, tt.path, tt.body, c, nil); r.status != http.StatusForbidden {
+				t.Errorf("%s: %s %s: status %d, want 403", email, tt.method, tt.path, r.status)
+			}
+		}
+	}
 
 	for _, tt := range []struct {
-		name   string
-		cookie *http.Cookie
-		scope  string
+		name     string
+		scope    string
+		lifetime time.Duration
 	}{
-		{"users:write", admin, "users:write"},
-		{"users:read", admin, "users:read"},
-		{"scope beyond the role", viewer, "audit:read"},
-		{"wildcard", admin, "*:*"},
+		{"users:write", "users:write", time.Hour},
+		{"users:read", "users:read", time.Hour},
+		{"api_keys:write", "api_keys:write", time.Hour},
+		{"wildcard", "*:*", time.Hour},
+		{"beyond three years", "audit:read", apikey.MaxLifetime + 24*time.Hour},
+		{"in the past", "audit:read", -time.Hour},
 	} {
-		r := send(t, srv, http.MethodPost, "/api/v1/session/api-keys", keyBody("k", tt.scope, testPassword), tt.cookie, nil)
+		r := send(t, srv, http.MethodPost, "/api/v1/api-keys", keyBody("k", tt.scope, testPassword, tt.lifetime), admin, nil)
 		if r.status != http.StatusBadRequest {
 			t.Errorf("%s: status %d, want 400", tt.name, r.status)
 		}
 	}
 	if n := d.count(t, `SELECT count(*) FROM api_keys`); n != 0 {
 		t.Errorf("%d keys created, want 0", n)
+	}
+	r := send(t, srv, http.MethodPost, "/api/v1/api-keys", keyBody("long-lived", "audit:read", testPassword, apikey.MaxLifetime-24*time.Hour), admin, nil)
+	if r.status != http.StatusCreated {
+		t.Errorf("key for almost three years: %d %v, want 201", r.status, r.body)
 	}
 }
 
@@ -164,8 +176,8 @@ func TestAPIKey_CreateRequiresThePassword(t *testing.T) {
 	srv := startConsole(t, d)
 	c := mustSignIn(t, srv)
 
-	r := send(t, srv, http.MethodPost, "/api/v1/session/api-keys", keyBody("k", "audit:read", "wrong horse battery"), c, nil)
-	if code, _ := r.body["error"].(map[string]any)["code"].(string); r.status != http.StatusForbidden || code != "wrong_password" {
+	r := send(t, srv, http.MethodPost, "/api/v1/api-keys", keyBody("k", "audit:read", "wrong horse battery", time.Hour), c, nil)
+	if r.status != http.StatusForbidden || errorCode(r) != "wrong_password" {
 		t.Errorf("wrong password: %d %v, want 403 wrong_password", r.status, r.body)
 	}
 	if n := d.count(t, `SELECT failed_logins FROM users WHERE id = $1`, ada); n != 1 {
@@ -180,53 +192,38 @@ SELECT count(*) FROM audit_entries WHERE action = 'api_key.create' AND outcome =
 	}
 }
 
-// An expired, revoked or malformed key, and a key of a deactivated account, is
-// answered like a request without credentials and not recorded.
+// An expired, revoked or malformed key is answered like a request without
+// credentials and not recorded.
 func TestAPIKey_InvalidKeysAreUnauthenticated(t *testing.T) {
 	t.Parallel()
 
 	d := newTestDB(t)
 	createUser(t, d, "ada@example.com", "admin", "active", testPassword)
-	bob := createUser(t, d, "bob@example.com", "admin", "active", testPassword)
 	srv := startConsole(t, d)
 	c := mustSignIn(t, srv)
-	bobCookie := signIn(t, srv, "bob@example.com", testPassword, nil).cookie
 
 	expiredID, expired := createKey(t, srv, c)
 	revokedID, revoked := createKey(t, srv, c)
-	if r := send(t, srv, http.MethodDelete, "/api/v1/session/api-keys/"+revokedID, "", c, nil); r.status != http.StatusNoContent {
-		t.Fatalf("revoke: status %d", r.status)
-	}
-	// Creating a key deletes the expired keys of the account, so the key
-	// expires after the last one of ada is created.
-	d.exec(t, `UPDATE api_keys SET created_at = clock_timestamp() - interval '2 days', expires_at = clock_timestamp() WHERE id = $1`, expiredID)
-	leakedID, leaked := createKey(t, srv, bobCookie)
-	for _, path := range []string{"/api/v1/users/not-a-uuid/api-keys/" + leakedID, "/api/v1/users/" + bob + "/api-keys/not-a-uuid"} {
+	for _, path := range []string{"/api/v1/api-keys/not-a-uuid", "/api/v1/api-keys/00000000-0000-4000-8000-000000000000"} {
 		if r := send(t, srv, http.MethodDelete, path, "", c, nil); r.status != http.StatusNotFound {
 			t.Errorf("DELETE %s: status %d, want 404", path, r.status)
 		}
 	}
-	if r := send(t, srv, http.MethodDelete, "/api/v1/users/"+bob+"/api-keys/"+leakedID, "", c, nil); r.status != http.StatusNoContent {
-		t.Fatalf("revoke the key of another account: status %d", r.status)
+	if r := send(t, srv, http.MethodDelete, "/api/v1/api-keys/"+revokedID, "", c, nil); r.status != http.StatusNoContent {
+		t.Fatalf("revoke: status %d", r.status)
 	}
-	_, deactivated := createKey(t, srv, bobCookie)
-	if r := send(t, srv, http.MethodPatch, "/api/v1/users/"+bob, `{"status": "deactivated"}`, c, nil); r.status != http.StatusOK {
-		t.Fatalf("deactivate: %d %v", r.status, r.body)
+	if n := d.count(t, `SELECT count(*) FROM audit_entries WHERE action = 'api_key.revoke' AND resource_id = $1`, revokedID); n != 1 {
+		t.Errorf("%d revocations recorded, want 1", n)
 	}
-	if n := d.count(t, `SELECT count(*) FROM api_keys WHERE user_id = $1`, bob); n != 0 {
-		t.Errorf("%d keys of the deactivated account left, want 0", n)
-	}
-	if n := d.count(t, `SELECT count(*) FROM audit_entries WHERE action = 'api_key.revoke' AND resource_id IN ($1, $2)`, revokedID, leakedID); n != 2 {
-		t.Errorf("%d revocations recorded, want 2", n)
-	}
+	// Creating a key deletes the expired keys, so the key expires after the
+	// last one is created.
+	d.exec(t, `UPDATE api_keys SET created_at = clock_timestamp() - interval '2 days', expires_at = clock_timestamp() WHERE id = $1`, expiredID)
 
 	before := d.count(t, `SELECT count(*) FROM audit_entries`)
 	for name, header := range map[string]map[string]string{
-		"expired":             bearer(expired),
-		"revoked":             bearer(revoked),
-		"revoked by an admin": bearer(leaked),
-		"deactivated account": bearer(deactivated),
-		"malformed":           bearer("nyk_secret"),
+		"expired":   bearer(expired),
+		"revoked":   bearer(revoked),
+		"malformed": bearer("nyk_secret"),
 	} {
 		r := send(t, srv, http.MethodGet, "/api/v1/audit-entries", "", nil, header)
 		if r.status != http.StatusUnauthorized || r.header.Get("WWW-Authenticate") != "Bearer" {
@@ -238,9 +235,9 @@ func TestAPIKey_InvalidKeysAreUnauthenticated(t *testing.T) {
 	}
 }
 
-// A request with a bearer token authenticates with it alone, also when it
-// carries a valid session cookie.
-func TestAPIKey_HeaderTakesPrecedenceOverTheCookie(t *testing.T) {
+// A request with an API key authenticates with it alone, also when it carries a
+// valid session cookie. Other credentials leave the session in charge.
+func TestAPIKey_TakesPrecedenceOverTheCookie(t *testing.T) {
 	t.Parallel()
 
 	d := newTestDB(t)
@@ -268,9 +265,9 @@ func TestAPIKey_HeaderTakesPrecedenceOverTheCookie(t *testing.T) {
 	}
 }
 
-// Routes that manage the session, how the account signs in and its keys reject
-// API keys, so that a leaked key can neither take over the account nor issue a
-// successor. A key cannot remove the second factor of another account either.
+// Routes that manage the session, how the account signs in and the keys reject
+// API keys, so that a leaked key can neither take over an account nor issue
+// itself a successor.
 func TestAPIKey_RejectedWhereOnlySessionsAreAdmitted(t *testing.T) {
 	t.Parallel()
 
@@ -290,9 +287,9 @@ func TestAPIKey_RejectedWhereOnlySessionsAreAdmitted(t *testing.T) {
 		{http.MethodDelete, "/api/v1/session/totp", `{"password": "` + testPassword + `", "code": "123456"}`},
 		{http.MethodPost, "/api/v1/session/totp/confirmation", `{"code": "123456"}`},
 		{http.MethodPost, "/api/v1/session/totp/recovery-codes", `{"password": "` + testPassword + `", "code": "123456"}`},
-		{http.MethodGet, "/api/v1/session/api-keys", ""},
-		{http.MethodPost, "/api/v1/session/api-keys", keyBody("successor", "audit:read", testPassword)},
-		{http.MethodDelete, "/api/v1/session/api-keys/" + id, ""},
+		{http.MethodGet, "/api/v1/api-keys", ""},
+		{http.MethodPost, "/api/v1/api-keys", keyBody("successor", "audit:read", testPassword, time.Hour)},
+		{http.MethodDelete, "/api/v1/api-keys/" + id, ""},
 		{http.MethodPatch, "/api/v1/users/" + bob, `{"totp_enabled": false, "password": "` + testPassword + `"}`},
 	} {
 		r := send(t, srv, tt.method, tt.path, tt.body, nil, bearer(key))
@@ -301,8 +298,10 @@ func TestAPIKey_RejectedWhereOnlySessionsAreAdmitted(t *testing.T) {
 		}
 		// The key lacks users:write for the account route; every other route
 		// tells the client that it needs a session.
-		message, _ := r.body["error"].(map[string]any)["message"].(string)
-		if session := strings.Contains(message, "session"); session != strings.HasPrefix(tt.path, "/api/v1/session") {
+		e, _ := r.body["error"].(map[string]any)
+		message, _ := e["message"].(string)
+		needsSession := !strings.HasPrefix(tt.path, "/api/v1/users/")
+		if strings.Contains(message, "session") != needsSession {
 			t.Errorf("%s %s with an API key: message %q", tt.method, tt.path, message)
 		}
 	}
@@ -321,42 +320,46 @@ func TestAPIKey_RejectedWhereOnlySessionsAreAdmitted(t *testing.T) {
 	}
 }
 
-// The limit of keys is counted under the lock of the account, so that
-// concurrent requests cannot exceed it: a request waits for a transaction that
-// holds the lock and sees the keys it added.
-func TestAPIKey_CreateCountsKeysUnderTheLockOfTheAccount(t *testing.T) {
+// The limit of keys is counted under the lock of the active administrators, who
+// alone create keys, so that two administrators cannot exceed it together: a
+// request of one waits for a transaction that holds the lock of another and
+// sees the keys it added.
+func TestAPIKey_CreateCountsKeysUnderTheLockOfTheAdministrators(t *testing.T) {
 	t.Parallel()
 
 	d := newTestDB(t)
-	id := createUser(t, d, "ada@example.com", "admin", "active", testPassword)
+	ada := createUser(t, d, "ada@example.com", "admin", "active", testPassword)
+	createUser(t, d, "bob@example.com", "admin", "active", testPassword)
 	srv := startConsole(t, d)
-	c := mustSignIn(t, srv)
+	bob := signIn(t, srv, "bob@example.com", testPassword, nil).cookie
 
 	holder, err := d.owner.Begin(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = holder.Rollback(context.WithoutCancel(t.Context())) }()
-	if _, err := holder.Exec(t.Context(), `SELECT FROM users WHERE id = $1 FOR UPDATE`, id); err != nil {
+	// Only the row of the other administrator, so that the request waits for
+	// the lock of the administrators and not for its own account.
+	if _, err := holder.Exec(t.Context(), `SELECT FROM users WHERE id = $1 FOR UPDATE`, ada); err != nil {
 		t.Fatal(err)
 	}
 	_, err = holder.Exec(t.Context(), `
-INSERT INTO api_keys (user_id, name, secret_hash, scopes, expires_at)
-SELECT $1, 'k' || i, sha256(convert_to('k' || i, 'UTF8')), '{audit:read}', clock_timestamp() + interval '1 day'
-FROM generate_series(1, $2) AS i`, id, apikey.MaxPerUser)
+INSERT INTO api_keys (name, secret_hash, scopes, expires_at)
+SELECT 'k' || i, sha256(convert_to('k' || i, 'UTF8')), '{audit:read}', clock_timestamp() + interval '1 day'
+FROM generate_series(1, $1) AS i`, apikey.MaxKeys)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	done := make(chan response, 1)
 	go func() {
-		done <- send(t, srv, http.MethodPost, "/api/v1/session/api-keys", keyBody("k", "audit:read", testPassword), c, nil)
+		done <- send(t, srv, http.MethodPost, "/api/v1/api-keys", keyBody("k", "audit:read", testPassword, time.Hour), bob, nil)
 	}()
 	waitForLockWaiter(t, d, done)
 	if err := holder.Commit(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if r := <-done; r.status != http.StatusConflict {
+	if r := <-done; r.status != http.StatusConflict || errorCode(r) != "too_many_api_keys" {
 		t.Errorf("create beyond the limit: %d %v, want 409", r.status, r.body)
 	}
 }

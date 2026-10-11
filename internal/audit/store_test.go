@@ -55,6 +55,19 @@ RETURNING id`, email, displayName).Scan(&id)
 	return id
 }
 
+// createKey inserts an API key and returns its ID.
+func createKey(t *testing.T, q db.Querier, name string) string {
+	t.Helper()
+	var id string
+	err := q.QueryRow(t.Context(), `
+INSERT INTO api_keys (name, secret_hash, scopes, expires_at) VALUES ($1, sha256(convert_to($1, 'UTF8')), '{audit:read}', clock_timestamp() + interval '1 day')
+RETURNING id`, name).Scan(&id)
+	if err != nil {
+		t.Fatalf("create API key: %v", err)
+	}
+	return id
+}
+
 // userEntry returns a valid entry of userID that updates another user.
 func userEntry(userID, resourceID string) audit.Entry {
 	return audit.Entry{
@@ -256,11 +269,12 @@ func TestRecord_StoresEveryKindOfActor(t *testing.T) {
 
 	s, pool := newStore(t)
 	userID := createUser(t, pool, "jane@example.com", "Jane Doe")
+	key := createKey(t, pool, "SIEM export")
 	actors := []audit.Actor{
 		{Kind: audit.ActorUser, Method: audit.AuthPassword, UserID: userID},
 		{Kind: audit.ActorUser, Method: audit.AuthOIDC, UserID: userID},
 		{Kind: audit.ActorUser, Method: audit.AuthSession, UserID: userID},
-		{Kind: audit.ActorUser, Method: audit.AuthAPIKey, UserID: userID, APIKeyID: keyID},
+		{Kind: audit.ActorAPIKey, Method: audit.AuthAPIKey, APIKeyID: key},
 		{Kind: audit.ActorUser, Method: audit.AuthActivationToken, UserID: userID},
 		{Kind: audit.ActorUser, Method: audit.AuthPasswordResetToken, UserID: userID},
 		{Kind: audit.ActorUser, Method: audit.AuthTOTP, UserID: userID},
@@ -285,11 +299,17 @@ func TestRecord_StoresEveryKindOfActor(t *testing.T) {
 		t.Fatalf("got %d entries, want %d", len(entries), len(actors))
 	}
 	for _, r := range entries {
-		isUser := r.ActorKind == string(audit.ActorUser)
-		if hasCopy := r.ActorEmail != nil && r.ActorDisplayName != nil; hasCopy != isUser {
-			t.Errorf("actor %s/%s: copy of address and name = %v, want %v", r.ActorKind, r.AuthMethod, hasCopy, isUser)
+		isUser, isKey := r.ActorKind == string(audit.ActorUser), r.ActorKind == string(audit.ActorAPIKey)
+		if hasAddress := r.ActorEmail != nil; hasAddress != isUser {
+			t.Errorf("actor %s/%s: copy of the address = %v, want %v", r.ActorKind, r.AuthMethod, hasAddress, isUser)
 		}
-		if hasKey := deref(r.APIKeyID) == keyID; hasKey != (r.AuthMethod == string(audit.AuthAPIKey)) {
+		if hasName := r.ActorDisplayName != nil; hasName != (isUser || isKey) {
+			t.Errorf("actor %s/%s: copy of the name = %v, want %v", r.ActorKind, r.AuthMethod, hasName, isUser || isKey)
+		}
+		if isKey && deref(r.ActorDisplayName) != "SIEM export" {
+			t.Errorf("actor of the key: name %q, want the name of the key", deref(r.ActorDisplayName))
+		}
+		if hasKey := deref(r.APIKeyID) == key; hasKey != isKey {
 			t.Errorf("actor %s/%s: api_key_id = %s", r.ActorKind, r.AuthMethod, deref(r.APIKeyID))
 		}
 	}
@@ -503,9 +523,33 @@ func TestRecord_RejectsInvalidEntries(t *testing.T) {
 			constraint: "audit_entries_actor_check",
 		},
 		{
-			name:       "API key without identifier",
-			modify:     func(e *audit.Entry) { e.Actor.Method = audit.AuthAPIKey },
-			constraint: "audit_entries_api_key_check",
+			name: "user with API key",
+			modify: func(e *audit.Entry) {
+				e.Actor = audit.Actor{Kind: audit.ActorUser, Method: audit.AuthAPIKey, UserID: userID, APIKeyID: keyID}
+			},
+			constraint: "audit_entries_actor_check",
+		},
+		{
+			name: "API key with account",
+			modify: func(e *audit.Entry) {
+				e.Actor = audit.Actor{Kind: audit.ActorAPIKey, Method: audit.AuthAPIKey, UserID: userID, APIKeyID: keyID}
+			},
+			constraint: "audit_entries_actor_check",
+		},
+		{
+			// Without a key, the name cannot be copied.
+			name: "unknown API key",
+			modify: func(e *audit.Entry) {
+				e.Actor = audit.Actor{Kind: audit.ActorAPIKey, Method: audit.AuthAPIKey, APIKeyID: keyID}
+			},
+			constraint: "audit_entries_actor_check",
+		},
+		{
+			name: "API key with session",
+			modify: func(e *audit.Entry) {
+				e.Actor = audit.Actor{Kind: audit.ActorAPIKey, Method: audit.AuthSession, APIKeyID: keyID}
+			},
+			constraint: "audit_entries_actor_check",
 		},
 		{
 			name:       "key identifier with session",

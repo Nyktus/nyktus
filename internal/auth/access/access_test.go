@@ -6,6 +6,7 @@ package access
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"nyktus.org/nyktus/internal/audit"
@@ -61,13 +62,13 @@ func TestKeyScopes_AreGrantedPermissions(t *testing.T) {
 	}
 }
 
-// A key holds the intersection of its scopes, the scopes that keys may carry
-// and the role of its user.
-func TestPrincipal_AllowedForAPIKeyIsTheIntersection(t *testing.T) {
+// A key holds its scopes, as far as keys may carry them, regardless of any
+// role; a user holds the permissions of their role, regardless of scopes.
+func TestPrincipal_AllowedForAPIKeyFollowsItsScopes(t *testing.T) {
 	t.Parallel()
 
-	key := func(role user.Role, scopes ...httpx.Permission) Principal {
-		return Principal{UserID: "u1", Role: role, Method: audit.AuthAPIKey, APIKeyID: "k1", Scopes: scopes}
+	key := func(scopes ...httpx.Permission) Principal {
+		return Principal{Method: audit.AuthAPIKey, APIKeyID: "k1", Scopes: scopes}
 	}
 	for _, tt := range []struct {
 		name string
@@ -75,15 +76,27 @@ func TestPrincipal_AllowedForAPIKeyIsTheIntersection(t *testing.T) {
 		perm httpx.Permission
 		want bool
 	}{
-		{"scope and role", key(user.RoleAdmin, "audit:read"), "audit:read", true},
-		{"scope without role", key(user.RoleViewer, "audit:read"), "audit:read", false},
-		{"role without scope", key(user.RoleAdmin, "audit:read"), "users:read", false},
-		{"no scopes", key(user.RoleAdmin), "audit:read", false},
-		{"scope that keys may not carry", key(user.RoleAdmin, "users:write"), "users:write", false},
+		{"scope", key("audit:read"), "audit:read", true},
+		{"other scope", key("audit:read"), "users:read", false},
+		{"no scopes", key(), "audit:read", false},
+		{"scope that keys may not carry", key("users:write"), "users:write", false},
+		{"role of a key", Principal{Role: user.RoleAdmin, Method: audit.AuthAPIKey, APIKeyID: "k1"}, "audit:read", false},
 		{"session ignores scopes", Principal{Role: user.RoleAdmin, Method: audit.AuthSession, SessionID: "s1"}, "users:write", true},
+		{"session without the role", Principal{Role: user.RoleViewer, Method: audit.AuthSession, SessionID: "s1", Scopes: []httpx.Permission{"audit:read"}}, "audit:read", false},
 	} {
 		if got := tt.p.Allowed(tt.perm); got != tt.want {
 			t.Errorf("%s: Allowed(%s) = %v, want %v", tt.name, tt.perm, got, tt.want)
+		}
+	}
+}
+
+// Keys never manage accounts or keys.
+func TestKeyScopes_ExcludeAccountsAndKeys(t *testing.T) {
+	t.Parallel()
+
+	for _, s := range KeyScopes() {
+		if strings.HasPrefix(string(s), "users:") || strings.HasPrefix(string(s), "api_keys:") {
+			t.Errorf("API keys may carry %s", s)
 		}
 	}
 }
@@ -102,8 +115,8 @@ func TestPrincipal_ContextAndActor(t *testing.T) {
 	if a := p.Actor(); a != (audit.Actor{Kind: audit.ActorUser, Method: audit.AuthSession, UserID: "u1"}) {
 		t.Errorf("Actor() = %+v", a)
 	}
-	k := Principal{UserID: "u1", Role: user.RoleAdmin, Method: audit.AuthAPIKey, APIKeyID: "k1", Scopes: []httpx.Permission{"audit:read"}}
-	if a := k.Actor(); a != (audit.Actor{Kind: audit.ActorUser, Method: audit.AuthAPIKey, UserID: "u1", APIKeyID: "k1"}) {
+	k := Principal{Method: audit.AuthAPIKey, APIKeyID: "k1", Scopes: []httpx.Permission{"audit:read"}}
+	if a := k.Actor(); a != (audit.Actor{Kind: audit.ActorAPIKey, Method: audit.AuthAPIKey, APIKeyID: "k1"}) {
 		t.Errorf("Actor() of an API key = %+v", a)
 	}
 }

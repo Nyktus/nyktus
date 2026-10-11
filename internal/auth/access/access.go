@@ -21,14 +21,15 @@ import (
 // grants lists the permissions of each role. A permission appears here when the
 // first route that requires it is added.
 var grants = map[user.Role][]httpx.Permission{
-	user.RoleAdmin:  {"audit:read", "users:read", "users:write"},
+	user.RoleAdmin:  {"api_keys:read", "api_keys:write", "audit:read", "users:read", "users:write"},
 	user.RoleUser:   {},
 	user.RoleViewer: {},
 }
 
 // keyScopes lists the permissions that an API key may carry as scopes. Keys do
-// not manage accounts, not even by reading them: a leaked key with users:write
-// could take over every account through password reset links.
+// not manage accounts or keys, not even by reading them: a leaked key with
+// users:write could take over every account through password reset links, and
+// one with api_keys:write could issue itself a successor.
 var keyScopes = []httpx.Permission{"audit:read"}
 
 // KeyScopes returns the permissions that an API key may carry as scopes.
@@ -57,6 +58,8 @@ func Permissions() []httpx.Permission {
 
 // Principal is the authenticated party of a request.
 type Principal struct {
+	// UserID and Role are those of the signed-in user. An API key belongs to
+	// the team and has neither.
 	UserID string
 	Role   user.Role
 	// Method is how the principal authenticated, such as with a session.
@@ -65,23 +68,18 @@ type Principal struct {
 	SessionID string
 	// APIKeyID identifies the API key, if the principal authenticated with one.
 	APIKeyID string
-	// Scopes are the scopes of the API key. They restrict the role, never
-	// extend it.
+	// Scopes are the scopes of the API key, which grant its permissions.
 	Scopes []httpx.Permission
 }
 
-// Allowed reports whether p holds perm. An API key holds the intersection of
-// its scopes and the current role of its user, and only scopes that keys may
-// carry, so that demoting the user restricts the key immediately and a scope
-// that keys may no longer carry grants nothing.
+// Allowed reports whether p holds perm. A user holds the permissions of their
+// current role. An API key holds its scopes, as far as keys may carry them, so
+// that a scope that keys may no longer carry grants nothing.
 func (p Principal) Allowed(perm httpx.Permission) bool {
-	if !Allowed(p.Role, perm) {
-		return false
+	if p.Method == audit.AuthAPIKey {
+		return slices.Contains(p.Scopes, perm) && slices.Contains(keyScopes, perm)
 	}
-	if p.Method != audit.AuthAPIKey {
-		return true
-	}
-	return slices.Contains(p.Scopes, perm) && slices.Contains(keyScopes, perm)
+	return Allowed(p.Role, perm)
 }
 
 // HasSession reports whether p signed in with a session, as opposed to another
@@ -92,7 +90,10 @@ func (p Principal) HasSession() bool {
 
 // Actor returns the principal as the actor of an audit entry.
 func (p Principal) Actor() audit.Actor {
-	return audit.Actor{Kind: audit.ActorUser, Method: p.Method, UserID: p.UserID, APIKeyID: p.APIKeyID}
+	if p.Method == audit.AuthAPIKey {
+		return audit.Actor{Kind: audit.ActorAPIKey, Method: audit.AuthAPIKey, APIKeyID: p.APIKeyID}
+	}
+	return audit.Actor{Kind: audit.ActorUser, Method: p.Method, UserID: p.UserID}
 }
 
 type principalKey struct{}
