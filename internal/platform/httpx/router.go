@@ -98,6 +98,9 @@ func (a Access) Permission() (perm Permission, ok bool) {
 var (
 	ErrUnauthenticated = errors.New("unauthenticated")
 	ErrForbidden       = errors.New("forbidden")
+	// ErrSessionRequired means that the route admits only sessions and the
+	// request authenticated otherwise, such as with an API key.
+	ErrSessionRequired = errors.New("session required")
 )
 
 // Authorizer authenticates requests and checks permissions for the router.
@@ -106,7 +109,9 @@ type Authorizer interface {
 	// which is never Public, including its restriction to sessions. On success it returns the request to pass on, which
 	// carries the principal in its context. It returns ErrUnauthenticated if r
 	// carries no valid credentials and ErrForbidden if the principal lacks the
-	// permission; every other error is answered as a server error. The router writes
+	// permission, or ErrSessionRequired if the route admits only sessions and
+	// the request authenticated otherwise; every other error is answered as a
+	// server error. The router writes
 	// all error responses, so an Authorizer cannot leave a denied request unanswered.
 	Authorize(r *http.Request, access Access) (*http.Request, error)
 }
@@ -222,6 +227,8 @@ func (rt *Router) authorize(access Access, next http.Handler) http.Handler {
 			WriteError(w, r, http.StatusUnauthorized, CodeUnauthenticated, "authentication required")
 		case errors.Is(err, ErrForbidden):
 			WriteError(w, r, http.StatusForbidden, CodeForbidden, "permission denied")
+		case errors.Is(err, ErrSessionRequired):
+			WriteError(w, r, http.StatusForbidden, CodeForbidden, "this request requires a signed-in session, not an API key")
 		case err != nil:
 			ServerError(w, r, rt.logger, "authorize", err)
 		case authorized == nil:

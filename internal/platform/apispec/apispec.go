@@ -174,6 +174,18 @@ func validate(key string, op operation, ids map[string]string) []error {
 		if op.Security == nil || len(*op.Security) == 0 {
 			errs = append(errs, fmt.Errorf("%s: protected operation does not declare its security requirements", key))
 		}
+		// Each credential authenticates a request on its own. A requirement with
+		// several schemes would demand all of them together, which the router
+		// never does, and the schemes of an operation would no longer say which
+		// credentials it admits.
+		if op.Security != nil {
+			for _, requirement := range *op.Security {
+				if len(requirement) != 1 {
+					errs = append(errs, fmt.Errorf("%s: each security requirement must name exactly one scheme", key))
+					break
+				}
+			}
+		}
 		if _, ok := op.Responses["401"]; !ok {
 			errs = append(errs, fmt.Errorf("%s: protected operation does not document response 401", key))
 		}

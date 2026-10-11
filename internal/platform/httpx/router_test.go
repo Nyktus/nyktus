@@ -50,6 +50,7 @@ func TestRouter_DeniedRequestsNeverReachTheHandler(t *testing.T) {
 		{name: "unauthenticated", authz: &fakeAuthorizer{err: ErrUnauthenticated}, wantStatus: http.StatusUnauthorized, wantCode: CodeUnauthenticated},
 		{name: "forbidden", authz: &fakeAuthorizer{err: ErrForbidden}, wantStatus: http.StatusForbidden, wantCode: CodeForbidden},
 		{name: "wrapped forbidden", authz: &fakeAuthorizer{err: fmt.Errorf("role viewer: %w", ErrForbidden)}, wantStatus: http.StatusForbidden, wantCode: CodeForbidden},
+		{name: "session required", authz: &fakeAuthorizer{err: ErrSessionRequired}, wantStatus: http.StatusForbidden, wantCode: CodeForbidden},
 		{name: "authorizer failure", authz: &fakeAuthorizer{err: errors.New("session store down")}, wantStatus: http.StatusInternalServerError, wantCode: CodeInternal},
 		{name: "authorizer returns no request", authz: &fakeAuthorizer{noRequest: true}, wantStatus: http.StatusInternalServerError, wantCode: CodeInternal},
 		// http.ServeMux answers HEAD with the GET route, so HEAD must be authorized too.

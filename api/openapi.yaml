@@ -1788,13 +1788,13 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Forbidden:
-      description: The caller lacks the permission that the operation requires. The denial is recorded in the audit log, at most once per user, permission and minute.
+      description: The caller lacks the permission that the operation requires. The denial is recorded in the audit log, at most once per user, permission and minute, and separately for each API key.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     ForbiddenWrite:
-      description: The caller lacks the permission that the operation requires, or the request comes from another origin than the console. A denial for a missing permission is recorded in the audit log, at most once per user, permission and minute.
+      description: The caller lacks the permission that the operation requires, or the request comes from another origin than the console. A denial for a missing permission is recorded in the audit log, at most once per user, permission and minute, and separately for each API key.
       content:
         application/json:
           schema:

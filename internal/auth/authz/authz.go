@@ -131,7 +131,7 @@ func (a *Authorizer) authenticateKey(ctx context.Context, key string) (access.Pr
 // the audit log could name.
 func (a *Authorizer) check(ctx context.Context, p access.Principal, acc httpx.Access) error {
 	if acc.RequiresSession() && !p.HasSession() {
-		return httpx.ErrForbidden
+		return httpx.ErrSessionRequired
 	}
 	perm, ok := acc.Permission()
 	if !ok || p.Allowed(perm) {

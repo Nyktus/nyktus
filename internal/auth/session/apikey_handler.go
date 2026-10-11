@@ -64,11 +64,11 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := apikey.ParseName(req.Name); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "name: 1 to 64 printable characters without surrounding whitespace")
+		writeInvalidName(w, r)
 		return
 	}
 	if err := apikey.ValidateScopes(req.Scopes, p.Role); err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "scopes: distinct permissions that API keys may carry and your role grants")
+		writeInvalidScopes(w, r)
 		return
 	}
 	// The database checks the expiry against its own clock as well.
@@ -93,10 +93,13 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, apikey.ErrInvalidExpiry):
 		writeInvalidExpiry(w, r)
 		return
-	case errors.Is(err, apikey.ErrInvalidName), errors.Is(err, apikey.ErrInvalidScopes):
-		// The database checks the fields as well, in case its rules and those
-		// above ever differ.
-		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, err.Error())
+	// The database checks the fields as well, in case its rules and those above
+	// ever differ.
+	case errors.Is(err, apikey.ErrInvalidName):
+		writeInvalidName(w, r)
+		return
+	case errors.Is(err, apikey.ErrInvalidScopes):
+		writeInvalidScopes(w, r)
 		return
 	case errors.Is(err, apikey.ErrTooManyKeys):
 		httpx.WriteError(w, r, http.StatusConflict, codeTooManyAPIKeys, "revoke an API key before you create another one")
@@ -107,6 +110,14 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	h.logger.InfoContext(r.Context(), "session: API key created", slog.Any("api_key", k))
 	httpx.WriteJSON(w, http.StatusCreated, createAPIKeyResponse{Response: k.Response(), Key: key})
+}
+
+func writeInvalidName(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "name: 1 to 64 printable characters without surrounding whitespace")
+}
+
+func writeInvalidScopes(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "scopes: distinct permissions that API keys may carry and your role grants")
 }
 
 func writeInvalidExpiry(w http.ResponseWriter, r *http.Request) {

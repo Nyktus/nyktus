@@ -23,8 +23,8 @@ func TestCheck_SessionOnlyRejectsOtherCredentials(t *testing.T) {
 	key := access.Principal{UserID: "00000000-0000-4000-8000-000000000000", Role: user.RoleAdmin, Method: audit.AuthAPIKey}
 	signedIn := access.Principal{UserID: key.UserID, Role: user.RoleAdmin, Method: audit.AuthSession, SessionID: "00000000-0000-4000-8000-000000000001"}
 	for _, acc := range []httpx.Access{httpx.Authenticated.SessionOnly(), httpx.Require("users:write").SessionOnly()} {
-		if err := a.check(t.Context(), key, acc); !errors.Is(err, httpx.ErrForbidden) {
-			t.Errorf("%v with an API key: error = %v, want ErrForbidden", acc, err)
+		if err := a.check(t.Context(), key, acc); !errors.Is(err, httpx.ErrSessionRequired) {
+			t.Errorf("%v with an API key: error = %v, want ErrSessionRequired", acc, err)
 		}
 		if err := a.check(t.Context(), signedIn, acc); err != nil {
 			t.Errorf("%v with a session: error = %v, want nil", acc, err)

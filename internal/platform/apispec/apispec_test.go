@@ -142,11 +142,17 @@ paths:
     get: {operationId: getMe, x-access: authenticated, responses: {"200": {description: ok}, "401": {description: no}}}
   /users:
     get: {operationId: listUsers, x-access: users:read, security: [], responses: {"200": {description: ok}, "401": {description: no}, "403": {description: no}}}
+  /both:
+    get: {operationId: both, x-access: authenticated, security: [{session: [], key: []}], responses: {"200": {description: ok}, "401": {description: no}}}
+  /none:
+    get: {operationId: none, x-access: authenticated, security: [{}], responses: {"200": {description: ok}, "401": {description: no}}}
 `,
 			want: []string{
 				"GET /open: public operation declares security requirements",
 				"GET /me: protected operation does not declare its security requirements",
 				"GET /users: protected operation does not declare its security requirements",
+				"GET /both: each security requirement must name exactly one scheme",
+				"GET /none: each security requirement must name exactly one scheme",
 			},
 		},
 		{

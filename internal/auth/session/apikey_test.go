@@ -295,8 +295,15 @@ func TestAPIKey_RejectedWhereOnlySessionsAreAdmitted(t *testing.T) {
 		{http.MethodDelete, "/api/v1/session/api-keys/" + id, ""},
 		{http.MethodPatch, "/api/v1/users/" + bob, `{"totp_enabled": false, "password": "` + testPassword + `"}`},
 	} {
-		if r := send(t, srv, tt.method, tt.path, tt.body, nil, bearer(key)); r.status != http.StatusForbidden {
+		r := send(t, srv, tt.method, tt.path, tt.body, nil, bearer(key))
+		if r.status != http.StatusForbidden {
 			t.Errorf("%s %s with an API key: status %d, want 403", tt.method, tt.path, r.status)
+		}
+		// The key lacks users:write for the account route; every other route
+		// tells the client that it needs a session.
+		message, _ := r.body["error"].(map[string]any)["message"].(string)
+		if session := strings.Contains(message, "session"); session != strings.HasPrefix(tt.path, "/api/v1/session") {
+			t.Errorf("%s %s with an API key: message %q", tt.method, tt.path, message)
 		}
 	}
 	// Nothing changed: the session, the password and the keys are as before.
