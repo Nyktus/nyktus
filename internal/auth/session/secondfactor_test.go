@@ -7,13 +7,18 @@ import (
 	"context"
 	"encoding/base32"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"nyktus.org/nyktus/internal/audit"
+	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/totp"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
+	"nyktus.org/nyktus/internal/user"
 )
 
 // step returns the current time step of the database, whose clock checks the
@@ -546,5 +551,40 @@ func TestRemoveTOTP_EndsSessionsAndTheSecondStep(t *testing.T) {
 	}
 	if n := d.count(t, `SELECT count(*) FROM audit_entries WHERE action = 'user.totp_disable' AND outcome = 'success' AND resource_id = $1`, id); n != 1 {
 		t.Errorf("recorded %d removals, want 1", n)
+	}
+}
+
+// A session revoked by a concurrent change, here simulated by deleting it
+// after the request was authenticated, does not obtain a new session through a
+// change that rotates the session of the caller.
+func TestConfirmTOTP_RevokedSessionGetsNoNewSession(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDB(t)
+	id := createUser(t, d, "ada@example.com", "viewer", "active", testPassword)
+	svc, err := session.NewService(t.Context(), d.console, hasher, secretboxtest.Keyring(t), testSessions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.SignIn(t.Context(), "ada@example.com", testPassword, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := access.Principal{UserID: id, Role: user.RoleViewer, Method: audit.AuthSession, SessionID: result.Session.ID}
+	setup, err := svc.BeginTOTP(t.Context(), p, testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.exec(t, `DELETE FROM sessions WHERE user_id = $1`, id)
+
+	_, _, _, err = svc.ConfirmTOTP(t.Context(), p, totp.Code(mustDecode(t, setup.Secret), step(t, d)))
+	if !errors.Is(err, session.ErrNoSession) {
+		t.Errorf("ConfirmTOTP() with a revoked session error = %v, want ErrNoSession", err)
+	}
+	if n := d.count(t, `SELECT count(*) FROM sessions WHERE user_id = $1`, id); n != 0 {
+		t.Errorf("%d sessions after the confirmation with a revoked session, want none", n)
+	}
+	if n := d.count(t, `SELECT count(*) FROM totp_factors WHERE user_id = $1 AND confirmed_at IS NOT NULL`, id); n != 0 {
+		t.Errorf("factor confirmed with a revoked session")
 	}
 }

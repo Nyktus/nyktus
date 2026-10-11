@@ -289,7 +289,7 @@ func (s *Service) ConfirmTOTP(ctx context.Context, p access.Principal, code stri
 		if err != nil {
 			return err
 		}
-		sess, tok, err = s.rotate(ctx, tx, u)
+		sess, tok, err = s.rotate(ctx, tx, u, p.SessionID)
 		if err != nil {
 			return err
 		}
@@ -343,7 +343,7 @@ func (s *Service) RemoveTOTP(ctx context.Context, p access.Principal, password s
 		}
 		u.TOTPEnabled = false
 		var err error
-		sess, tok, err = s.rotate(ctx, tx, u)
+		sess, tok, err = s.rotate(ctx, tx, u, p.SessionID)
 		if err != nil {
 			return err
 		}

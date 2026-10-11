@@ -404,7 +404,7 @@ func (s *Service) ChangePassword(ctx context.Context, p access.Principal, curren
 		if err != nil {
 			return err
 		}
-		sess, tok, err = s.rotate(ctx, tx, changed)
+		sess, tok, err = s.rotate(ctx, tx, changed, p.SessionID)
 		if err != nil {
 			return err
 		}
@@ -484,9 +484,20 @@ func lockVerified(ctx context.Context, tx pgx.Tx, u user.User, p access.Principa
 }
 
 // rotate ends every session of u and starts a new one, which replaces the
-// session of the caller, so that the user stays signed in while every other
-// session, and every old token, stops working.
-func (s *Service) rotate(ctx context.Context, tx pgx.Tx, u user.User) (Session, string, error) {
+// session sessionID of the caller, so that the user stays signed in while every
+// other session, and every old token, stops working. The caller holds the lock
+// of u. It returns ErrNoSession if the session of the caller ended since the
+// request was authenticated, for example by a concurrent change of password:
+// a revoked session must not obtain a new one.
+func (s *Service) rotate(ctx context.Context, tx pgx.Tx, u user.User, sessionID string) (Session, string, error) {
+	var exists bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT FROM sessions WHERE id = $1 AND user_id = $2)`, sessionID, u.ID).Scan(&exists)
+	if err != nil {
+		return Session{}, "", fmt.Errorf("look up session: %w", err)
+	}
+	if !exists {
+		return Session{}, "", ErrNoSession
+	}
 	if err := RevokeAll(ctx, tx, u.ID); err != nil {
 		return Session{}, "", err
 	}

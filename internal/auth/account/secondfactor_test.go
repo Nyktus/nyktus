@@ -5,8 +5,15 @@ package account_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
+
+	"nyktus.org/nyktus/internal/audit"
+	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/auth/account"
+	"nyktus.org/nyktus/internal/auth/session"
+	"nyktus.org/nyktus/internal/user"
 )
 
 // addFactor gives the account id a confirmed TOTP factor with one recovery code
@@ -189,5 +196,28 @@ func (e env) exec(t *testing.T, sql string, args ...any) {
 	t.Helper()
 	if _, err := e.owner.Exec(t.Context(), sql, args...); err != nil {
 		t.Fatalf("%s: %v", sql, err)
+	}
+}
+
+// An administrator demoted since the request was authenticated no longer may
+// remove a factor, even with the correct password.
+func TestUpdate_DemotedAdministratorCannotRemoveASecondFactor(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t)
+	adminID, _ := e.signIn(t, "ada@example.com", "admin")
+	e.signIn(t, "bob@example.com", "admin")
+	id, _ := e.signIn(t, "jane@example.com", "viewer")
+	e.addFactor(t, id)
+	p := access.Principal{UserID: adminID, Role: user.RoleAdmin, Method: audit.AuthSession, SessionID: unknownID}
+	e.exec(t, `UPDATE users SET role = 'viewer' WHERE id = $1`, adminID)
+
+	svc := account.NewService(e.console, consoleURL, hasher)
+	_, err := svc.Update(t.Context(), p, id, account.Change{RemoveTOTP: true, Password: testPassword})
+	if !errors.Is(err, session.ErrNoSession) {
+		t.Errorf("Update() by a demoted administrator error = %v, want ErrNoSession", err)
+	}
+	if n := e.count(t, `SELECT count(*) FROM totp_factors WHERE user_id = $1`, id); n != 1 {
+		t.Errorf("factor removed by a demoted administrator")
 	}
 }

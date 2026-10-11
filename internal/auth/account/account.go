@@ -315,12 +315,18 @@ func (s *Service) verifyAdminPassword(ctx context.Context, p access.Principal, i
 
 // lockVerifiedAdmin locks the active administrators and checks under the lock
 // that the administrator p, whose password verifyAdminPassword verified, is
-// still an active administrator with the same password and not locked. It
+// still one of them, with the same password and not locked. It
 // returns the reason if not, and records it as a failed removal.
 func (s *Service) lockVerifiedAdmin(ctx context.Context, tx pgx.Tx, p access.Principal, actor user.User, id string) (outcome, err error) {
 	users := user.NewStore(tx)
-	if _, err := users.LockActiveAdmins(ctx); err != nil {
+	admins, err := users.LockActiveAdmins(ctx)
+	if err != nil {
 		return nil, err
+	}
+	// An administrator demoted or deactivated since the request was
+	// authenticated no longer may remove the factor.
+	if !slices.Contains(admins, actor.ID) {
+		return session.ErrNoSession, nil
 	}
 	state, err := users.LockForSignIn(ctx, actor.ID)
 	if errors.Is(err, user.ErrNotFound) {
