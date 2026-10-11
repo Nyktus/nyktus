@@ -203,12 +203,16 @@ func (s *Service) SignIn(ctx context.Context, email, password, previous string) 
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		users := user.NewStore(tx)
 		// The state is read again under the row lock, so that a lock set by a
-		// concurrent failure since the password was checked is respected.
+		// concurrent failure since the password was checked is respected, and
+		// a password replaced in the meantime, such as by a reset, no longer
+		// signs in.
 		state, err := users.LockForSignIn(ctx, u.ID)
 		if err != nil {
 			return err
 		}
 		switch {
+		case state.PasswordHash != u.PasswordHash:
+			outcome = ErrInvalidCredentials
 		case state.RetryAfter > 0:
 			outcome = &LockedError{RetryAfter: state.RetryAfter}
 		case state.Status != user.StatusActive:
@@ -364,7 +368,8 @@ func (s *Service) ChangePassword(ctx context.Context, p access.Principal, curren
 	)
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		users := user.NewStore(tx)
-		// As in SignIn, the state is read again under the row lock.
+		// As in SignIn, the state is read again under the row lock. A password
+		// replaced since it was verified is no longer the current password.
 		state, err := users.LockForSignIn(ctx, u.ID)
 		if err != nil {
 			return err
@@ -374,16 +379,14 @@ func (s *Service) ChangePassword(ctx context.Context, p access.Principal, curren
 			// The account was deactivated since the request was authenticated.
 			outcome = ErrNoSession
 			return nil
+		case state.PasswordHash != u.PasswordHash:
+			outcome = ErrWrongPassword
+			return audit.NewStore(tx).Record(ctx, passwordChangeEntry(ctx, audit.OutcomeFailure, p))
 		case state.RetryAfter > 0:
 			outcome = &LockedError{RetryAfter: state.RetryAfter}
 			return audit.NewStore(tx).Record(ctx, passwordChangeEntry(ctx, audit.OutcomeFailure, p))
 		}
 		changed, err := users.SetPassword(ctx, u.ID, newHash)
-		if errors.Is(err, user.ErrNotFound) {
-			// The account was deleted after the lock.
-			outcome = ErrNoSession
-			return nil
-		}
 		if err != nil {
 			return err
 		}

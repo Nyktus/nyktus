@@ -4,11 +4,17 @@
 package session_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"testing"
 
+	"nyktus.org/nyktus/internal/audit"
+	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/user"
 )
 
@@ -160,5 +166,84 @@ func TestChangePassword_RejectsAnInvalidNewPasswordFirst(t *testing.T) {
 	}
 	if r := signIn(t, srv, "ada@example.com", testPassword, nil); r.status != http.StatusOK {
 		t.Error("a rejected request changed the password")
+	}
+}
+
+// racingHasher calls during once after a verification, as if another request
+// changed the password while this one was hashing.
+type racingHasher struct {
+	*password.Hasher
+	during func()
+}
+
+func (r *racingHasher) Verify(ctx context.Context, pw, encoded string) (bool, error) {
+	ok, err := r.Hasher.Verify(ctx, pw, encoded)
+	if r.during != nil {
+		r.during()
+	}
+	return ok, err
+}
+
+// resetDuring returns a hasher and a service whose next verification is
+// overtaken by a reset of the account id: the password is replaced and every
+// session ends, as POST /api/v1/password-reset does.
+func resetDuring(t *testing.T, d testDB, id string) *session.Service {
+	t.Helper()
+	newHash, err := hasher.Hash(t.Context(), newPassword)
+	if err != nil {
+		t.Fatalf("Hash() error = %v", err)
+	}
+	racing := &racingHasher{Hasher: hasher}
+	svc, err := session.NewService(t.Context(), d.console, racing, testSessions)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	racing.during = func() {
+		racing.during = nil
+		d.exec(t, `UPDATE users SET password_hash = $2 WHERE id = $1`, id, newHash)
+		d.exec(t, `DELETE FROM sessions WHERE user_id = $1`, id)
+	}
+	return svc
+}
+
+// A password that was replaced while it was being verified no longer counts:
+// otherwise a sign-in with the old password could start a session after the
+// reset that should have locked its holder out.
+func TestSignIn_RejectsAPasswordReplacedDuringVerification(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDB(t)
+	id := createUser(t, d, "ada@example.com", "admin", "active", testPassword)
+	svc := resetDuring(t, d, id)
+
+	_, _, err := svc.SignIn(t.Context(), "ada@example.com", testPassword, "")
+	if !errors.Is(err, session.ErrInvalidCredentials) {
+		t.Errorf("SignIn() error = %v, want ErrInvalidCredentials", err)
+	}
+	if n := d.count(t, `SELECT count(*) FROM sessions`); n != 0 {
+		t.Errorf("%d sessions after the reset, want none", n)
+	}
+}
+
+// Likewise, a change of password that verified the replaced password must not
+// overwrite the new one.
+func TestChangePassword_RejectsAPasswordReplacedDuringVerification(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDB(t)
+	id := createUser(t, d, "ada@example.com", "admin", "active", testPassword)
+	svc := resetDuring(t, d, id)
+	p := access.Principal{UserID: id, Role: user.RoleAdmin, Method: audit.AuthSession, SessionID: "00000000-0000-4000-8000-000000000000"}
+
+	_, _, err := svc.ChangePassword(t.Context(), p, testPassword, "the attacker's horse battery")
+	if !errors.Is(err, session.ErrWrongPassword) {
+		t.Errorf("ChangePassword() error = %v, want ErrWrongPassword", err)
+	}
+	if n := d.count(t, `SELECT count(*) FROM sessions`); n != 0 {
+		t.Errorf("%d sessions after the reset, want none", n)
+	}
+	srv := startConsole(t, d)
+	if r := signIn(t, srv, "ada@example.com", newPassword, nil); r.status != http.StatusOK {
+		t.Errorf("sign-in with the password of the reset: status %d, want 200", r.status)
 	}
 }
