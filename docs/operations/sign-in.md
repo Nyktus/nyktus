@@ -1,6 +1,6 @@
 # Sign-in and sessions
 
-Users sign in to the console with their email address and password, and with a code if they set up a [second factor](#second-factor). A successful sign-in starts a session, which the browser keeps in a cookie.
+Users sign in to the console with their email address and password, and with a code if they set up a [second factor](#second-factor), or through your [identity provider](#identity-provider) with OpenID Connect. A successful sign-in starts a session, which the browser keeps in a cookie.
 
 To sign in without the web console, for example to check the installation, send the address and password to the API and keep the cookie:
 
@@ -10,6 +10,39 @@ curl --fail-with-body https://nyktus.example.com/api/v1/session \
   --data @credentials.json \
   --cookie-jar cookies.txt
 ```
+
+## Identity provider
+
+Users can sign in through an OpenID Connect provider, such as Keycloak, Microsoft Entra ID, Okta or Authentik. Nyktus then creates their accounts and takes their roles from their groups at the provider. Set it up as follows:
+
+1. Register Nyktus at the provider as a confidential client with the authorization code flow. Use `https://nyktus.example.com/api/v1/oidc/callback` as redirect URI, with the address of `NYKTUS_CONSOLE_URL`.
+2. Let the provider put the groups of the user into the ID token, as a list of strings in the claim `groups` or another one that `NYKTUS_OIDC_GROUPS_CLAIM` names. Nyktus reads claims only from the ID token.
+3. Set `NYKTUS_OIDC_ISSUER`, `NYKTUS_OIDC_CLIENT_ID`, `NYKTUS_OIDC_CLIENT_SECRET` and the groups of each role, see [Configuration](configuration.md#sign-in-through-an-identity-provider).
+4. Complete the [first start](first-start.md) as usual. The first administrator signs in with a password; the provider cannot create it.
+
+The web console sends the browser to `GET /api/v1/oidc/authorize`, which forwards it to the provider. The provider sends it back to the callback, which starts the session and forwards the browser to the console. A failed sign-in ends on the sign-in page; the reason is written to the log and, if the provider confirmed the user, to the [audit log](audit-log.md).
+
+### Accounts and roles
+
+- An account is created when its user signs in for the first time. It is named by the issuer and the subject of the provider, never by its email address. An account is never linked to an existing one by its address: if another account already has the address of the user, the sign-in is rejected. Delete the other account first if it belongs to the same person.
+- The provider must report an email address in the claim `email` and confirm it with `email_verified: true`. Some providers send `email_verified` only when asked to, or not at all; configure the provider to send it. The address is kept as it was at the first sign-in; the display name follows the claim `name` with every sign-in.
+- The role follows the groups with every sign-in: the highest role among the groups of the user wins. A change of role ends the other sessions of the account. Administrators cannot change the role of such an account in Nyktus.
+- A user in none of the configured groups cannot sign in, and their account is deactivated, which ends its sessions. Nyktus learns of a removal from the groups only when the user signs in through the provider again: until then, open sessions continue, at most for `NYKTUS_SESSION_MAX_AGE`. To lock a user out at once, deactivate the account in Nyktus as well.
+- Deleting an account does not lock its user out: the next sign-in creates it again. To lock a user out, deactivate the account, or remove the user from the groups. A deactivated account stays locked out until an administrator reactivates it, even if the user is added to a group again.
+- The groups can neither demote nor deactivate the last active administrator. Such a sign-in is rejected, and the account stays as it is.
+- Accounts of the provider have no password and no second factor in Nyktus; the provider handles both. Their users cannot change a password or set up a second factor, and administrators cannot issue password reset links for them.
+- Administrators of the provider currently cannot create [API keys](api-keys.md) or remove the second factor of another account, because both are confirmed with a password. A local administrator does both.
+
+### Password sign-in with an identity provider
+
+With a provider, only administrators sign in with a password by default (`NYKTUS_LOCAL_LOGIN=admins`). Keep at least one local administrator as emergency access for when the provider is unreachable, and give it a [second factor](#second-factor): a local administrator without one bypasses the multi-factor authentication of your provider. Other accounts with a password receive the same answer as a wrong password. Set `NYKTUS_LOCAL_LOGIN=all` to let every account sign in with its password as well, or `off` to let nobody, which leaves no access while the provider is unreachable.
+
+### Availability and sign-out
+
+- If the provider is unreachable when the console starts, the console starts anyway, logs a warning and tries again every 30 seconds, then less often, up to every 5 minutes. Until it reaches the provider, `GET /api/v1/oidc/authorize` answers `503`, and local administrators sign in with their password. Signing keys that the provider rotates are fetched again when a token needs them.
+- A sign-in must be completed within ten minutes. The cookie `__Host-nyktus_oidc` binds it to the browser that started it; it is `Secure`, `HttpOnly` and `SameSite=Lax`, because the provider sends the browser back from another site.
+- Signing out ends the session in Nyktus only, not the session at the provider. The next sign-in may therefore complete without a password prompt.
+- The requests to the provider bypass the protection against requests to internal addresses that other outgoing requests receive, because the provider is often only reachable internally. They use HTTPS, which is required outside development.
 
 ## Sessions
 
@@ -23,7 +56,7 @@ curl --fail-with-body https://nyktus.example.com/api/v1/session \
 
 - `NYKTUS_CONSOLE_URL` must be exactly the address that users open in the browser, including the port if it is not the default. Requests that change state, such as a sign-in, are rejected with `403` if the browser reports another origin. This protects sessions against requests from other sites, including pages on other subdomains of your domain.
 - Pass the `Origin` header to the console unchanged.
-- Rate-limit the sign-in endpoints `POST /api/v1/session` and `POST /api/v1/session/second-factor` and the endpoints `POST /api/v1/activation` and `POST /api/v1/password-reset` at the proxy, per client address.
+- Rate-limit the sign-in endpoints `POST /api/v1/session`, `POST /api/v1/session/second-factor`, `GET /api/v1/oidc/authorize` and `GET /api/v1/oidc/callback` and the endpoints `POST /api/v1/activation` and `POST /api/v1/password-reset` at the proxy, per client address. Each request to `GET /api/v1/oidc/authorize` stores a sign-in for ten minutes.
 
 ## Changing the password
 
@@ -110,7 +143,7 @@ The database stores the secrets of the factors encrypted with the [encryption ke
 - Five failed sign-ins in a row lock the account for 15 minutes. Wrong codes of the second factor count as well, and so do a wrong current password when changing the password and a wrong password or code when managing the second factor. The count starts again only after a complete sign-in: the correct password alone does not reset it while the code is missing. A lock blocks the sign-in, not existing sessions. Only a sign-in with the correct password learns about the lock, and when it ends. A lock that a wrong code triggers ends the sign-in that waits for the code. Failures during the lock do not extend it.
 - The lock limits how fast codes can be guessed, but does not end the guessing: whoever knows the password can try five codes every 15 minutes. Watch the [audit log](audit-log.md) for repeated failures of `session.create` with the method `totp`, and change the password of an account that shows them.
 - Anyone who can reach the sign-in can lock an account, including the only administrator, for 15 minutes at a time. Keep the console off the public internet and rate-limit sign-ins at the proxy to make this harder.
-- Every sign-in and change of password, successful or not, and every sign-out is recorded in the [audit log](audit-log.md) with the client address. A failure for an unknown address does not record the address. With a second factor, the correct password is recorded as `sign_in_challenge.create`, and the second step as `session.create` with the method `totp` or `recovery_code`. The setup, confirmation and removal of a factor and new recovery codes are recorded as `user.totp_enroll`, `user.totp_enable`, `user.totp_disable` and `user.recovery_codes_create`.
+- Every sign-in and change of password, successful or not, and every sign-out is recorded in the [audit log](audit-log.md) with the client address. A sign-in through the provider is recorded as `session.create` with the method `oidc`; a sign-in that does not prove an identity, such as an expired one, is only logged. A failure for an unknown address does not record the address. With a second factor, the correct password is recorded as `sign_in_challenge.create`, and the second step as `session.create` with the method `totp` or `recovery_code`. The setup, confirmation and removal of a factor and new recovery codes are recorded as `user.totp_enroll`, `user.totp_enable`, `user.totp_disable` and `user.recovery_codes_create`.
 
 ## When the server is busy
 

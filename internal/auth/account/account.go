@@ -59,6 +59,9 @@ var (
 	// ErrInvalidToken means that the token of a link is unknown, expired, used
 	// or issued for another purpose.
 	ErrInvalidToken = errors.New("invalid link token")
+	// errOIDCPassword means that an administrator of the identity provider
+	// tried to confirm a change with a password, which they do not have.
+	errOIDCPassword = fmt.Errorf("administrator has no password: %w", user.ErrOIDCAccount)
 )
 
 // resourceType names accounts in the audit log.
@@ -194,7 +197,9 @@ type Change struct {
 }
 
 // Update applies c to the account id, as user.Store.Update does, and records
-// the changed fields. A change of role or status ends the sessions of the
+// the changed fields. The role of an account of the identity provider follows
+// its groups there and cannot be changed here, which returns
+// user.ErrOIDCAccount. A change of role or status ends the sessions of the
 // account, and a change of status removes its activation link. Removing the
 // TOTP factor ends the sessions as well and is recorded on its own. It returns
 // ErrOwnAccount if an administrator demotes or deactivates their own account and
@@ -293,6 +298,9 @@ func (s *Service) verifyAdminPassword(ctx context.Context, p access.Principal, i
 	}
 	if err != nil {
 		return user.User{}, err
+	}
+	if actor.Identity != nil {
+		return user.User{}, errOIDCPassword
 	}
 	ok, err := s.verifier.Verify(ctx, password, actor.PasswordHash)
 	if err != nil {
@@ -458,7 +466,9 @@ var passwordReset = purpose{name: "password_reset", action: audit.ActionPassword
 // IssueResetLink issues a password reset link for the active account id, which
 // may be locked. The previous link of the account stops working. Issuing the
 // link changes nothing else: the password and the sessions stay valid until the
-// link is used. It returns ErrNotActive if the account is not active.
+// link is used. It returns ErrNotActive if the account is not active and
+// user.ErrOIDCAccount for an account of the identity provider, which has no
+// password.
 func (s *Service) IssueResetLink(ctx context.Context, p access.Principal, id string) (Link, error) {
 	var link Link
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
@@ -468,8 +478,11 @@ func (s *Service) IssueResetLink(ctx context.Context, p access.Principal, id str
 		if err != nil {
 			return err
 		}
-		if u.Status != user.StatusActive {
+		switch {
+		case u.Status != user.StatusActive:
 			return ErrNotActive
+		case u.Identity != nil:
+			return user.ErrOIDCAccount
 		}
 		link, err = s.issue(ctx, tx, p.Actor(), id, passwordReset)
 		return err
@@ -484,14 +497,18 @@ func (s *Service) IssueResetLink(ctx context.Context, p access.Principal, id str
 // with the address email, on behalf of the command line, so that an operator
 // can regain access when no administrator can sign in. Other accounts are reset
 // by an administrator. It returns user.ErrNotFound if no account has the
-// address, ErrNotAdmin if the account is no administrator and ErrNotActive if
-// it is not active.
+// address, ErrNotAdmin if the account is no administrator, ErrNotActive if it
+// is not active and user.ErrOIDCAccount if it signs in through the identity
+// provider.
 func (s *Service) IssueAdminResetLink(ctx context.Context, email string) (Link, error) {
 	var link Link
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		u, err := s.lockActiveAdmin(ctx, tx, email)
 		if err != nil {
 			return err
+		}
+		if u.Identity != nil {
+			return user.ErrOIDCAccount
 		}
 		link, err = s.issue(ctx, tx, audit.Actor{Kind: audit.ActorSystem, Method: audit.AuthCLI}, u.ID, passwordReset)
 		return err

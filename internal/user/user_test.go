@@ -133,7 +133,42 @@ func TestUser_ResponseLeavesOutThePasswordHash(t *testing.T) {
 	t.Parallel()
 
 	u := User{ID: "id", Email: "ada@example.com", DisplayName: "Ada", Role: RoleAdmin, Status: StatusActive, PasswordHash: "$argon2id$..."}
-	if got, want := u.Response(), (Response{ID: "id", Email: "ada@example.com", DisplayName: "Ada", Role: RoleAdmin, Status: StatusActive}); got != want {
+	want := Response{ID: "id", Email: "ada@example.com", DisplayName: "Ada", Role: RoleAdmin, Status: StatusActive, SignInMethod: SignInPassword}
+	if got := u.Response(); got != want {
 		t.Errorf("Response() = %+v, want %+v", got, want)
+	}
+}
+
+func TestUser_SignInMethodFollowsTheIdentity(t *testing.T) {
+	t.Parallel()
+
+	u := User{Identity: &Identity{Issuer: "https://idp.example.com", Subject: "248289761001"}}
+	if got := u.Response().SignInMethod; got != SignInOIDC {
+		t.Errorf("SignInMethod = %q, want %q", got, SignInOIDC)
+	}
+}
+
+func TestIdentity_Valid(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		id   Identity
+		want bool
+	}{
+		{"typical", Identity{Issuer: "https://idp.example.com/realms/x", Subject: "f:1a2b-3c4d"}, true},
+		{"subject with space", Identity{Issuer: "https://idp.example.com", Subject: "a b"}, true},
+		{"longest subject", Identity{Issuer: "https://idp.example.com", Subject: strings.Repeat("s", MaxSubjectLength)}, true},
+		{"subject too long", Identity{Issuer: "https://idp.example.com", Subject: strings.Repeat("s", MaxSubjectLength+1)}, false},
+		{"issuer too long", Identity{Issuer: "https://" + strings.Repeat("i", MaxIssuerLength), Subject: "s"}, false},
+		{"empty subject", Identity{Issuer: "https://idp.example.com"}, false},
+		{"empty issuer", Identity{Subject: "s"}, false},
+		{"issuer with space", Identity{Issuer: "https://idp.example.com/a b", Subject: "s"}, false},
+		{"subject with newline", Identity{Issuer: "https://idp.example.com", Subject: "a\nb"}, false},
+		{"non-ASCII subject", Identity{Issuer: "https://idp.example.com", Subject: "jäne"}, false},
+	} {
+		if got := tc.id.Valid(); got != tc.want {
+			t.Errorf("%s: Valid() = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

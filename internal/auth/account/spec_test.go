@@ -62,7 +62,7 @@ func TestSpecification_MatchesCode(t *testing.T) {
 	}
 
 	conflict := spec.Components.Responses["Conflict"].Description
-	for _, code := range []string{CodeEmailTaken, CodeLastActiveAdmin, CodeOwnAccount, CodeInvalidState} {
+	for _, code := range []string{CodeEmailTaken, CodeLastActiveAdmin, CodeOwnAccount, CodeInvalidState, CodeOIDCAccount} {
 		if !strings.Contains(conflict, "`"+code+"`") {
 			t.Errorf("the response Conflict does not name the code %s", code)
 		}
@@ -79,6 +79,10 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		if got := spec.Components.Schemas[s].Properties["role"].Enum; !sameSet(got, roles) {
 			t.Errorf("%s.role = %v, want %v", s, got, roles)
 		}
+	}
+	methods := []string{string(user.SignInPassword), string(user.SignInOIDC)}
+	if got := spec.Components.Schemas["User"].Properties["sign_in_method"].Enum; !sameSet(got, methods) {
+		t.Errorf("User.sign_in_method = %v, want %v", got, methods)
 	}
 	statuses := []string{string(user.StatusActive), string(user.StatusDeactivated)}
 	if got := spec.Components.Schemas["UpdateUserRequest"].Properties["status"].Enum; !sameSet(got, statuses) {

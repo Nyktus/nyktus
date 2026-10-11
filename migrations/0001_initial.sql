@@ -54,6 +54,12 @@ CREATE TABLE public.users (
 	role          text NOT NULL,
 	status        text NOT NULL,
 	password_hash text,
+	-- An account of the identity provider signs in through OpenID Connect and
+	-- has no password. The provider names it by its issuer and subject, never by
+	-- the address, which the provider may let users change. Both are set when
+	-- the account is created and cannot be changed.
+	oidc_issuer   text,
+	oidc_subject  text,
 	-- The time of the insert, not the start of the transaction, so that accounts
 	-- created in one transaction keep their order in the list, and an account
 	-- created after waiting for a lock records the time it was created.
@@ -91,16 +97,30 @@ CREATE TABLE public.users (
 	-- account can sign in with its password. A deactivated account keeps its hash,
 	-- if it had one, so that it can be reactivated without a new activation link.
 	CONSTRAINT users_status_check CHECK (status IN ('pending', 'active', 'deactivated')),
+	-- An account of the identity provider is created active and never sets a
+	-- password, so it is never pending. An active account signs in with its
+	-- password or through the provider, never both.
 	CONSTRAINT users_password_check CHECK (
-		(status <> 'pending' OR password_hash IS NULL)
-		AND (status <> 'active' OR password_hash IS NOT NULL)
+		(status <> 'pending' OR (password_hash IS NULL AND oidc_subject IS NULL))
+		AND (status <> 'active' OR password_hash IS NOT NULL OR oidc_subject IS NOT NULL)
+		AND (password_hash IS NULL OR oidc_subject IS NULL)
 	),
 	-- Only encoded Argon2id hashes are accepted, so a plain-text password can
 	-- never be stored by mistake.
 	CONSTRAINT users_password_hash_check CHECK (
 		password_hash ~ '^\$argon2id\$v=19\$m=[0-9]+,t=[0-9]+,p=[0-9]+\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$'
 	),
-	CONSTRAINT users_updated_at_check CHECK (updated_at >= created_at)
+	CONSTRAINT users_updated_at_check CHECK (updated_at >= created_at),
+	-- A subject has at most 255 ASCII characters (OpenID Connect Core 1.0,
+	-- section 2) and is unique within its issuer.
+	CONSTRAINT users_oidc_key UNIQUE (oidc_issuer, oidc_subject),
+	CONSTRAINT users_oidc_check CHECK (
+		(oidc_issuer IS NULL) = (oidc_subject IS NULL)
+		AND char_length(oidc_issuer) BETWEEN 1 AND 2048
+		AND oidc_issuer !~ '[^\x21-\x7e]'
+		AND char_length(oidc_subject) BETWEEN 1 AND 255
+		AND oidc_subject !~ '[^\x20-\x7e]'
+	)
 );
 
 -- Administrators list accounts from the newest to the oldest, a page at a time,
@@ -188,8 +208,9 @@ GRANT USAGE ON SCHEMA public TO nyktus_console;
 GRANT SELECT, DELETE ON public.users TO nyktus_console;
 -- Identifiers, creation times and the lockout counters come from the database
 -- when an account is created. The console cannot set them, and it cannot change
--- identifiers, creation times or addresses.
-GRANT INSERT (email, display_name, role, status, password_hash) ON public.users TO nyktus_console;
+-- identifiers, creation times, addresses or the identity of an account of the
+-- identity provider.
+GRANT INSERT (email, display_name, role, status, password_hash, oidc_issuer, oidc_subject) ON public.users TO nyktus_console;
 GRANT UPDATE (display_name, role, status, password_hash, updated_at, failed_logins, locked_until)
 	ON public.users TO nyktus_console;
 
@@ -201,7 +222,8 @@ BEGIN
 		OR NOT has_table_privilege('nyktus_console', 'public.users', 'SELECT')
 		OR NOT has_table_privilege('nyktus_console', 'public.users', 'DELETE')
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['email', 'display_name', 'role', 'status', 'password_hash']) AS c (name)
+			SELECT FROM unnest(ARRAY['email', 'display_name', 'role', 'status', 'password_hash', 'oidc_issuer',
+				'oidc_subject']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.users', c.name, 'INSERT')
 		)
 		OR EXISTS (
@@ -222,7 +244,7 @@ BEGIN
 			WHERE has_column_privilege('nyktus_console', 'public.users', c.name, 'INSERT')
 		)
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['id', 'email', 'created_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['id', 'email', 'created_at', 'oidc_issuer', 'oidc_subject']) AS c (name)
 			WHERE has_column_privilege('nyktus_console', 'public.users', c.name, 'UPDATE')
 		) THEN
 		RAISE EXCEPTION 'nyktus_console has more privileges on public.users than granted; check the default privileges of the owner';
@@ -622,6 +644,64 @@ BEGIN
 			WHERE has_column_privilege('nyktus_console', p.tbl, p.col, p.priv)
 		) THEN
 		RAISE EXCEPTION 'nyktus_console has more privileges on the tables of the second factor than granted; check the default privileges of the owner';
+	END IF;
+END
+$$;
+
+-- A sign-in through OpenID Connect leaves the console for the identity provider
+-- and returns with a code. Its state is kept here between the two requests, so
+-- that it works across console processes. The browser that started the sign-in
+-- holds a token in a cookie, which binds the sign-in to it; the state parameter
+-- travels through the provider and names the row. Only the SHA-256 hashes of
+-- both are stored. The nonce and the PKCE verifier go to the provider in the
+-- course of the sign-in, so they are kept as they are; they are of no use
+-- without the code, which only the browser receives. A row is consumed once.
+CREATE TABLE public.oidc_logins (
+	state_hash    bytea PRIMARY KEY,
+	browser_hash  bytea NOT NULL,
+	nonce         text NOT NULL,
+	code_verifier text NOT NULL,
+	-- The hash of the token of the session that the browser held when the
+	-- sign-in started, which ends when the new one starts. The browser does
+	-- not send its session cookie, which is SameSite=Strict, when the provider
+	-- sends it back from another site.
+	previous_session_hash bytea,
+	-- The lifetime is fixed here, so that the console cannot extend it.
+	expires_at    timestamptz NOT NULL DEFAULT clock_timestamp() + interval '10 minutes',
+
+	CONSTRAINT oidc_logins_state_hash_check CHECK (octet_length(state_hash) = 32),
+	CONSTRAINT oidc_logins_browser_hash_check CHECK (octet_length(browser_hash) = 32),
+	CONSTRAINT oidc_logins_previous_session_hash_check CHECK (octet_length(previous_session_hash) = 32),
+	-- Unpadded base64url of 256 random bits. A PKCE verifier must have 43 to 128
+	-- unreserved characters (RFC 7636, section 4.1).
+	CONSTRAINT oidc_logins_nonce_check CHECK (nonce ~ '^[A-Za-z0-9_-]{43}$'),
+	CONSTRAINT oidc_logins_code_verifier_check CHECK (code_verifier ~ '^[A-Za-z0-9_-]{43}$')
+);
+
+-- Starting a sign-in removes the expired ones.
+CREATE INDEX oidc_logins_expires_at_idx ON public.oidc_logins (expires_at);
+
+REVOKE ALL ON public.oidc_logins FROM PUBLIC, nyktus_console;
+
+-- Sign-ins are started, consumed and removed when they expire, never changed.
+GRANT SELECT, DELETE ON public.oidc_logins TO nyktus_console;
+GRANT INSERT (state_hash, browser_hash, nonce, code_verifier, previous_session_hash) ON public.oidc_logins TO nyktus_console;
+
+DO $$
+BEGIN
+	IF NOT has_table_privilege('nyktus_console', 'public.oidc_logins', 'SELECT')
+		OR NOT has_table_privilege('nyktus_console', 'public.oidc_logins', 'DELETE')
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['state_hash', 'browser_hash', 'nonce', 'code_verifier', 'previous_session_hash']) AS c (name)
+			WHERE NOT has_column_privilege('nyktus_console', 'public.oidc_logins', c.name, 'INSERT')
+		) THEN
+		RAISE EXCEPTION 'nyktus_console lacks privileges on public.oidc_logins; run migrations as the owner of the schema';
+	END IF;
+
+	IF has_table_privilege('nyktus_console', 'public.oidc_logins', 'INSERT, UPDATE, TRUNCATE, REFERENCES, TRIGGER')
+		OR has_any_column_privilege('nyktus_console', 'public.oidc_logins', 'UPDATE, REFERENCES')
+		OR has_column_privilege('nyktus_console', 'public.oidc_logins', 'expires_at', 'INSERT') THEN
+		RAISE EXCEPTION 'nyktus_console has more privileges on public.oidc_logins than granted; check the default privileges of the owner';
 	END IF;
 END
 $$;

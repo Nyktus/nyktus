@@ -167,6 +167,10 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE api_keys SET last_used_at = clock_timestamp()",
 		"SELECT count(*) FROM api_keys",
 		"DELETE FROM api_keys",
+		"INSERT INTO users (email, display_name, role, status, oidc_issuer, oidc_subject) VALUES ('o@example.com', 'O', 'viewer', 'active', 'https://idp.example.com', 'o')",
+		"INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, previous_session_hash) VALUES (sha256('s'), sha256('b'), repeat('n', 43), repeat('v', 43), sha256('p'))",
+		"SELECT count(*) FROM oidc_logins WHERE expires_at > clock_timestamp()",
+		"DELETE FROM oidc_logins",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -225,6 +229,13 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE api_keys SET name = name",
 		"UPDATE api_keys SET created_at = now()",
 		"TRUNCATE api_keys",
+		"UPDATE users SET oidc_issuer = 'https://other.example.com'",
+		"UPDATE users SET oidc_subject = 'other'",
+		"INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, expires_at) VALUES (sha256('t'), sha256('b'), repeat('n', 43), repeat('v', 43), now() + interval '1 year')",
+		"UPDATE oidc_logins SET expires_at = now() + interval '1 year'",
+		"UPDATE oidc_logins SET nonce = nonce",
+		"UPDATE oidc_logins SET previous_session_hash = NULL",
+		"TRUNCATE oidc_logins",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -299,6 +310,12 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_column_privilege($1, 'public.api_keys', 'scopes', 'UPDATE')",
 		"has_column_privilege($1, 'public.api_keys', 'expires_at', 'UPDATE')",
 		"has_column_privilege($1, 'public.api_keys', 'secret_hash', 'UPDATE')",
+		"has_column_privilege($1, 'public.users', 'oidc_issuer', 'UPDATE')",
+		"has_column_privilege($1, 'public.users', 'oidc_subject', 'UPDATE')",
+		"has_any_column_privilege($1, 'public.oidc_logins', 'UPDATE')",
+		"has_table_privilege($1, 'public.oidc_logins', 'TRUNCATE')",
+		"has_table_privilege($1, 'public.oidc_logins', 'REFERENCES')",
+		"has_column_privilege($1, 'public.oidc_logins', 'expires_at', 'INSERT')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

@@ -20,6 +20,18 @@ The console writes one record with the message `http: request` per request:
 
 Requests without valid credentials, such as a failed setup attempt or a request without a session, are recorded only here, not in the [audit log](audit-log.md). The access log is the place to look for them.
 
+## Sign-in through an identity provider
+
+With an [identity provider](sign-in.md#identity-provider), the console writes these records:
+
+| Message | Level | Content |
+|---|---|---|
+| `oidc: identity provider unreachable; sign-ins through it fail until it is discovered` | warn | The provider could not be reached at startup. `issuer`, `retry_in` until the next attempt, and `error`. |
+| `oidc: identity provider discovered` | info | The provider was reached; sign-ins through it work from now on. |
+| `oidc: sign-in rejected` | warn | The provider confirmed the user, but the sign-in was rejected. `rejection` holds the `reason`, such as a user in none of the configured groups, and the `issuer` and `subject` of the user at the provider. |
+| `oidc: invalid sign-in` | info | The sign-in proves no identity, for example because it expired, was used before, was started in another browser or the provider did not confirm the code or token. `error` names the cause. |
+| `oidc: the identity provider returned an error` | info | The user declined or the provider refused. `error` holds the registered error code, or `unregistered`. |
+
 ## Personal data
 
-The access log contains client addresses and account identifiers, which are personal data. Keep it only as long as you need it to investigate incidents, and restrict access to it like access to the [audit log](audit-log.md).
+The access log contains client addresses and account identifiers, which are personal data. The records of rejected sign-ins through the identity provider contain the subject of the user at the provider. Keep it only as long as you need it to investigate incidents, and restrict access to it like access to the [audit log](audit-log.md).

@@ -69,12 +69,34 @@ type PasswordHasher interface {
 	NeedsRehash(encoded string) bool
 }
 
-// Config sets the lifetime of sessions.
+// Config sets the lifetime of sessions and who signs in with a password.
 type Config struct {
 	// IdleTimeout ends a session after this long without a request.
 	IdleTimeout time.Duration
 	// MaxAge ends a session this long after sign-in.
 	MaxAge time.Duration
+	// LocalLogin says which accounts sign in with a password.
+	LocalLogin LocalLogin
+}
+
+// LocalLogin says which accounts sign in with a password, while the other
+// users sign in through the identity provider.
+type LocalLogin int
+
+// Policies of the sign-in with a password.
+const (
+	// LocalLoginAll lets every account with a password sign in with it.
+	LocalLoginAll LocalLogin = iota
+	// LocalLoginAdmins lets only administrators sign in with a password, as
+	// emergency access while the identity provider is unreachable.
+	LocalLoginAdmins
+	// LocalLoginOff lets no account sign in with a password.
+	LocalLoginOff
+)
+
+// allows reports whether an account with role may sign in with a password.
+func (l LocalLogin) allows(role user.Role) bool {
+	return l == LocalLoginAll || (l == LocalLoginAdmins && role == user.RoleAdmin)
 }
 
 // Service signs users in and out and resolves sessions.
@@ -149,12 +171,13 @@ type SignInResult struct {
 // starts, so that no session is left behind and a token set before sign-in is
 // never carried over.
 //
-// It returns ErrInvalidCredentials for an unknown address, a wrong password and
-// an account that is not active, and a *LockedError only if the password is
-// correct. The password is verified in every case, against a dummy hash if there
-// is no account, so the time of the answer does not reveal whether the account
-// exists. Every attempt is recorded in the audit log; a failure for an unknown
-// address does not record the address, which may be a mistyped password.
+// It returns ErrInvalidCredentials for an unknown address, a wrong password, an
+// account that is not active and an account that may not sign in with a
+// password, and a *LockedError only if the password is correct. The password is
+// verified in every case, against a dummy hash if there is no account, so the
+// time of the answer does not reveal whether the account exists. Every attempt
+// is recorded in the audit log; a failure for an unknown address does not
+// record the address, which may be a mistyped password.
 func (s *Service) SignIn(ctx context.Context, email, password, previous string) (SignInResult, error) {
 	users := user.NewStore(s.db)
 	u, err := users.GetByEmail(ctx, email)
@@ -223,6 +246,13 @@ func (s *Service) SignIn(ctx context.Context, email, password, previous string) 
 		switch {
 		case state.PasswordHash != u.PasswordHash:
 			outcome = ErrInvalidCredentials
+		// An account that may not sign in with a password is rejected like a
+		// wrong password, after the same work, so that the answer reveals
+		// neither the password nor the role. It is checked before the lock,
+		// which only the correct password of an account that may sign in
+		// learns.
+		case !s.cfg.LocalLogin.allows(state.Role):
+			outcome = ErrInvalidCredentials
 		case state.RetryAfter > 0:
 			outcome = &LockedError{RetryAfter: state.RetryAfter}
 		case state.Status != user.StatusActive:
@@ -257,7 +287,7 @@ func (s *Service) SignIn(ctx context.Context, email, password, previous string) 
 		if err := users.CompleteSignIn(ctx, u.ID, rehash); err != nil {
 			return err
 		}
-		result.Session, result.Token, err = s.start(ctx, tx, u, previous)
+		result.Session, result.Token, err = s.Start(ctx, tx, u, token.Hash(previous))
 		if err != nil {
 			return err
 		}
@@ -272,14 +302,16 @@ func (s *Service) SignIn(ctx context.Context, email, password, previous string) 
 	return result, nil
 }
 
-// start starts a new session of u and ends the session previous, which the
-// client still holds, and the expired sessions of u.
-func (s *Service) start(ctx context.Context, tx pgx.Tx, u user.User, previous string) (Session, string, error) {
+// Start starts a new session of u in tx and ends the session whose token has
+// the hash previous, which the client still holds, and the expired sessions of
+// u. previous may be nil. The caller has authenticated u and records the
+// sign-in.
+func (s *Service) Start(ctx context.Context, tx pgx.Tx, u user.User, previous []byte) (Session, string, error) {
 	if _, err := tx.Exec(ctx, `
 DELETE FROM sessions
 WHERE token_hash = $1
 	OR (user_id = $2 AND (last_seen_at <= clock_timestamp() - $3::interval OR created_at <= clock_timestamp() - $4::interval))`,
-		token.Hash(previous), u.ID, s.cfg.IdleTimeout, s.cfg.MaxAge); err != nil {
+		previous, u.ID, s.cfg.IdleTimeout, s.cfg.MaxAge); err != nil {
 		return Session{}, "", fmt.Errorf("delete previous and expired sessions: %w", err)
 	}
 	return s.insert(ctx, tx, u)
@@ -319,9 +351,10 @@ func (s *Service) Authenticate(ctx context.Context, tok string) (Session, error)
 	var (
 		sess                  Session
 		createdAt, lastSeenAt time.Time
+		issuer, subject       *string
 	)
 	err := s.db.QueryRow(ctx, `
-SELECT s.id, s.created_at, s.last_seen_at, u.id, u.email, u.display_name, u.role, u.status,
+SELECT s.id, s.created_at, s.last_seen_at, u.id, u.email, u.display_name, u.role, u.status, u.oidc_issuer, u.oidc_subject,
 	EXISTS (SELECT FROM totp_factors AS f WHERE f.user_id = u.id AND f.confirmed_at IS NOT NULL)
 FROM sessions AS s
 JOIN users AS u ON u.id = s.user_id
@@ -330,12 +363,15 @@ WHERE s.token_hash = $1
 	AND s.created_at > clock_timestamp() - $3::interval
 	AND u.status = $4`, token.Hash(tok), s.cfg.IdleTimeout, s.cfg.MaxAge, user.StatusActive).
 		Scan(&sess.ID, &createdAt, &lastSeenAt, &sess.User.ID, &sess.User.Email, &sess.User.DisplayName, &sess.User.Role, &sess.User.Status,
-			&sess.User.TOTPEnabled)
+			&issuer, &subject, &sess.User.TOTPEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrNoSession
 	}
 	if err != nil {
 		return Session{}, fmt.Errorf("look up session: %w", err)
+	}
+	if issuer != nil && subject != nil {
+		sess.User.Identity = &user.Identity{Issuer: *issuer, Subject: *subject}
 	}
 
 	err = s.db.QueryRow(ctx, `
@@ -424,7 +460,8 @@ func (s *Service) ChangePassword(ctx context.Context, p access.Principal, curren
 // password counts as a failed sign-in and returns ErrWrongPassword, so that a
 // taken-over session cannot guess the password more often than the sign-in
 // can. It returns ErrNoSession if the account was deleted since the request was
-// authenticated.
+// authenticated, and user.ErrOIDCAccount for an account of the identity
+// provider, which has no password.
 //
 // The password is verified without a lock, because hashing must not hold one;
 // the caller confirms the result under the lock with lockVerified.
@@ -435,6 +472,9 @@ func (s *Service) verifyCurrentPassword(ctx context.Context, p access.Principal,
 	}
 	if err != nil {
 		return user.User{}, err
+	}
+	if u.Identity != nil {
+		return user.User{}, user.ErrOIDCAccount
 	}
 	ok, err := s.hasher.Verify(ctx, password, u.PasswordHash)
 	if err != nil {

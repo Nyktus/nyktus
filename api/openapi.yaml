@@ -32,14 +32,15 @@ info:
     message and a request ID that correlates them with the server log.
 
     Browsers authenticate with a session cookie, which `POST /api/v1/session`
-    sets. Requests that change state and carry an `Origin` header must come from
+    sets, or, for users of an identity provider, the sign-in that
+    `GET /api/v1/oidc/authorize` starts. Requests that change state and carry an `Origin` header must come from
     the origin of the console, otherwise they receive `403`.
 
     Integrations authenticate with an API key in the header
     `Authorization: Bearer <key>`. A request with a key authenticates with it
-    alone; other credentials in the header are ignored. A key holds the intersection of its scopes
-    and the current role of its user. Operations that do not list `bearerKey`
-    reject keys with `403`.
+    alone; other credentials in the header are ignored. A key belongs to the team
+    and holds its scopes, regardless of who created it. Operations that do not
+    list `bearerKey` reject keys with `403`.
   version: 0.0.0
   license:
     name: AGPL-3.0-or-later
@@ -154,7 +155,10 @@ paths:
         The count of failed sign-ins starts again only then.
 
         Every rejected sign-in receives the same `401`, whether the address is
-        unknown, the password is wrong or the account may not sign in. Five failed
+        unknown, the password is wrong or the account may not sign in. That
+        includes an account of the identity provider, which has no password, and,
+        while users sign in through an identity provider, by default every
+        account other than an administrator's. Five failed
         sign-ins in a row lock the account for 15 minutes. Only a request with the
         correct password learns that the account is locked, through `403` with the
         code `account_locked`.
@@ -280,6 +284,9 @@ paths:
         account is locked, through `403` with the code `account_locked`. Every
         attempt is recorded in the audit log as `user.password_change`.
 
+        An account of the identity provider has no password and receives `409`
+        with the code `oidc_account`.
+
         Only a session can change the password; an API key receives `403`.
       tags: [session]
       x-access: authenticated
@@ -317,6 +324,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "413":
           $ref: "#/components/responses/BodyTooLarge"
         "415":
@@ -325,6 +334,85 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/Unavailable"
+
+  /api/v1/oidc/authorize:
+    get:
+      operationId: beginOIDCSignIn
+      summary: Start a sign-in through the identity provider
+      description: |
+        Sends the browser to the identity provider, which sends it back to
+        `GET /api/v1/oidc/callback`. A browser navigates here; it is not called
+        with `fetch`. The response sets a cookie that binds the sign-in to the
+        browser. The sign-in must complete within ten minutes.
+
+        Until the console has reached the identity provider, for example after
+        a start while the provider was down, the response is `503`. Without a
+        configured identity provider, it is `404`.
+      tags: [session]
+      x-access: public
+      responses:
+        "302":
+          description: The browser goes to the identity provider.
+          headers:
+            Location:
+              description: The authorization endpoint of the provider, with state, nonce and PKCE challenge.
+              schema:
+                type: string
+            Set-Cookie:
+              description: The cookie `__Host-nyktus_oidc`, with `Secure`, `HttpOnly`, `SameSite=Lax` and `Path=/`, valid for ten minutes.
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/oidc/callback:
+    get:
+      operationId: completeOIDCSignIn
+      summary: Complete a sign-in through the identity provider
+      description: |
+        The identity provider sends the browser here with a code. The console
+        exchanges the code, verifies the ID token and starts a session. The
+        account is created at the first sign-in; its role follows the groups of
+        the user at the provider with every sign-in.
+
+        The browser always goes on to a page of the console: `/` when signed in,
+        `/sign-in#error=oidc` otherwise. The reason of a failure is recorded only
+        in the log and, for an identity that the provider vouched for, in the
+        audit log. Without a configured identity provider, the response is `404`.
+      tags: [session]
+      x-access: public
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          description: Set by the provider instead of `code` if the user declined or the provider refused.
+          schema:
+            type: string
+      responses:
+        "303":
+          description: The browser goes on to the console.
+          headers:
+            Location:
+              description: "`/` when signed in, `/sign-in#error=oidc` otherwise."
+              schema:
+                type: string
+            Set-Cookie:
+              description: The cleared cookie `__Host-nyktus_oidc` and, when signed in, the session cookie `__Host-nyktus_session`.
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/v1/session/second-factor:
     post:
@@ -411,8 +499,9 @@ paths:
 
         A wrong password receives `403` with the code `wrong_password` and
         counts as a failed sign-in. An account that already has a factor
-        receives `409` with the code `totp_enabled`. Only a session can manage
-        the second factor.
+        receives `409` with the code `totp_enabled`, and an account of the
+        identity provider, whose second factor the provider manages, `409` with
+        the code `oidc_account`. Only a session can manage the second factor.
       tags: [session]
       x-access: authenticated
       security:
@@ -644,7 +733,9 @@ paths:
         A wrong password receives `403` with the code `wrong_password` and
         counts as a failed sign-in. New keys, wrong passwords and requests of a
         locked account are recorded in the audit log as `api_key.create`. Only
-        a session can create API keys.
+        a session can create API keys. An administrator of the identity
+        provider has no password and cannot create keys yet (`409`, code
+        `oidc_account`).
       tags: [api-keys]
       x-access: api_keys:write
       security:
@@ -921,8 +1012,11 @@ paths:
         - `status: deactivated` blocks the sign-in and removes an open activation
           link. `status: active` reactivates a deactivated account and ends a
           lock after failed sign-ins; an account that never set a password
-          returns to `pending`. A pending account becomes active only through
-          its activation link.
+          returns to `pending`, unless it signs in through the identity
+          provider. A pending account becomes active only through its
+          activation link.
+        - The role of an account of the identity provider follows its groups
+          there and cannot be changed (`409`, code `oidc_account`).
         - At least one active administrator must remain, and administrators
           cannot demote or deactivate their own account (`409`).
         - `totp_enabled: false` removes the TOTP factor and the recovery codes,
@@ -933,7 +1027,9 @@ paths:
           correct password learns it (`403` with the code `account_locked`).
           The audit log records every attempt as `user.totp_disable`. Only a
           session can remove a factor (`403`). Administrators remove their own
-          factor with `DELETE /api/v1/session/totp` (`409`).
+          factor with `DELETE /api/v1/session/totp` (`409`). An administrator
+          of the identity provider has no password and cannot remove factors
+          yet (`409`, code `oidc_account`).
 
         The audit log records the names of the changed fields, not their values.
       tags: [users]
@@ -1067,7 +1163,8 @@ paths:
         The link is shown only in this response.
 
         Creating the link changes nothing else: the password and the sessions of
-        the account stay valid until the link is used.
+        the account stay valid until the link is used. An account of the
+        identity provider has no password (`409`, code `oidc_account`).
       tags: [users]
       x-access: users:write
       security:
@@ -1260,7 +1357,7 @@ components:
     User:
       type: object
       additionalProperties: false
-      required: [id, email, display_name, role, status, totp_enabled]
+      required: [id, email, display_name, role, status, totp_enabled, sign_in_method]
       properties:
         id:
           type: string
@@ -1280,6 +1377,12 @@ components:
         totp_enabled:
           type: boolean
           description: Whether signing in takes a code of a TOTP factor in addition to the password.
+        sign_in_method:
+          type: string
+          enum: [password, oidc]
+          description: |
+            How the account signs in. An account of the identity provider (`oidc`) is created at its
+            first sign-in, has no password and takes its role from its groups at the provider.
 
     AuditEntryPage:
       type: object
@@ -1338,7 +1441,8 @@ components:
           enum: [user, api_key, setup, system, anonymous]
         auth_method:
           type: string
-          enum: [password, oidc, session, api_key, setup_token, cli, none]
+          enum: [password, oidc, session, api_key, setup_token, activation_token, password_reset_token, totp,
+            recovery_code, cli, none]
         user_id:
           type: string
           format: uuid
@@ -1772,8 +1876,10 @@ components:
         (the account cannot take the requested status or receive the requested link: an activation
         link only for a pending account, a password reset link only for an active one),
         `totp_enabled` (the account already has a TOTP factor), `totp_not_enabled` (it has none),
-        `no_totp_setup` (no setup of a TOTP factor waits for confirmation, or it expired) or
-        `too_many_api_keys` (the user has the maximum number of API keys that have not expired).
+        `no_totp_setup` (no setup of a TOTP factor waits for confirmation, or it expired),
+        `too_many_api_keys` (the team has the maximum number of API keys that have not expired) or
+        `oidc_account` (the account signs in through the identity provider, which manages its
+        password, second factor and role).
       content:
         application/json:
           schema:

@@ -143,14 +143,17 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 ### Local login and OpenID Connect
 
 - OpenID Connect is configured exclusively through the environment. Secrets are read from environment variables or files and are never stored in the database or logged.
-- Local login is restricted by policy: `admins` (default), `all` or `off`. A login rejected by the policy returns the same generic `401` as wrong credentials, after the same password verification. While OpenID Connect is enabled, every local login is recorded in the audit log.
+- Local login is restricted by policy while OpenID Connect is enabled: `admins` (default), `all` or `off`. Without OpenID Connect, every account signs in with its password. A login rejected by the policy returns the same generic `401` as wrong credentials, after the same password verification, and before the lockout is revealed. Every local login is recorded in the audit log.
 - An unreachable identity provider at startup produces a warning and a later retry, never a failed start. Otherwise an identity provider outage would also lock out the local administrators.
-- The `state` parameter is 32 bytes from `crypto/rand`, single-use, short-lived and bound to the browser through an `HttpOnly` cookie, compared in constant time.
+- The `state` parameter is 32 bytes from `crypto/rand`, single-use, short-lived and bound to the browser through an `HttpOnly` cookie with a token of its own. The database stores only the SHA-256 hashes of both, and consumes the sign-in atomically with both hashes.
 - PKCE with `S256` and a `nonce` are mandatory. The nonce in the ID token is verified explicitly.
 - `email_verified` must be asserted as true by the identity provider. Missing or false values are rejected.
 - An identity from the identity provider is **never linked automatically** to an existing local account, even when the email addresses match. Such a login is rejected with a generic error and recorded in the audit log. Otherwise anyone who controls an address in the identity provider could take over a local administrator.
-- Discovery, JWKS, token and userinfo requests use the SSRF-guarded HTTP client.
-- A user without a matching group claim is denied. There is no fallback role.
+- Requests to the identity provider do not use the SSRF-guarded client: the issuer is configured by the operator, not supplied by a user, and the provider is often reachable only internally. They use a client of their own with timeouts, which refuses plain `http` outside development, also for redirects and for the endpoints that discovery names.
+- Claims are taken only from the verified ID token, never from the userinfo endpoint. A token for several audiences must name the console in `azp`.
+- An account of the identity provider is identified by issuer and subject, never by its email address, and has no password. Changes that the password confirms are refused for it.
+- A user without a matching group claim is denied, and an existing account is deactivated. There is no fallback role. The role follows the groups with every sign-in, under the lock of the active administrators, so that the groups never demote or deactivate the last one.
+- The identity provider never creates the first administrator: sign-ins through it are rejected until the setup is complete.
 
 ### API keys
 
@@ -182,7 +185,7 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 
 ## Outbound requests
 
-Several features send requests to user-supplied URLs: webhooks, chat integrations, identity provider discovery and catalog imports. Every such request goes through the SSRF-guarded client.
+Several features send requests to user-supplied URLs: webhooks, chat integrations and catalog imports. Every such request goes through the SSRF-guarded client. The identity provider is configured by the operator and is the exception, see [Local login and OpenID Connect](#local-login-and-openid-connect).
 
 - **Validation on save.** The scheme must be `https` (plain `http` only in development, and only where explicitly allowed). Host names such as `localhost`, `*.local` and `*.internal` are rejected. All resolved addresses are checked against blocked ranges: loopback, private (RFC 1918, RFC 4193), link-local including cloud metadata addresses, carrier-grade NAT, multicast and unspecified addresses.
 - **Enforcement on connect.** A `net.Dialer.Control` function checks the address actually dialed on every connection. This defeats DNS rebinding between validation and use.

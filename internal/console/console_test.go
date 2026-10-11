@@ -48,6 +48,7 @@ func deps(db Pinger) Deps {
 			Activate: http.NotFoundHandler(), IssueResetLink: http.NotFoundHandler(), ResetPassword: http.NotFoundHandler(),
 		},
 		APIKeys: APIKeys{List: http.NotFoundHandler(), Create: http.NotFoundHandler(), Revoke: http.NotFoundHandler()},
+		OIDC:    OIDC{Authorize: http.NotFoundHandler(), Callback: http.NotFoundHandler()},
 		Origin:  "https://nyktus.example.com",
 	}
 }

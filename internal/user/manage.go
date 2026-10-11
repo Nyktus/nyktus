@@ -28,6 +28,9 @@ var (
 	ErrInvalidTransition = errors.New("invalid status transition")
 	// ErrInvalidPageSize is returned for a page size outside [1, MaxPageSize].
 	ErrInvalidPageSize = errors.New("invalid page size")
+	// ErrOIDCAccount means that a change does not apply to an account of the
+	// identity provider: it has no password, and its role follows its groups.
+	ErrOIDCAccount = errors.New("the account signs in through the identity provider")
 )
 
 const checkViolation = "23514"
@@ -43,7 +46,7 @@ type Cursor struct {
 
 // userColumns are the columns that scan reads, in its order. Whether the account
 // has a confirmed TOTP factor is part of the account as clients see it.
-const userColumns = `id, email, display_name, role, status, password_hash, created_at, updated_at,
+const userColumns = `id, email, display_name, role, status, password_hash, oidc_issuer, oidc_subject, created_at, updated_at,
 	EXISTS (SELECT FROM totp_factors AS f WHERE f.user_id = users.id AND f.confirmed_at IS NOT NULL)`
 
 const (
@@ -93,8 +96,13 @@ type Change struct {
 	Role        *Role
 	// Status is StatusActive to reactivate a deactivated account or
 	// StatusDeactivated to deactivate one. A reactivated account without a
-	// password returns to pending.
+	// password returns to pending, unless it is an account of the identity
+	// provider, which has none.
 	Status *Status
+	// FromProvider marks a change that the sign-in through the identity
+	// provider makes. Only such a change sets the role of an account of the
+	// provider, which follows its groups there.
+	FromProvider bool
 }
 
 // Names of the fields of a change, as recorded in the audit log.
@@ -108,8 +116,10 @@ const (
 // after the change and the names of the fields whose values changed, which is
 // empty if c changes nothing. It returns ErrNotFound if the account does not
 // exist, ErrLastActiveAdmin if no active administrator would remain,
-// ErrInvalidStatus for a status that a change cannot set, and
-// ErrInvalidTransition if the account cannot take the requested status.
+// ErrInvalidStatus for a status that a change cannot set,
+// ErrInvalidTransition if the account cannot take the requested status, and
+// ErrOIDCAccount if it changes the role of an account of the identity provider
+// other than from the provider.
 //
 // Reactivating an account ends a lock after failed sign-ins: an administrator
 // decided to let the user in again.
@@ -151,6 +161,9 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (User, []string
 		changed = append(changed, FieldDisplayName)
 	}
 	if c.Role != nil && *c.Role != current.Role {
+		if current.Identity != nil && !c.FromProvider {
+			return User{}, nil, ErrOIDCAccount
+		}
 		updated.Role = *c.Role
 		changed = append(changed, FieldRole)
 	}
@@ -162,7 +175,7 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (User, []string
 		case *c.Status == StatusActive && current.Status == StatusDeactivated:
 			reactivate = true
 			updated.Status = StatusActive
-			if current.PasswordHash == "" {
+			if current.PasswordHash == "" && current.Identity == nil {
 				updated.Status = StatusPending
 			}
 		case *c.Status == StatusActive && current.Status == StatusPending:

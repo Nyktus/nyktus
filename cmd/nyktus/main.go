@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"nyktus.org/nyktus/internal/auth/oidc"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/secondfactor"
 	"nyktus.org/nyktus/internal/auth/session"
@@ -177,16 +178,39 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 	}
 	logger.InfoContext(ctx, "console: listening", slog.String("addr", ln.Addr().String()))
 
+	var provider *oidc.Provider
+	var groups oidc.Groups
+	if c := cfg.Console.OIDC; c != nil {
+		provider = oidc.NewProvider(oidc.ProviderConfig{
+			Issuer:       c.Issuer,
+			ClientID:     c.ClientID,
+			ClientSecret: c.ClientSecret.Value(),
+			Scopes:       c.Scopes,
+			RedirectURL:  cfg.Console.URL + oidc.CallbackPath,
+			AllowHTTP:    cfg.Environment == config.Development,
+		}, logger)
+		groups = oidc.Groups{GroupsClaim: c.GroupsClaim, Admin: c.AdminGroups, User: c.UserGroups, Viewer: c.ViewerGroups}
+		// An unreachable provider must not keep the console from starting:
+		// administrators sign in with their password in the meantime.
+		go provider.Run(ctx)
+	}
+
 	setupService := setup.NewService(pool)
 	handler, err := console.New(ctx, console.Options{
-		Logger:         logger,
-		DB:             pool,
-		Setup:          setupService,
-		Hasher:         password.NewHasher(),
-		Sessions:       session.Config{IdleTimeout: cfg.Console.SessionIdleTimeout, MaxAge: cfg.Console.SessionMaxAge},
+		Logger: logger,
+		DB:     pool,
+		Setup:  setupService,
+		Hasher: password.NewHasher(),
+		Sessions: session.Config{
+			IdleTimeout: cfg.Console.SessionIdleTimeout,
+			MaxAge:      cfg.Console.SessionMaxAge,
+			LocalLogin:  localLogin(cfg.Console.LocalLogin),
+		},
 		Keys:           cfg.EncryptionKeys,
 		ConsoleURL:     cfg.Console.URL,
 		TrustedProxies: cfg.TrustedProxies,
+		OIDC:           provider,
+		OIDCGroups:     groups,
 	})
 	if err != nil {
 		_ = ln.Close()
@@ -219,6 +243,17 @@ func announceSetup(ctx context.Context, svc *setup.Service, consoleURL string, l
 	}
 	logger.InfoContext(ctx, "console: setup pending", slog.Any("token", t))
 	return nil
+}
+
+func localLogin(l config.LocalLogin) session.LocalLogin {
+	switch l {
+	case config.LocalLoginAdmins:
+		return session.LocalLoginAdmins
+	case config.LocalLoginOff:
+		return session.LocalLoginOff
+	default:
+		return session.LocalLoginAll
+	}
 }
 
 func runMigrate(ctx context.Context, args []string, src config.Source, stderr io.Writer) error {
