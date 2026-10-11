@@ -117,7 +117,7 @@ func TestUser_LogValueOmitsHashAndAddress(t *testing.T) {
 func TestRole_Valid(t *testing.T) {
 	t.Parallel()
 
-	for _, r := range []Role{RoleAdmin, RoleEditor, RoleViewer} {
+	for _, r := range []Role{RoleAdmin, RoleUser, RoleViewer} {
 		if !r.Valid() {
 			t.Errorf("Role(%q).Valid() = false, want true", r)
 		}

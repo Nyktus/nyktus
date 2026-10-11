@@ -74,7 +74,7 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		}
 	}
 
-	roles := []string{string(user.RoleAdmin), string(user.RoleEditor), string(user.RoleViewer)}
+	roles := []string{string(user.RoleAdmin), string(user.RoleUser), string(user.RoleViewer)}
 	for _, s := range []string{"CreateUserRequest", "UpdateUserRequest", "User"} {
 		if got := spec.Components.Schemas[s].Properties["role"].Enum; !sameSet(got, roles) {
 			t.Errorf("%s.role = %v, want %v", s, got, roles)

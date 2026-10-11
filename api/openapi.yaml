@@ -1335,7 +1335,7 @@ components:
           type: string
         role:
           type: string
-          enum: [admin, editor, viewer]
+          enum: [admin, user, viewer]
         status:
           type: string
           enum: [pending, active, deactivated]
@@ -1457,7 +1457,7 @@ components:
           maxLength: 100
         role:
           type: string
-          enum: [admin, editor, viewer]
+          enum: [admin, user, viewer]
 
     UpdateUserRequest:
       type: object
@@ -1470,7 +1470,7 @@ components:
           maxLength: 100
         role:
           type: string
-          enum: [admin, editor, viewer]
+          enum: [admin, user, viewer]
         status:
           type: string
           enum: [active, deactivated]

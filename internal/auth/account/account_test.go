@@ -222,14 +222,14 @@ func deref(s *string) string {
 	return *s
 }
 
-// Viewers and editors are denied every operation on accounts before the
+// Viewers and users are denied every operation on accounts before the
 // account is looked up: an existing and an unknown ID receive the same answer.
 func TestUsers_DeniedRequestsAreRejectedBeforeTheLookup(t *testing.T) {
 	t.Parallel()
 
 	e := newEnv(t)
 	existing, _ := e.signIn(t, "ada@example.com", "admin")
-	for _, role := range []string{"viewer", "editor"} {
+	for _, role := range []string{"viewer", "user"} {
 		_, cookie := e.signIn(t, role+"@example.com", role)
 		for _, id := range []string{existing, unknownID} {
 			for _, op := range []struct {
@@ -277,13 +277,13 @@ func TestCreateUser_ReturnsTheActivationLinkOnce(t *testing.T) {
 
 	e := newEnv(t)
 	adminID, cookie := e.signIn(t, "ada@example.com", "admin")
-	r := e.do(t, http.MethodPost, "/api/v1/users", cookie, map[string]string{"email": "Jane@Example.com", "display_name": "Jane Doe", "role": "editor"})
+	r := e.do(t, http.MethodPost, "/api/v1/users", cookie, map[string]string{"email": "Jane@Example.com", "display_name": "Jane Doe", "role": "user"})
 	if r.status != http.StatusCreated {
 		t.Fatalf("status %d, body %s; want 201", r.status, r.raw)
 	}
 	u := r.body["user"].(map[string]any)
-	if u["email"] != "jane@example.com" || u["display_name"] != "Jane Doe" || u["role"] != "editor" || u["status"] != "pending" {
-		t.Errorf("user = %v, want a pending editor with the address in lower case", u)
+	if u["email"] != "jane@example.com" || u["display_name"] != "Jane Doe" || u["role"] != "user" || u["status"] != "pending" {
+		t.Errorf("user = %v, want a pending user with the address in lower case", u)
 	}
 	activation := r.body["activation"].(map[string]any)
 	tok := tokenOf(t, activation["url"].(string))
@@ -519,8 +519,8 @@ func TestUpdateUser_ChangesFieldsAndRecordsTheirNames(t *testing.T) {
 	adminID, cookie := e.signIn(t, "ada@example.com", "admin")
 	id, _ := e.signIn(t, "jane@example.com", "viewer")
 
-	r := e.do(t, http.MethodPatch, "/api/v1/users/"+id, cookie, map[string]string{"display_name": "Jane Roe", "role": "editor"})
-	if r.status != http.StatusOK || r.body["display_name"] != "Jane Roe" || r.body["role"] != "editor" {
+	r := e.do(t, http.MethodPatch, "/api/v1/users/"+id, cookie, map[string]string{"display_name": "Jane Roe", "role": "user"})
+	if r.status != http.StatusOK || r.body["display_name"] != "Jane Roe" || r.body["role"] != "user" {
 		t.Fatalf("status %d, body %s; want 200 with the changes", r.status, r.raw)
 	}
 	if r := e.do(t, http.MethodPatch, "/api/v1/users/"+id, cookie, map[string]string{"display_name": "Jane Roe"}); r.status != http.StatusOK {
@@ -565,10 +565,10 @@ func TestUpdateUser_RejectsInvalidRequests(t *testing.T) {
 			t.Errorf("body %s: status %d, body %s; want 400", body, r.status, r.raw)
 		}
 	}
-	if r := e.do(t, http.MethodPatch, "/api/v1/users/"+unknownID, cookie, map[string]string{"role": "editor"}); r.status != http.StatusNotFound {
+	if r := e.do(t, http.MethodPatch, "/api/v1/users/"+unknownID, cookie, map[string]string{"role": "user"}); r.status != http.StatusNotFound {
 		t.Errorf("unknown account: status %d, want 404", r.status)
 	}
-	if r := e.do(t, http.MethodPatch, "/api/v1/users/not-a-uuid", cookie, map[string]string{"role": "editor"}); r.status != http.StatusNotFound {
+	if r := e.do(t, http.MethodPatch, "/api/v1/users/not-a-uuid", cookie, map[string]string{"role": "user"}); r.status != http.StatusNotFound {
 		t.Errorf("invalid ID: status %d, want 404", r.status)
 	}
 	if n := len(e.auditEntries(t, "user.update")); n != 0 {
@@ -584,7 +584,7 @@ func TestUpdateUser_RoleAndStatusChangesEndSessions(t *testing.T) {
 	e := newEnv(t)
 	_, cookie := e.signIn(t, "ada@example.com", "admin")
 	for name, body := range map[string]map[string]string{
-		"role":   {"role": "editor"},
+		"role":   {"role": "user"},
 		"status": {"status": "deactivated"},
 	} {
 		id, userCookie := e.signIn(t, name+"@example.com", "viewer")
@@ -639,7 +639,7 @@ func TestUsers_AdministratorsCannotDemoteDeactivateOrDeleteThemselves(t *testing
 		method string
 		body   any
 	}{
-		{http.MethodPatch, map[string]string{"role": "editor"}},
+		{http.MethodPatch, map[string]string{"role": "user"}},
 		{http.MethodPatch, map[string]string{"status": "deactivated"}},
 		{http.MethodPatch, map[string]string{"display_name": "Ada", "role": "viewer"}},
 		{http.MethodDelete, nil},

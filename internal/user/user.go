@@ -22,14 +22,14 @@ type Role string
 // Roles of a user.
 const (
 	RoleAdmin  Role = "admin"
-	RoleEditor Role = "editor"
+	RoleUser   Role = "user"
 	RoleViewer Role = "viewer"
 )
 
 // Valid reports whether r is a known role. An unknown role has no permissions.
 func (r Role) Valid() bool {
 	switch r {
-	case RoleAdmin, RoleEditor, RoleViewer:
+	case RoleAdmin, RoleUser, RoleViewer:
 		return true
 	default:
 		return false

@@ -139,7 +139,7 @@ func TestListAuditEntries_OnlyAdministratorsMayRead(t *testing.T) {
 
 	e := newEnv(t)
 	_, adminSession := e.signIn(t, "ada@example.com", "admin")
-	for _, role := range []string{"editor", "viewer"} {
+	for _, role := range []string{"user", "viewer"} {
 		id, tok := e.signIn(t, role+"@example.com", role)
 		if status, _ := e.get(t, tok, ""); status != http.StatusForbidden {
 			t.Errorf("%s: status %d, want 403", role, status)

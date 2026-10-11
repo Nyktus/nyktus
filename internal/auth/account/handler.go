@@ -409,7 +409,7 @@ func (h *Handler) redeem(w http.ResponseWriter, r *http.Request, pu purpose, set
 
 var (
 	displayNameRule = fmt.Sprintf("display_name must have 1 to %d printable characters without leading or trailing spaces", user.MaxDisplayNameLength)
-	roleRule        = "role must be admin, editor or viewer"
+	roleRule        = "role must be admin, user or viewer"
 )
 
 func validDisplayName(s string) bool {

@@ -22,7 +22,7 @@ import (
 // first route that requires it is added.
 var grants = map[user.Role][]httpx.Permission{
 	user.RoleAdmin:  {"audit:read", "users:read", "users:write"},
-	user.RoleEditor: {},
+	user.RoleUser:   {},
 	user.RoleViewer: {},
 }
 
