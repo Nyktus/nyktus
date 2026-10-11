@@ -154,6 +154,8 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 - An account of the identity provider is identified by issuer and subject, never by its email address, and has no password. Changes that the password confirms are refused for it.
 - A user without a matching group claim is denied, and an existing account is deactivated. There is no fallback role. The role follows the groups with every sign-in, under the lock of the active administrators, so that the groups never demote or deactivate the last one.
 - The identity provider never creates the first administrator: sign-ins through it are rejected until the setup is complete.
+- Where a local account confirms an action with its password, an account of the identity provider confirms by signing in there again with `prompt=login` and `max_age=0`. The provider must report an `auth_time` after the start of the reauthentication, for the identity and the role of the account of the session; the session is then marked for five minutes. The mark belongs to the session, is checked under the lock of the account, and is never accepted in place of a password from a local account.
+- The page to which a reauthentication returns is a path of the console, validated in the application and in the schema, never a URL.
 
 ### API keys
 

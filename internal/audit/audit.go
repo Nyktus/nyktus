@@ -71,6 +71,10 @@ const (
 	ActionSignInChallengeCreate Action = "sign_in_challenge.create"
 	// ActionSessionDelete records a sign-out.
 	ActionSessionDelete Action = "session.delete"
+	// ActionSessionReauthenticate records that a user of the identity provider
+	// signed in there again, to confirm sensitive actions of the session, or
+	// failed to.
+	ActionSessionReauthenticate Action = "session.reauthenticate"
 	// ActionAPIKeyCreate records a new API key, and an attempt to issue one with
 	// a wrong password or for a locked account. The resource is the key, or the
 	// account if the attempt failed.

@@ -26,11 +26,18 @@ const CallbackPath = "/api/v1/oidc/callback"
 const cookieMaxAge = 10 * 60
 
 // Pages of the console that a sign-in ends on. The reason of a failure goes to
-// the log and the audit log, never to the browser.
+// the log and the audit log, never to the browser. A reauthentication returns
+// to the page that started it, with reauthenticationFailed appended if it
+// failed.
 const (
-	successPage = "/"
-	failurePage = "/sign-in#error=oidc"
+	successPage            = "/"
+	failurePage            = "/sign-in#error=oidc"
+	reauthenticationFailed = "#error=reauthentication"
 )
+
+// codeNotOIDCAccount rejects a reauthentication of an account that confirms
+// sensitive actions with its password.
+const codeNotOIDCAccount = "not_oidc_account"
 
 // CookieSetter sets the session cookie. *session.Handler implements it.
 type CookieSetter interface {
@@ -73,12 +80,57 @@ func (h *Handler) Authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	setCookie(w, browser, cookieMaxAge)
 	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, redirect, http.StatusFound)
+	// The authorization endpoint comes from the discovery of the configured
+	// provider; nothing of the request enters the URL but the state that the
+	// console generated.
+	http.Redirect(w, r, redirect, http.StatusFound) //nolint:gosec // Not an open redirect, see above.
+}
+
+// Reauthenticate handles GET /api/v1/oidc/reauthenticate. It sends the browser
+// of a signed-in user of the provider to the provider, which asks for the
+// credentials again, so that the session may perform sensitive actions for a
+// few minutes. The browser returns to the path return_to, or to the start
+// page.
+func (h *Handler) Reauthenticate(w http.ResponseWriter, r *http.Request) {
+	sess, ok := session.FromContext(r.Context())
+	if !ok {
+		httpx.ServerError(w, r, h.logger, "oidc: reauthenticate", errors.New("no session in the request context"))
+		return
+	}
+	if sess.User.Identity == nil {
+		httpx.WriteError(w, r, http.StatusConflict, codeNotOIDCAccount,
+			"the account confirms sensitive actions with its password, not through the identity provider")
+		return
+	}
+	returnTo := r.URL.Query().Get("return_to")
+	if returnTo == "" {
+		returnTo = successPage
+	}
+	if !ValidReturnTo(returnTo) {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest,
+			"return_to must be a path of the console, such as /settings, without a fragment")
+		return
+	}
+	redirect, browser, err := h.svc.BeginReauthentication(r.Context(), sess, returnTo)
+	switch {
+	case errors.Is(err, ErrUnavailable):
+		httpx.Unavailable(w, r, h.logger, "oidc: reauthenticate", err)
+		return
+	case err != nil:
+		httpx.ServerError(w, r, h.logger, "oidc: reauthenticate", err)
+		return
+	}
+	setCookie(w, browser, cookieMaxAge)
+	w.Header().Set("Cache-Control", "no-store")
+	// The authorization endpoint comes from the discovery of the configured
+	// provider; nothing of the request enters the URL but the state that the
+	// console generated.
+	http.Redirect(w, r, redirect, http.StatusFound) //nolint:gosec // Not an open redirect, see above.
 }
 
 // Callback handles GET /api/v1/oidc/callback, to which the provider sends the
 // browser back. It starts a session and sends the browser to the console, or
-// to the sign-in page with an error.
+// to the sign-in page with an error. A reauthentication returns to its page.
 //
 // The request is a GET that changes state, which the check of the origin does
 // not cover. A forged request cannot sign a browser in to the account of the
@@ -99,42 +151,53 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 		// from the provider, but travels through the browser, so only the
 		// registered code is logged.
 		h.logger.InfoContext(r.Context(), "oidc: the identity provider returned an error", slog.String("error", errorCode(e)))
-		h.fail(w, r)
+		h.fail(w, r, "")
 		return
 	}
 	state, code := q.Get("state"), q.Get("code")
 	if state == "" || code == "" || browser == "" {
 		h.logger.InfoContext(r.Context(), "oidc: callback without state, code or cookie")
-		h.fail(w, r)
+		h.fail(w, r, "")
 		return
 	}
 
-	sess, tok, err := h.svc.Complete(r.Context(), state, browser, code)
+	res, err := h.svc.Complete(r.Context(), state, browser, code)
 	var rejected *RejectedError
 	switch {
 	case errors.As(err, &rejected):
 		h.logger.WarnContext(r.Context(), "oidc: sign-in rejected", slog.Any("rejection", rejected))
-		h.fail(w, r)
+		h.fail(w, r, res.ReturnTo)
 		return
 	case errors.Is(err, ErrInvalidSignIn):
 		h.logger.InfoContext(r.Context(), "oidc: invalid sign-in", slog.Any("error", err))
-		h.fail(w, r)
+		h.fail(w, r, res.ReturnTo)
 		return
 	case errors.Is(err, ErrUnavailable):
 		h.logger.WarnContext(r.Context(), "oidc: sign-in while the identity provider is not discovered", slog.Any("error", err))
-		h.fail(w, r)
+		h.fail(w, r, res.ReturnTo)
 		return
 	case err != nil:
 		h.logger.ErrorContext(r.Context(), "http: request failed", slog.String("op", "oidc: callback"), slog.Any("error", err))
-		h.fail(w, r)
+		h.fail(w, r, res.ReturnTo)
 		return
 	}
-	h.cookies.SetCookie(w, tok)
-	h.logger.InfoContext(r.Context(), "session: signed in", slog.Any("session", sess))
+	if res.ReturnTo != "" {
+		h.logger.InfoContext(r.Context(), "oidc: reauthenticated", slog.Any("session", res.Session))
+		http.Redirect(w, r, res.ReturnTo, http.StatusSeeOther)
+		return
+	}
+	h.cookies.SetCookie(w, res.Token)
+	h.logger.InfoContext(r.Context(), "session: signed in", slog.Any("session", res.Session))
 	http.Redirect(w, r, successPage, http.StatusSeeOther)
 }
 
-func (h *Handler) fail(w http.ResponseWriter, r *http.Request) {
+// fail sends the browser to the sign-in page, or back to returnTo with an
+// error if a reauthentication failed.
+func (h *Handler) fail(w http.ResponseWriter, r *http.Request, returnTo string) {
+	if returnTo != "" {
+		http.Redirect(w, r, returnTo+reauthenticationFailed, http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, failurePage, http.StatusSeeOther)
 }
 

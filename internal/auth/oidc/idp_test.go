@@ -113,7 +113,7 @@ func (p *idp) authorize(location, sub string, groups []string, opts ...option) (
 		challenge: q.Get("code_challenge"),
 		claims: map[string]any{
 			"iss": p.issuer(), "aud": clientID, "sub": sub, "nonce": q.Get("nonce"),
-			"iat": now.Unix(), "exp": now.Add(time.Hour).Unix(),
+			"iat": now.Unix(), "exp": now.Add(time.Hour).Unix(), "auth_time": now.Unix(),
 			"email": sub + "@example.com", "email_verified": true, "name": "User " + sub, "groups": groups,
 		},
 	}

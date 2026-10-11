@@ -369,6 +369,66 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/oidc/reauthenticate:
+    get:
+      operationId: beginOIDCReauthentication
+      summary: Confirm sensitive actions through the identity provider
+      description: |
+        Sends the browser of a signed-in user of the identity provider to the
+        provider, which asks for the credentials again, and back through
+        `GET /api/v1/oidc/callback` to `return_to`. For the next five minutes,
+        the session may then perform the actions that a local account confirms
+        with its password: creating an API key and removing the second factor
+        of another account. A browser navigates here; it is not called with
+        `fetch`.
+
+        If the provider confirms another user, does not report that it asked for
+        the credentials again (`auth_time`), or the groups of the user no longer
+        give the role of the account, the session stays as it is and the
+        browser returns to `return_to` with `#error=reauthentication`. The
+        attempt is recorded in the audit log as `session.reauthenticate`.
+
+        An account that signs in with a password receives `409` with the code
+        `not_oidc_account`. Without a configured identity provider, the response
+        is `404`; until the console has reached the provider, `503`.
+      tags: [session]
+      x-access: authenticated
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: return_to
+          in: query
+          description: Path of the console to return to, such as `/settings/api-keys`, with an optional query and without a fragment. Defaults to `/`.
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "302":
+          description: The browser goes to the identity provider.
+          headers:
+            Location:
+              description: The authorization endpoint of the provider, with `prompt=login` and `max_age=0`.
+              schema:
+                type: string
+            Set-Cookie:
+              description: The cookie `__Host-nyktus_oidc`, as for a sign-in.
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/SessionRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
   /api/v1/oidc/callback:
     get:
       operationId: completeOIDCSignIn
@@ -380,7 +440,8 @@ paths:
         the user at the provider with every sign-in.
 
         The browser always goes on to a page of the console: `/` when signed in,
-        `/sign-in#error=oidc` otherwise. The reason of a failure is recorded only
+        `/sign-in#error=oidc` otherwise. A reauthentication returns to its
+        `return_to`, with `#error=reauthentication` if it failed. The reason of a failure is recorded only
         in the log and, for an identity that the provider vouched for, in the
         audit log. Without a configured identity provider, the response is `404`.
       tags: [session]
@@ -404,7 +465,7 @@ paths:
           description: The browser goes on to the console.
           headers:
             Location:
-              description: "`/` when signed in, `/sign-in#error=oidc` otherwise."
+              description: "`/` when signed in, `/sign-in#error=oidc` otherwise; for a reauthentication its `return_to`."
               schema:
                 type: string
             Set-Cookie:
@@ -734,8 +795,10 @@ paths:
         counts as a failed sign-in. New keys, wrong passwords and requests of a
         locked account are recorded in the audit log as `api_key.create`. Only
         a session can create API keys. An administrator of the identity
-        provider has no password and cannot create keys yet (`409`, code
-        `oidc_account`).
+        provider has no password and omits it: they confirm by signing in at
+        the provider again through `GET /api/v1/oidc/reauthenticate` within the
+        five minutes before, otherwise the response is `403` with the code
+        `reauthentication_required`.
       tags: [api-keys]
       x-access: api_keys:write
       security:
@@ -760,8 +823,9 @@ paths:
         "403":
           description: |
             The caller lacks the permission, the password is wrong (`wrong_password`), the password
-            is correct but the account is locked (`account_locked`), the request is not made with a
-            session, or the request comes from another origin.
+            is correct but the account is locked (`account_locked`), an administrator of the identity
+            provider has not signed in there again recently (`reauthentication_required`), the request
+            is not made with a session, or the request comes from another origin.
           headers:
             Retry-After:
               description: Seconds until the lock ends. Only sent for a locked account.
@@ -1028,8 +1092,10 @@ paths:
           The audit log records every attempt as `user.totp_disable`. Only a
           session can remove a factor (`403`). Administrators remove their own
           factor with `DELETE /api/v1/session/totp` (`409`). An administrator
-          of the identity provider has no password and cannot remove factors
-          yet (`409`, code `oidc_account`).
+          of the identity provider omits the password and confirms by signing
+          in at the provider again through `GET /api/v1/oidc/reauthenticate`
+          within the five minutes before, otherwise the response is `403` with
+          the code `reauthentication_required`.
 
         The audit log records the names of the changed fields, not their values.
       tags: [users]
@@ -1057,7 +1123,9 @@ paths:
           description: |
             The caller lacks the permission, the request comes from another origin, a second factor is
             removed with an API key (`forbidden`), the password of the administrator is wrong
-            (`wrong_password`), or it is correct but their account is locked (`account_locked`).
+            (`wrong_password`), it is correct but their account is locked (`account_locked`), or an
+            administrator of the identity provider has not signed in there again recently
+            (`reauthentication_required`).
           headers:
             Retry-After:
               description: Seconds until the lock ends. Only sent for a locked account.
@@ -1523,7 +1591,9 @@ components:
         password:
           type: string
           writeOnly: true
-          description: The password of the administrator. Required with `totp_enabled`, and only with it.
+          description: |
+            The password of the administrator. Only with `totp_enabled`, and required with it unless the
+            administrator signs in through the identity provider.
 
     CreatedUser:
       type: object
@@ -1686,7 +1756,7 @@ components:
     CreateAPIKeyRequest:
       type: object
       additionalProperties: false
-      required: [name, scopes, expires_at, password]
+      required: [name, scopes, expires_at]
       properties:
         name:
           type: string
@@ -1707,7 +1777,7 @@ components:
           description: When the key expires, in the future and at most three years away.
         password:
           type: string
-          description: The password of the administrator.
+          description: The password of the administrator. Required unless the administrator signs in through the identity provider.
 
     CreatedAPIKey:
       type: object
@@ -1879,7 +1949,8 @@ components:
         `no_totp_setup` (no setup of a TOTP factor waits for confirmation, or it expired),
         `too_many_api_keys` (the team has the maximum number of API keys that have not expired) or
         `oidc_account` (the account signs in through the identity provider, which manages its
-        password, second factor and role).
+        password, second factor and role) or `not_oidc_account` (the account signs in with a
+        password and confirms with it, not through the identity provider).
       content:
         application/json:
           schema:

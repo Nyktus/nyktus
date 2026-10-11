@@ -17,7 +17,6 @@ import (
 	"nyktus.org/nyktus/internal/auth/apikey"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/platform/httpx"
-	"nyktus.org/nyktus/internal/user"
 )
 
 // maxBodyBytes bounds a request to create a key.
@@ -25,10 +24,12 @@ const maxBodyBytes = 8 << 10
 
 // Error codes of the creation of a key.
 const (
-	codeWrongPassword  = "wrong_password"
-	codeOIDCAccount    = "oidc_account"
-	codeAccountLocked  = "account_locked"
-	codeTooManyAPIKeys = "too_many_api_keys" //nolint:gosec // An error code, not a credential.
+	codeWrongPassword = "wrong_password"
+	// codeReauthenticationRequired asks an administrator of the identity
+	// provider, who has no password, to sign in there again.
+	codeReauthenticationRequired = "reauthentication_required"
+	codeAccountLocked            = "account_locked"
+	codeTooManyAPIKeys           = "too_many_api_keys" //nolint:gosec // An error code, not a credential.
 )
 
 // Creator issues a key that an administrator confirms with their password.
@@ -125,9 +126,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		httpx.WriteError(w, r, http.StatusUnauthorized, httpx.CodeUnauthenticated, "authentication required")
 		return
-	case errors.Is(err, user.ErrOIDCAccount):
-		httpx.WriteError(w, r, http.StatusConflict, codeOIDCAccount,
-			"the account signs in through the identity provider and cannot confirm with a password")
+	case errors.Is(err, session.ErrReauthenticationRequired):
+		writeReauthenticationRequired(w, r)
 		return
 	// The database checks the fields as well, in case its rules and those above
 	// ever differ.
@@ -181,4 +181,9 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func writeReauthenticationRequired(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteError(w, r, http.StatusForbidden, codeReauthenticationRequired,
+		"sign in at the identity provider again through GET /api/v1/oidc/reauthenticate, then repeat the request within 5 minutes")
 }

@@ -21,6 +21,7 @@ var Actions = []Action{
 	ActionPasswordResetLinkCreate,
 	ActionSessionCreate,
 	ActionSessionDelete,
+	ActionSessionReauthenticate,
 	ActionSignInChallengeCreate,
 	ActionAPIKeyCreate,
 	ActionAPIKeyRevoke,

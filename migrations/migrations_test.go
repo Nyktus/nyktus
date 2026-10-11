@@ -168,7 +168,10 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM api_keys",
 		"DELETE FROM api_keys",
 		"INSERT INTO users (email, display_name, role, status, oidc_issuer, oidc_subject) VALUES ('o@example.com', 'O', 'viewer', 'active', 'https://idp.example.com', 'o')",
-		"INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, previous_session_hash) VALUES (sha256('s'), sha256('b'), repeat('n', 43), repeat('v', 43), sha256('p'))",
+		"INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, purpose, previous_session_hash) VALUES (sha256('s'), sha256('b'), repeat('n', 43), repeat('v', 43), 'sign_in', sha256('p'))",
+		"INSERT INTO sessions (token_hash, user_id) SELECT sha256('r'), id FROM users WHERE email = 'o@example.com'",
+		"UPDATE sessions SET reauthenticated_at = clock_timestamp()",
+		"INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, purpose, session_id, return_to) SELECT sha256('t'), sha256('b'), repeat('n', 43), repeat('v', 43), 'reauthentication', id, '/settings' FROM sessions",
 		"SELECT count(*) FROM oidc_logins WHERE expires_at > clock_timestamp()",
 		"DELETE FROM oidc_logins",
 	}
@@ -235,6 +238,10 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE oidc_logins SET expires_at = now() + interval '1 year'",
 		"UPDATE oidc_logins SET nonce = nonce",
 		"UPDATE oidc_logins SET previous_session_hash = NULL",
+		"UPDATE oidc_logins SET return_to = '/'",
+		"UPDATE oidc_logins SET session_id = session_id",
+		"INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, purpose, created_at) VALUES (sha256('u'), sha256('b'), repeat('n', 43), repeat('v', 43), 'sign_in', now() - interval '1 day')",
+		"INSERT INTO sessions (token_hash, user_id, reauthenticated_at) SELECT sha256('v'), id, now() FROM users LIMIT 1",
 		"TRUNCATE oidc_logins",
 	}
 	for _, statement := range denied {

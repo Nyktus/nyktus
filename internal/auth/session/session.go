@@ -43,7 +43,16 @@ var (
 	// ErrWrongPassword means that the current password given for a change of
 	// password is wrong.
 	ErrWrongPassword = errors.New("current password is wrong")
+	// ErrReauthenticationRequired means that a user of the identity provider
+	// must sign in there again to confirm an action, which a local account
+	// confirms with its password.
+	ErrReauthenticationRequired = errors.New("the action requires signing in at the identity provider again")
 )
+
+// ReauthenticationWindow is how long a sign-in at the identity provider
+// confirms the sensitive actions of a session. It is short, so that a session
+// taken over later cannot use it, and long enough for several actions in a row.
+const ReauthenticationWindow = 5 * time.Minute
 
 // LockedError means that the password was correct, but the account is locked
 // after too many failed sign-ins.
@@ -466,10 +475,7 @@ func (s *Service) ChangePassword(ctx context.Context, p access.Principal, curren
 // The password is verified without a lock, because hashing must not hold one;
 // the caller confirms the result under the lock with lockVerified.
 func (s *Service) verifyCurrentPassword(ctx context.Context, p access.Principal, password string, action audit.Action) (user.User, error) {
-	u, err := user.NewStore(s.db).Get(ctx, p.UserID)
-	if errors.Is(err, user.ErrNotFound) {
-		return user.User{}, ErrNoSession
-	}
+	u, err := s.account(ctx, p)
 	if err != nil {
 		return user.User{}, err
 	}
@@ -493,6 +499,16 @@ func (s *Service) verifyCurrentPassword(ctx context.Context, p access.Principal,
 		return user.User{}, ErrWrongPassword
 	}
 	return u, nil
+}
+
+// account returns the account of p. It returns ErrNoSession if the account was
+// deleted since the request was authenticated.
+func (s *Service) account(ctx context.Context, p access.Principal) (user.User, error) {
+	u, err := user.NewStore(s.db).Get(ctx, p.UserID)
+	if errors.Is(err, user.ErrNotFound) {
+		return user.User{}, ErrNoSession
+	}
+	return u, err
 }
 
 // lockVerified locks the account u, whose password verifyCurrentPassword
@@ -552,6 +568,40 @@ func accountEntry(ctx context.Context, action audit.Action, outcome audit.Outcom
 		Actor:    p.Actor(),
 		Resource: audit.Resource{Type: "user", ID: p.UserID},
 	}.WithRequest(ctx)
+}
+
+// Reauthenticated reports whether the user of the session sessionID, which
+// belongs to the account userID, signed in at the identity provider again
+// within ReauthenticationWindow. It returns ErrNoSession if there is no such
+// session.
+func Reauthenticated(ctx context.Context, q db.Querier, sessionID, userID string) (bool, error) {
+	var fresh bool
+	err := q.QueryRow(ctx, `
+SELECT coalesce(reauthenticated_at > clock_timestamp() - $3::interval, false)
+FROM sessions
+WHERE id = $1 AND user_id = $2`, sessionID, userID, ReauthenticationWindow).Scan(&fresh)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, ErrNoSession
+	}
+	if err != nil {
+		return false, fmt.Errorf("look up reauthentication of session: %w", err)
+	}
+	return fresh, nil
+}
+
+// MarkReauthenticated records that the user of the session sessionID, which
+// belongs to the account userID, signed in at the identity provider again. It
+// returns ErrNoSession if there is no such session.
+func MarkReauthenticated(ctx context.Context, q db.Querier, sessionID, userID string) error {
+	tag, err := q.Exec(ctx, `UPDATE sessions SET reauthenticated_at = clock_timestamp() WHERE id = $1 AND user_id = $2`,
+		sessionID, userID)
+	if err != nil {
+		return fmt.Errorf("record reauthentication of session: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNoSession
+	}
+	return nil
 }
 
 // RevokeAll ends every session of the account userID and every sign-in that

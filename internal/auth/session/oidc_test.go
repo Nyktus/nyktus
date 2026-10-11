@@ -148,8 +148,7 @@ func TestOIDCAccount_HasNoPassword(t *testing.T) {
 			http.MethodPut, "/api/v1/session/password",
 			mustJSON(t, map[string]string{"current_password": testPassword, "new_password": "another horse battery"}),
 		},
-		"set up TOTP":    {http.MethodPost, "/api/v1/session/totp", mustJSON(t, map[string]string{"password": testPassword})},
-		"create API key": {http.MethodPost, "/api/v1/api-keys", keyBody("k", "audit:read", testPassword, time.Hour)},
+		"set up TOTP": {http.MethodPost, "/api/v1/session/totp", mustJSON(t, map[string]string{"password": testPassword})},
 	} {
 		r := send(t, srv, req.method, req.path, req.body, cookie, nil)
 		if r.status != http.StatusConflict || errorCode(r) != "oidc_account" {
@@ -159,7 +158,57 @@ func TestOIDCAccount_HasNoPassword(t *testing.T) {
 	if n := d.count(t, `SELECT count(*) FROM users WHERE id = $1 AND password_hash IS NULL`, jane); n != 1 {
 		t.Error("the account has a password, want none")
 	}
+}
+
+// An administrator of the identity provider confirms the creation of a key by
+// signing in there again, within the last five minutes, instead of with a
+// password.
+func TestAPIKey_AdministratorOfTheProviderConfirmsBySigningInAgain(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDB(t)
+	srv := startConsole(t, d)
+	jane := createOIDCUser(t, d, "jane@example.com", "admin")
+	cookie := sessionOf(t, d, jane)
+	// The sessions began before the times of the reauthentications below.
+	backdate := func() { d.exec(t, `UPDATE sessions SET created_at = clock_timestamp() - interval '10 minutes'`) }
+	backdate()
+	body := mustJSON(t, map[string]any{
+		"name": "k", "scopes": []string{"audit:read"}, "expires_at": time.Now().Add(time.Hour).Format(time.RFC3339),
+	})
+
+	for _, tc := range []struct{ name, at string }{
+		{"never", "NULL"},
+		{"six minutes ago", "clock_timestamp() - interval '6 minutes'"},
+		{"in another session", ""},
+	} {
+		d.exec(t, `UPDATE sessions SET reauthenticated_at = NULL`)
+		if tc.at == "" {
+			other := sessionOf(t, d, jane)
+			backdate()
+			d.exec(t, `UPDATE sessions SET reauthenticated_at = clock_timestamp() WHERE token_hash = $1`, token.Hash(other.Value))
+		} else {
+			d.exec(t, `UPDATE sessions SET reauthenticated_at = `+tc.at)
+		}
+		r := send(t, srv, http.MethodPost, "/api/v1/api-keys", body, cookie, nil)
+		if r.status != http.StatusForbidden || errorCode(r) != "reauthentication_required" {
+			t.Errorf("%s: %d %v, want 403 reauthentication_required", tc.name, r.status, r.body)
+		}
+	}
 	if n := d.count(t, `SELECT count(*) FROM api_keys`); n != 0 {
-		t.Errorf("%d keys created, want 0", n)
+		t.Fatalf("%d keys created, want 0", n)
+	}
+
+	d.exec(t, `UPDATE sessions SET reauthenticated_at = clock_timestamp() - interval '4 minutes' WHERE token_hash = $1`,
+		token.Hash(cookie.Value))
+	for range 2 {
+		if r := send(t, srv, http.MethodPost, "/api/v1/api-keys", body, cookie, nil); r.status != http.StatusCreated {
+			t.Errorf("after signing in again: %d %v, want 201 for every key within the window", r.status, r.body)
+		}
+	}
+	if n := d.count(t, `
+SELECT count(*) FROM audit_entries WHERE action = 'api_key.create' AND outcome = 'success' AND actor_user_id = $1 AND auth_method = 'session'`,
+		jane); n != 2 {
+		t.Errorf("%d creations recorded, want 2", n)
 	}
 }

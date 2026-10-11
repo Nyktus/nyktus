@@ -5,6 +5,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -19,8 +20,11 @@ import (
 // CreateAPIKey issues an API key that the signed-in administrator p creates for
 // the team, confirmed with their password, and returns it with the key itself.
 // A key outlives the session, so a taken-over session must not be able to issue
-// one without the password. The caller validates the name and the scopes of
-// spec; the router has checked the permission.
+// one without the password. An administrator of the identity provider, who has
+// no password, confirms by signing in there again within
+// ReauthenticationWindow, and receives ErrReauthenticationRequired otherwise.
+// The caller validates the name and the scopes of spec; the router has checked
+// the permission.
 //
 // As with a change of password, a wrong password counts as a failed sign-in and
 // returns ErrWrongPassword, and a lock is revealed only with the correct
@@ -30,6 +34,9 @@ import (
 // ErrNoSession if the session of p ended since the request was authenticated.
 func (s *Service) CreateAPIKey(ctx context.Context, p access.Principal, password string, spec apikey.Spec) (apikey.Key, string, error) {
 	u, err := s.verifyCurrentPassword(ctx, p, password, audit.ActionAPIKeyCreate)
+	if errors.Is(err, user.ErrOIDCAccount) {
+		u, err = s.account(ctx, p)
+	}
 	if err != nil {
 		return apikey.Key{}, "", err
 	}
@@ -52,7 +59,11 @@ func (s *Service) CreateAPIKey(ctx context.Context, p access.Principal, password
 			outcome = ErrNoSession
 			return nil
 		}
-		outcome, err = lockVerified(ctx, tx, u, p, audit.ActionAPIKeyCreate)
+		if u.Identity != nil {
+			outcome, err = lockReauthenticated(ctx, tx, u, p)
+		} else {
+			outcome, err = lockVerified(ctx, tx, u, p, audit.ActionAPIKeyCreate)
+		}
 		if err != nil || outcome != nil {
 			return err
 		}
@@ -85,4 +96,29 @@ func (s *Service) CreateAPIKey(ctx context.Context, p access.Principal, password
 		return apikey.Key{}, "", outcome
 	}
 	return k, key, nil
+}
+
+// lockReauthenticated locks the account u of the identity provider and checks
+// under the lock that it is still active and that the session of p signed in at
+// the provider again within ReauthenticationWindow. It returns the reason if
+// not: ErrNoSession if the account or the session ended, and
+// ErrReauthenticationRequired if the sign-in is missing or too old.
+func lockReauthenticated(ctx context.Context, tx pgx.Tx, u user.User, p access.Principal) (outcome, err error) {
+	state, err := user.NewStore(tx).LockForSignIn(ctx, u.ID)
+	if errors.Is(err, user.ErrNotFound) || (err == nil && state.Status != user.StatusActive) {
+		return ErrNoSession, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	fresh, err := Reauthenticated(ctx, tx, p.SessionID, u.ID)
+	switch {
+	case errors.Is(err, ErrNoSession):
+		return ErrNoSession, nil
+	case err != nil:
+		return nil, err
+	case !fresh:
+		return ErrReauthenticationRequired, nil
+	}
+	return nil, nil
 }
