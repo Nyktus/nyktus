@@ -115,16 +115,21 @@ An administrator can reset the password of another administrator and then act as
 
 ## Removing a second factor
 
-A user who lost both the authenticator and the recovery codes cannot sign in. An administrator removes the factor:
+A user who lost both the authenticator and the recovery codes cannot sign in. An administrator removes the factor and confirms it with their own password. Write the request into a file, so that the password does not end up in the shell history:
+
+```json
+{"totp_enabled": false, "password": "<your password>"}
+```
 
 ```sh
 curl --fail-with-body --request PATCH https://nyktus.example.com/api/v1/users/<id> \
   --header 'Content-Type: application/json' \
-  --data '{"totp_enabled": false}' \
+  --data @remove.json \
   --cookie cookies.txt
+rm remove.json
 ```
 
-The removal deletes the factor and the recovery codes and ends every session of the account. The user then signs in with the password alone and should set up a new factor right away. Make sure that the request really comes from the user, for example by calling them back: the factor protects against someone who knows the password. Only a signed-in session can remove a factor, not an API key. Administrators remove their own factor themselves, with their password and a code, see [Sign-in and sessions](sign-in.md#recovery-codes-and-removal). Only users enable a factor; `"totp_enabled": true` is rejected.
+The password confirms that you, and not someone who took over your session, remove the factor. A wrong one receives `403` with the code `wrong_password` and counts as a failed sign-in of your account. The removal deletes the factor and the recovery codes and ends every session of the account. The user then signs in with the password alone and should set up a new factor right away. Make sure that the request really comes from the user, for example by calling them back: the factor protects against someone who knows the password. Only a signed-in session can remove a factor, not an API key. Administrators remove their own factor themselves, with their password and a code, see [Sign-in and sessions](sign-in.md#recovery-codes-and-removal). Only users enable a factor; `"totp_enabled": true` is rejected.
 
 ## When no administrator can sign in
 

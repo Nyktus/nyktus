@@ -770,9 +770,13 @@ paths:
           cannot demote or deactivate their own account (`409`).
         - `totp_enabled: false` removes the TOTP factor and the recovery codes,
           for a user who lost both, and ends every session of the account. The
-          audit log records it as `user.totp_disable`. Only a session can remove
-          a factor (`403`). Administrators remove their own factor with
-          `DELETE /api/v1/session/totp` (`409`).
+          administrator confirms it with their own `password`: a wrong one
+          receives `403` with the code `wrong_password` and counts as a failed
+          sign-in of the administrator; while their account is locked, only the
+          correct password learns it (`403` with the code `account_locked`).
+          The audit log records every attempt as `user.totp_disable`. Only a
+          session can remove a factor (`403`). Administrators remove their own
+          factor with `DELETE /api/v1/session/totp` (`409`).
 
         The audit log records the names of the changed fields, not their values.
       tags: [users]
@@ -797,7 +801,19 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/ForbiddenWrite"
+          description: |
+            The caller lacks the permission, the request comes from another origin, a second factor is
+            removed with an API key (`forbidden`), the password of the administrator is wrong
+            (`wrong_password`), or it is correct but their account is locked (`account_locked`).
+          headers:
+            Retry-After:
+              description: Seconds until the lock ends. Only sent for a locked account.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -1236,6 +1252,10 @@ components:
           type: boolean
           const: false
           description: Removes the TOTP factor. A factor is enabled only by its user.
+        password:
+          type: string
+          writeOnly: true
+          description: The password of the administrator. Required with `totp_enabled`, and only with it.
 
     CreatedUser:
       type: object

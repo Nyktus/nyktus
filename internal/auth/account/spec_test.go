@@ -68,6 +68,12 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		}
 	}
 
+	for _, code := range []string{CodeWrongPassword, CodeAccountLocked} {
+		if !strings.Contains(string(api.OpenAPI()), "`"+code+"`") {
+			t.Errorf("the specification does not name the code %s", code)
+		}
+	}
+
 	roles := []string{string(user.RoleAdmin), string(user.RoleEditor), string(user.RoleViewer)}
 	for _, s := range []string{"CreateUserRequest", "UpdateUserRequest", "User"} {
 		if got := spec.Components.Schemas[s].Properties["role"].Enum; !sameSet(got, roles) {
@@ -79,8 +85,8 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		t.Errorf("UpdateUserRequest.status = %v, want %v", got, statuses)
 	}
 	// totp_enabled removes the second factor, which is not a field of the
-	// account.
-	fields := []string{user.FieldDisplayName, user.FieldRole, user.FieldStatus, "totp_enabled"}
+	// account, and password confirms the removal.
+	fields := []string{user.FieldDisplayName, user.FieldRole, user.FieldStatus, "totp_enabled", "password"}
 	var props []string
 	for name := range spec.Components.Schemas["UpdateUserRequest"].Properties {
 		props = append(props, name)

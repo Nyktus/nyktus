@@ -96,7 +96,7 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/api/v1/users", httpx.Require("users:read"), d.Accounts.List)
 	rt.Handle(http.MethodPost, "/api/v1/users", httpx.Require("users:write"), d.Accounts.Create)
 	rt.Handle(http.MethodGet, "/api/v1/users/{id}", httpx.Require("users:read"), d.Accounts.Get)
-	rt.Handle(http.MethodPatch, "/api/v1/users/{id}", httpx.Require("users:write"), d.Accounts.Update)
+	rt.Handle(http.MethodPatch, "/api/v1/users/{id}", httpx.Require("users:write"), httpx.Deadline(hashDeadline)(d.Accounts.Update))
 	rt.Handle(http.MethodDelete, "/api/v1/users/{id}", httpx.Require("users:write"), d.Accounts.Delete)
 	rt.Handle(http.MethodPost, "/api/v1/users/{id}/activation-link", httpx.Require("users:write"), d.Accounts.IssueLink)
 	rt.Handle(http.MethodPost, "/api/v1/activation", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.Activate))

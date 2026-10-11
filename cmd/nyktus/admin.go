@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"nyktus.org/nyktus/internal/auth/account"
+	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/secondfactor"
 	"nyktus.org/nyktus/internal/platform/config"
 	"nyktus.org/nyktus/internal/platform/db"
@@ -106,7 +107,7 @@ func runAdminCommand(ctx context.Context, name string, args []string, src config
 				return err
 			}
 		}
-		return run(ctx, cfg, account.NewService(pool, cfg.ConsoleURL), email, logger, stdout)
+		return run(ctx, cfg, account.NewService(pool, cfg.ConsoleURL, password.NewHasher()), email, logger, stdout)
 	}()
 	if err != nil {
 		return logFailure(ctx, logger, "admin "+name, err)

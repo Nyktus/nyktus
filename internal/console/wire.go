@@ -46,7 +46,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		return nil, err
 	}
 	h := session.NewHandler(o.Logger, sessions)
-	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL), o.Hasher)
+	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
 	return NewHandler(Deps{
 		Logger:         o.Logger,
 		DB:             o.DB,
