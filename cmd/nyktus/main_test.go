@@ -5,6 +5,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -18,6 +20,7 @@ import (
 	"nyktus.org/nyktus/internal/platform/dbtest"
 	"nyktus.org/nyktus/internal/platform/migrate"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/platform/secretbox"
 	"nyktus.org/nyktus/migrations"
 )
 
@@ -26,6 +29,17 @@ func source(env map[string]string) config.Source {
 		Getenv:   func(key string) string { return env[key] },
 		ReadFile: func(string) ([]byte, error) { return nil, nil },
 	}
+}
+
+// testKeys returns a valid keyring for encryption at rest, generated for each
+// test so that no key material is written into the source.
+func testKeys(t *testing.T) string {
+	t.Helper()
+	raw := make([]byte, secretbox.KeySize)
+	if _, err := rand.Read(raw); err != nil {
+		t.Fatal(err)
+	}
+	return "1:" + base64.StdEncoding.EncodeToString(raw)
 }
 
 func TestRun_ExitCodes(t *testing.T) {
@@ -188,10 +202,15 @@ func TestRun_FailedStartIssuesNoSetupToken(t *testing.T) {
 		"NYKTUS_CONSOLE_DATABASE_URL": consoleURL,
 		"NYKTUS_CONSOLE_ADDR":         occupied.Addr().String(),
 		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+		"NYKTUS_ENCRYPTION_KEYS":      testKeys(t),
 	}
 	var stdout, stderr bytes.Buffer
 	if code := run(t.Context(), []string{"serve", "--roles=console"}, source(env), &stdout, &stderr); code != exitFailure {
 		t.Fatalf("exit code = %d, want %d; stderr: %s", code, exitFailure, stderr.String())
+	}
+	// The start must fail at the listener, after the configuration was accepted.
+	if !strings.Contains(stderr.String(), "address already in use") {
+		t.Errorf("stderr = %q, want the failure of the listener", stderr.String())
 	}
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q, want nothing", stdout.String())

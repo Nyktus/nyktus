@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"nyktus.org/nyktus/internal/platform/logging"
+	"nyktus.org/nyktus/internal/platform/secretbox"
 )
 
 const prefix = "NYKTUS_"
@@ -111,6 +112,9 @@ type Console struct {
 	SessionIdleTimeout time.Duration
 	// SessionMaxAge ends a session this long after sign-in, however active it is.
 	SessionMaxAge time.Duration
+	// EncryptionKeys encrypt the secrets that the console stores and must read
+	// back, such as the secrets of second factors.
+	EncryptionKeys *secretbox.Keyring
 }
 
 // Limits of the session durations. A session must be able to outlast a short
@@ -163,6 +167,7 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 			DatabaseURL: r.requiredSecret("CONSOLE_DATABASE_URL"),
 			SessionIdleTimeout: r.duration("SESSION_IDLE_TIMEOUT", time.Hour,
 				minSessionIdleTimeout, maxSessionIdleTimeout),
+			EncryptionKeys: r.keyring("ENCRYPTION_KEYS"),
 		}
 		cfg.Console.SessionMaxAge = r.duration("SESSION_MAX_AGE", 12*time.Hour,
 			max(cfg.Console.SessionIdleTimeout, minSessionIdleTimeout), maxSessionMaxAge)
@@ -344,6 +349,22 @@ func parsePrefix(s string) (netip.Prefix, error) {
 		return netip.Prefix{}, fmt.Errorf("%q is an IPv4 range in IPv6 notation; write it as an IPv4 range", s)
 	}
 	return p, nil
+}
+
+// keyring reads the keys that encrypt secrets at rest. They are required in
+// every environment: a key derived from another secret or generated at each
+// start would make the stored secrets unreadable or tie them to that secret.
+func (r *reader) keyring(name string) *secretbox.Keyring {
+	value := r.requiredSecret(name)
+	if value == "" {
+		return nil
+	}
+	k, err := secretbox.ParseKeyring(value.Value())
+	if err != nil {
+		r.fail("%s%s: %w", prefix, name, err)
+		return nil
+	}
+	return k
 }
 
 // requiredSecret reads a secret either from NAME or from the file named by

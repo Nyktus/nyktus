@@ -5,6 +5,8 @@ package config
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +17,19 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"nyktus.org/nyktus/internal/platform/secretbox"
 )
+
+// testKeys is a valid keyring, generated for each run so that no key material
+// is written into the source.
+var testKeys = func() string {
+	raw := make([]byte, secretbox.KeySize)
+	if _, err := rand.Read(raw); err != nil {
+		panic(err)
+	}
+	return "1:" + base64.StdEncoding.EncodeToString(raw)
+}()
 
 type fakeSource struct {
 	env   map[string]string
@@ -41,6 +55,7 @@ func TestLoadServe_Defaults(t *testing.T) {
 	src := fakeSource{env: map[string]string{
 		"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
 		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+		"NYKTUS_ENCRYPTION_KEYS":      testKeys,
 	}}
 	cfg, err := LoadServe(src.source(), []Role{RoleConsole})
 	if err != nil {
@@ -73,7 +88,7 @@ func TestLoadServe_ReportsAllProblems(t *testing.T) {
 	if err == nil {
 		t.Fatal("LoadServe() returned no error")
 	}
-	for _, want := range []string{"NYKTUS_ENV", "NYKTUS_LOG_LEVEL", "NYKTUS_CONSOLE_ADDR", "NYKTUS_CONSOLE_URL", "NYKTUS_CONSOLE_DATABASE_URL"} {
+	for _, want := range []string{"NYKTUS_ENV", "NYKTUS_LOG_LEVEL", "NYKTUS_CONSOLE_ADDR", "NYKTUS_CONSOLE_URL", "NYKTUS_CONSOLE_DATABASE_URL", "NYKTUS_ENCRYPTION_KEYS"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not mention %s: %v", want, err)
 		}
@@ -130,7 +145,11 @@ func TestLoadServe_ConsoleURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			env := map[string]string{"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus", "NYKTUS_CONSOLE_URL": tt.value}
+			env := map[string]string{
+				"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+				"NYKTUS_CONSOLE_URL":          tt.value,
+				"NYKTUS_ENCRYPTION_KEYS":      testKeys,
+			}
 			if tt.development {
 				env["NYKTUS_ENV"] = "development"
 			}
@@ -183,6 +202,7 @@ func TestLoadServe_SessionDurations(t *testing.T) {
 				"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
 				"NYKTUS_SESSION_IDLE_TIMEOUT": tt.idle,
 				"NYKTUS_SESSION_MAX_AGE":      tt.maxAge,
+				"NYKTUS_ENCRYPTION_KEYS":      testKeys,
 			}
 			cfg, err := LoadServe(fakeSource{env: env}.source(), []Role{RoleConsole})
 			if tt.err != "" {
@@ -198,6 +218,46 @@ func TestLoadServe_SessionDurations(t *testing.T) {
 				t.Errorf("durations = %v, %v; want %v, %v", cfg.Console.SessionIdleTimeout, cfg.Console.SessionMaxAge, tt.wantIdle, tt.wantMaxAge)
 			}
 		})
+	}
+}
+
+func TestLoadServe_EncryptionKeys(t *testing.T) {
+	t.Parallel()
+
+	env := func(keys string) map[string]string {
+		return map[string]string{
+			"NYKTUS_ENV":                  "development",
+			"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+			"NYKTUS_ENCRYPTION_KEYS":      keys,
+		}
+	}
+
+	cfg, err := LoadServe(fakeSource{env: env(testKeys)}.source(), []Role{RoleConsole})
+	if err != nil {
+		t.Fatalf("LoadServe() error = %v", err)
+	}
+	if cfg.Console.EncryptionKeys == nil || cfg.Console.EncryptionKeys.CurrentKeyID() != 1 {
+		t.Errorf("EncryptionKeys = %v, want the keyring with key 1", cfg.Console.EncryptionKeys)
+	}
+
+	// Development needs the keys as well: a generated key would make the stored
+	// secrets unreadable after a restart.
+	_, err = LoadServe(fakeSource{env: env("")}.source(), []Role{RoleConsole})
+	if err == nil || !strings.Contains(err.Error(), "NYKTUS_ENCRYPTION_KEYS or NYKTUS_ENCRYPTION_KEYS_FILE is required") {
+		t.Errorf("LoadServe() without keys error = %v, want them required", err)
+	}
+
+	_, err = LoadServe(fakeSource{env: env("1:c2hvcnQ=")}.source(), []Role{RoleConsole})
+	if err == nil || !strings.Contains(err.Error(), "NYKTUS_ENCRYPTION_KEYS: key 1: must be 32 bytes, got 5") {
+		t.Errorf("LoadServe() with a short key error = %v", err)
+	}
+
+	src := fakeSource{
+		env:   map[string]string{"NYKTUS_ENV": "development", "NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus", "NYKTUS_ENCRYPTION_KEYS_FILE": "/run/secrets/keys"},
+		files: map[string]string{"/run/secrets/keys": testKeys + "\n"},
+	}
+	if _, err := LoadServe(src.source(), []Role{RoleConsole}); err != nil {
+		t.Errorf("LoadServe() with keys from a file error = %v", err)
 	}
 }
 

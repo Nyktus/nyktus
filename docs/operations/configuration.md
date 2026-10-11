@@ -34,10 +34,25 @@ Settings of a server role are only read when the role runs. A process started wi
 | `NYKTUS_CONSOLE_DATABASE_URL` | required, secret | Connection URL of the console's login role. See [Database setup](database.md). |
 | `NYKTUS_SESSION_IDLE_TIMEOUT` | `1h` | A session ends after this long without a request. Between `5m` and `24h`. See [Sign-in and sessions](sign-in.md). |
 | `NYKTUS_SESSION_MAX_AGE` | `12h` | A session ends this long after sign-in, however active it is. Between the idle timeout and `720h` (30 days). |
+| `NYKTUS_ENCRYPTION_KEYS` | required, secret, also in development | Keys that encrypt secrets stored in the database. See [Encryption keys](#encryption-keys). |
 
 ## `nyktus admin`
 
 The admin commands, such as [`nyktus admin reset-password`](users.md#when-no-administrator-can-sign-in), use the settings of the console: `NYKTUS_CONSOLE_DATABASE_URL` and `NYKTUS_CONSOLE_URL`, and `NYKTUS_CONSOLE_ADDR` for the default of the URL in development.
+
+## Encryption keys
+
+Secrets that Nyktus must read back, such as the secrets of second factors, are stored encrypted with AES-256-GCM. The keys never reach the database, so a copy of the database alone does not reveal the secrets. Keep a copy of the keys in your secret store: without them, the encrypted secrets are lost.
+
+`NYKTUS_ENCRYPTION_KEYS` holds a comma-separated list of keys, each written as `<id>:<key>`. The ID is a number from 1 to 255 that is stored with every encrypted value. The key is 32 random bytes in standard base64. Generate one with:
+
+```sh
+echo "1:$(openssl rand -base64 32)"
+```
+
+The keys are required in development as well. Nyktus neither derives a key from another secret nor generates one at startup, because either would make the stored secrets unreadable once that secret or the process changes.
+
+To replace a key, put a new key with an unused ID first and keep the old one behind it, such as `2:<new key>,1:<old key>`. The first key encrypts new values; every listed key decrypts. Remove the old key only when no stored value uses it any more.
 
 ## Client addresses
 
