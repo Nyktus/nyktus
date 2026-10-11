@@ -6,7 +6,6 @@ package auditapi_test
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -256,6 +255,8 @@ func TestListAuditEntries_PagesWithCursor(t *testing.T) {
 	}
 }
 
+// The rules for the query are tested with httpx.DecodeListQuery. These cases
+// show that the handler applies them.
 func TestListAuditEntries_RejectsInvalidQueries(t *testing.T) {
 	t.Parallel()
 
@@ -265,29 +266,14 @@ func TestListAuditEntries_RejectsInvalidQueries(t *testing.T) {
 	for _, query := range []string{
 		"?limit=0",
 		"?limit=201",
-		"?limit=ten",
-		"?limit=+50",
-		"?limit=0050",
-		"?limit=-0",
-		"?limit=99999999999999999999",
-		"?limit=1&limit=2",
 		"?offset=10",
-		"?cursor=%%%",
-		"?cursor=" + b64([]byte("2026-10-10T12:00:00Z")),
-		"?cursor=" + b64([]byte("yesterday|00000000-0000-4000-8000-000000000000")),
 		"?cursor=" + b64([]byte("2026-10-10T12:00:00Z|' OR 1=1 --")),
-		"?cursor=" + b64([]byte("2026-10-10T12:00:00Z|00000000-0000-4000-8000-000000000000")) + "%3D",
 	} {
 		status, body := e.get(t, tok, query)
 		errBody, _ := body["error"].(map[string]any)
 		if status != http.StatusBadRequest || errBody["code"] != "invalid_request" {
 			t.Errorf("GET %s: status %d, body %v; want 400", query, status, body)
 		}
-	}
-	// The client chooses the parameter names, so the error does not repeat them.
-	name := strings.Repeat("n", 1000)
-	if _, body := e.get(t, tok, "?"+name+"=1"); strings.Contains(fmt.Sprint(body), name) {
-		t.Error("the error repeats the unknown parameter name")
 	}
 	if status, _ := e.get(t, tok, "?cursor="+b64([]byte("2026-10-10T12:00:00.123456Z|00000000-0000-4000-8000-000000000000"))); status != http.StatusOK {
 		t.Errorf("valid cursor: status %d, want 200", status)
