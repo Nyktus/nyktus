@@ -100,8 +100,13 @@ func TestRouter_DeniedRequestsNeverReachTheHandler(t *testing.T) {
 func TestRouter_AuthorizedRequestReachesHandlerWithPrincipal(t *testing.T) {
 	t.Parallel()
 
-	for _, access := range []Access{Authenticated, Require("users:read")} {
-		t.Run(access.String(), func(t *testing.T) {
+	for name, access := range map[string]Access{
+		"authenticated":              Authenticated,
+		"permission":                 Require("users:read"),
+		"authenticated session only": Authenticated.SessionOnly(),
+		"permission session only":    Require("users:read").SessionOnly(),
+	} {
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
 			authz := &fakeAuthorizer{}
@@ -200,6 +205,34 @@ func TestAccess_String(t *testing.T) {
 		if got := access.String(); got != want {
 			t.Errorf("String() = %q, want %q", got, want)
 		}
+	}
+}
+
+// The restriction to sessions is enforced by the authorizer, which receives the
+// access of the route. It does not change what the specification declares in
+// x-access.
+func TestAccess_SessionOnly(t *testing.T) {
+	t.Parallel()
+
+	for _, access := range []Access{Authenticated, Require("users:read")} {
+		restricted := access.SessionOnly()
+		if access.RequiresSession() || !restricted.RequiresSession() {
+			t.Errorf("%v: RequiresSession() = %v before and %v after SessionOnly(), want false and true",
+				access, access.RequiresSession(), restricted.RequiresSession())
+		}
+		if restricted.String() != access.String() || restricted.permission != access.permission {
+			t.Errorf("SessionOnly() changed %v into %v", access, restricted)
+		}
+	}
+	for _, access := range []Access{Public, {}} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%v.SessionOnly() did not panic", access)
+				}
+			}()
+			access.SessionOnly()
+		}()
 	}
 }
 

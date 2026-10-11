@@ -13,6 +13,7 @@ import (
 
 	"nyktus.org/nyktus/internal/audit/auditapi"
 	"nyktus.org/nyktus/internal/auth/account"
+	"nyktus.org/nyktus/internal/auth/authz"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
@@ -51,7 +52,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		Logger:         o.Logger,
 		DB:             o.DB,
 		Setup:          setup.NewHandler(o.Logger, o.Setup, o.Hasher),
-		Authorizer:     session.NewAuthorizer(sessions),
+		Authorizer:     authz.New(o.DB, sessions),
 		SignIn:         http.HandlerFunc(h.SignIn),
 		Session:        http.HandlerFunc(h.Current),
 		SignOut:        http.HandlerFunc(h.SignOut),

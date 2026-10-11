@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,6 +126,22 @@ func TestRoutes_RequireOnlyGrantedPermissions(t *testing.T) {
 	for _, route := range NewRouter(deps(fakePinger{})).Routes() {
 		if perm, ok := route.Access.Permission(); ok && !slices.Contains(granted, perm) {
 			t.Errorf("route %s %s requires %s, which no role grants", route.Method, route.Path, perm)
+		}
+	}
+}
+
+// The session and how the account signs in, under /api/v1/session, are managed
+// only with a session, so that a leaked API key can neither end the session nor
+// take over the account. The authorizer enforces the restriction that the route
+// declares.
+func TestSessionRoutes_AdmitOnlySessions(t *testing.T) {
+	t.Parallel()
+
+	for _, route := range NewRouter(deps(fakePinger{})).Routes() {
+		own := route.Path == "/api/v1/session" || strings.HasPrefix(route.Path, "/api/v1/session/")
+		protected := route.Access != httpx.Public
+		if want := own && protected; route.Access.RequiresSession() != want {
+			t.Errorf("route %s %s: RequiresSession() = %v, want %v", route.Method, route.Path, route.Access.RequiresSession(), want)
 		}
 	}
 }

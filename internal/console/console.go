@@ -79,18 +79,22 @@ func NewRouter(d Deps) *httpx.Router {
 		panic("console: router needs a logger, a database, an authorizer and the setup, session, audit and account handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
+	// The session itself and how the account signs in are managed only with a
+	// session, so that a leaked API key can neither sign the user out nor take
+	// over the account.
+	session := httpx.Authenticated.SessionOnly()
 	rt.Handle(http.MethodGet, "/livez", httpx.Public, http.HandlerFunc(live))
 	rt.Handle(http.MethodGet, "/readyz", httpx.Public, ready(d.Logger, d.DB))
 	rt.Handle(http.MethodPost, "/api/v1/setup", httpx.Public, httpx.Deadline(hashDeadline)(d.Setup))
 	rt.Handle(http.MethodPost, "/api/v1/session", httpx.Public, httpx.Deadline(hashDeadline)(d.SignIn))
-	rt.Handle(http.MethodGet, "/api/v1/session", httpx.Authenticated, d.Session)
-	rt.Handle(http.MethodDelete, "/api/v1/session", httpx.Authenticated, d.SignOut)
-	rt.Handle(http.MethodPut, "/api/v1/session/password", httpx.Authenticated, httpx.Deadline(hashDeadline)(d.ChangePassword))
+	rt.Handle(http.MethodGet, "/api/v1/session", session, d.Session)
+	rt.Handle(http.MethodDelete, "/api/v1/session", session, d.SignOut)
+	rt.Handle(http.MethodPut, "/api/v1/session/password", session, httpx.Deadline(hashDeadline)(d.ChangePassword))
 	rt.Handle(http.MethodPost, "/api/v1/session/second-factor", httpx.Public, d.SecondFactor.CompleteSignIn)
-	rt.Handle(http.MethodPost, "/api/v1/session/totp", httpx.Authenticated, httpx.Deadline(hashDeadline)(d.SecondFactor.Begin))
-	rt.Handle(http.MethodDelete, "/api/v1/session/totp", httpx.Authenticated, httpx.Deadline(hashDeadline)(d.SecondFactor.Remove))
-	rt.Handle(http.MethodPost, "/api/v1/session/totp/confirmation", httpx.Authenticated, d.SecondFactor.Confirm)
-	rt.Handle(http.MethodPost, "/api/v1/session/totp/recovery-codes", httpx.Authenticated,
+	rt.Handle(http.MethodPost, "/api/v1/session/totp", session, httpx.Deadline(hashDeadline)(d.SecondFactor.Begin))
+	rt.Handle(http.MethodDelete, "/api/v1/session/totp", session, httpx.Deadline(hashDeadline)(d.SecondFactor.Remove))
+	rt.Handle(http.MethodPost, "/api/v1/session/totp/confirmation", session, d.SecondFactor.Confirm)
+	rt.Handle(http.MethodPost, "/api/v1/session/totp/recovery-codes", session,
 		httpx.Deadline(hashDeadline)(d.SecondFactor.ReplaceRecoveryCodes))
 	rt.Handle(http.MethodGet, "/api/v1/audit-entries", httpx.Require("audit:read"), d.AuditEntries)
 	rt.Handle(http.MethodGet, "/api/v1/users", httpx.Require("users:read"), d.Accounts.List)
