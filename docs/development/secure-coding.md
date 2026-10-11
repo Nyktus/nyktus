@@ -65,7 +65,7 @@ Every handler must satisfy the following:
 2. **Strict decoding.** Decode JSON with unknown fields rejected and trailing data treated as an error.
 3. **Validation at the boundary.** Validate every field: length limits, allowed values, URL and email syntax (`net/mail.ParseAddress`, `net/url.Parse` with explicit scheme and host checks). Do not write fragile regular expressions for formats the standard library parses.
 4. **Permission before lookup.** Check the caller's permission before loading the resource, so a denied request cannot reveal whether a specific resource exists.
-5. **No generic relinking.** Relations that carry security meaning, such as the scenario a resource belongs to, change only through a dedicated, validated operation, not through a generic `PATCH`.
+5. **No generic relinking.** Relations that carry security meaning, such as the scenario a resource belongs to, change only through a dedicated, validated operation, not through a generic `PATCH`. A `PATCH` is not generic if it accepts only fields that its request type declares, validates each of them on its own, and gives a security-relevant field, such as the role of an account, the same checks and consequences as a dedicated operation would.
 6. **Secrets are shown once.** API keys, webhook secrets, recovery codes and activation links are returned only in the response that creates them. Every later response masks them.
 7. **Generic errors.** Clients receive a generic message for every `5xx`. Error details, `err.Error()` strings and stack traces go to the log only, correlated by request ID.
 8. **Audit.** Security-relevant writes create an audit log entry (see [Logging and audit](#logging-and-audit)).

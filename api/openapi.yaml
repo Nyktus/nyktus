@@ -46,6 +46,8 @@ tags:
     description: Sign-in, the session of the caller and sign-out.
   - name: audit
     description: The audit log of security-relevant actions.
+  - name: users
+    description: Management of accounts by administrators, and their activation.
 
 paths:
   /livez:
@@ -284,6 +286,291 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/users:
+    get:
+      operationId: listUsers
+      summary: List accounts
+      description: |
+        Returns accounts from the newest to the oldest, a page at a time. To read
+        the next page, pass the `next_cursor` of a response as `cursor`.
+
+        Accounts contain personal data, so reads are recorded in the audit log as
+        `users.read`, at most once per user and minute.
+      tags: [users]
+      x-access: users:read
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: limit
+          in: query
+          description: Number of accounts per page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A page of accounts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createUser
+      summary: Create an account
+      description: |
+        Creates a pending account without a password and returns an activation
+        link for it. The link is shown only in this response: pass it on to the
+        user, who sets their own password through it. It is valid for 72 hours
+        and can be used once. Administrators never set or see the password of
+        another user.
+      tags: [users]
+      x-access: users:write
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: The account has been created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedUser"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getUser
+      summary: Get an account
+      description: |
+        Returns one account. The read is recorded like a read of the list.
+      tags: [users]
+      x-access: users:read
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateUser
+      summary: Change an account
+      description: |
+        Changes the display name, the role or the status of an account. Members
+        that are left out stay unchanged. All changes take effect together or
+        not at all.
+
+        - A change of role or status ends every session of the account.
+        - `status: deactivated` blocks the sign-in and removes an open activation
+          link. `status: active` reactivates a deactivated account and ends a
+          lock after failed sign-ins; an account that never set a password
+          returns to `pending`. A pending account becomes active only through
+          its activation link.
+        - At least one active administrator must remain, and administrators
+          cannot demote or deactivate their own account (`409`).
+
+        The audit log records the names of the changed fields, not their values.
+      tags: [users]
+      x-access: users:write
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: The account after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteUser
+      summary: Delete an account
+      description: |
+        Deletes an account with its sessions and its activation link. Audit
+        entries of the account remain readable. At least one active
+        administrator must remain, and administrators cannot delete their own
+        account (`409`).
+      tags: [users]
+      x-access: users:write
+      security:
+        - sessionCookie: []
+      responses:
+        "204":
+          description: The account has been deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/{id}/activation-link:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: createActivationLink
+      summary: Create a new activation link
+      description: |
+        Returns a new activation link for a pending account, for example after
+        the previous one expired. The previous link stops working. The link is
+        shown only in this response.
+      tags: [users]
+      x-access: users:write
+      security:
+        - sessionCookie: []
+      responses:
+        "201":
+          description: The new activation link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivationLink"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/activation:
+    post:
+      operationId: activateUser
+      summary: Activate an account
+      description: |
+        Sets the password of a pending account and makes it active. The request
+        must carry the token from the fragment of the activation link, such as
+        `https://nyktus.example.com/activate#token=...`. The activation does not
+        sign in.
+
+        For every request whose token is unknown, expired or already used, the
+        operation answers with the same status, headers and body as a route that
+        does not exist. The password is validated only for a valid token.
+      tags: [users]
+      x-access: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivationRequest"
+      responses:
+        "200":
+          description: The account is active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -460,6 +747,90 @@ components:
           type: string
           format: uuid
 
+    UserPage:
+      type: object
+      additionalProperties: false
+      required: [users]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        next_cursor:
+          type: string
+          description: Cursor of the next page. Absent on the last page.
+
+    CreateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [email, display_name, role]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: The sign-in name of the account. It cannot be changed later.
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        role:
+          type: string
+          enum: [admin, editor, viewer]
+
+    UpdateUserRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        role:
+          type: string
+          enum: [admin, editor, viewer]
+        status:
+          type: string
+          enum: [active, deactivated]
+
+    CreatedUser:
+      type: object
+      additionalProperties: false
+      required: [user, activation]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        activation:
+          $ref: "#/components/schemas/ActivationLink"
+
+    ActivationLink:
+      type: object
+      additionalProperties: false
+      required: [url, expires_at]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: The activation link. It is shown only once.
+        expires_at:
+          type: string
+          format: date-time
+
+    ActivationRequest:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token:
+          type: string
+          description: The token from the fragment of the activation link.
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+          description: Counted in Unicode code points after NFC normalization.
+
     Error:
       type: object
       additionalProperties: false
@@ -498,6 +869,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    ForbiddenWrite:
+      description: The caller lacks the permission that the operation requires, or the request comes from another origin than the console. A denial for a missing permission is recorded in the audit log, at most once per user, permission and minute.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     CrossOrigin:
       description: The request changes state and comes from another origin than the console.
       content:
@@ -512,6 +889,17 @@ components:
             $ref: "#/components/schemas/Error"
     NotFound:
       description: The route does not exist or is not available to the caller.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: |
+        The request conflicts with the state of the accounts. The error code names the conflict:
+        `email_taken` (another account uses the address), `last_active_admin` (no active
+        administrator would remain), `own_account` (administrators cannot demote, deactivate or
+        delete their own account) or `invalid_state` (the account cannot take the requested status
+        or receive an activation link).
       content:
         application/json:
           schema:

@@ -33,12 +33,16 @@ test: ## Run unit tests; database tests are skipped
 test-db: ## Run all tests including database tests (needs db-up)
 	NYKTUS_TEST_DATABASE_URL='$(TEST_DB_URL)' NYKTUS_REQUIRE_DB_TESTS=1 go test -race -count=1 ./...
 
+# Packages and their database tests run in parallel, one per CPU each, and every
+# test holds its own connections, so the default of 100 connections runs out on
+# machines with many cores.
 .PHONY: db-up
 db-up: ## Start the disposable test database
 	docker run --detach --rm --name $(TEST_DB_CONTAINER) \
 		--env POSTGRES_PASSWORD=postgres \
 		--publish 127.0.0.1:$(TEST_DB_PORT):5432 \
-		$(TEST_DB_IMAGE)
+		$(TEST_DB_IMAGE) \
+		-c max_connections=400
 	@until docker exec $(TEST_DB_CONTAINER) pg_isready --username postgres --quiet; do sleep 1; done
 
 .PHONY: db-down

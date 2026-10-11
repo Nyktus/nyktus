@@ -27,6 +27,20 @@ const (
 	// ActionUserCreate records the creation of an account. The actor tells
 	// whether an administrator or the holder of the setup token created it.
 	ActionUserCreate Action = "user.create"
+	// ActionUserUpdate records a change of an account, with the names of the
+	// changed fields.
+	ActionUserUpdate Action = "user.update"
+	// ActionUserDelete records the deletion of an account.
+	ActionUserDelete Action = "user.delete"
+	// ActionUserActivate records that a user set their password through an
+	// activation link.
+	ActionUserActivate Action = "user.activate"
+	// ActionUsersRead records a read of accounts, which contain personal data. A
+	// request denied for lacking the permission users:read has the same action.
+	ActionUsersRead Action = "users.read"
+	// ActionActivationLinkCreate records an activation link issued for an
+	// account. The resource is the account.
+	ActionActivationLinkCreate Action = "activation_link.create"
 	// ActionSessionCreate records a sign-in, successful or not.
 	ActionSessionCreate Action = "session.create"
 	// ActionSessionDelete records a sign-out.
@@ -78,7 +92,10 @@ const (
 	AuthSession    AuthMethod = "session"
 	AuthAPIKey     AuthMethod = "api_key"
 	AuthSetupToken AuthMethod = "setup_token"
-	AuthCLI        AuthMethod = "cli"
+	// AuthActivationToken is used by a user who activates their account through
+	// an activation link.
+	AuthActivationToken AuthMethod = "activation_token"
+	AuthCLI             AuthMethod = "cli"
 	// AuthNone is used by background jobs, which act without authenticating.
 	AuthNone AuthMethod = "none"
 )

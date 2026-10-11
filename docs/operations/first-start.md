@@ -45,7 +45,7 @@ A new installation has no accounts. The first administrator is created through a
    rm setup.json
    ```
 
-   A successful request answers with `201 Created` and the new account. The administrator is active and [signs in](sign-in.md) with the email address and the password.
+   A successful request answers with `201 Created` and the new account. The administrator is active and [signs in](sign-in.md) with the email address and the password. Further accounts are created by administrators, see [Managing accounts](users.md).
 
 The password must have between 12 and 128 characters. The email address is stored in lower case.
 
@@ -53,7 +53,7 @@ The password must have between 12 and 128 characters. The email address is store
 
 - **One hour, once.** A setup URL is valid for one hour and can be used once. If it expires, restart the console to get a new one.
 - **Several console processes.** Every console process issues its own URL when it starts. Each of them works until it expires, so the setup also works behind a load balancer. Concurrent requests never create more than one administrator.
-- **Closed for good.** Once an administrator exists, the console issues no more setup URLs, and the setup endpoint answers every request with the same response as a route that does not exist, also after a restart. Deactivating an administrator does not open the setup again.
+- **Closed for good.** Once an administrator exists, the console issues no more setup URLs, and the setup endpoint answers every request with the same response as a route that does not exist, also after a restart. The last active administrator cannot be demoted, deactivated or deleted, so the setup does not open again.
 - **Nothing to learn without the token.** A well-formed request with an unknown, expired or used token receives the same answer as a route that does not exist. The fields of the request are only checked for a valid token.
 - **The token stays out of logs.** It is placed in the fragment of the URL, the part after `#`. Browsers never send the fragment to a server, so it does not appear in the access logs of the console or of a reverse proxy. The database stores only a SHA-256 hash of the token.
 - **Audit.** The creation of the administrator is recorded in the [audit log](audit-log.md) with the client address and the setup token as the means of authentication.

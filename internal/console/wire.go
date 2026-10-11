@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"nyktus.org/nyktus/internal/audit/auditapi"
+	"nyktus.org/nyktus/internal/auth/account"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
@@ -27,8 +28,10 @@ type Options struct {
 	// that its limit on concurrent hash operations bounds every path together.
 	Hasher   *password.Hasher
 	Sessions session.Config
-	// Origin is the origin under which users reach the console.
-	Origin         string
+	// ConsoleURL is the address under which users reach the console, such as
+	// "https://nyktus.example.com". Requests that change state must come from
+	// this origin, and activation links start with it.
+	ConsoleURL     string
 	TrustedProxies []netip.Prefix
 }
 
@@ -40,16 +43,26 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		return nil, err
 	}
 	h := session.NewHandler(o.Logger, sessions)
+	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL), o.Hasher)
 	return NewHandler(Deps{
-		Logger:         o.Logger,
-		DB:             o.DB,
-		Setup:          setup.NewHandler(o.Logger, o.Setup, o.Hasher),
-		Authorizer:     session.NewAuthorizer(sessions),
-		SignIn:         http.HandlerFunc(h.SignIn),
-		Session:        http.HandlerFunc(h.Current),
-		SignOut:        http.HandlerFunc(h.SignOut),
-		AuditEntries:   auditapi.NewHandler(o.Logger, o.DB),
-		Origin:         o.Origin,
+		Logger:       o.Logger,
+		DB:           o.DB,
+		Setup:        setup.NewHandler(o.Logger, o.Setup, o.Hasher),
+		Authorizer:   session.NewAuthorizer(sessions),
+		SignIn:       http.HandlerFunc(h.SignIn),
+		Session:      http.HandlerFunc(h.Current),
+		SignOut:      http.HandlerFunc(h.SignOut),
+		AuditEntries: auditapi.NewHandler(o.Logger, o.DB),
+		Accounts: Accounts{
+			List:      http.HandlerFunc(a.List),
+			Get:       http.HandlerFunc(a.Get),
+			Create:    http.HandlerFunc(a.Create),
+			Update:    http.HandlerFunc(a.Update),
+			Delete:    http.HandlerFunc(a.Delete),
+			IssueLink: http.HandlerFunc(a.IssueLink),
+			Activate:  http.HandlerFunc(a.Activate),
+		},
+		Origin:         o.ConsoleURL,
 		TrustedProxies: o.TrustedProxies,
 	}), nil
 }
