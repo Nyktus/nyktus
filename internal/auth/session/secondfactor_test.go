@@ -399,8 +399,8 @@ func TestConfirmTOTP_EndsOtherSessions(t *testing.T) {
 	if r.status != http.StatusForbidden || errorCode(r) != "wrong_code" {
 		t.Errorf("wrong code: status %d, body %v; want 403 wrong_code", r.status, r.body)
 	}
-	if n := d.count(t, `SELECT failed_logins FROM users WHERE id = $1`, id); n != 0 {
-		t.Errorf("failed_logins = %d after a wrong code at the confirmation, want 0", n)
+	if n := d.count(t, `SELECT failed_logins FROM users WHERE id = $1`, id); n != 1 {
+		t.Errorf("failed_logins = %d after a wrong code at the confirmation, want it counted", n)
 	}
 
 	r = send(t, srv, http.MethodPost, "/api/v1/session/totp/confirmation",
@@ -426,6 +426,35 @@ func TestConfirmTOTP_EndsOtherSessions(t *testing.T) {
 	}
 	if n := d.count(t, `SELECT count(*) FROM audit_entries WHERE action = 'user.totp_enable' AND resource_id = $1`, id); n != 3 {
 		t.Errorf("recorded %d confirmations, want 3 (no setup, wrong code, success)", n)
+	}
+	if n := d.count(t, `SELECT count(*) FROM audit_entries WHERE action = 'user.totp_enroll' AND outcome = 'failure' AND resource_id = $1`, id); n != 1 {
+		t.Errorf("recorded %d failed setups, want the second setup", n)
+	}
+}
+
+// A taken-over session cannot guess the code of a setup: wrong codes count
+// towards the lock, and a locked account cannot confirm.
+func TestConfirmTOTP_WrongCodesCountTowardsTheLock(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDB(t)
+	id := createUser(t, d, "ada@example.com", "viewer", "active", testPassword)
+	srv := startConsole(t, d)
+	cookie := mustSignIn(t, srv)
+	r := send(t, srv, http.MethodPost, "/api/v1/session/totp", jsonBody(t, map[string]string{"password": testPassword}), cookie, nil)
+	secret := mustDecode(t, r.body["secret"].(string))
+
+	wrong := jsonBody(t, map[string]string{"code": totp.Code(secret, step(t, d)+5)})
+	for range 5 {
+		send(t, srv, http.MethodPost, "/api/v1/session/totp/confirmation", wrong, cookie, nil)
+	}
+	r = send(t, srv, http.MethodPost, "/api/v1/session/totp/confirmation",
+		jsonBody(t, map[string]string{"code": totp.Code(secret, step(t, d))}), cookie, nil)
+	if r.status != http.StatusForbidden || errorCode(r) != "account_locked" {
+		t.Errorf("correct code while locked: status %d, body %v; want 403 account_locked", r.status, r.body)
+	}
+	if n := d.count(t, `SELECT count(*) FROM totp_factors WHERE user_id = $1 AND confirmed_at IS NOT NULL`, id); n != 0 {
+		t.Errorf("factor confirmed while the account is locked")
 	}
 }
 

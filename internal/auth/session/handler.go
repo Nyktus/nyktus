@@ -171,7 +171,7 @@ func (h *Handler) SignIn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if c := result.Challenge; c != nil {
-		setChallengeCookie(w, c.Token, c.ExpiresAt)
+		setChallengeCookie(w, c.Token)
 		httpx.WriteJSON(w, http.StatusAccepted, challengeResponse{SecondFactor: "totp", ExpiresAt: c.ExpiresAt})
 		return
 	}

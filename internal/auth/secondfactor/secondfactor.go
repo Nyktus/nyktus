@@ -230,13 +230,15 @@ WHERE user_id = $1 AND confirmed_at IS NOT NULL`, userID, int64(totp.Period/time
 		return fmt.Errorf("look up TOTP factor of user %s: %w", userID, err)
 	}
 
-	if proof.RecoveryCode != "" {
-		return s.consumeRecoveryCode(ctx, userID, proof.RecoveryCode)
-	}
-
 	secret, err := s.keys.Open(sealed, associatedData(userID))
 	if err != nil {
 		return fmt.Errorf("decrypt TOTP secret of user %s: %w", userID, err)
+	}
+	if proof.RecoveryCode != "" {
+		if err := s.consumeRecoveryCode(ctx, userID, proof.RecoveryCode); err != nil {
+			return err
+		}
+		return s.reseal(ctx, userID, sealed, secret)
 	}
 	matched, ok := totp.Match(secret, proof.Code, step, lastUsed)
 	if !ok {
@@ -259,6 +261,23 @@ WHERE user_id = $1 AND confirmed_at IS NOT NULL`, userID, int64(totp.Period/time
 	}
 	if tag.RowsAffected() != 1 {
 		return ErrWrongCode
+	}
+	return nil
+}
+
+// reseal encrypts the secret of the account userID again with the current key
+// if it was encrypted with another one, so that a user who signs in only with
+// recovery codes does not keep an old key in use.
+func (s *Store) reseal(ctx context.Context, userID string, sealed, secret []byte) error {
+	if !s.keys.NeedsReseal(sealed) {
+		return nil
+	}
+	resealed, err := s.keys.Seal(secret, associatedData(userID))
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(ctx, `UPDATE totp_factors SET secret = $2 WHERE user_id = $1`, userID, resealed); err != nil {
+		return fmt.Errorf("encrypt TOTP secret of user %s again: %w", userID, err)
 	}
 	return nil
 }
@@ -298,7 +317,11 @@ func Remove(ctx context.Context, q db.Querier, userID string) (bool, error) {
 // no longer sign in, so the console refuses to start until the key is listed
 // again.
 func CheckKeys(ctx context.Context, q db.Querier, keys *secretbox.Keyring) error {
-	rows, err := q.Query(ctx, `SELECT DISTINCT get_byte(secret, 0) FROM totp_factors`)
+	// A setup that expired unconfirmed can never be used and is replaced by
+	// the next one, so its key does not matter.
+	rows, err := q.Query(ctx, `
+SELECT DISTINCT get_byte(secret, 0) FROM totp_factors
+WHERE confirmed_at IS NOT NULL OR created_at > clock_timestamp() - $1::interval`, EnrollmentTimeout)
 	if err != nil {
 		return fmt.Errorf("list encryption keys in use: %w", err)
 	}

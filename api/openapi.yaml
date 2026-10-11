@@ -491,9 +491,10 @@ paths:
         factor; the response sets a new session cookie in place of the one of
         the request.
 
-        A wrong code receives `403` with the code `wrong_code`. Without a setup,
-        or after ten minutes, the response is `409` with the code
-        `no_totp_setup`.
+        A wrong code receives `403` with the code `wrong_code` and counts as a
+        failed sign-in; a locked account cannot confirm (`403` with the code
+        `account_locked`). Without a setup, or after ten minutes, the response
+        is `409` with the code `no_totp_setup`.
       tags: [session]
       x-access: authenticated
       security:
@@ -769,8 +770,9 @@ paths:
           cannot demote or deactivate their own account (`409`).
         - `totp_enabled: false` removes the TOTP factor and the recovery codes,
           for a user who lost both, and ends every session of the account. The
-          audit log records it as `user.totp_disable`. Administrators remove
-          their own factor with `DELETE /api/v1/session/totp` (`409`).
+          audit log records it as `user.totp_disable`. Only a session can remove
+          a factor (`403`). Administrators remove their own factor with
+          `DELETE /api/v1/session/totp` (`409`).
 
         The audit log records the names of the changed fields, not their values.
       tags: [users]

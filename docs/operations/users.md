@@ -124,7 +124,7 @@ curl --fail-with-body --request PATCH https://nyktus.example.com/api/v1/users/<i
   --cookie cookies.txt
 ```
 
-The removal deletes the factor and the recovery codes and ends every session of the account. The user then signs in with the password alone and should set up a new factor right away. Make sure that the request really comes from the user, for example by calling them back: the factor protects against someone who knows the password. Administrators remove their own factor themselves, with their password and a code, see [Sign-in and sessions](sign-in.md#recovery-codes-and-removal). Only users enable a factor; `"totp_enabled": true` is rejected.
+The removal deletes the factor and the recovery codes and ends every session of the account. The user then signs in with the password alone and should set up a new factor right away. Make sure that the request really comes from the user, for example by calling them back: the factor protects against someone who knows the password. Only a signed-in session can remove a factor, not an API key. Administrators remove their own factor themselves, with their password and a code, see [Sign-in and sessions](sign-in.md#recovery-codes-and-removal). Only users enable a factor; `"totp_enabled": true` is rejected.
 
 ## When no administrator can sign in
 

@@ -261,12 +261,17 @@ func writeInvalidChallenge(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteError(w, r, http.StatusUnauthorized, codeInvalidChallenge, "the sign-in expired; sign in again")
 }
 
-func setChallengeCookie(w http.ResponseWriter, tok string, expiresAt time.Time) {
+// challengeLifetime is the lifetime of a challenge that the schema sets. The
+// cookie uses it rather than the expiry from the database, whose clock may
+// differ from the clock of the console.
+const challengeLifetime = 5 * time.Minute
+
+func setChallengeCookie(w http.ResponseWriter, tok string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     ChallengeCookieName,
 		Value:    tok,
 		Path:     "/",
-		MaxAge:   max(int(time.Until(expiresAt).Seconds()), 1),
+		MaxAge:   int(challengeLifetime.Seconds()),
 		Secure:   true,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,

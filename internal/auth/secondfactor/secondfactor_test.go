@@ -431,3 +431,65 @@ func TestSchema_RejectsInvalidFactors(t *testing.T) {
 		}
 	}
 }
+
+// A user who signs in only with recovery codes does not keep an old key in use.
+func TestVerify_RecoveryCodeEncryptsTheSecretWithTheCurrentKey(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t)
+	oldEntry := secretboxtest.Entry(t, 1)
+	old, err := secretbox.ParseKeyring(oldEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.keys = old
+	id := e.createUser(t, "ada@example.com")
+	_, codes := e.enable(t, id)
+
+	rotated, err := secretbox.ParseKeyring(secretboxtest.Entry(t, 2) + "," + oldEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = e.in(t, rotated, func(s *secondfactor.Store) error {
+		return s.Verify(t.Context(), id, secondfactor.Proof{RecoveryCode: codes[0]})
+	})
+	if err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	var keyID int
+	if err := e.owner.QueryRow(t.Context(), `SELECT get_byte(secret, 0) FROM totp_factors WHERE user_id = $1`, id).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if keyID != 2 {
+		t.Errorf("secret encrypted with key %d after a recovery code, want the current key 2", keyID)
+	}
+}
+
+// A setup that expired unconfirmed cannot be used, so its key does not keep
+// the console from starting.
+func TestCheckKeys_IgnoresExpiredSetups(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t)
+	id := e.createUser(t, "ada@example.com")
+	err := e.in(t, e.keys, func(s *secondfactor.Store) error {
+		_, err := s.Begin(t.Context(), id)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := secretbox.ParseKeyring(secretboxtest.Entry(t, 2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secondfactor.CheckKeys(t.Context(), e.console, other); err == nil {
+		t.Error("CheckKeys() accepted a running setup under a missing key")
+	}
+	if _, err := e.owner.Exec(t.Context(), `UPDATE totp_factors SET created_at = created_at - interval '11 minutes'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := secondfactor.CheckKeys(t.Context(), e.console, other); err != nil {
+		t.Errorf("CheckKeys() with an expired setup under a missing key error = %v", err)
+	}
+}

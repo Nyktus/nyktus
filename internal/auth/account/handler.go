@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/platform/httpx"
@@ -210,6 +211,11 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	case req.TOTPEnabled.set && req.TOTPEnabled.value:
 		invalid(w, r, "totp_enabled can only be false; users enable their second factor themselves")
+		return
+	case c.RemoveTOTP && (p.Method != audit.AuthSession || p.SessionID == ""):
+		// A leaked API key must not strip the second factor of other accounts,
+		// which, with a password reset link, would take them over.
+		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "only a signed-in session can remove a second factor")
 		return
 	case c.DisplayName != nil && !validDisplayName(*c.DisplayName):
 		invalid(w, r, displayNameRule)

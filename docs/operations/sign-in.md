@@ -71,7 +71,7 @@ Every account can add a second factor: a time-based one-time password (TOTP, RFC
      --cookie cookies.txt --cookie-jar cookies.txt
    ```
 
-   The answer contains ten **recovery codes**, such as `abcd-efgh-ijkl-mnop`. Each one signs in once in place of a code. They are shown only once: store them outside the device of the authenticator app, for example in a password manager or on paper.
+   A wrong code answers `403` with the code `wrong_code` and counts as a failed sign-in. The answer contains ten **recovery codes**, such as `abcd-efgh-ijkl-mnop`. Each one signs in once in place of a code. They are shown only once: store them outside the device of the authenticator app, for example in a password manager or on paper.
 
 Confirming the factor ends every other session of the account, which began without it, and sets a new session cookie for the session that confirmed it.
 

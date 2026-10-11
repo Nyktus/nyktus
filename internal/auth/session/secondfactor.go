@@ -219,7 +219,7 @@ func (s *Service) BeginTOTP(ctx context.Context, p access.Principal, password st
 		enrollment, err := secondfactor.NewStore(tx, s.keys).Begin(ctx, u.ID)
 		if errors.Is(err, secondfactor.ErrEnabled) {
 			outcome = err
-			return nil
+			return audit.NewStore(tx).Record(ctx, accountEntry(ctx, audit.ActionUserTOTPEnroll, audit.OutcomeFailure, p))
 		}
 		if err != nil {
 			return err
@@ -247,9 +247,9 @@ func (s *Service) BeginTOTP(ctx context.Context, p access.Principal, password st
 // of p is replaced by the returned one, as on a change of password.
 //
 // It returns secondfactor.ErrNoEnrollment if there is no setup to confirm and
-// ErrWrongCode if the code does not match. A wrong code does not count as a
-// failed sign-in: it is checked against a secret that the confirmed password
-// has just created.
+// ErrWrongCode if the code does not match. A wrong code counts as a failed
+// sign-in, and a locked account cannot confirm, so that a taken-over session
+// cannot guess the code of a setup and obtain the recovery codes.
 func (s *Service) ConfirmTOTP(ctx context.Context, p access.Principal, code string) ([]string, Session, string, error) {
 	var (
 		codes   []string
@@ -267,6 +267,10 @@ func (s *Service) ConfirmTOTP(ctx context.Context, p access.Principal, code stri
 		if err != nil {
 			return err
 		}
+		if state.RetryAfter > 0 {
+			outcome = &LockedError{RetryAfter: state.RetryAfter}
+			return audit.NewStore(tx).Record(ctx, accountEntry(ctx, audit.ActionUserTOTPEnable, audit.OutcomeFailure, p))
+		}
 		codes, err = secondfactor.NewStore(tx, s.keys).Confirm(ctx, p.UserID, code)
 		switch {
 		case errors.Is(err, secondfactor.ErrNoEnrollment):
@@ -274,6 +278,9 @@ func (s *Service) ConfirmTOTP(ctx context.Context, p access.Principal, code stri
 			return audit.NewStore(tx).Record(ctx, accountEntry(ctx, audit.ActionUserTOTPEnable, audit.OutcomeFailure, p))
 		case errors.Is(err, secondfactor.ErrWrongCode):
 			outcome = ErrWrongCode
+			if err := users.RecordFailedLogin(ctx, p.UserID); err != nil {
+				return err
+			}
 			return audit.NewStore(tx).Record(ctx, accountEntry(ctx, audit.ActionUserTOTPEnable, audit.OutcomeFailure, p))
 		case err != nil:
 			return err
@@ -368,7 +375,7 @@ func (s *Service) withSecondFactor(ctx context.Context, p access.Principal, pass
 		switch {
 		case errors.Is(err, secondfactor.ErrNotEnabled):
 			outcome = err
-			return nil
+			return audit.NewStore(tx).Record(ctx, accountEntry(ctx, action, audit.OutcomeFailure, p))
 		case errors.Is(err, secondfactor.ErrWrongCode):
 			outcome = ErrWrongCode
 			if err := user.NewStore(tx).RecordFailedLogin(ctx, u.ID); err != nil {
