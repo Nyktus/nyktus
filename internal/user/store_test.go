@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -323,6 +324,59 @@ func TestSchema_RejectsInvalidTransitions(t *testing.T) {
 
 	_, err = pool.Exec(t.Context(), "UPDATE users SET updated_at = created_at - interval '1 second' WHERE id = $1", u.ID)
 	wantConstraint(t, err, "users_updated_at_check")
+}
+
+func TestSchema_LimitsFailedLogins(t *testing.T) {
+	t.Parallel()
+
+	s, pool := newStore(t)
+	u, err := s.Create(t.Context(), NewUser{Email: "jane@example.com", DisplayName: "Jane", Role: RoleViewer})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	for _, n := range []int{0, 4} {
+		if _, err := pool.Exec(t.Context(), "UPDATE users SET failed_logins = $1 WHERE id = $2", n, u.ID); err != nil {
+			t.Errorf("failed_logins = %d: error = %v, want nil", n, err)
+		}
+	}
+	for _, n := range []int{-1, 5} {
+		_, err := pool.Exec(t.Context(), "UPDATE users SET failed_logins = $1 WHERE id = $2", n, u.ID)
+		wantConstraint(t, err, "users_failed_logins_check")
+	}
+}
+
+// Accounts created in one transaction keep their order, and an account that was
+// never changed has equal creation and update times.
+func TestSchema_RecordsTheTimeOfEachInsert(t *testing.T) {
+	t.Parallel()
+
+	_, pool := newStore(t)
+	tx, err := pool.Begin(t.Context())
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(t.Context()) }()
+
+	type times struct{ created, updated time.Time }
+	var got []times
+	for _, email := range []string{"a@example.com", "b@example.com"} {
+		var tt times
+		err := tx.QueryRow(t.Context(),
+			"INSERT INTO users (email, display_name, role, status) VALUES ($1, 'A', 'viewer', 'pending') RETURNING created_at, updated_at",
+			email).Scan(&tt.created, &tt.updated)
+		if err != nil {
+			t.Fatalf("insert %s: %v", email, err)
+		}
+		got = append(got, tt)
+	}
+	for i, tt := range got {
+		if !tt.updated.Equal(tt.created) {
+			t.Errorf("account %d: updated_at = %v, created_at = %v; want equal", i, tt.updated, tt.created)
+		}
+	}
+	if !got[1].created.After(got[0].created) {
+		t.Errorf("created_at = %v, then %v; want the second account created later", got[0].created, got[1].created)
+	}
 }
 
 func wantConstraint(t *testing.T, err error, constraint string) {

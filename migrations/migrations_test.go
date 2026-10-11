@@ -188,6 +188,7 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE activation_tokens SET user_id = user_id",
 		"TRUNCATE activation_tokens",
 		"SELECT public.users_keep_active_admin()",
+		"SELECT public.users_set_updated_at()",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -240,6 +241,7 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_column_privilege($1, 'public.users', 'failed_logins', 'INSERT')",
 		"has_column_privilege($1, 'public.users', 'email', 'UPDATE')",
 		"has_function_privilege($1, 'public.users_keep_active_admin()', 'EXECUTE')",
+		"has_function_privilege($1, 'public.users_set_updated_at()', 'EXECUTE')",
 		"has_any_column_privilege($1, 'public.activation_tokens', 'UPDATE')",
 		"has_table_privilege($1, 'public.activation_tokens', 'TRUNCATE')",
 		"has_table_privilege($1, 'public.activation_tokens', 'REFERENCES')",

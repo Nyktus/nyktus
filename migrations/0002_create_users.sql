@@ -35,8 +35,13 @@ CREATE TABLE public.users (
 	role          text NOT NULL,
 	status        text NOT NULL,
 	password_hash text,
-	created_at    timestamptz NOT NULL DEFAULT now(),
-	updated_at    timestamptz NOT NULL DEFAULT now(),
+	-- The time of the insert, not the start of the transaction, so that accounts
+	-- created in one transaction keep their order in the list, and an account
+	-- created after waiting for a lock records the time it was created.
+	created_at    timestamptz NOT NULL DEFAULT clock_timestamp(),
+	-- Set by the trigger below on insert, so that an account that was never
+	-- changed has equal times. A second clock_timestamp() would differ.
+	updated_at    timestamptz NOT NULL,
 	-- Five failed sign-ins in a row lock an account for 15 minutes. The counters
 	-- live in the database, so that neither a restart nor a second console process
 	-- resets them. failed_logins counts the failures since the last successful
@@ -86,6 +91,20 @@ CREATE TABLE public.users (
 -- and with it in the logs of proxies.
 CREATE INDEX users_created_at_id_idx ON public.users (created_at DESC, id DESC);
 
+CREATE FUNCTION public.users_set_updated_at() RETURNS trigger
+	LANGUAGE plpgsql
+	SET search_path = ''
+AS $$
+BEGIN
+	NEW.updated_at := NEW.created_at;
+	RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER users_set_updated_at
+	BEFORE INSERT ON public.users
+	FOR EACH ROW EXECUTE FUNCTION public.users_set_updated_at();
+
 -- At least one active administrator must remain once one exists. Without one,
 -- nobody could manage the installation, and once no account with the role admin
 -- is left, the setup of a first administrator opens again with the next start.
@@ -100,6 +119,10 @@ CREATE INDEX users_created_at_id_idx ON public.users (created_at DESC, id DESC);
 -- sees its result, or one of them fails with a deadlock; either way, one
 -- administrator remains. The console locks all active administrators in a fixed
 -- order before it changes one, so its own requests wait instead of deadlocking.
+--
+-- The error names the constraint users_active_admin_check, which does not exist
+-- as a table constraint. The console recognizes the violation by this name, so
+-- it must not change.
 CREATE FUNCTION public.users_keep_active_admin() RETURNS trigger
 	LANGUAGE plpgsql
 	SET search_path = ''
@@ -135,9 +158,13 @@ CREATE TRIGGER users_keep_active_admin
 -- Revoking a table privilege also revokes it on every column.
 REVOKE ALL ON public.users FROM PUBLIC, nyktus_console;
 -- A trigger function runs with the rights of the role that fires the trigger, and
--- needs no grant for it. Nobody calls it directly.
+-- needs no grant for it. Nobody calls them directly.
+REVOKE ALL ON FUNCTION public.users_set_updated_at() FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.users_keep_active_admin() FROM PUBLIC, nyktus_console;
 
+-- The console reaches no table without the schema. It is granted with the first
+-- table the console uses, because the migration of the schema runs before any
+-- server role is checked.
 GRANT USAGE ON SCHEMA public TO nyktus_console;
 GRANT SELECT, DELETE ON public.users TO nyktus_console;
 -- Identifiers, creation times and the lockout counters come from the database
@@ -169,6 +196,7 @@ BEGIN
 	IF has_table_privilege('nyktus_console', 'public.users', 'INSERT')
 		OR has_table_privilege('nyktus_console', 'public.users', 'UPDATE, TRUNCATE, REFERENCES, TRIGGER')
 		OR has_any_column_privilege('nyktus_console', 'public.users', 'REFERENCES')
+		OR has_function_privilege('nyktus_console', 'public.users_set_updated_at()', 'EXECUTE')
 		OR has_function_privilege('nyktus_console', 'public.users_keep_active_admin()', 'EXECUTE')
 		OR EXISTS (
 			SELECT FROM unnest(ARRAY['id', 'created_at', 'updated_at', 'failed_logins', 'locked_until']) AS c (name)
