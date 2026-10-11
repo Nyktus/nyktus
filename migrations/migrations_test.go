@@ -150,9 +150,9 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE sessions SET last_seen_at = clock_timestamp()",
 		"SELECT count(*) FROM sessions",
 		"DELETE FROM sessions",
-		"INSERT INTO activation_tokens (user_id, token_hash) SELECT id, sha256('a') FROM users WHERE email = 's@example.com'",
-		"SELECT count(*) FROM activation_tokens WHERE expires_at > clock_timestamp()",
-		"DELETE FROM activation_tokens",
+		"INSERT INTO account_links (user_id, token_hash, purpose) SELECT id, sha256('a'), 'activation' FROM users WHERE email = 's@example.com'",
+		"SELECT count(*) FROM account_links WHERE expires_at > clock_timestamp()",
+		"DELETE FROM account_links",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -183,10 +183,11 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE sessions SET token_hash = token_hash",
 		"TRUNCATE sessions",
 		"UPDATE users SET email = 'z@example.com'",
-		"INSERT INTO activation_tokens (user_id, token_hash, expires_at) SELECT id, sha256('b'), now() + interval '1 year' FROM users LIMIT 1",
-		"UPDATE activation_tokens SET expires_at = now() + interval '1 year'",
-		"UPDATE activation_tokens SET user_id = user_id",
-		"TRUNCATE activation_tokens",
+		"INSERT INTO account_links (user_id, token_hash, purpose, expires_at) SELECT id, sha256('b'), 'activation', now() + interval '1 year' FROM users LIMIT 1",
+		"UPDATE account_links SET expires_at = now() + interval '1 year'",
+		"UPDATE account_links SET user_id = user_id",
+		"UPDATE account_links SET purpose = 'password_reset'",
+		"TRUNCATE account_links",
 		"SELECT public.users_keep_active_admin()",
 		"SELECT public.users_set_updated_at()",
 	}
@@ -242,10 +243,11 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_column_privilege($1, 'public.users', 'email', 'UPDATE')",
 		"has_function_privilege($1, 'public.users_keep_active_admin()', 'EXECUTE')",
 		"has_function_privilege($1, 'public.users_set_updated_at()', 'EXECUTE')",
-		"has_any_column_privilege($1, 'public.activation_tokens', 'UPDATE')",
-		"has_table_privilege($1, 'public.activation_tokens', 'TRUNCATE')",
-		"has_table_privilege($1, 'public.activation_tokens', 'REFERENCES')",
-		"has_column_privilege($1, 'public.activation_tokens', 'expires_at', 'INSERT')",
+		"has_any_column_privilege($1, 'public.account_links', 'UPDATE')",
+		"has_table_privilege($1, 'public.account_links', 'TRUNCATE')",
+		"has_table_privilege($1, 'public.account_links', 'REFERENCES')",
+		"has_column_privilege($1, 'public.account_links', 'expires_at', 'INSERT')",
+		"has_column_privilege($1, 'public.account_links', 'purpose', 'UPDATE')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

@@ -95,7 +95,10 @@ const (
 	// AuthActivationToken is used by a user who activates their account through
 	// an activation link.
 	AuthActivationToken AuthMethod = "activation_token"
-	AuthCLI             AuthMethod = "cli"
+	// AuthPasswordResetToken is used by a user who sets a new password through a
+	// password reset link.
+	AuthPasswordResetToken AuthMethod = "password_reset_token"
+	AuthCLI                AuthMethod = "cli"
 	// AuthNone is used by background jobs, which act without authenticating.
 	AuthNone AuthMethod = "none"
 )

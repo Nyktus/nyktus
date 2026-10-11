@@ -148,7 +148,7 @@ func (s *Service) Create(ctx context.Context, p access.Principal, na NewAccount)
 		if err := record(ctx, tx, p, audit.ActionUserCreate, created.ID, nil); err != nil {
 			return err
 		}
-		link, err = s.issue(ctx, tx, p, created.ID)
+		link, err = s.issue(ctx, tx, p, created.ID, activation)
 		return err
 	})
 	if err != nil {
@@ -225,7 +225,7 @@ func (s *Service) IssueLink(ctx context.Context, p access.Principal, id string) 
 		if u.Status != user.StatusPending {
 			return ErrNotPending
 		}
-		link, err = s.issue(ctx, tx, p, id)
+		link, err = s.issue(ctx, tx, p, id, activation)
 		return err
 	})
 	if err != nil {
@@ -234,8 +234,24 @@ func (s *Service) IssueLink(ctx context.Context, p access.Principal, id string) 
 	return link, nil
 }
 
-// issue replaces the activation link of the account id and records it.
-func (s *Service) issue(ctx context.Context, tx pgx.Tx, p access.Principal, id string) (Link, error) {
+// purpose is what a link lets its holder do. Each public endpoint consumes only
+// links issued for its purpose.
+type purpose struct {
+	// name is stored with the link.
+	name string
+	// action records the issuance of a link in the audit log.
+	action audit.Action
+	// page is the path of the console page that opens a link.
+	page string
+}
+
+// activation lets the holder of a link set the first password of a pending
+// account.
+var activation = purpose{name: "activation", action: audit.ActionActivationLinkCreate, page: "/activate"}
+
+// issue replaces the link of the account id with a new one for pu and records
+// it.
+func (s *Service) issue(ctx context.Context, tx pgx.Tx, p access.Principal, id string, pu purpose) (Link, error) {
 	if err := deleteLink(ctx, tx, id); err != nil {
 		return Link{}, err
 	}
@@ -245,35 +261,43 @@ func (s *Service) issue(ctx context.Context, tx pgx.Tx, p access.Principal, id s
 	}
 	var expiresAt time.Time
 	// The database sets the expiry.
-	err = tx.QueryRow(ctx, `INSERT INTO activation_tokens (user_id, token_hash) VALUES ($1, $2) RETURNING expires_at`,
-		id, token.Hash(value)).Scan(&expiresAt)
+	err = tx.QueryRow(ctx, `INSERT INTO account_links (user_id, token_hash, purpose) VALUES ($1, $2, $3) RETURNING expires_at`,
+		id, token.Hash(value), pu.name).Scan(&expiresAt)
 	if err != nil {
-		return Link{}, fmt.Errorf("insert activation token: %w", err)
+		return Link{}, fmt.Errorf("insert account link: %w", err)
 	}
-	if err := record(ctx, tx, p, audit.ActionActivationLinkCreate, id, nil); err != nil {
+	if err := record(ctx, tx, p, pu.action, id, nil); err != nil {
 		return Link{}, err
 	}
-	return Link{URL: URL(s.consoleURL, value), ExpiresAt: expiresAt.UTC()}, nil
+	return Link{URL: linkURL(s.consoleURL, pu, value), ExpiresAt: expiresAt.UTC()}, nil
 }
 
-// URL returns the address of the activation page for tok. The token is placed
-// in the fragment, which browsers never send to a server, so that it does not
-// reach the access logs of the console or of a reverse proxy, nor a Referer
-// header.
+// URL returns the address of the activation page for tok.
 func URL(consoleURL, tok string) string {
-	return consoleURL + "/activate#token=" + tok
+	return linkURL(consoleURL, activation, tok)
+}
+
+// linkURL returns the address of the page for a link. The token is placed in the
+// fragment, which browsers never send to a server, so that it does not reach the
+// access logs of the console or of a reverse proxy, nor a Referer header.
+func linkURL(consoleURL string, pu purpose, tok string) string {
+	return consoleURL + pu.page + "#token=" + tok
 }
 
 // Valid reports whether tok is a valid activation token, without consuming it.
 // It lets a caller reject a request before hashing a password. Activate checks
 // the token again.
 func (s *Service) Valid(ctx context.Context, tok string) (bool, error) {
+	return s.valid(ctx, tok, activation)
+}
+
+func (s *Service) valid(ctx context.Context, tok string, pu purpose) (bool, error) {
 	var valid bool
 	err := s.db.QueryRow(ctx,
-		`SELECT EXISTS (SELECT FROM activation_tokens WHERE token_hash = $1 AND expires_at > clock_timestamp())`,
-		token.Hash(tok)).Scan(&valid)
+		`SELECT EXISTS (SELECT FROM account_links WHERE token_hash = $1 AND purpose = $2 AND expires_at > clock_timestamp())`,
+		token.Hash(tok), pu.name).Scan(&valid)
 	if err != nil {
-		return false, fmt.Errorf("look up activation token: %w", err)
+		return false, fmt.Errorf("look up account link: %w", err)
 	}
 	return valid, nil
 }
@@ -281,44 +305,14 @@ func (s *Service) Valid(ctx context.Context, tok string) (bool, error) {
 // Activate consumes tok and sets the password of its pending account, which
 // becomes active. The holder of the token acts as the user of the account. It
 // returns ErrInvalidToken if the token is not valid.
-//
-// The account is locked before its link, in the same order as every other
-// change of an account takes its locks. A deactivation holds the account and
-// then removes the link; locking the link first would let the two deadlock.
 func (s *Service) Activate(ctx context.Context, tok, passwordHash string) (user.User, error) {
-	hash := token.Hash(tok)
 	var activated user.User
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
-		var id string
-		err := tx.QueryRow(ctx,
-			`SELECT user_id FROM activation_tokens WHERE token_hash = $1 AND expires_at > clock_timestamp()`,
-			hash).Scan(&id)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrInvalidToken
-		}
+		id, err := consume(ctx, tx, tok, activation)
 		if err != nil {
-			return fmt.Errorf("look up activation token: %w", err)
-		}
-		users := user.NewStore(tx)
-		if _, err := users.Lock(ctx, id); err != nil {
-			if errors.Is(err, user.ErrNotFound) {
-				// The account was deleted after the lookup.
-				return ErrInvalidToken
-			}
 			return err
 		}
-		// The token is consumed only now, under the lock of the account. A
-		// concurrent request may have used or replaced it since the lookup.
-		err = tx.QueryRow(ctx,
-			`DELETE FROM activation_tokens WHERE token_hash = $1 AND user_id = $2 AND expires_at > clock_timestamp() RETURNING user_id`,
-			hash, id).Scan(&id)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrInvalidToken
-		}
-		if err != nil {
-			return fmt.Errorf("consume activation token: %w", err)
-		}
-		activated, err = users.Activate(ctx, id, passwordHash)
+		activated, err = user.NewStore(tx).Activate(ctx, id, passwordHash)
 		if errors.Is(err, user.ErrNotFound) {
 			// A link exists only for pending accounts, so this means a bug.
 			return ErrInvalidToken
@@ -339,9 +333,49 @@ func (s *Service) Activate(ctx context.Context, tok, passwordHash string) (user.
 	return activated, nil
 }
 
+// consume deletes the link tok, issued for pu, and returns its account, which
+// stays locked until the end of tx. It returns ErrInvalidToken if the link is
+// not valid.
+//
+// The account is locked before its link, in the same order as every other
+// change of an account takes its locks. A deactivation holds the account and
+// then removes the link; locking the link first would let the two deadlock.
+func consume(ctx context.Context, tx pgx.Tx, tok string, pu purpose) (string, error) {
+	hash := token.Hash(tok)
+	var id string
+	err := tx.QueryRow(ctx,
+		`SELECT user_id FROM account_links WHERE token_hash = $1 AND purpose = $2 AND expires_at > clock_timestamp()`,
+		hash, pu.name).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrInvalidToken
+	}
+	if err != nil {
+		return "", fmt.Errorf("look up account link: %w", err)
+	}
+	if _, err := user.NewStore(tx).Lock(ctx, id); err != nil {
+		if errors.Is(err, user.ErrNotFound) {
+			// The account was deleted after the lookup.
+			return "", ErrInvalidToken
+		}
+		return "", err
+	}
+	// The link is consumed only now, under the lock of the account. A concurrent
+	// request may have used or replaced it since the lookup.
+	err = tx.QueryRow(ctx,
+		`DELETE FROM account_links WHERE token_hash = $1 AND user_id = $2 AND purpose = $3 AND expires_at > clock_timestamp() RETURNING user_id`,
+		hash, id, pu.name).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrInvalidToken
+	}
+	if err != nil {
+		return "", fmt.Errorf("consume account link: %w", err)
+	}
+	return id, nil
+}
+
 func deleteLink(ctx context.Context, q db.Querier, id string) error {
-	if _, err := q.Exec(ctx, `DELETE FROM activation_tokens WHERE user_id = $1`, id); err != nil {
-		return fmt.Errorf("delete activation token: %w", err)
+	if _, err := q.Exec(ctx, `DELETE FROM account_links WHERE user_id = $1`, id); err != nil {
+		return fmt.Errorf("delete account link: %w", err)
 	}
 	return nil
 }
