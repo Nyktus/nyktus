@@ -615,7 +615,13 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          description: |
+            The caller lacks the permission, which is recorded in the audit log at most once per user,
+            permission and minute, or the request is not made with a session, which is not recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
@@ -710,7 +716,14 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/ForbiddenWrite"
+          description: |
+            The caller lacks the permission, which is recorded in the audit log at most once per user,
+            permission and minute, the request is not made with a session, which is not recorded, or
+            the request comes from another origin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
