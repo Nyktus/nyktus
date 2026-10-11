@@ -104,6 +104,10 @@ func TestSignIn_WithTOTPTakesTheSecondFactor(t *testing.T) {
 	if r.body["second_factor"] != "totp" || r.body["expires_at"] == nil {
 		t.Errorf("body = %v, want second_factor totp and expires_at", r.body)
 	}
+	// The cookie lives as long as the challenge that the schema expires.
+	if n := d.count(t, `SELECT extract(epoch FROM expires_at - clock_timestamp())::int FROM sign_in_challenges WHERE user_id = $1`, id); n < 290 || n > 300 {
+		t.Errorf("challenge expires in %d seconds, want the 300 of the cookie", n)
+	}
 	c := r.challenge
 	if c == nil || !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteStrictMode || c.Path != "/" || c.MaxAge < 290 || c.MaxAge > 300 {
 		t.Fatalf("challenge cookie = %+v, want HttpOnly, Secure, SameSite=Strict, Path=/ and five minutes", c)

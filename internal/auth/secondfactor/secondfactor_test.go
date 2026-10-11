@@ -493,3 +493,19 @@ func TestCheckKeys_IgnoresExpiredSetups(t *testing.T) {
 		t.Errorf("CheckKeys() with an expired setup under a missing key error = %v", err)
 	}
 }
+
+// A recovery code is the way back when the secret is lost, so it works even if
+// the secret cannot be decrypted.
+func TestVerify_RecoveryCodeWorksWithoutTheSecret(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t)
+	id := e.createUser(t, "ada@example.com")
+	_, codes := e.enable(t, id)
+	if _, err := e.owner.Exec(t.Context(), `UPDATE totp_factors SET secret = decode(repeat('01', 49), 'hex') WHERE user_id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.verify(t, id, secondfactor.Proof{RecoveryCode: codes[0]}); err != nil {
+		t.Errorf("Verify() with a recovery code and an unreadable secret error = %v", err)
+	}
+}

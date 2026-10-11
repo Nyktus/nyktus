@@ -230,15 +230,20 @@ WHERE user_id = $1 AND confirmed_at IS NOT NULL`, userID, int64(totp.Period/time
 		return fmt.Errorf("look up TOTP factor of user %s: %w", userID, err)
 	}
 
-	secret, err := s.keys.Open(sealed, associatedData(userID))
-	if err != nil {
-		return fmt.Errorf("decrypt TOTP secret of user %s: %w", userID, err)
-	}
 	if proof.RecoveryCode != "" {
 		if err := s.consumeRecoveryCode(ctx, userID, proof.RecoveryCode); err != nil {
 			return err
 		}
-		return s.reseal(ctx, userID, sealed, secret)
+		// A recovery code does not need the secret, so it works even if the
+		// secret cannot be decrypted; only the new encryption is skipped then.
+		if secret, err := s.keys.Open(sealed, associatedData(userID)); err == nil {
+			return s.reseal(ctx, userID, sealed, secret)
+		}
+		return nil
+	}
+	secret, err := s.keys.Open(sealed, associatedData(userID))
+	if err != nil {
+		return fmt.Errorf("decrypt TOTP secret of user %s: %w", userID, err)
 	}
 	matched, ok := totp.Match(secret, proof.Code, step, lastUsed)
 	if !ok {
