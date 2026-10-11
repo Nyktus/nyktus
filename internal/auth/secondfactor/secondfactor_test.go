@@ -81,15 +81,22 @@ func (e env) enable(t *testing.T, userID string) ([]byte, []string) {
 	if err != nil {
 		t.Fatalf("Begin() error = %v", err)
 	}
-	// The confirmation uses the code of the previous step, so that the tests can
-	// use the codes of the current and the next one.
+	// The confirmation uses the code of the current step, which stays valid if
+	// the step advances before the database checks it; a code of the previous
+	// step would then be two steps old. The step of the code is set back
+	// afterwards, so that the tests can use the codes of the current and the
+	// next one.
+	current := e.step(t)
 	err = e.in(t, e.keys, func(s *secondfactor.Store) error {
 		var err error
-		codes, err = s.Confirm(t.Context(), userID, totp.Code(enrollment.Secret, e.step(t)-1))
+		codes, err = s.Confirm(t.Context(), userID, totp.Code(enrollment.Secret, current))
 		return err
 	})
 	if err != nil {
 		t.Fatalf("Confirm() error = %v", err)
+	}
+	if _, err := e.owner.Exec(t.Context(), `UPDATE totp_factors SET last_used_step = $2 WHERE user_id = $1`, userID, current-1); err != nil {
+		t.Fatalf("set back the step of the confirmation: %v", err)
 	}
 	return enrollment.Secret, codes
 }
