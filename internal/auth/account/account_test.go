@@ -252,7 +252,7 @@ func TestUsers_DeniedRequestsAreRejectedBeforeTheLookup(t *testing.T) {
 	if n := e.count(t, `SELECT count(*) FROM users WHERE id = $1 AND role = 'admin' AND status = 'active' AND updated_at = created_at`, existing); n != 1 {
 		t.Error("a denied request changed or deleted the existing account")
 	}
-	if n := e.count(t, `SELECT count(*) FROM activation_tokens`); n != 0 {
+	if n := e.count(t, `SELECT count(*) FROM account_links`); n != 0 {
 		t.Error("a denied request issued an activation link")
 	}
 	if n := e.count(t, `SELECT count(*) FROM audit_entries WHERE outcome = 'denied' AND action IN ('users.read', 'users.write')`); n != 4 {
@@ -289,7 +289,7 @@ func TestCreateUser_ReturnsTheActivationLinkOnce(t *testing.T) {
 
 	id := u["id"].(string)
 	sum := sha256.Sum256([]byte(tok))
-	if n := e.count(t, `SELECT count(*) FROM activation_tokens WHERE user_id = $1 AND token_hash = $2`, id, sum[:]); n != 1 {
+	if n := e.count(t, `SELECT count(*) FROM account_links WHERE user_id = $1 AND token_hash = $2`, id, sum[:]); n != 1 {
 		t.Errorf("stored hashes of the token = %d, want 1", n)
 	}
 	if n := e.count(t, `SELECT count(*) FROM users WHERE id = $1 AND password_hash IS NULL`, id); n != 1 {
@@ -364,8 +364,8 @@ func TestActivate_SetsThePasswordOnce(t *testing.T) {
 	if again := e.activate(t, tok, "another password for jane"); again.status != http.StatusNotFound {
 		t.Errorf("second use: status %d, want 404", again.status)
 	}
-	if n := e.count(t, `SELECT count(*) FROM activation_tokens`); n != 0 {
-		t.Errorf("activation tokens = %d, want the used one removed", n)
+	if n := e.count(t, `SELECT count(*) FROM account_links`); n != 0 {
+		t.Errorf("account links = %d, want the used one removed", n)
 	}
 
 	entries := e.auditEntries(t, "user.activate")
@@ -375,8 +375,8 @@ func TestActivate_SetsThePasswordOnce(t *testing.T) {
 	}
 }
 
-// Unknown, expired and used tokens receive the same response as a route that
-// does not exist. The password is not validated without a valid token, and
+// Unknown, expired and used tokens, and tokens issued for another purpose,
+// receive the same response as a route that does not exist. The password is not validated without a valid token, and
 // nothing is recorded in the audit log.
 func TestActivate_InvalidTokensAnswerLikeAnUnknownRoute(t *testing.T) {
 	t.Parallel()
@@ -384,17 +384,21 @@ func TestActivate_InvalidTokensAnswerLikeAnUnknownRoute(t *testing.T) {
 	e := newEnv(t)
 	_, cookie := e.signIn(t, "ada@example.com", "admin")
 	_, expired := e.create(t, cookie, "expired@example.com")
-	if _, err := e.owner.Exec(t.Context(), `UPDATE activation_tokens SET expires_at = clock_timestamp() - interval '1 second'`); err != nil {
+	if _, err := e.owner.Exec(t.Context(), `UPDATE account_links SET expires_at = clock_timestamp() - interval '1 second'`); err != nil {
 		t.Fatalf("expire token: %v", err)
 	}
 	_, used := e.create(t, cookie, "used@example.com")
 	if r := e.activate(t, used, testPassword); r.status != http.StatusOK {
 		t.Fatalf("activate: status %d", r.status)
 	}
+	otherID, other := e.create(t, cookie, "other@example.com")
+	if _, err := e.owner.Exec(t.Context(), `UPDATE account_links SET purpose = 'password_reset' WHERE user_id = $1`, otherID); err != nil {
+		t.Fatalf("change purpose: %v", err)
+	}
 	entriesBefore := e.count(t, `SELECT count(*) FROM audit_entries`)
 
 	unknownRoute := e.do(t, http.MethodPost, "/api/v1/no-such-route", "", map[string]string{"token": "x", "password": testPassword})
-	for name, tok := range map[string]string{"unknown": strings.Repeat("A", 43), "expired": expired, "used": used, "empty": ""} {
+	for name, tok := range map[string]string{"unknown": strings.Repeat("A", 43), "expired": expired, "used": used, "other purpose": other, "empty": ""} {
 		for _, pw := range []string{testPassword, "short"} {
 			r := e.activate(t, tok, pw)
 			if r.status != unknownRoute.status || !sameError(r.body, unknownRoute.body) || !headersEqual(r.header, unknownRoute.header) {
@@ -771,7 +775,7 @@ func TestActivate_LocksTheAccountBeforeTheLink(t *testing.T) {
 	go func() { done <- e.activate(t, tok, testPassword) }()
 	waitForLockWaiter(t, e.owner, done)
 
-	_, err = e.owner.Exec(t.Context(), `SELECT FROM activation_tokens WHERE user_id = $1 FOR UPDATE NOWAIT`, id)
+	_, err = e.owner.Exec(t.Context(), `SELECT FROM account_links WHERE user_id = $1 FOR UPDATE NOWAIT`, id)
 	if err != nil {
 		t.Errorf("lock the link while the activation waits for the account: error = %v, want the link unlocked", err)
 	}
