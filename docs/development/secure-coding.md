@@ -107,6 +107,7 @@ Local accounts sign in with their email address and password. The display name i
 - Five failed attempts lock the account for 15 minutes. Counters are persistent, not per session.
 - The lock is revealed only after a correct password. A wrong password on a locked account returns the same generic `401` as any other failure.
 - The second factor has its own failure counting under the same lockout.
+- Failures count for every known account, including pending ones, so anyone who knows an address can lock it. An action that proves access to the account without the password, such as an activation link, ends the lock.
 
 ### Single-use tokens
 

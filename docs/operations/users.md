@@ -53,7 +53,7 @@ curl --fail-with-body https://nyktus.example.com/api/v1/activation \
   --data @activation.json
 ```
 
-The activation does not sign in. Afterwards, the user signs in with the address and the new password. An unknown, expired or used token receives `404`, like a page that does not exist.
+The activation does not sign in, and it ends a lock after failed sign-ins that someone may have caused before. Afterwards, the user signs in with the address and the new password. An unknown, expired or used token receives `404`, like a page that does not exist.
 
 ## Changing an account
 

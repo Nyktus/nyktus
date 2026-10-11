@@ -245,8 +245,14 @@ func TestUsers_DeniedRequestsAreRejectedBeforeTheLookup(t *testing.T) {
 			}
 		}
 	}
-	if n := e.count(t, `SELECT count(*) FROM users WHERE email = 'x@example.com' OR role <> 'admin' AND role <> 'viewer' AND role <> 'editor'`); n != 0 {
-		t.Errorf("%d accounts changed by denied requests, want none", n)
+	if n := e.count(t, `SELECT count(*) FROM users WHERE email = 'x@example.com'`); n != 0 {
+		t.Error("a denied request created an account")
+	}
+	if n := e.count(t, `SELECT count(*) FROM users WHERE id = $1 AND role = 'admin' AND status = 'active' AND updated_at = created_at`, existing); n != 1 {
+		t.Error("a denied request changed or deleted the existing account")
+	}
+	if n := e.count(t, `SELECT count(*) FROM activation_tokens`); n != 0 {
+		t.Error("a denied request issued an activation link")
 	}
 	if n := e.count(t, `SELECT count(*) FROM audit_entries WHERE outcome = 'denied' AND action IN ('users.read', 'users.write')`); n != 4 {
 		t.Errorf("denied entries = %d, want one per role and permission", n)

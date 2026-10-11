@@ -61,6 +61,7 @@ Fakes cannot find a mismatch between a `SELECT` list and a `Scan`, a missing ind
 - Database tests run when `NYKTUS_TEST_DATABASE_URL` points to a server that allows creating databases. `make db-up` starts one, `make test-db` runs the suite against it. Without the variable the tests are skipped; CI sets `NYKTUS_REQUIRE_DB_TESTS=1`, which turns a skip into a failure.
 - Constraint and permission behavior is tested with the same database roles that production uses, one per server role. `schematest.Console` returns a migrated database and a login role that is a member of `nyktus_console`, as the console connects in production. Store tests use it instead of the superuser, so a missing grant fails the test.
 - Group roles are global to the server and shared by all tests. `dbtest.GroupRole` creates one idempotently and safely under concurrency; tests never drop them. A test that needs a missing role uses a unique name instead.
+- Packages and their tests run in parallel, and every test holds its database connections until it ends. Cases of one test share a database, each with its own rows, instead of creating a database per parallel subtest. Subtests that need a database of their own run one after another.
 - `dbtest` and `schematest` are for tests only. The linter rejects them in other code.
 
 ### Concurrency is tested deterministically

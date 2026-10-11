@@ -496,3 +496,22 @@ func TestActivate(t *testing.T) {
 		}
 	}
 }
+
+// Failed sign-ins count for pending accounts too, so the account may be locked
+// before its owner activates it. The activation proves access and ends the lock.
+func TestActivate_EndsALockFromBeforeTheActivation(t *testing.T) {
+	t.Parallel()
+
+	s, _, owner := manageDB(t)
+	id := account(t, owner, "jane@example.com", RoleViewer, StatusPending)
+	fail(t, s, id, MaxFailedLogins)
+	if l := readLockout(t, owner, id); !l.locked {
+		t.Fatalf("after %d failures: %+v, want locked", MaxFailedLogins, l)
+	}
+	if _, err := s.Activate(t.Context(), id, testHash); err != nil {
+		t.Fatalf("Activate() error = %v", err)
+	}
+	if l := readLockout(t, owner, id); l.failures != 0 || l.locked {
+		t.Errorf("after activation: %+v, want no failures and no lock", l)
+	}
+}

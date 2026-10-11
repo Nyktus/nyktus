@@ -104,7 +104,8 @@ const (
 // Update validates c and applies it to the account id. It returns the account
 // after the change and the names of the fields whose values changed, which is
 // empty if c changes nothing. It returns ErrNotFound if the account does not
-// exist, ErrLastActiveAdmin if no active administrator would remain, and
+// exist, ErrLastActiveAdmin if no active administrator would remain,
+// ErrInvalidStatus for a status that a change cannot set, and
 // ErrInvalidTransition if the account cannot take the requested status.
 //
 // Reactivating an account ends a lock after failed sign-ins: an administrator
@@ -215,13 +216,22 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 // Activate sets the password of the pending account id and makes it active. It
 // returns ErrNotFound if no pending account with that ID exists, so that a link
 // can never set the password of an account that already has one.
+//
+// Failed sign-ins count for pending accounts as well, so anyone who knows the
+// address could lock the account before it is activated. The holder of the link
+// has just proven access to the account, so the activation ends such a lock.
 func (s *Store) Activate(ctx context.Context, id, passwordHash string) (User, error) {
 	// As in Create: a plain-text password must never reach the database.
 	if !strings.HasPrefix(passwordHash, "$argon2id$") {
 		return User{}, ErrInvalidPasswordHash
 	}
 	u, err := scan(s.db.QueryRow(ctx, `
-UPDATE users SET status = $2, password_hash = $3, updated_at = clock_timestamp()
+UPDATE users SET
+	status = $2,
+	password_hash = $3,
+	failed_logins = 0,
+	locked_until = NULL,
+	updated_at = clock_timestamp()
 WHERE id = $1 AND status = $4
 RETURNING `+userColumns, id, StatusActive, passwordHash, StatusPending))
 	var pgErr *pgconn.PgError
