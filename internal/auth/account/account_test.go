@@ -5,6 +5,7 @@ package account_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"io"
@@ -720,5 +721,64 @@ func TestListUsers_PagesWithCursor(t *testing.T) {
 	}
 	if r := e.do(t, http.MethodGet, "/api/v1/users?limit=201", cookie, nil); r.status != http.StatusBadRequest {
 		t.Errorf("limit above the maximum: status %d, want 400", r.status)
+	}
+}
+
+// waitForLockWaiter returns once a session of the test database waits for a
+// lock, or fails the test if done receives first.
+func waitForLockWaiter(t *testing.T, owner *pgxpool.Pool, done <-chan response) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	for {
+		var waiting bool
+		err := owner.QueryRow(ctx, `
+SELECT EXISTS (SELECT FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock')`).Scan(&waiting)
+		if err != nil {
+			t.Fatalf("query waiting sessions: %v", err)
+		}
+		if waiting {
+			return
+		}
+		select {
+		case r := <-done:
+			t.Fatalf("the activation completed without waiting for the account: status %d", r.status)
+		default:
+		}
+	}
+}
+
+// The activation locks the account before its link, as a deactivation does,
+// so the two wait for each other instead of deadlocking. While the activation
+// waits for the account, the link must still be free.
+func TestActivate_LocksTheAccountBeforeTheLink(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t)
+	_, cookie := e.signIn(t, "ada@example.com", "admin")
+	id, tok := e.create(t, cookie, "jane@example.com")
+
+	holder, err := e.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = holder.Rollback(context.WithoutCancel(t.Context())) }()
+	if _, err := holder.Exec(t.Context(), `SELECT FROM users WHERE id = $1 FOR UPDATE`, id); err != nil {
+		t.Fatalf("lock account: %v", err)
+	}
+
+	done := make(chan response, 1)
+	go func() { done <- e.activate(t, tok, testPassword) }()
+	waitForLockWaiter(t, e.owner, done)
+
+	_, err = e.owner.Exec(t.Context(), `SELECT FROM activation_tokens WHERE user_id = $1 FOR UPDATE NOWAIT`, id)
+	if err != nil {
+		t.Errorf("lock the link while the activation waits for the account: error = %v, want the link unlocked", err)
+	}
+	if err := holder.Commit(t.Context()); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	if r := <-done; r.status != http.StatusOK {
+		t.Errorf("activation: status %d, body %s; want 200", r.status, r.raw)
 	}
 }

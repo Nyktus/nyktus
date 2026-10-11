@@ -45,12 +45,17 @@ The new user sets their own password through the activation link. Administrators
 
 - The token is in the fragment of the URL (after `#`). Browsers never send the fragment to a server, so the token does not reach the logs of the console or of your reverse proxy.
 
-Until the web console is available, the new user activates the account through the API, with the token from the link and a password of 12 to 128 characters:
+Until the web console is available, the new user activates the account through the API, with the token from the link and a password of 12 to 128 characters. Write both into a file, so that the password does not end up in the shell history:
+
+```json
+{"token": "<the part of the link after #token=>", "password": "<the new password>"}
+```
 
 ```sh
 curl --fail-with-body https://nyktus.example.com/api/v1/activation \
   --header 'Content-Type: application/json' \
   --data @activation.json
+rm activation.json
 ```
 
 The activation does not sign in, and it ends a lock after failed sign-ins that someone may have caused before. Afterwards, the user signs in with the address and the new password. An unknown, expired or used token receives `404`, like a page that does not exist.

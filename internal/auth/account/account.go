@@ -281,20 +281,44 @@ func (s *Service) Valid(ctx context.Context, tok string) (bool, error) {
 // Activate consumes tok and sets the password of its pending account, which
 // becomes active. The holder of the token acts as the user of the account. It
 // returns ErrInvalidToken if the token is not valid.
+//
+// The account is locked before its link, in the same order as every other
+// change of an account takes its locks. A deactivation holds the account and
+// then removes the link; locking the link first would let the two deadlock.
 func (s *Service) Activate(ctx context.Context, tok, passwordHash string) (user.User, error) {
+	hash := token.Hash(tok)
 	var activated user.User
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		var id string
 		err := tx.QueryRow(ctx,
-			`DELETE FROM activation_tokens WHERE token_hash = $1 AND expires_at > clock_timestamp() RETURNING user_id`,
-			token.Hash(tok)).Scan(&id)
+			`SELECT user_id FROM activation_tokens WHERE token_hash = $1 AND expires_at > clock_timestamp()`,
+			hash).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInvalidToken
+		}
+		if err != nil {
+			return fmt.Errorf("look up activation token: %w", err)
+		}
+		users := user.NewStore(tx)
+		if _, err := users.Lock(ctx, id); err != nil {
+			if errors.Is(err, user.ErrNotFound) {
+				// The account was deleted after the lookup.
+				return ErrInvalidToken
+			}
+			return err
+		}
+		// The token is consumed only now, under the lock of the account. A
+		// concurrent request may have used or replaced it since the lookup.
+		err = tx.QueryRow(ctx,
+			`DELETE FROM activation_tokens WHERE token_hash = $1 AND user_id = $2 AND expires_at > clock_timestamp() RETURNING user_id`,
+			hash, id).Scan(&id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrInvalidToken
 		}
 		if err != nil {
 			return fmt.Errorf("consume activation token: %w", err)
 		}
-		activated, err = user.NewStore(tx).Activate(ctx, id, passwordHash)
+		activated, err = users.Activate(ctx, id, passwordHash)
 		if errors.Is(err, user.ErrNotFound) {
 			// A link exists only for pending accounts, so this means a bug.
 			return ErrInvalidToken
