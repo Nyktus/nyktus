@@ -19,6 +19,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/token"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 	"nyktus.org/nyktus/internal/user"
 )
 
@@ -85,14 +86,14 @@ func TestSignIn_VerifiesThePasswordInEveryCase(t *testing.T) {
 	createUser(t, d, "ada@example.com", "admin", "active", testPassword)
 	createUser(t, d, "pending@example.com", "viewer", "pending", "")
 	counting := &countingHasher{Hasher: hasher}
-	svc, err := session.NewService(t.Context(), d.console, counting, testSessions)
+	svc, err := session.NewService(t.Context(), d.console, counting, secretboxtest.Keyring(t), testSessions)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
 	for _, email := range []string{"nobody@example.com", "invalid", "pending@example.com", "ada@example.com"} {
 		before := counting.verified.Load()
-		_, _, err := svc.SignIn(t.Context(), email, "wrong horse battery", "")
+		_, err := svc.SignIn(t.Context(), email, "wrong horse battery", "")
 		if err != session.ErrInvalidCredentials { //nolint:errorlint // The service returns the sentinel itself.
 			t.Errorf("SignIn(%s) error = %v, want ErrInvalidCredentials", email, err)
 		}

@@ -41,7 +41,10 @@ type Cursor struct {
 	ID        string
 }
 
-const userColumns = `id, email, display_name, role, status, password_hash, created_at, updated_at`
+// userColumns are the columns that scan reads, in its order. Whether the account
+// has a confirmed TOTP factor is part of the account as clients see it.
+const userColumns = `id, email, display_name, role, status, password_hash, created_at, updated_at,
+	EXISTS (SELECT FROM totp_factors AS f WHERE f.user_id = users.id AND f.confirmed_at IS NOT NULL)`
 
 const (
 	listNewest = `SELECT ` + userColumns + ` FROM users
@@ -132,7 +135,7 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (User, []string
 	var admins []string
 	if c.Role != nil || c.Status != nil {
 		var err error
-		if admins, err = s.lockActiveAdmins(ctx); err != nil {
+		if admins, err = s.LockActiveAdmins(ctx); err != nil {
 			return User{}, nil, err
 		}
 	}
@@ -196,7 +199,7 @@ RETURNING `+userColumns, id, updated.DisplayName, updated.Role, updated.Status, 
 // returns ErrNotFound if the account does not exist and ErrLastActiveAdmin if it
 // is the last active administrator. Like Update, it must run in a transaction.
 func (s *Store) Delete(ctx context.Context, id string) error {
-	admins, err := s.lockActiveAdmins(ctx)
+	admins, err := s.LockActiveAdmins(ctx)
 	if err != nil {
 		return err
 	}
@@ -276,12 +279,12 @@ RETURNING `+userColumns, id, passwordHash, StatusActive))
 	return u, nil
 }
 
-// lockActiveAdmins locks the active administrators until the end of the
+// LockActiveAdmins locks the active administrators until the end of the
 // transaction and returns their IDs. They are locked in the order of their IDs,
 // so that concurrent changes wait for each other instead of deadlocking. A
 // waiting transaction evaluates the condition again once the lock is free, so it
 // sees an administrator that a concurrent change has removed.
-func (s *Store) lockActiveAdmins(ctx context.Context) ([]string, error) {
+func (s *Store) LockActiveAdmins(ctx context.Context) ([]string, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT id FROM users
 WHERE role = $1 AND status = $2

@@ -153,6 +153,16 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"INSERT INTO account_links (user_id, token_hash, purpose) SELECT id, sha256('a'), 'activation' FROM users WHERE email = 's@example.com'",
 		"SELECT count(*) FROM account_links WHERE expires_at > clock_timestamp()",
 		"DELETE FROM account_links",
+		"INSERT INTO sign_in_challenges (token_hash, user_id) SELECT sha256('c'), id FROM users WHERE email = 's@example.com'",
+		"SELECT count(*) FROM sign_in_challenges WHERE expires_at > clock_timestamp()",
+		"DELETE FROM sign_in_challenges",
+		"INSERT INTO totp_factors (user_id, secret) SELECT id, decode(repeat('01', 49), 'hex') FROM users WHERE email = 's@example.com'",
+		"UPDATE totp_factors SET confirmed_at = clock_timestamp(), last_used_step = 1, secret = secret",
+		"INSERT INTO recovery_codes (user_id, code_hash) SELECT user_id, sha256('r') FROM totp_factors",
+		"SELECT count(*) FROM recovery_codes",
+		"DELETE FROM recovery_codes",
+		"SELECT count(*) FROM totp_factors",
+		"DELETE FROM totp_factors",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -190,6 +200,17 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"TRUNCATE account_links",
 		"SELECT public.users_keep_active_admin()",
 		"SELECT public.users_set_updated_at()",
+		"INSERT INTO sign_in_challenges (token_hash, user_id, expires_at) SELECT sha256('d'), id, now() + interval '1 year' FROM users LIMIT 1",
+		"UPDATE sign_in_challenges SET expires_at = now() + interval '1 year'",
+		"UPDATE sign_in_challenges SET user_id = user_id",
+		"TRUNCATE sign_in_challenges",
+		"INSERT INTO totp_factors (user_id, secret, confirmed_at) SELECT id, decode(repeat('01', 49), 'hex'), now() FROM users LIMIT 1",
+		"INSERT INTO totp_factors (user_id, secret, last_used_step) SELECT id, decode(repeat('01', 49), 'hex'), 0 FROM users LIMIT 1",
+		"UPDATE totp_factors SET user_id = user_id",
+		"UPDATE totp_factors SET created_at = now()",
+		"TRUNCATE totp_factors",
+		"UPDATE recovery_codes SET code_hash = code_hash",
+		"TRUNCATE recovery_codes",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -248,6 +269,15 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_table_privilege($1, 'public.account_links', 'REFERENCES')",
 		"has_column_privilege($1, 'public.account_links', 'expires_at', 'INSERT')",
 		"has_column_privilege($1, 'public.account_links', 'purpose', 'UPDATE')",
+		"has_any_column_privilege($1, 'public.sign_in_challenges', 'UPDATE')",
+		"has_table_privilege($1, 'public.sign_in_challenges', 'TRUNCATE')",
+		"has_column_privilege($1, 'public.sign_in_challenges', 'expires_at', 'INSERT')",
+		"has_table_privilege($1, 'public.totp_factors', 'TRUNCATE')",
+		"has_column_privilege($1, 'public.totp_factors', 'confirmed_at', 'INSERT')",
+		"has_column_privilege($1, 'public.totp_factors', 'user_id', 'UPDATE')",
+		"has_column_privilege($1, 'public.totp_factors', 'created_at', 'UPDATE')",
+		"has_any_column_privilege($1, 'public.recovery_codes', 'UPDATE')",
+		"has_table_privilege($1, 'public.recovery_codes', 'TRUNCATE')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

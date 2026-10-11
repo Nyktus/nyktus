@@ -17,6 +17,7 @@ import (
 	"syscall"
 
 	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/secondfactor"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
@@ -166,6 +167,9 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 			return fmt.Errorf("console: %w", err)
 		}
 	}
+	if err := secondfactor.CheckKeys(ctx, pool, cfg.EncryptionKeys); err != nil {
+		return fmt.Errorf("console: %w", err)
+	}
 
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Console.Addr)
 	if err != nil {
@@ -180,6 +184,7 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 		Setup:          setupService,
 		Hasher:         password.NewHasher(),
 		Sessions:       session.Config{IdleTimeout: cfg.Console.SessionIdleTimeout, MaxAge: cfg.Console.SessionMaxAge},
+		Keys:           cfg.EncryptionKeys,
 		ConsoleURL:     cfg.Console.URL,
 		TrustedProxies: cfg.TrustedProxies,
 	})

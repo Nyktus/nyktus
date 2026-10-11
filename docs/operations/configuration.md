@@ -38,7 +38,7 @@ Settings of a server role are only read when the role runs. A process started wi
 
 ## `nyktus admin`
 
-The admin commands, such as [`nyktus admin reset-password`](users.md#when-no-administrator-can-sign-in), use the settings of the console: `NYKTUS_CONSOLE_DATABASE_URL` and `NYKTUS_CONSOLE_URL`, and `NYKTUS_CONSOLE_ADDR` for the default of the URL in development.
+The admin commands, such as [`nyktus admin reset-password`](users.md#when-no-administrator-can-sign-in), use the settings of the console: `NYKTUS_CONSOLE_DATABASE_URL` and `NYKTUS_CONSOLE_URL`, and `NYKTUS_CONSOLE_ADDR` for the default of the URL in development. They do not need the encryption keys.
 
 ## Encryption keys
 
@@ -52,7 +52,7 @@ echo "1:$(openssl rand -base64 32)"
 
 The keys are required in development as well. Nyktus neither derives a key from another secret nor generates one at startup, because either would make the stored secrets unreadable once that secret or the process changes.
 
-To replace a key, put a new key with an unused ID first and keep the old one behind it, such as `2:<new key>,1:<old key>`. The first key encrypts new values; every listed key decrypts. Keep the old key listed: a value encrypted with a key that is no longer listed cannot be decrypted.
+To replace a key, put a new key with an unused ID first and keep the old one behind it, such as `2:<new key>,1:<old key>`. The first key encrypts new values; every listed key decrypts. The secret of a second factor is encrypted again with the first key the next time its user enters a code. Keep the old key listed: a value encrypted with a key that is no longer listed cannot be decrypted, so the console refuses to start while the database holds such a value, and names the ID of the missing key. To retire an old key that some accounts still use, remove their second factor, and let them set it up again.
 
 ## Client addresses
 

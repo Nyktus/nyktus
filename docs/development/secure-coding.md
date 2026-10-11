@@ -132,7 +132,12 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 
 - Every local account can enable TOTP (RFC 6238) with recovery codes. It is optional.
 - TOTP secrets are encrypted at rest.
-- The challenge between password and second factor is short-lived and single-use.
+- The challenge between password and second factor is short-lived and single-use: it starts at most one session. A wrong code keeps it, so that a typo does not cost the password again; the codes it can try are bounded by the lockout, which ends it.
+- A change that rotates the session of the caller first checks under the lock of the account that this session still exists, so that a session revoked by a concurrent change does not obtain a new one.
+- A correct password does not reset the count of failed sign-ins while the second factor is missing. Otherwise whoever knows the password could reset the count between guesses of the code.
+- A code is accepted only for a later time step than the last accepted one, checked under the lock of the account, so that it cannot be used twice. Recovery codes are consumed.
+- `session.RevokeAll` also removes the challenges of the account, so that every change that ends the sessions, such as a new password or the removal of the factor, also ends the sign-ins that wait for a code.
+- The setup, the new recovery codes and the removal, also by an administrator, require a session, never an API key. An administrator confirms the removal of another account's factor with their own password, because the removal and a reset link together would let a taken-over session take over the account. Wrong codes count as failed sign-ins wherever they are entered, also when a setup is confirmed. Setup asks for the password; new recovery codes and the removal ask for the password and a code.
 - Accounts that sign in through OpenID Connect do not get a local second factor. The identity provider is responsible for it.
 
 ### Local login and OpenID Connect

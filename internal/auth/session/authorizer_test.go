@@ -17,6 +17,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/platform/logging"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 )
 
 // guardedServer serves a route that requires a permission no role holds, and one
@@ -24,7 +25,7 @@ import (
 // shared middleware. It records the log.
 func guardedServer(t *testing.T, d testDB, logs *bytes.Buffer) (*httptest.Server, *int) {
 	t.Helper()
-	svc, err := session.NewService(t.Context(), d.console, hasher, testSessions)
+	svc, err := session.NewService(t.Context(), d.console, hasher, secretboxtest.Keyring(t), testSessions)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}

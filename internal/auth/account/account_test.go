@@ -24,6 +24,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 )
 
 const (
@@ -37,6 +38,8 @@ var hasher = password.NewHasher()
 type env struct {
 	srv   *httptest.Server
 	owner *pgxpool.Pool
+	// console is a pool of the console's database role.
+	console *pgxpool.Pool
 }
 
 func newEnv(t *testing.T) env {
@@ -49,6 +52,7 @@ func newEnv(t *testing.T) env {
 		Setup:      setup.NewService(pool),
 		Hasher:     hasher,
 		Sessions:   session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour},
+		Keys:       secretboxtest.Keyring(t),
 		ConsoleURL: consoleURL,
 	})
 	if err != nil {
@@ -56,7 +60,7 @@ func newEnv(t *testing.T) env {
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return env{srv: srv, owner: schematest.Open(t, ownerURL)}
+	return env{srv: srv, owner: schematest.Open(t, ownerURL), console: pool}
 }
 
 // signIn creates an active account with role and returns its ID and the cookie

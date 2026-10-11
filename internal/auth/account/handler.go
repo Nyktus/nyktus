@@ -9,11 +9,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
 	"time"
 
+	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/user"
 )
@@ -25,6 +29,13 @@ const (
 	CodeLastActiveAdmin = "last_active_admin"
 	CodeOwnAccount      = "own_account"
 	CodeInvalidState    = "invalid_state"
+)
+
+// Error codes of the confirmation with the password of the administrator, the
+// same as those of the session routes.
+const (
+	CodeWrongPassword = "wrong_password"
+	CodeAccountLocked = "account_locked"
 )
 
 // defaultPageSize is the page size if the request names none.
@@ -187,6 +198,15 @@ type updateRequest struct {
 	DisplayName field[string]      `json:"display_name"`
 	Role        field[user.Role]   `json:"role"`
 	Status      field[user.Status] `json:"status"`
+	TOTPEnabled field[bool]        `json:"totp_enabled"`
+	// Password confirms the removal of a second factor: it is the password of
+	// the administrator.
+	Password field[string] `json:"password"`
+}
+
+// LogValue keeps the password out of logs.
+func (updateRequest) LogValue() slog.Value {
+	return slog.StringValue("[redacted]")
 }
 
 // Update serves PATCH /api/v1/users/{id}.
@@ -199,10 +219,28 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
-	c := user.Change{DisplayName: req.DisplayName.ptr(), Role: req.Role.ptr(), Status: req.Status.ptr()}
+	c := Change{
+		Change:     user.Change{DisplayName: req.DisplayName.ptr(), Role: req.Role.ptr(), Status: req.Status.ptr()},
+		RemoveTOTP: req.TOTPEnabled.set,
+		Password:   req.Password.value,
+	}
 	switch {
-	case c.DisplayName == nil && c.Role == nil && c.Status == nil:
-		invalid(w, r, "request must change display_name, role or status")
+	case c.DisplayName == nil && c.Role == nil && c.Status == nil && !c.RemoveTOTP:
+		invalid(w, r, "request must change display_name, role, status or totp_enabled")
+		return
+	case req.TOTPEnabled.set && req.TOTPEnabled.value:
+		invalid(w, r, "totp_enabled can only be false; users enable their second factor themselves")
+		return
+	case c.RemoveTOTP && (p.Method != audit.AuthSession || p.SessionID == ""):
+		// A leaked API key must not strip the second factor of other accounts,
+		// which, with a password reset link, would take them over.
+		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "only a signed-in session can remove a second factor")
+		return
+	case c.RemoveTOTP && !req.Password.set:
+		invalid(w, r, "password is required to remove a second factor")
+		return
+	case !c.RemoveTOTP && req.Password.set:
+		invalid(w, r, "password is only used to remove a second factor")
 		return
 	case c.DisplayName != nil && !validDisplayName(*c.DisplayName):
 		invalid(w, r, displayNameRule)
@@ -362,6 +400,7 @@ func (h *Handler) principal(w http.ResponseWriter, r *http.Request) (access.Prin
 }
 
 func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, err error) {
+	var locked *session.LockedError
 	switch {
 	case errors.Is(err, user.ErrNotFound):
 		httpx.NotFound(w, r)
@@ -371,6 +410,16 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, 
 		httpx.WriteError(w, r, http.StatusConflict, CodeLastActiveAdmin, "at least one active administrator must remain")
 	case errors.Is(err, ErrOwnAccount):
 		httpx.WriteError(w, r, http.StatusConflict, CodeOwnAccount, "administrators cannot demote, deactivate or delete their own account")
+	case errors.Is(err, session.ErrWrongPassword):
+		httpx.WriteError(w, r, http.StatusForbidden, CodeWrongPassword, "the password is wrong")
+	case errors.As(err, &locked):
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(locked.RetryAfter.Seconds()))))
+		httpx.WriteError(w, r, http.StatusForbidden, CodeAccountLocked, "your account is locked after too many failed sign-ins; try again later")
+	case errors.Is(err, session.ErrNoSession):
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		httpx.WriteError(w, r, http.StatusUnauthorized, httpx.CodeUnauthenticated, "authentication required")
+	case errors.Is(err, ErrOwnSecondFactor):
+		httpx.WriteError(w, r, http.StatusConflict, CodeOwnAccount, "remove your own second factor with DELETE /api/v1/session/totp")
 	case errors.Is(err, user.ErrInvalidTransition):
 		httpx.WriteError(w, r, http.StatusConflict, CodeInvalidState, "a pending account becomes active through its activation link")
 	case errors.Is(err, ErrNotPending):

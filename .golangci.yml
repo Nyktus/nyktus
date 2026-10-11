@@ -52,6 +52,7 @@ linters:
             - "!$test"
             - "!**/internal/platform/apispec/*.go"
             - "!**/internal/platform/schematest/*.go"
+            - "!**/internal/platform/secretbox/secretboxtest/*.go"
           deny:
             - pkg: go.yaml.in/yaml
               desc: the YAML parser is a test dependency
@@ -61,6 +62,8 @@ linters:
               desc: test databases are for tests only
             - pkg: nyktus.org/nyktus/internal/platform/schematest
               desc: test databases are for tests only
+            - pkg: nyktus.org/nyktus/internal/platform/secretbox/secretboxtest
+              desc: test keys are for tests only
 
     exhaustive:
       default-signifies-exhaustive: true

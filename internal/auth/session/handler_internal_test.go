@@ -34,3 +34,30 @@ func TestChangePassword_RequiresASession(t *testing.T) {
 		t.Errorf("API key: %d %s, want 403 forbidden", w.Code, w.Body)
 	}
 }
+
+// The second factor is managed only by a session, for the same reason.
+func TestSecondFactorManagement_RequiresASession(t *testing.T) {
+	t.Parallel()
+
+	h := &Handler{logger: slog.New(slog.DiscardHandler), svc: &Service{}}
+	p := access.Principal{UserID: "00000000-0000-4000-8000-000000000000", Role: user.RoleAdmin, Method: audit.AuthAPIKey}
+	for _, tt := range []struct {
+		method, path, body string
+		handle             http.HandlerFunc
+	}{
+		{http.MethodPost, "/api/v1/session/totp", `{"password": "correct horse battery"}`, h.BeginTOTP},
+		{http.MethodPost, "/api/v1/session/totp/confirmation", `{"code": "123456"}`, h.ConfirmTOTP},
+		{http.MethodPost, "/api/v1/session/totp/recovery-codes", `{"password": "correct horse battery", "code": "123456"}`, h.ReplaceRecoveryCodes},
+		{http.MethodDelete, "/api/v1/session/totp", `{"password": "correct horse battery", "code": "123456"}`, h.RemoveTOTP},
+	} {
+		req := httptest.NewRequestWithContext(access.WithPrincipal(t.Context(), p), tt.method, tt.path, strings.NewReader(tt.body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		tt.handle(w, req)
+
+		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), `"forbidden"`) {
+			t.Errorf("%s %s with an API key: %d %s, want 403 forbidden", tt.method, tt.path, w.Code, w.Body)
+		}
+	}
+}

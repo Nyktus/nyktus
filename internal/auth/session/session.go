@@ -21,8 +21,10 @@ import (
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/auth/secondfactor"
 	"nyktus.org/nyktus/internal/auth/token"
 	"nyktus.org/nyktus/internal/platform/db"
+	"nyktus.org/nyktus/internal/platform/secretbox"
 	"nyktus.org/nyktus/internal/user"
 )
 
@@ -79,17 +81,18 @@ type Config struct {
 type Service struct {
 	db     DB
 	hasher PasswordHasher
+	keys   *secretbox.Keyring
 	cfg    Config
 	// dummyHash is verified when no account or no password hash exists, so that a
 	// sign-in takes the same time whether or not the account exists.
 	dummyHash string
 }
 
-// NewService returns a Service. It computes the dummy hash with hasher, so it
-// takes as long as one password hash.
-func NewService(ctx context.Context, d DB, hasher PasswordHasher, cfg Config) (*Service, error) {
-	if d == nil || hasher == nil {
-		panic("session: service needs a database and a password hasher")
+// NewService returns a Service. keys encrypt the secrets of second factors. It
+// computes the dummy hash with hasher, so it takes as long as one password hash.
+func NewService(ctx context.Context, d DB, hasher PasswordHasher, keys *secretbox.Keyring, cfg Config) (*Service, error) {
+	if d == nil || hasher == nil || keys == nil {
+		panic("session: service needs a database, a password hasher and encryption keys")
 	}
 	if cfg.IdleTimeout <= 0 || cfg.MaxAge < cfg.IdleTimeout {
 		panic("session: idle timeout must be positive and at most the maximum age")
@@ -102,7 +105,7 @@ func NewService(ctx context.Context, d DB, hasher PasswordHasher, cfg Config) (*
 	if err != nil {
 		return nil, fmt.Errorf("compute dummy password hash: %w", err)
 	}
-	return &Service{db: d, hasher: hasher, cfg: cfg, dummyHash: dummy}, nil
+	return &Service{db: d, hasher: hasher, keys: keys, cfg: cfg, dummyHash: dummy}, nil
 }
 
 // Session is a valid session.
@@ -129,10 +132,22 @@ func (s *Service) expiries(createdAt, lastSeenAt time.Time) (idle, absolute time
 	return idle, absolute
 }
 
-// SignIn verifies the address and password and starts a new session. It returns
-// the session and its token, which only the client keeps. previous is the token
-// of a session the client still holds; that session ends, so that no session is
-// left behind and a token set before sign-in is never carried over.
+// SignInResult is the outcome of a correct password: either a session with its
+// token, which only the client keeps, or, for an account with a second factor,
+// a challenge that a code of the second factor turns into a session.
+type SignInResult struct {
+	Session Session
+	Token   string
+	// Challenge is set instead of Session and Token if the account has a
+	// second factor.
+	Challenge *Challenge
+}
+
+// SignIn verifies the address and password and starts a new session, or a
+// challenge for the second factor if the account has one. previous is the token
+// of a session the client still holds; that session ends when the new one
+// starts, so that no session is left behind and a token set before sign-in is
+// never carried over.
 //
 // It returns ErrInvalidCredentials for an unknown address, a wrong password and
 // an account that is not active, and a *LockedError only if the password is
@@ -140,12 +155,12 @@ func (s *Service) expiries(createdAt, lastSeenAt time.Time) (idle, absolute time
 // is no account, so the time of the answer does not reveal whether the account
 // exists. Every attempt is recorded in the audit log; a failure for an unknown
 // address does not record the address, which may be a mistyped password.
-func (s *Service) SignIn(ctx context.Context, email, password, previous string) (Session, string, error) {
+func (s *Service) SignIn(ctx context.Context, email, password, previous string) (SignInResult, error) {
 	users := user.NewStore(s.db)
 	u, err := users.GetByEmail(ctx, email)
 	known := err == nil
 	if err != nil && !errors.Is(err, user.ErrNotFound) {
-		return Session{}, "", err
+		return SignInResult{}, err
 	}
 	encoded := s.dummyHash
 	if known && u.PasswordHash != "" {
@@ -153,16 +168,16 @@ func (s *Service) SignIn(ctx context.Context, email, password, previous string) 
 	}
 	ok, err := s.hasher.Verify(ctx, password, encoded)
 	if err != nil {
-		return Session{}, "", fmt.Errorf("verify password: %w", err)
+		return SignInResult{}, fmt.Errorf("verify password: %w", err)
 	}
 
 	if !known {
 		err := audit.NewStore(s.db).Record(ctx, signInEntry(ctx, audit.OutcomeFailure,
 			audit.Actor{Kind: audit.ActorAnonymous, Method: audit.AuthPassword}, ""))
 		if err != nil {
-			return Session{}, "", err
+			return SignInResult{}, err
 		}
-		return Session{}, "", ErrInvalidCredentials
+		return SignInResult{}, ErrInvalidCredentials
 	}
 	actor := audit.Actor{Kind: audit.ActorUser, Method: audit.AuthPassword, UserID: u.ID}
 	if !ok {
@@ -173,9 +188,9 @@ func (s *Service) SignIn(ctx context.Context, email, password, previous string) 
 			return audit.NewStore(tx).Record(ctx, signInEntry(ctx, audit.OutcomeFailure, actor, ""))
 		})
 		if err != nil {
-			return Session{}, "", fmt.Errorf("record failed sign-in: %w", err)
+			return SignInResult{}, fmt.Errorf("record failed sign-in: %w", err)
 		}
-		return Session{}, "", ErrInvalidCredentials
+		return SignInResult{}, ErrInvalidCredentials
 	}
 
 	// Raised hashing parameters reach an account when it signs in, because only
@@ -187,17 +202,12 @@ func (s *Service) SignIn(ctx context.Context, email, password, previous string) 
 		if err != nil {
 			rehash = ""
 			if ctx.Err() != nil {
-				return Session{}, "", fmt.Errorf("rehash password: %w", err)
+				return SignInResult{}, fmt.Errorf("rehash password: %w", err)
 			}
 		}
 	}
-	tok, err := token.New()
-	if err != nil {
-		return Session{}, "", err
-	}
-
 	var (
-		sess    Session
+		result  SignInResult
 		outcome error
 	)
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
@@ -222,33 +232,74 @@ func (s *Service) SignIn(ctx context.Context, email, password, previous string) 
 			return audit.NewStore(tx).Record(ctx, signInEntry(ctx, audit.OutcomeFailure, actor, ""))
 		}
 
+		enabled, err := secondfactor.NewStore(tx, s.keys).Enabled(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		if enabled {
+			// The count of failures starts again only after the second factor.
+			// Otherwise whoever knows the password could reset it between
+			// guesses of the code and guess without limit.
+			if rehash != "" {
+				if err := users.RehashPassword(ctx, u.ID, rehash); err != nil {
+					return err
+				}
+			}
+			result.Challenge, err = issueChallenge(ctx, tx, u.ID)
+			if err != nil {
+				return err
+			}
+			return audit.NewStore(tx).Record(ctx, audit.Entry{
+				Action: audit.ActionSignInChallengeCreate, Outcome: audit.OutcomeSuccess, Actor: actor,
+			}.WithRequest(ctx))
+		}
+
 		if err := users.CompleteSignIn(ctx, u.ID, rehash); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `
+		result.Session, result.Token, err = s.start(ctx, tx, u, previous)
+		if err != nil {
+			return err
+		}
+		return audit.NewStore(tx).Record(ctx, signInEntry(ctx, audit.OutcomeSuccess, actor, result.Session.ID))
+	})
+	if err != nil {
+		return SignInResult{}, fmt.Errorf("sign in: %w", err)
+	}
+	if outcome != nil {
+		return SignInResult{}, outcome
+	}
+	return result, nil
+}
+
+// start starts a new session of u and ends the session previous, which the
+// client still holds, and the expired sessions of u.
+func (s *Service) start(ctx context.Context, tx pgx.Tx, u user.User, previous string) (Session, string, error) {
+	if _, err := tx.Exec(ctx, `
 DELETE FROM sessions
 WHERE token_hash = $1
 	OR (user_id = $2 AND (last_seen_at <= clock_timestamp() - $3::interval OR created_at <= clock_timestamp() - $4::interval))`,
-			token.Hash(previous), u.ID, s.cfg.IdleTimeout, s.cfg.MaxAge); err != nil {
-			return fmt.Errorf("delete previous and expired sessions: %w", err)
-		}
-		var createdAt, lastSeenAt time.Time
-		err = tx.QueryRow(ctx, `
+		token.Hash(previous), u.ID, s.cfg.IdleTimeout, s.cfg.MaxAge); err != nil {
+		return Session{}, "", fmt.Errorf("delete previous and expired sessions: %w", err)
+	}
+	return s.insert(ctx, tx, u)
+}
+
+// insert inserts a new session of u and returns it with its token.
+func (s *Service) insert(ctx context.Context, tx pgx.Tx, u user.User) (Session, string, error) {
+	tok, err := token.New()
+	if err != nil {
+		return Session{}, "", err
+	}
+	sess := Session{User: u}
+	var createdAt, lastSeenAt time.Time
+	err = tx.QueryRow(ctx, `
 INSERT INTO sessions (token_hash, user_id) VALUES ($1, $2)
 RETURNING id, created_at, last_seen_at`, token.Hash(tok), u.ID).Scan(&sess.ID, &createdAt, &lastSeenAt)
-		if err != nil {
-			return fmt.Errorf("insert session: %w", err)
-		}
-		sess.User = u
-		sess.IdleExpiresAt, sess.ExpiresAt = s.expiries(createdAt, lastSeenAt)
-		return audit.NewStore(tx).Record(ctx, signInEntry(ctx, audit.OutcomeSuccess, actor, sess.ID))
-	})
 	if err != nil {
-		return Session{}, "", fmt.Errorf("sign in: %w", err)
+		return Session{}, "", fmt.Errorf("insert session: %w", err)
 	}
-	if outcome != nil {
-		return Session{}, "", outcome
-	}
+	sess.IdleExpiresAt, sess.ExpiresAt = s.expiries(createdAt, lastSeenAt)
 	return sess, tok, nil
 }
 
@@ -270,14 +321,16 @@ func (s *Service) Authenticate(ctx context.Context, tok string) (Session, error)
 		createdAt, lastSeenAt time.Time
 	)
 	err := s.db.QueryRow(ctx, `
-SELECT s.id, s.created_at, s.last_seen_at, u.id, u.email, u.display_name, u.role, u.status
+SELECT s.id, s.created_at, s.last_seen_at, u.id, u.email, u.display_name, u.role, u.status,
+	EXISTS (SELECT FROM totp_factors AS f WHERE f.user_id = u.id AND f.confirmed_at IS NOT NULL)
 FROM sessions AS s
 JOIN users AS u ON u.id = s.user_id
 WHERE s.token_hash = $1
 	AND s.last_seen_at > clock_timestamp() - $2::interval
 	AND s.created_at > clock_timestamp() - $3::interval
 	AND u.status = $4`, token.Hash(tok), s.cfg.IdleTimeout, s.cfg.MaxAge, user.StatusActive).
-		Scan(&sess.ID, &createdAt, &lastSeenAt, &sess.User.ID, &sess.User.Email, &sess.User.DisplayName, &sess.User.Role, &sess.User.Status)
+		Scan(&sess.ID, &createdAt, &lastSeenAt, &sess.User.ID, &sess.User.Email, &sess.User.DisplayName, &sess.User.Role, &sess.User.Status,
+			&sess.User.TOTPEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrNoSession
 	}
@@ -329,80 +382,33 @@ func (s *Service) SignOut(ctx context.Context, p access.Principal) error {
 // revealed only with the correct password, as a *LockedError. Every attempt is
 // recorded in the audit log.
 func (s *Service) ChangePassword(ctx context.Context, p access.Principal, current, next string) (Session, string, error) {
-	u, err := user.NewStore(s.db).Get(ctx, p.UserID)
-	if errors.Is(err, user.ErrNotFound) {
-		// The account was deleted since the request was authenticated.
-		return Session{}, "", ErrNoSession
-	}
+	u, err := s.verifyCurrentPassword(ctx, p, current, audit.ActionUserPasswordChange)
 	if err != nil {
 		return Session{}, "", err
 	}
-	ok, err := s.hasher.Verify(ctx, current, u.PasswordHash)
-	if err != nil {
-		return Session{}, "", fmt.Errorf("verify password: %w", err)
-	}
-	if !ok {
-		err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
-			if err := user.NewStore(tx).RecordFailedLogin(ctx, u.ID); err != nil {
-				return err
-			}
-			return audit.NewStore(tx).Record(ctx, passwordChangeEntry(ctx, audit.OutcomeFailure, p))
-		})
-		if err != nil {
-			return Session{}, "", fmt.Errorf("record failed change of password: %w", err)
-		}
-		return Session{}, "", ErrWrongPassword
-	}
-
 	newHash, err := s.hasher.Hash(ctx, next)
 	if err != nil {
 		return Session{}, "", fmt.Errorf("hash password: %w", err)
 	}
-	tok, err := token.New()
-	if err != nil {
-		return Session{}, "", err
-	}
 	var (
 		sess    Session
+		tok     string
 		outcome error
 	)
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
-		users := user.NewStore(tx)
-		// As in SignIn, the state is read again under the row lock. A password
-		// replaced since it was verified is no longer the current password.
-		state, err := users.LockForSignIn(ctx, u.ID)
+		outcome, err = lockVerified(ctx, tx, u, p, audit.ActionUserPasswordChange)
+		if err != nil || outcome != nil {
+			return err
+		}
+		changed, err := user.NewStore(tx).SetPassword(ctx, u.ID, newHash)
 		if err != nil {
 			return err
 		}
-		switch {
-		case state.Status != user.StatusActive:
-			// The account was deactivated since the request was authenticated.
-			outcome = ErrNoSession
-			return nil
-		case state.PasswordHash != u.PasswordHash:
-			outcome = ErrWrongPassword
-			return audit.NewStore(tx).Record(ctx, passwordChangeEntry(ctx, audit.OutcomeFailure, p))
-		case state.RetryAfter > 0:
-			outcome = &LockedError{RetryAfter: state.RetryAfter}
-			return audit.NewStore(tx).Record(ctx, passwordChangeEntry(ctx, audit.OutcomeFailure, p))
-		}
-		changed, err := users.SetPassword(ctx, u.ID, newHash)
+		sess, tok, err = s.rotate(ctx, tx, changed, p.SessionID)
 		if err != nil {
 			return err
 		}
-		if err := RevokeAll(ctx, tx, u.ID); err != nil {
-			return err
-		}
-		var createdAt, lastSeenAt time.Time
-		err = tx.QueryRow(ctx, `
-INSERT INTO sessions (token_hash, user_id) VALUES ($1, $2)
-RETURNING id, created_at, last_seen_at`, token.Hash(tok), u.ID).Scan(&sess.ID, &createdAt, &lastSeenAt)
-		if err != nil {
-			return fmt.Errorf("insert session: %w", err)
-		}
-		sess.User = changed
-		sess.IdleExpiresAt, sess.ExpiresAt = s.expiries(createdAt, lastSeenAt)
-		return audit.NewStore(tx).Record(ctx, passwordChangeEntry(ctx, audit.OutcomeSuccess, p))
+		return audit.NewStore(tx).Record(ctx, accountEntry(ctx, audit.ActionUserPasswordChange, audit.OutcomeSuccess, p))
 	})
 	if err != nil {
 		return Session{}, "", fmt.Errorf("change password: %w", err)
@@ -413,21 +419,113 @@ RETURNING id, created_at, last_seen_at`, token.Hash(tok), u.ID).Scan(&sess.ID, &
 	return sess, tok, nil
 }
 
-func passwordChangeEntry(ctx context.Context, outcome audit.Outcome, p access.Principal) audit.Entry {
+// verifyCurrentPassword verifies the password that the signed-in principal p
+// gave to confirm a change of their account, recorded as action. A wrong
+// password counts as a failed sign-in and returns ErrWrongPassword, so that a
+// taken-over session cannot guess the password more often than the sign-in
+// can. It returns ErrNoSession if the account was deleted since the request was
+// authenticated.
+//
+// The password is verified without a lock, because hashing must not hold one;
+// the caller confirms the result under the lock with lockVerified.
+func (s *Service) verifyCurrentPassword(ctx context.Context, p access.Principal, password string, action audit.Action) (user.User, error) {
+	u, err := user.NewStore(s.db).Get(ctx, p.UserID)
+	if errors.Is(err, user.ErrNotFound) {
+		return user.User{}, ErrNoSession
+	}
+	if err != nil {
+		return user.User{}, err
+	}
+	ok, err := s.hasher.Verify(ctx, password, u.PasswordHash)
+	if err != nil {
+		return user.User{}, fmt.Errorf("verify password: %w", err)
+	}
+	if !ok {
+		err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+			if err := user.NewStore(tx).RecordFailedLogin(ctx, u.ID); err != nil {
+				return err
+			}
+			return audit.NewStore(tx).Record(ctx, accountEntry(ctx, action, audit.OutcomeFailure, p))
+		})
+		if err != nil {
+			return user.User{}, fmt.Errorf("record failed confirmation of password: %w", err)
+		}
+		return user.User{}, ErrWrongPassword
+	}
+	return u, nil
+}
+
+// lockVerified locks the account u, whose password verifyCurrentPassword
+// verified, and checks under the lock that the change may proceed. It returns
+// the reason if not: ErrNoSession if the account is no longer active,
+// ErrWrongPassword if the password was replaced since it was verified, and a
+// *LockedError if the account is locked after failed sign-ins, which only the
+// correct password learns. The last two are recorded as failures of action.
+func lockVerified(ctx context.Context, tx pgx.Tx, u user.User, p access.Principal, action audit.Action) (outcome, err error) {
+	state, err := user.NewStore(tx).LockForSignIn(ctx, u.ID)
+	if errors.Is(err, user.ErrNotFound) {
+		return ErrNoSession, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case state.Status != user.StatusActive:
+		// The account was deactivated since the request was authenticated.
+		return ErrNoSession, nil
+	case state.PasswordHash != u.PasswordHash:
+		outcome = ErrWrongPassword
+	case state.RetryAfter > 0:
+		outcome = &LockedError{RetryAfter: state.RetryAfter}
+	default:
+		return nil, nil
+	}
+	return outcome, audit.NewStore(tx).Record(ctx, accountEntry(ctx, action, audit.OutcomeFailure, p))
+}
+
+// rotate ends every session of u and starts a new one, which replaces the
+// session sessionID of the caller, so that the user stays signed in while every
+// other session, and every old token, stops working. The caller holds the lock
+// of u. It returns ErrNoSession if the session of the caller ended since the
+// request was authenticated, for example by a concurrent change of password:
+// a revoked session must not obtain a new one.
+func (s *Service) rotate(ctx context.Context, tx pgx.Tx, u user.User, sessionID string) (Session, string, error) {
+	var exists bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT FROM sessions WHERE id = $1 AND user_id = $2)`, sessionID, u.ID).Scan(&exists)
+	if err != nil {
+		return Session{}, "", fmt.Errorf("look up session: %w", err)
+	}
+	if !exists {
+		return Session{}, "", ErrNoSession
+	}
+	if err := RevokeAll(ctx, tx, u.ID); err != nil {
+		return Session{}, "", err
+	}
+	return s.insert(ctx, tx, u)
+}
+
+// accountEntry records a change that the principal p made to their own account.
+func accountEntry(ctx context.Context, action audit.Action, outcome audit.Outcome, p access.Principal) audit.Entry {
 	return audit.Entry{
-		Action:   audit.ActionUserPasswordChange,
+		Action:   action,
 		Outcome:  outcome,
 		Actor:    p.Actor(),
 		Resource: audit.Resource{Type: "user", ID: p.UserID},
 	}.WithRequest(ctx)
 }
 
-// RevokeAll ends every session of the account userID. It runs on q, so that a
-// change that requires it, such as deactivating the account or changing its
-// role, ends the sessions in its own transaction.
+// RevokeAll ends every session of the account userID and every sign-in that
+// waits for its second factor. It runs on q, so that a change that requires it,
+// such as deactivating the account or changing its role or password, ends the
+// sessions in its own transaction. A challenge ends with the sessions, so that a
+// password that was replaced, or a second factor that was removed, cannot
+// complete a sign-in that started before.
 func RevokeAll(ctx context.Context, q db.Querier, userID string) error {
 	if _, err := q.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID); err != nil {
 		return fmt.Errorf("revoke sessions of user %s: %w", userID, err)
+	}
+	if _, err := q.Exec(ctx, `DELETE FROM sign_in_challenges WHERE user_id = $1`, userID); err != nil {
+		return fmt.Errorf("revoke sign-in challenges of user %s: %w", userID, err)
 	}
 	return nil
 }

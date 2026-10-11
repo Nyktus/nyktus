@@ -31,6 +31,10 @@ func TestRunAdmin_ExitCodes(t *testing.T) {
 		{name: "reset with unknown flag", args: []string{"admin", "reset-password", "--force", "a@example.com"}, want: exitUsage},
 		{name: "reset help", args: []string{"admin", "reset-password", "-h"}, want: exitOK},
 		{name: "reset without configuration", args: []string{"admin", "reset-password", "a@example.com"}, want: exitFailure},
+		{name: "remove TOTP without address", args: []string{"admin", "remove-totp"}, want: exitUsage},
+		{name: "remove TOTP with invalid address", args: []string{"admin", "remove-totp", "not an address"}, want: exitUsage},
+		{name: "remove TOTP help", args: []string{"admin", "remove-totp", "-h"}, want: exitOK},
+		{name: "remove TOTP without configuration", args: []string{"admin", "remove-totp", "a@example.com"}, want: exitFailure},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -129,5 +133,91 @@ SELECT count(*) FROM audit_entries WHERE action = 'password_reset_link.create' A
 	}
 	if err := owner.QueryRow(t.Context(), `SELECT count(*) FROM account_links`).Scan(&links); err != nil || links != 1 {
 		t.Errorf("account links = %d (%v), want only the one for the administrator", links, err)
+	}
+}
+
+// The command line removes the second factor of an active administrator who
+// lost it, with the database role of the console and without encryption keys.
+func TestRunAdmin_RemoveTOTPRemovesTheFactorOfAnAdministrator(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, consoleURL := schematest.Console(t)
+	owner := schematest.Open(t, ownerURL)
+	ids := map[string]string{}
+	for _, u := range []struct{ email, role, status string }{
+		{"ada@example.com", "admin", "active"},
+		{"bob@example.com", "admin", "active"},
+		{"jane@example.com", "viewer", "active"},
+		{"gone@example.com", "admin", "deactivated"},
+	} {
+		var id string
+		err := owner.QueryRow(t.Context(), `
+INSERT INTO users (email, display_name, role, status, password_hash)
+VALUES ($1, 'Test User', $2, $3, '$argon2id$v=19$m=65536,t=3,p=4$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+RETURNING id`, u.email, u.role, u.status).Scan(&id)
+		if err != nil {
+			t.Fatalf("create %s: %v", u.email, err)
+		}
+		ids[u.email] = id
+		if u.email == "bob@example.com" {
+			continue
+		}
+		for _, statement := range []string{
+			`INSERT INTO totp_factors (user_id, secret, confirmed_at, last_used_step)
+VALUES ($1, decode(repeat('01', 49), 'hex'), clock_timestamp(), 0)`,
+			`INSERT INTO sessions (token_hash, user_id) VALUES (sha256(uuid_send($1::uuid)), $1)`,
+		} {
+			if _, err := owner.Exec(t.Context(), statement, id); err != nil {
+				t.Fatalf("%s: %v", statement, err)
+			}
+		}
+	}
+	env := map[string]string{
+		"NYKTUS_CONSOLE_DATABASE_URL": consoleURL,
+		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+	}
+	remove := func(email string) (code int, stdout, stderr string) {
+		var out, errOut bytes.Buffer
+		code = run(t.Context(), []string{"admin", "remove-totp", email}, source(env), &out, &errOut)
+		return code, out.String(), errOut.String()
+	}
+
+	for email, want := range map[string]string{
+		"jane@example.com":   "not an administrator",
+		"gone@example.com":   "not active",
+		"nobody@example.com": "no account",
+		"bob@example.com":    "has no TOTP factor",
+	} {
+		code, stdout, stderr := remove(email)
+		if code != exitFailure || stdout != "" || !strings.Contains(stderr, want) {
+			t.Errorf("%s: exit %d, stdout %q, stderr %s; want failure naming %q", email, code, stdout, stderr, want)
+		}
+	}
+
+	code, stdout, stderr := remove("ADA@example.com")
+	if code != exitOK || !strings.Contains(stdout, "are removed") {
+		t.Fatalf("exit code = %d, stdout %q; stderr: %s", code, stdout, stderr)
+	}
+	count := func(sql string, args ...any) int {
+		t.Helper()
+		var n int
+		if err := owner.QueryRow(t.Context(), sql, args...).Scan(&n); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		return n
+	}
+	if n := count(`SELECT count(*) FROM totp_factors WHERE user_id = $1`, ids["ada@example.com"]); n != 0 {
+		t.Errorf("factors of the administrator = %d, want none", n)
+	}
+	if n := count(`SELECT count(*) FROM sessions WHERE user_id = $1`, ids["ada@example.com"]); n != 0 {
+		t.Errorf("sessions of the administrator = %d, want none", n)
+	}
+	if n := count(`SELECT count(*) FROM totp_factors`); n != 2 {
+		t.Errorf("factors of other accounts = %d, want them kept", n)
+	}
+	if n := count(`
+SELECT count(*) FROM audit_entries WHERE action = 'user.totp_disable' AND outcome = 'success'
+	AND actor_kind = 'system' AND auth_method = 'cli' AND resource_id = $1`, ids["ada@example.com"]); n != 1 {
+		t.Errorf("audit entries = %d, want 1 by the command line", n)
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 )
 
 // startConsole starts the console as a process would, on a real server, so that
@@ -37,6 +38,7 @@ func startConsole(t *testing.T, d testDB) (srv *httptest.Server, tok setup.Token
 		Setup:          svc,
 		Hasher:         password.NewHasher(),
 		Sessions:       session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour},
+		Keys:           secretboxtest.Keyring(t),
 		ConsoleURL:     "https://nyktus.example.com",
 		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
 	})

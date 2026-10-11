@@ -28,11 +28,22 @@ const CookieName = "__Host-nyktus_session"
 // maxBodyBytes bounds a sign-in request.
 const maxBodyBytes = 8 << 10
 
-// Error codes of the sign-in and the change of password.
+// ChallengeCookieName names the cookie that carries the challenge of a sign-in
+// that waits for its second factor. Like the session cookie, it is out of reach
+// of scripts and of other subdomains.
+const ChallengeCookieName = "__Host-nyktus_challenge"
+
+// Error codes of the sign-in, the change of password and the second factor.
 const (
-	codeRejected      = "invalid_credentials"
-	codeAccountLocked = "account_locked"
-	codeWrongPassword = "wrong_password"
+	codeRejected         = "invalid_credentials"
+	codeAccountLocked    = "account_locked"
+	codeWrongPassword    = "wrong_password"
+	codeInvalidChallenge = "invalid_challenge"
+	codeInvalidCode      = "invalid_code"
+	codeWrongCode        = "wrong_code"
+	codeTOTPEnabled      = "totp_enabled"
+	codeTOTPNotEnabled   = "totp_not_enabled"
+	codeNoTOTPSetup      = "no_totp_setup"
 )
 
 // Authorizer authenticates requests with the session cookie and checks the
@@ -122,9 +133,17 @@ func newSessionResponse(s Session) sessionResponse {
 	return sessionResponse{User: s.User.Response(), IdleExpiresAt: s.IdleExpiresAt, ExpiresAt: s.ExpiresAt}
 }
 
+// challengeResponse tells the client that the sign-in waits for the second
+// factor. The challenge itself travels in a cookie.
+type challengeResponse struct {
+	SecondFactor string    `json:"second_factor"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
+
 // SignIn handles POST /api/v1/session. Every rejected sign-in, except one with
 // the correct password for a locked account, receives the same status, headers
-// and body.
+// and body. For an account with a second factor, the correct password yields
+// 202 and a challenge cookie instead of a session.
 func (h *Handler) SignIn(w http.ResponseWriter, r *http.Request) {
 	var req signInRequest
 	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
@@ -135,7 +154,7 @@ func (h *Handler) SignIn(w http.ResponseWriter, r *http.Request) {
 		previous = c.Value
 	}
 
-	sess, tok, err := h.svc.SignIn(r.Context(), req.Email, req.Password, previous)
+	result, err := h.svc.SignIn(r.Context(), req.Email, req.Password, previous)
 	var locked *LockedError
 	switch {
 	case errors.Is(err, ErrInvalidCredentials):
@@ -151,9 +170,14 @@ func (h *Handler) SignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.setCookie(w, tok)
-	h.logger.InfoContext(r.Context(), "session: signed in", slog.Any("session", sess))
-	httpx.WriteJSON(w, http.StatusOK, newSessionResponse(sess))
+	if c := result.Challenge; c != nil {
+		setChallengeCookie(w, c.Token)
+		httpx.WriteJSON(w, http.StatusAccepted, challengeResponse{SecondFactor: "totp", ExpiresAt: c.ExpiresAt})
+		return
+	}
+	h.setCookie(w, result.Token)
+	h.logger.InfoContext(r.Context(), "session: signed in", slog.Any("session", result.Session))
+	httpx.WriteJSON(w, http.StatusOK, newSessionResponse(result.Session))
 }
 
 func (h *Handler) setCookie(w http.ResponseWriter, tok string) {
@@ -192,8 +216,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, r, h.logger, "session: change password", errors.New("no principal in the request context"))
 		return
 	}
-	if p.Method != audit.AuthSession || p.SessionID == "" {
-		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "only a signed-in session can change the password")
+	if !h.requireSession(w, r, p, "only a signed-in session can change the password") {
 		return
 	}
 	var req changePasswordRequest
@@ -215,8 +238,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeLocked(w, r, locked)
 		return
 	case errors.Is(err, ErrNoSession):
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		httpx.WriteError(w, r, http.StatusUnauthorized, httpx.CodeUnauthenticated, "authentication required")
+		writeNoSession(w, r)
 		return
 	case err != nil:
 		httpx.ServerError(w, r, h.logger, "session: change password", err)
