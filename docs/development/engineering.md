@@ -72,7 +72,7 @@ Configuration is read from the environment once at startup, parsed into a typed 
 ### Authorization
 
 - Routes are registered with `httpx.Public`, `httpx.Authenticated` or `httpx.Require(permission)`. Routes that are not public pass through the authorizer before the handler runs, so permission checks happen in one place.
-- Routes that change how the account itself authenticates, such as its password, its second factor or its session, add `.SessionOnly()`. The authorizer then rejects every credential other than a session with `403`, so a leaked API key cannot take over the account. Handlers do not repeat the check.
+- Routes that change how the account itself authenticates, such as its password, its second factor or its session, add `.SessionOnly()`. The authorizer then rejects every credential other than a session with `403`, so a leaked API key cannot take over the account. Handlers rely on it; a handler that reaches such a route without a session answers `500`, because the route was registered without the restriction.
 - The authorizer only decides. It returns the request with the principal, `ErrUnauthenticated`, `ErrForbidden` or another error. The router writes the `401` (with a `WWW-Authenticate` challenge), `403` or generic `500` response, so a denied request can never go unanswered.
 - Recording denied requests is the authorizer's job, because only it knows the principal. It writes requests denied with `403` to the audit log; the access log records the status of every request, including `401`.
 
