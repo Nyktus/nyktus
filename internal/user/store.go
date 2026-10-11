@@ -20,6 +20,9 @@ import (
 var (
 	ErrNotFound   = errors.New("user not found")
 	ErrEmailTaken = errors.New("email address is already in use")
+	// ErrIdentityTaken means that another account has the same identity, which
+	// a concurrent first sign-in through the identity provider created.
+	ErrIdentityTaken = errors.New("identity is already in use")
 )
 
 // SQLSTATE codes mapped by the store.
@@ -51,6 +54,9 @@ type NewUser struct {
 	// administrator. Without it, the account is pending until the user sets a
 	// password.
 	PasswordHash string
+	// Identity, if set, creates an active account of the identity provider,
+	// which has no password.
+	Identity *Identity
 }
 
 // Create validates nu and stores a new account. It returns ErrEmailTaken if
@@ -73,7 +79,17 @@ func (s *Store) Create(ctx context.Context, nu NewUser) (User, error) {
 		return User{}, ErrInvalidRole
 	}
 	status := StatusPending
-	var hash *string
+	var (
+		hash            *string
+		issuer, subject *string
+	)
+	if nu.Identity != nil {
+		if nu.PasswordHash != "" || !nu.Identity.Valid() {
+			return User{}, ErrInvalidIdentity
+		}
+		status = StatusActive
+		issuer, subject = &nu.Identity.Issuer, &nu.Identity.Subject
+	}
 	if nu.PasswordHash != "" {
 		// The prefix keeps a plain-text password away from the database and its
 		// log. The full format is checked by the schema; a second copy of that
@@ -86,13 +102,18 @@ func (s *Store) Create(ctx context.Context, nu NewUser) (User, error) {
 	}
 
 	u, err := scan(s.db.QueryRow(ctx, `
-INSERT INTO users (email, display_name, role, status, password_hash)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO users (email, display_name, role, status, password_hash, oidc_issuer, oidc_subject)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING `+userColumns,
-		email, name, nu.Role, status, hash))
+		email, name, nu.Role, status, hash, issuer, subject))
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation && pgErr.ConstraintName == "users_email_key" {
-		return User{}, ErrEmailTaken
+	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+		switch pgErr.ConstraintName {
+		case "users_email_key":
+			return User{}, ErrEmailTaken
+		case "users_oidc_key":
+			return User{}, ErrIdentityTaken
+		}
 	}
 	if err != nil {
 		return User{}, fmt.Errorf("create user: %w", err)
@@ -135,6 +156,24 @@ WHERE email = $1`, normalized))
 		// The address is not logged: it may be input from an unauthenticated
 		// sign-in attempt.
 		return User{}, fmt.Errorf("get user by email: %w", err)
+	}
+	return u, nil
+}
+
+// LockByIdentity locks the account of the identity id until the end of the
+// transaction and returns it. It returns ErrNotFound if no account has the
+// identity.
+func (s *Store) LockByIdentity(ctx context.Context, id Identity) (User, error) {
+	u, err := scan(s.db.QueryRow(ctx, `
+SELECT `+userColumns+`
+FROM users
+WHERE oidc_issuer = $1 AND oidc_subject = $2
+FOR UPDATE`, id.Issuer, id.Subject))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return User{}, ErrNotFound
+	}
+	if err != nil {
+		return User{}, fmt.Errorf("lock user by identity: %w", err)
 	}
 	return u, nil
 }
@@ -190,6 +229,7 @@ WHERE id = $1`, id, MaxFailedLogins, LockDuration)
 // SignInState is what a sign-in needs to know about an account.
 type SignInState struct {
 	Status Status
+	Role   Role
 	// PasswordHash is the current hash. A caller that verified a password
 	// before taking the lock compares it with the hash it verified against, so
 	// that a password replaced in the meantime no longer counts.
@@ -208,10 +248,10 @@ func (s *Store) LockForSignIn(ctx context.Context, id string) (SignInState, erro
 		seconds float64
 	)
 	err := s.db.QueryRow(ctx, `
-SELECT status, coalesce(password_hash, ''), coalesce(greatest(extract(epoch FROM locked_until - clock_timestamp()), 0), 0)
+SELECT status, role, coalesce(password_hash, ''), coalesce(greatest(extract(epoch FROM locked_until - clock_timestamp()), 0), 0)
 FROM users
 WHERE id = $1
-FOR UPDATE`, id).Scan(&state.Status, &state.PasswordHash, &seconds)
+FOR UPDATE`, id).Scan(&state.Status, &state.Role, &state.PasswordHash, &seconds)
 	var pgErr *pgconn.PgError
 	if errors.Is(err, pgx.ErrNoRows) || (errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation) {
 		return SignInState{}, ErrNotFound
@@ -266,15 +306,20 @@ func (s *Store) RehashPassword(ctx context.Context, id, passwordHash string) err
 
 func scan(row pgx.Row) (User, error) {
 	var (
-		u    User
-		hash *string
+		u               User
+		hash            *string
+		issuer, subject *string
 	)
-	err := row.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.Status, &hash, &u.CreatedAt, &u.UpdatedAt, &u.TOTPEnabled)
+	err := row.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.Status, &hash, &issuer, &subject,
+		&u.CreatedAt, &u.UpdatedAt, &u.TOTPEnabled)
 	if err != nil {
 		return User{}, err
 	}
 	if hash != nil {
 		u.PasswordHash = *hash
+	}
+	if issuer != nil && subject != nil {
+		u.Identity = &Identity{Issuer: *issuer, Subject: *subject}
 	}
 	u.CreatedAt = u.CreatedAt.UTC()
 	u.UpdatedAt = u.UpdatedAt.UTC()

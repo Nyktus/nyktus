@@ -15,9 +15,11 @@ import (
 	"nyktus.org/nyktus/internal/auth/account"
 	"nyktus.org/nyktus/internal/auth/apikey/apikeyapi"
 	"nyktus.org/nyktus/internal/auth/authz"
+	"nyktus.org/nyktus/internal/auth/oidc"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
+	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/platform/secretbox"
 )
 
@@ -38,6 +40,10 @@ type Options struct {
 	// this origin, and activation and password reset links start with it.
 	ConsoleURL     string
 	TrustedProxies []netip.Prefix
+	// OIDC is the identity provider, or nil if users do not sign in through
+	// one. OIDCGroups map its groups to roles.
+	OIDC       *oidc.Provider
+	OIDCGroups oidc.Groups
 }
 
 // New wires the console and returns its HTTP handler. It computes the dummy
@@ -49,6 +55,13 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 	}
 	h := session.NewHandler(o.Logger, sessions)
 	k := apikeyapi.NewHandler(o.Logger, o.DB, sessions)
+	// The routes exist without a provider as well, so that the API is the same
+	// in every configuration; they answer that there is nothing to sign in to.
+	signInThroughProvider := OIDC{Authorize: http.HandlerFunc(httpx.NotFound), Callback: http.HandlerFunc(httpx.NotFound)}
+	if o.OIDC != nil {
+		p := oidc.NewHandler(o.Logger, oidc.NewService(o.DB, o.OIDC, sessions, o.OIDCGroups), h)
+		signInThroughProvider = OIDC{Authorize: http.HandlerFunc(p.Authorize), Callback: http.HandlerFunc(p.Callback)}
+	}
 	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
 	return NewHandler(Deps{
 		Logger:         o.Logger,
@@ -66,6 +79,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			ReplaceRecoveryCodes: http.HandlerFunc(h.ReplaceRecoveryCodes),
 			Remove:               http.HandlerFunc(h.RemoveTOTP),
 		},
+		OIDC: signInThroughProvider,
 		APIKeys: APIKeys{
 			List:   http.HandlerFunc(k.List),
 			Create: http.HandlerFunc(k.Create),

@@ -4,7 +4,7 @@ Integrations such as a SIEM call the API with an API key instead of a session. K
 
 ## Creating a key
 
-An administrator creates a key while signed in with a session, and confirms the request with their password, because a key outlives the session:
+An administrator creates a key while signed in with a session, and confirms the request with their password, because a key outlives the session. Administrators who sign in through the [identity provider](sign-in.md#identity-provider) have no password and cannot create keys (`409` with the code `oidc_account`); a local administrator does it:
 
 ```sh
 curl --fail-with-body https://nyktus.example.com/api/v1/api-keys \

@@ -41,6 +41,7 @@ const (
 	codeTOTPEnabled      = "totp_enabled"
 	codeTOTPNotEnabled   = "totp_not_enabled"
 	codeNoTOTPSetup      = "no_totp_setup"
+	codeOIDCAccount      = "oidc_account"
 )
 
 type sessionKey struct{}
@@ -139,6 +140,20 @@ func (h *Handler) SignIn(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, newSessionResponse(result.Session))
 }
 
+// writeOIDCAccount rejects a change that needs the password of an account of
+// the identity provider, which has none. Its password and second factor are
+// managed by the provider.
+func writeOIDCAccount(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteError(w, r, http.StatusConflict, codeOIDCAccount,
+		"the account signs in through the identity provider and has no password")
+}
+
+// SetCookie sets the session cookie of tok, for a session that another way of
+// signing in started.
+func (h *Handler) SetCookie(w http.ResponseWriter, tok string) {
+	h.setCookie(w, tok)
+}
+
 func (h *Handler) setCookie(w http.ResponseWriter, tok string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
@@ -194,6 +209,9 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, ErrNoSession):
 		writeNoSession(w, r)
+		return
+	case errors.Is(err, user.ErrOIDCAccount):
+		writeOIDCAccount(w, r)
 		return
 	case err != nil:
 		httpx.ServerError(w, r, h.logger, "session: change password", err)

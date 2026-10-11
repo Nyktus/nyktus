@@ -12,6 +12,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/auth/secondfactor"
 	"nyktus.org/nyktus/internal/platform/httpx"
+	"nyktus.org/nyktus/internal/user"
 )
 
 // proofRequest carries a proof of the second factor: a code of the
@@ -230,6 +231,8 @@ func (h *Handler) writeSecondFactorError(w http.ResponseWriter, r *http.Request,
 		writeLocked(w, r, locked)
 	case errors.Is(err, ErrNoSession):
 		writeNoSession(w, r)
+	case errors.Is(err, user.ErrOIDCAccount):
+		writeOIDCAccount(w, r)
 	case errors.Is(err, secondfactor.ErrEnabled):
 		httpx.WriteError(w, r, http.StatusConflict, codeTOTPEnabled, "a TOTP factor is already enabled; remove it first")
 	case errors.Is(err, secondfactor.ErrNotEnabled):

@@ -58,13 +58,67 @@ type User struct {
 	Role        Role
 	Status      Status
 	// PasswordHash is the encoded Argon2id hash. It is empty while the user has
-	// not set a password.
+	// not set a password, and for an account of the identity provider.
 	PasswordHash string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// Identity is set for an account of the identity provider, which signs in
+	// through OpenID Connect and has no password.
+	Identity  *Identity
+	CreatedAt time.Time
+	UpdatedAt time.Time
 	// TOTPEnabled reports whether the account has a confirmed TOTP factor, so
 	// that signing in takes a code in addition to the password.
 	TOTPEnabled bool
+}
+
+// Identity names an account of an OpenID Connect provider.
+type Identity struct {
+	Issuer  string
+	Subject string
+}
+
+// MaxSubjectLength bounds the subject of an identity (OpenID Connect Core 1.0,
+// section 2), and MaxIssuerLength the URL of its issuer.
+const (
+	MaxSubjectLength = 255
+	MaxIssuerLength  = 2048
+)
+
+// ErrInvalidIdentity is returned for an identity that the schema would reject.
+var ErrInvalidIdentity = errors.New("invalid identity")
+
+// Valid reports whether the schema accepts id: an issuer of printable ASCII
+// without spaces and a subject of printable ASCII, each within its limit.
+func (id Identity) Valid() bool {
+	return asciiWithin(id.Issuer, MaxIssuerLength, '!') && asciiWithin(id.Subject, MaxSubjectLength, ' ')
+}
+
+func asciiWithin(s string, limit int, lowest byte) bool {
+	if s == "" || len(s) > limit {
+		return false
+	}
+	for i := range len(s) {
+		if s[i] < lowest || s[i] > '~' {
+			return false
+		}
+	}
+	return true
+}
+
+// SignInMethod is how an account signs in.
+type SignInMethod string
+
+// Sign-in methods of an account.
+const (
+	SignInPassword SignInMethod = "password"
+	SignInOIDC     SignInMethod = "oidc"
+)
+
+// SignInMethod returns how u signs in.
+func (u User) SignInMethod() SignInMethod {
+	if u.Identity != nil {
+		return SignInOIDC
+	}
+	return SignInPassword
 }
 
 // Response is the representation of an account in API responses. It leaves out
@@ -76,11 +130,17 @@ type Response struct {
 	Role        Role   `json:"role"`
 	Status      Status `json:"status"`
 	TOTPEnabled bool   `json:"totp_enabled"`
+	// SignInMethod tells clients whether the account has a password that it
+	// can change, or signs in through the identity provider.
+	SignInMethod SignInMethod `json:"sign_in_method"`
 }
 
 // Response returns the representation of u in API responses.
 func (u User) Response() Response {
-	return Response{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Role: u.Role, Status: u.Status, TOTPEnabled: u.TOTPEnabled}
+	return Response{
+		ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Role: u.Role, Status: u.Status,
+		TOTPEnabled: u.TOTPEnabled, SignInMethod: u.SignInMethod(),
+	}
 }
 
 // LogValue keeps the password hash and the address out of logs. A hash allows

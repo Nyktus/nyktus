@@ -124,6 +124,8 @@ func adminError(err error, other string) error {
 		return errors.New("the account is not an administrator; " + other)
 	case errors.Is(err, account.ErrNotActive):
 		return errors.New("the account is not active")
+	case errors.Is(err, user.ErrOIDCAccount):
+		return errors.New("the account signs in through the identity provider and has no password")
 	}
 	return err
 }

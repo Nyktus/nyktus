@@ -183,7 +183,7 @@ func TestGetByEmail(t *testing.T) {
 // row is a users row written directly, without the validation of the store.
 type row struct {
 	email, displayName, role, status string
-	hash                             any
+	hash, issuer, subject            any
 }
 
 func validRow() row {
@@ -193,8 +193,8 @@ func validRow() row {
 func (r row) insert(t *testing.T, pool *pgxpool.Pool) error {
 	t.Helper()
 	_, err := pool.Exec(t.Context(),
-		"INSERT INTO users (email, display_name, role, status, password_hash) VALUES ($1, $2, $3, $4, $5)",
-		r.email, r.displayName, r.role, r.status, r.hash)
+		"INSERT INTO users (email, display_name, role, status, password_hash, oidc_issuer, oidc_subject) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+		r.email, r.displayName, r.role, r.status, r.hash, r.issuer, r.subject)
 	return err
 }
 
@@ -277,6 +277,32 @@ func TestSchema_RejectsInvalidUsers(t *testing.T) {
 			modify:     func(r *row) { r.status, r.hash = "active", strings.Replace(testHash, "argon2id", "argon2i", 1) },
 			constraint: "users_password_hash_check",
 		},
+		{name: "pending with identity", modify: withIdentity("pending", "s"), constraint: "users_password_check"},
+		{
+			name:       "identity and password",
+			modify:     func(r *row) { withIdentity("active", "s")(r); r.hash = testHash },
+			constraint: "users_password_check",
+		},
+		{
+			name:       "deactivated with identity and password",
+			modify:     func(r *row) { withIdentity("deactivated", "s")(r); r.hash = testHash },
+			constraint: "users_password_check",
+		},
+		{name: "issuer without subject", modify: func(r *row) { withIdentity("active", "s")(r); r.subject = nil }, constraint: "users_oidc_check"},
+		{name: "subject without issuer", modify: func(r *row) { withIdentity("active", "s")(r); r.issuer = nil }, constraint: "users_oidc_check"},
+		{name: "empty subject", modify: withIdentity("active", ""), constraint: "users_oidc_check"},
+		{name: "subject too long", modify: withIdentity("active", strings.Repeat("s", MaxSubjectLength+1)), constraint: "users_oidc_check"},
+		{name: "subject with newline", modify: withIdentity("active", "a\nb"), constraint: "users_oidc_check"},
+		{name: "non-ASCII subject", modify: withIdentity("active", "jäne"), constraint: "users_oidc_check"},
+		{name: "issuer with space", modify: func(r *row) { withIdentity("active", "s")(r); r.issuer = "https://idp.example.com/a b" }, constraint: "users_oidc_check"},
+		{
+			name: "issuer too long",
+			modify: func(r *row) {
+				withIdentity("active", "s")(r)
+				r.issuer = "https://" + strings.Repeat("i", MaxIssuerLength)
+			},
+			constraint: "users_oidc_check",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -287,23 +313,37 @@ func TestSchema_RejectsInvalidUsers(t *testing.T) {
 	}
 }
 
+// withIdentity makes the row an account of the identity provider with the
+// subject sub and the status status.
+func withIdentity(status, sub string) func(*row) {
+	return func(r *row) {
+		r.status, r.issuer, r.subject = status, "https://idp.example.com", sub
+	}
+}
+
 func TestSchema_AllowsEveryValidStatus(t *testing.T) {
 	t.Parallel()
 
 	_, pool := newStore(t)
 	tests := []struct {
-		status string
-		hash   any
+		status  string
+		hash    any
+		subject string
 	}{
 		{status: "pending"},
 		{status: "active", hash: testHash},
 		{status: "deactivated"},
 		{status: "deactivated", hash: testHash},
+		{status: "active", subject: "s1"},
+		{status: "deactivated", subject: "s2"},
 	}
 	for i, tt := range tests {
 		r := validRow()
 		r.email = string(rune('a'+i)) + "@example.com"
 		r.status, r.hash = tt.status, tt.hash
+		if tt.subject != "" {
+			r.issuer, r.subject = "https://idp.example.com", tt.subject
+		}
 		if err := r.insert(t, pool); err != nil {
 			t.Errorf("insert %s user with hash %v: error = %v, want nil", tt.status, tt.hash != nil, err)
 		}

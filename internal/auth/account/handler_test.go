@@ -37,6 +37,8 @@ func TestWriteError_MapsExpectedErrors(t *testing.T) {
 		{ErrOwnSecondFactor, http.StatusConflict, CodeOwnAccount},
 		{user.ErrInvalidTransition, http.StatusConflict, CodeInvalidState},
 		{ErrNotPending, http.StatusConflict, CodeInvalidState},
+		{user.ErrOIDCAccount, http.StatusConflict, CodeOIDCAccount},
+		{errOIDCPassword, http.StatusConflict, CodeOIDCAccount},
 		{errors.New("database is down"), http.StatusInternalServerError, "internal_error"},
 	}
 	for _, tt := range tests {

@@ -40,6 +40,8 @@ type Deps struct {
 	SecondFactor SecondFactor
 	// APIKeys manages the API keys of the team.
 	APIKeys APIKeys
+	// OIDC signs users in through the identity provider.
+	OIDC OIDC
 	// AuditEntries lists the audit log.
 	AuditEntries http.Handler
 	// Accounts manages accounts and activates them.
@@ -69,6 +71,17 @@ type APIKeys struct {
 	List, Create, Revoke http.Handler
 }
 
+// OIDC are the handlers of the sign-in through the identity provider: the
+// start, which sends the browser to the provider, and the callback, to which
+// the provider sends it back.
+type OIDC struct {
+	Authorize, Callback http.Handler
+}
+
+func (o OIDC) complete() bool {
+	return o.Authorize != nil && o.Callback != nil
+}
+
 func (k APIKeys) complete() bool {
 	return k.List != nil && k.Create != nil && k.Revoke != nil
 }
@@ -86,8 +99,8 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || d.AuditEntries == nil || !d.Accounts.complete() {
-		panic("console: router needs a logger, a database, an authorizer and the setup, session, audit and account handlers")
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || !d.Accounts.complete() {
+		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit and account handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	// The session itself and how the account signs in are managed only with a
@@ -102,6 +115,8 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodDelete, "/api/v1/session", session, d.SignOut)
 	rt.Handle(http.MethodPut, "/api/v1/session/password", session, httpx.Deadline(hashDeadline)(d.ChangePassword))
 	rt.Handle(http.MethodPost, "/api/v1/session/second-factor", httpx.Public, d.SecondFactor.CompleteSignIn)
+	rt.Handle(http.MethodGet, "/api/v1/oidc/authorize", httpx.Public, d.OIDC.Authorize)
+	rt.Handle(http.MethodGet, "/api/v1/oidc/callback", httpx.Public, d.OIDC.Callback)
 	rt.Handle(http.MethodPost, "/api/v1/session/totp", session, httpx.Deadline(hashDeadline)(d.SecondFactor.Begin))
 	rt.Handle(http.MethodDelete, "/api/v1/session/totp", session, httpx.Deadline(hashDeadline)(d.SecondFactor.Remove))
 	rt.Handle(http.MethodPost, "/api/v1/session/totp/confirmation", session, d.SecondFactor.Confirm)

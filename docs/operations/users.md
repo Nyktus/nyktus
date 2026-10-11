@@ -1,6 +1,6 @@
 # Managing accounts
 
-Administrators create and manage the accounts of the console. There is no public registration. Every account has an email address, which is its sign-in name and cannot be changed, a display name and a role:
+Administrators create and manage the accounts of the console. There is no public registration. Every account has an email address, which is its sign-in name and cannot be changed, a display name and a role. With an [identity provider](sign-in.md#identity-provider), the accounts of its users are created when they first sign in, and their roles follow their groups there; the field `sign_in_method` of an account is then `oidc` instead of `password`.
 
 | Role | Purpose |
 |---|---|
@@ -27,7 +27,7 @@ The answer contains the new account, which is `pending`, and an activation link:
 
 ```json
 {
-  "user": {"id": "...", "email": "jane@example.com", "display_name": "Jane Doe", "role": "user", "status": "pending"},
+  "user": {"id": "...", "email": "jane@example.com", "display_name": "Jane Doe", "role": "user", "status": "pending", "totp_enabled": false, "sign_in_method": "password"},
   "activation": {"url": "https://nyktus.example.com/activate#token=...", "expires_at": "..."}
 }
 ```
@@ -75,7 +75,8 @@ curl --fail-with-body --request PATCH https://nyktus.example.com/api/v1/users/<i
 
 - **Role.** A new role ends every session of the account and applies immediately.
 - **Deactivating** (`"status": "deactivated"`) blocks the sign-in, ends every session and removes an open activation or password reset link. The password is kept.
-- **Reactivating** (`"status": "active"`) lets the user sign in again with their password and ends a lock after failed sign-ins. An account that never set a password returns to `pending` and needs a new activation link.
+- **Reactivating** (`"status": "active"`) lets the user sign in again with their password and ends a lock after failed sign-ins. An account that never set a password returns to `pending` and needs a new activation link. An account of the identity provider becomes active and signs in through the provider again.
+- **Accounts of the identity provider.** Their role follows their groups at the provider and cannot be changed here (`409` with the code `oidc_account`). They have no password, so they receive no password reset link (`409`). To lock such a user out, deactivate the account: deleting it does not help, because the next sign-in creates it again.
 - **Second factor** (`"totp_enabled": false`), see [Removing a second factor](#removing-a-second-factor).
 
 The field `totp_enabled` of an account tells whether it has a [second factor](sign-in.md#second-factor).
@@ -131,7 +132,7 @@ curl --fail-with-body --request PATCH https://nyktus.example.com/api/v1/users/<i
 rm remove.json
 ```
 
-The password confirms that you, and not someone who took over your session, remove the factor. A wrong one receives `403` with the code `wrong_password` and counts as a failed sign-in of your account. The removal deletes the factor and the recovery codes and ends every session of the account. The user then signs in with the password alone and should set up a new factor right away. Make sure that the request really comes from the user, for example by calling them back: the factor protects against someone who knows the password. Only a signed-in session can remove a factor, not an API key. Administrators remove their own factor themselves, with their password and a code, see [Sign-in and sessions](sign-in.md#recovery-codes-and-removal). Only users enable a factor; `"totp_enabled": true` is rejected.
+The password confirms that you, and not someone who took over your session, remove the factor. A wrong one receives `403` with the code `wrong_password` and counts as a failed sign-in of your account. The removal deletes the factor and the recovery codes and ends every session of the account. The user then signs in with the password alone and should set up a new factor right away. Make sure that the request really comes from the user, for example by calling them back: the factor protects against someone who knows the password. Only a signed-in session can remove a factor, not an API key. Administrators of the identity provider have no password and cannot remove factors (`409` with the code `oidc_account`); a local administrator does it. Administrators remove their own factor themselves, with their password and a code, see [Sign-in and sessions](sign-in.md#recovery-codes-and-removal). Only users enable a factor; `"totp_enabled": true` is rejected.
 
 ## When no administrator can sign in
 
@@ -141,7 +142,7 @@ If no administrator can sign in, for example because the only one forgot the pas
 nyktus admin reset-password ada@example.com
 ```
 
-The command reads the configuration of the console (`NYKTUS_CONSOLE_DATABASE_URL` and `NYKTUS_CONSOLE_URL`) and prints the link on standard output. It works only for active administrators; other accounts are reset by an administrator. The link follows the rules above. The audit log records the command line as the creator of the link.
+The command reads the configuration of the console (`NYKTUS_CONSOLE_DATABASE_URL` and `NYKTUS_CONSOLE_URL`) and prints the link on standard output. It works only for active administrators who sign in with a password; other accounts are reset by an administrator. The link follows the rules above. The audit log records the command line as the creator of the link.
 
 If the administrator lost the second factor and the recovery codes, remove the factor on the server as well:
 

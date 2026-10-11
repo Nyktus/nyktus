@@ -29,6 +29,9 @@ const (
 	CodeLastActiveAdmin = "last_active_admin"
 	CodeOwnAccount      = "own_account"
 	CodeInvalidState    = "invalid_state"
+	// CodeOIDCAccount rejects a change that does not apply to an account of
+	// the identity provider.
+	CodeOIDCAccount = "oidc_account"
 )
 
 // Error codes of the confirmation with the password of the administrator, the
@@ -426,6 +429,12 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, 
 		httpx.WriteError(w, r, http.StatusConflict, CodeInvalidState, "only a pending account can receive an activation link")
 	case errors.Is(err, ErrNotActive):
 		httpx.WriteError(w, r, http.StatusConflict, CodeInvalidState, "only an active account can receive a password reset link")
+	case errors.Is(err, errOIDCPassword):
+		httpx.WriteError(w, r, http.StatusConflict, CodeOIDCAccount,
+			"your account signs in through the identity provider and cannot confirm with a password")
+	case errors.Is(err, user.ErrOIDCAccount):
+		httpx.WriteError(w, r, http.StatusConflict, CodeOIDCAccount,
+			"the account signs in through the identity provider, which manages its password and role")
 	default:
 		httpx.ServerError(w, r, h.logger, op, err)
 	}

@@ -157,7 +157,7 @@ SELECT EXISTS (SELECT FROM sign_in_challenges WHERE token_hash = $1 AND user_id 
 		if err != nil {
 			return err
 		}
-		sess, newTok, err = s.start(ctx, tx, u, previous)
+		sess, newTok, err = s.Start(ctx, tx, u, token.Hash(previous))
 		if err != nil {
 			return err
 		}

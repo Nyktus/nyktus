@@ -112,6 +112,51 @@ type Console struct {
 	SessionIdleTimeout time.Duration
 	// SessionMaxAge ends a session this long after sign-in, however active it is.
 	SessionMaxAge time.Duration
+	// OIDC configures the sign-in through an OpenID Connect provider. It is nil
+	// if the sign-in is not enabled.
+	OIDC *OIDC
+	// LocalLogin says which accounts sign in with a password.
+	LocalLogin LocalLogin
+}
+
+// LocalLogin says which accounts sign in with a password.
+type LocalLogin string
+
+// Accounts that sign in with a password.
+const (
+	// LocalLoginAll lets every account with a password sign in with it.
+	LocalLoginAll LocalLogin = "all"
+	// LocalLoginAdmins lets only administrators sign in with a password, as
+	// emergency access while every other user signs in through the identity
+	// provider.
+	LocalLoginAdmins LocalLogin = "admins"
+	// LocalLoginOff lets nobody sign in with a password.
+	LocalLoginOff LocalLogin = "off"
+)
+
+// OIDC configures the sign-in through an OpenID Connect provider. Accounts are
+// created at their first sign-in, and their role follows their groups at the
+// provider with every sign-in.
+type OIDC struct {
+	// Issuer is the URL of the provider, exactly as its tokens name it.
+	Issuer       string
+	ClientID     string
+	ClientSecret Secret
+	// Scopes are requested in addition to openid, which is always requested.
+	Scopes []string
+	// GroupsClaim names the claim of the ID token that lists the groups of the
+	// user.
+	GroupsClaim string
+	// The groups whose members receive a role. The highest role of the groups
+	// of a user wins; a user in none of them cannot sign in.
+	AdminGroups, UserGroups, ViewerGroups []string
+}
+
+// oidcVariables are the settings of the sign-in through OpenID Connect other
+// than the issuer, which enables it.
+var oidcVariables = []string{
+	"OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_CLIENT_SECRET_FILE", "OIDC_SCOPES", "OIDC_GROUPS_CLAIM",
+	"OIDC_ADMIN_GROUPS", "OIDC_USER_GROUPS", "OIDC_VIEWER_GROUPS",
 }
 
 // Limits of the session durations. A session must be able to outlast a short
@@ -172,6 +217,8 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 		}
 		cfg.Console.SessionMaxAge = r.duration("SESSION_MAX_AGE", 12*time.Hour,
 			max(cfg.Console.SessionIdleTimeout, minSessionIdleTimeout), maxSessionMaxAge)
+		cfg.Console.OIDC = r.oidc(cfg.Environment)
+		cfg.Console.LocalLogin = r.localLogin(cfg.Console.OIDC != nil)
 		cfg.EncryptionKeys = r.keyring("ENCRYPTION_KEYS")
 	}
 	return cfg, r.err()
@@ -306,6 +353,123 @@ func developmentURL(addr string) string {
 		host = "localhost"
 	}
 	return "http://" + net.JoinHostPort(host, port)
+}
+
+// oidc reads the sign-in through OpenID Connect, which NYKTUS_OIDC_ISSUER
+// enables. Its other settings are rejected without the issuer, so that a typo in
+// the name of the issuer does not silently leave the sign-in disabled.
+func (r *reader) oidc(env Environment) *OIDC {
+	if r.get("OIDC_ISSUER") == "" {
+		for _, name := range oidcVariables {
+			if r.get(name) != "" {
+				r.fail("%s%s is set, but %sOIDC_ISSUER is not; set it to enable the sign-in through OpenID Connect", prefix, name, prefix)
+			}
+		}
+		return nil
+	}
+	c := &OIDC{
+		Issuer:       r.issuer("OIDC_ISSUER", env),
+		ClientID:     r.get("OIDC_CLIENT_ID"),
+		ClientSecret: r.requiredSecret("OIDC_CLIENT_SECRET"),
+		Scopes:       []string{"email", "profile"},
+		GroupsClaim:  r.get("OIDC_GROUPS_CLAIM"),
+		AdminGroups:  r.list("OIDC_ADMIN_GROUPS"),
+		UserGroups:   r.list("OIDC_USER_GROUPS"),
+		ViewerGroups: r.list("OIDC_VIEWER_GROUPS"),
+	}
+	if c.ClientID == "" {
+		r.fail("%sOIDC_CLIENT_ID is required with %sOIDC_ISSUER", prefix, prefix)
+	}
+	if value := r.get("OIDC_SCOPES"); value != "" {
+		c.Scopes = nil
+		for scope := range strings.FieldsSeq(value) {
+			if !validScope(scope) {
+				r.fail("%sOIDC_SCOPES: %q is not a scope", prefix, scope)
+			}
+			if scope != "openid" && !slices.Contains(c.Scopes, scope) {
+				c.Scopes = append(c.Scopes, scope)
+			}
+		}
+	}
+	if c.GroupsClaim == "" {
+		c.GroupsClaim = "groups"
+	}
+	if len(c.AdminGroups)+len(c.UserGroups)+len(c.ViewerGroups) == 0 {
+		r.fail("%sOIDC_ADMIN_GROUPS, %sOIDC_USER_GROUPS or %sOIDC_VIEWER_GROUPS is required with %sOIDC_ISSUER; without groups, nobody can sign in",
+			prefix, prefix, prefix, prefix)
+	}
+	return c
+}
+
+// validScope accepts the characters that a scope may contain (RFC 6749,
+// section 3.3).
+func validScope(s string) bool {
+	for i := range len(s) {
+		if c := s[i]; c < 0x21 || c > 0x7e || c == '"' || c == '\\' {
+			return false
+		}
+	}
+	return s != ""
+}
+
+// issuer reads the URL of an OpenID Connect provider. Discovery appends a path
+// to it, and the tokens of the provider name it exactly, so it is kept as it is
+// written. It must use https outside development, because the provider vouches
+// for the identity of every user who signs in through it.
+func (r *reader) issuer(name string, env Environment) string {
+	value := r.get(name)
+	u, err := url.Parse(value)
+	switch {
+	case err != nil:
+		r.fail("%s%s: %q is not a URL", prefix, name, value)
+	case u.Scheme != "https" && (u.Scheme != "http" || env != Development):
+		r.fail("%s%s: must start with https:// (http:// is allowed in development only)", prefix, name)
+	case u.Host == "" || u.Hostname() == "":
+		r.fail("%s%s: must name a host", prefix, name)
+	case u.User != nil || u.Opaque != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.HasSuffix(value, "#"):
+		r.fail("%s%s: must not contain user information, a query or a fragment", prefix, name)
+	case len(value) > maxIssuerLength:
+		r.fail("%s%s: must not be longer than %d characters", prefix, name, maxIssuerLength)
+	default:
+		return value
+	}
+	return ""
+}
+
+// maxIssuerLength is the longest issuer that the database stores with an
+// account.
+const maxIssuerLength = 2048
+
+// localLogin reads which accounts sign in with a password. With the sign-in
+// through OpenID Connect, only administrators do by default, as emergency
+// access. Without it, every account must, or some users could not sign in at
+// all.
+func (r *reader) localLogin(oidc bool) LocalLogin {
+	switch value := LocalLogin(r.get("LOCAL_LOGIN")); {
+	case value == "" && oidc:
+		return LocalLoginAdmins
+	case value == "" || value == LocalLoginAll:
+		return LocalLoginAll
+	case (value == LocalLoginAdmins || value == LocalLoginOff) && oidc:
+		return value
+	case value == LocalLoginAdmins || value == LocalLoginOff:
+		r.fail("%sLOCAL_LOGIN: %q requires %sOIDC_ISSUER; otherwise some users could not sign in", prefix, value, prefix)
+	default:
+		r.fail("%sLOCAL_LOGIN: must be %q, %q or %q, got %q", prefix, LocalLoginAll, LocalLoginAdmins, LocalLoginOff, value)
+	}
+	return LocalLoginAll
+}
+
+// list reads a comma-separated list. Entries are trimmed, so that names may
+// contain inner spaces, and empty or repeated entries are dropped.
+func (r *reader) list(name string) []string {
+	var entries []string
+	for entry := range strings.SplitSeq(r.get(name), ",") {
+		if entry = strings.TrimSpace(entry); entry != "" && !slices.Contains(entries, entry) {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }
 
 // prefixes reads a comma-separated list of address ranges in CIDR notation. A

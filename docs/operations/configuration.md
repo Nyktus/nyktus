@@ -35,6 +35,24 @@ Settings of a server role are only read when the role runs. A process started wi
 | `NYKTUS_CONSOLE_DATABASE_URL` | required, secret | Connection URL of the console's login role. See [Database setup](database.md). |
 | `NYKTUS_SESSION_IDLE_TIMEOUT` | `1h` | A session ends after this long without a request. Between `5m` and `24h`. See [Sign-in and sessions](sign-in.md). |
 | `NYKTUS_SESSION_MAX_AGE` | `12h` | A session ends this long after sign-in, however active it is. Between the idle timeout and `720h` (30 days). |
+| `NYKTUS_LOCAL_LOGIN` | `admins` with an identity provider, `all` otherwise | Which accounts sign in with a password: `all`, `admins` or `off`. `admins` and `off` require an identity provider. See [Sign-in and sessions](sign-in.md#password-sign-in-with-an-identity-provider). |
+
+### Sign-in through an identity provider
+
+`NYKTUS_OIDC_ISSUER` enables the sign-in through an OpenID Connect provider. The other settings are rejected without it. See [Sign-in and sessions](sign-in.md#identity-provider).
+
+| Variable | Default | Description |
+|---|---|---|
+| `NYKTUS_OIDC_ISSUER` | empty | URL of the provider, exactly as its tokens name it in the claim `iss`, such as `https://sso.example.com/realms/example`. Nyktus appends `/.well-known/openid-configuration` to find its endpoints. `https` is required, `http` is allowed in development. |
+| `NYKTUS_OIDC_CLIENT_ID` | required with the issuer | Client ID of Nyktus at the provider. |
+| `NYKTUS_OIDC_CLIENT_SECRET` | required with the issuer, secret | Client secret of Nyktus at the provider. |
+| `NYKTUS_OIDC_SCOPES` | `openid email profile` | Space-separated scopes. `openid` is always requested. |
+| `NYKTUS_OIDC_GROUPS_CLAIM` | `groups` | Claim of the ID token that lists the groups of the user. |
+| `NYKTUS_OIDC_ADMIN_GROUPS` | empty | Comma-separated groups whose members are administrators. |
+| `NYKTUS_OIDC_USER_GROUPS` | empty | Comma-separated groups whose members have the role `user`. |
+| `NYKTUS_OIDC_VIEWER_GROUPS` | empty | Comma-separated groups whose members are viewers. At least one of the three lists is required. |
+
+The redirect URI is `NYKTUS_CONSOLE_URL` followed by `/api/v1/oidc/callback`. Group names are compared exactly, including case; spaces around the commas are ignored.
 
 ## `nyktus admin`
 
