@@ -46,7 +46,6 @@ func deps(db Pinger) Deps {
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
 			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(), IssueLink: http.NotFoundHandler(),
 			Activate: http.NotFoundHandler(), IssueResetLink: http.NotFoundHandler(), ResetPassword: http.NotFoundHandler(),
-			ListAPIKeys: http.NotFoundHandler(), RevokeAPIKey: http.NotFoundHandler(),
 		},
 		APIKeys: APIKeys{List: http.NotFoundHandler(), Create: http.NotFoundHandler(), Revoke: http.NotFoundHandler()},
 		Origin:  "https://nyktus.example.com",
@@ -134,17 +133,18 @@ func TestRoutes_RequireOnlyGrantedPermissions(t *testing.T) {
 	}
 }
 
-// The session and how the account signs in, under /api/v1/session, are managed
-// only with a session, so that a leaked API key can neither end the session nor
-// take over the account. The authorizer enforces the restriction that the route
-// declares.
+// The session and how the account signs in, under /api/v1/session, and the API
+// keys are managed only with a session, so that a leaked API key can neither
+// end the session, take over the account nor issue itself a successor. The
+// authorizer enforces the restriction that the route declares.
 func TestSessionRoutes_AdmitOnlySessions(t *testing.T) {
 	t.Parallel()
 
+	under := func(path, prefix string) bool { return path == prefix || strings.HasPrefix(path, prefix+"/") }
 	for _, route := range NewRouter(deps(fakePinger{})).Routes() {
-		own := route.Path == "/api/v1/session" || strings.HasPrefix(route.Path, "/api/v1/session/")
+		managed := under(route.Path, "/api/v1/session") || under(route.Path, "/api/v1/api-keys")
 		protected := route.Access != httpx.Public
-		if want := own && protected; route.Access.RequiresSession() != want {
+		if want := managed && protected; route.Access.RequiresSession() != want {
 			t.Errorf("route %s %s: RequiresSession() = %v, want %v", route.Method, route.Path, route.Access.RequiresSession(), want)
 		}
 	}

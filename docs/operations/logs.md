@@ -14,7 +14,8 @@ The console writes one record with the message `http: request` per request:
 | `duration` | Time to answer, in nanoseconds. |
 | `client_ip` | Address of the client, determined as described in [Client addresses](configuration.md#client-addresses). |
 | `request_id` | The ID that the response carries in `X-Request-ID`. Every other record of the same request, and the audit log, carries it as well. |
-| `user_id`, `auth_method` | The account that sent the request and how it authenticated, such as `session` or `api_key`. Only for authenticated requests; every later record of the request carries them as well. |
+| `auth_method` | How the request authenticated, such as `session` or `api_key`. Only for authenticated requests; every later record of the request carries it, and the two fields below, as well. |
+| `user_id` | The account that sent the request, for requests made with a session. |
 | `api_key_id` | The identifier of the [API key](api-keys.md), for requests made with one. |
 
 Requests without valid credentials, such as a failed setup attempt or a request without a session, are recorded only here, not in the [audit log](audit-log.md). The access log is the place to look for them.

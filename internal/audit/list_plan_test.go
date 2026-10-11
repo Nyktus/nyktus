@@ -28,21 +28,27 @@ func TestList_CursorIsAnIndexConditionInTheGenericPlan(t *testing.T) {
 }
 
 // The check for a recent entry of the same kind must seek into the index by
-// time, also with the generic plan, instead of reading every entry the user
+// time, also with the generic plan, instead of reading every entry the actor
 // ever caused: an integration that polls the audit log adds one every minute.
 func TestRecordUnlessRepeated_WindowIsAnIndexConditionInTheGenericPlan(t *testing.T) {
 	t.Parallel()
 
-	text := genericPlan(t, "insert_unless_repeated", insertUnlessRepeated, `
-EXECUTE insert_unless_repeated('audit.read', 'success', 'user', 'session', '00000000-0000-4000-8000-000000000000',
-	NULL, NULL, NULL, '{}', NULL, NULL, '1 minute')`)
-	var seeks bool
-	for line := range strings.SplitSeq(text, "\n") {
-		line = strings.TrimSpace(line)
-		seeks = seeks || (strings.HasPrefix(line, "Index Cond: ") && strings.Contains(line, "(occurred_at > (statement_timestamp() - "))
-	}
-	if !strings.Contains(text, "audit_entries_actor_user_id_idx") || !seeks {
-		t.Errorf("generic plan does not seek into the index by time:\n%s", text)
+	for _, tt := range []struct {
+		name, query, index, args string
+	}{
+		{"user", insertUnlessRepeatedByUser, "audit_entries_actor_user_id_idx", "'user', 'session', '00000000-0000-4000-8000-000000000000', NULL"},
+		{"key", insertUnlessRepeatedByKey, "audit_entries_api_key_id_idx", "'api_key', 'api_key', NULL, '00000000-0000-4000-8000-000000000000'"},
+	} {
+		text := genericPlan(t, "insert_unless_repeated", tt.query, `
+EXECUTE insert_unless_repeated('audit.read', 'success', `+tt.args+`, NULL, NULL, '{}', NULL, NULL, '1 minute')`)
+		var seeks bool
+		for line := range strings.SplitSeq(text, "\n") {
+			line = strings.TrimSpace(line)
+			seeks = seeks || (strings.HasPrefix(line, "Index Cond: ") && strings.Contains(line, "(occurred_at > (statement_timestamp() - "))
+		}
+		if !strings.Contains(text, tt.index) || !seeks {
+			t.Errorf("%s: generic plan does not seek into the index by time:\n%s", tt.name, text)
+		}
 	}
 }
 

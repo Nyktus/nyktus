@@ -38,7 +38,7 @@ type Deps struct {
 	SignIn, Session, SignOut, ChangePassword http.Handler
 	// SecondFactor completes sign-ins and manages the second factor.
 	SecondFactor SecondFactor
-	// APIKeys manages the API keys of the caller.
+	// APIKeys manages the API keys of the team.
 	APIKeys APIKeys
 	// AuditEntries lists the audit log.
 	AuditEntries http.Handler
@@ -56,9 +56,6 @@ type Deps struct {
 // of the reset of passwords.
 type Accounts struct {
 	List, Get, Create, Update, Delete, IssueLink, Activate, IssueResetLink, ResetPassword http.Handler
-	// ListAPIKeys and RevokeAPIKey let administrators see and revoke the API
-	// keys of an account.
-	ListAPIKeys, RevokeAPIKey http.Handler
 }
 
 // SecondFactor are the handlers of the second step of a sign-in and of the
@@ -67,7 +64,7 @@ type SecondFactor struct {
 	CompleteSignIn, Begin, Confirm, ReplaceRecoveryCodes, Remove http.Handler
 }
 
-// APIKeys are the handlers of the management of the API keys of the caller.
+// APIKeys are the handlers of the management of the API keys of the team.
 type APIKeys struct {
 	List, Create, Revoke http.Handler
 }
@@ -82,8 +79,7 @@ func (f SecondFactor) complete() bool {
 
 func (a Accounts) complete() bool {
 	return a.List != nil && a.Get != nil && a.Create != nil && a.Update != nil &&
-		a.Delete != nil && a.IssueLink != nil && a.Activate != nil && a.IssueResetLink != nil && a.ResetPassword != nil &&
-		a.ListAPIKeys != nil && a.RevokeAPIKey != nil
+		a.Delete != nil && a.IssueLink != nil && a.Activate != nil && a.IssueResetLink != nil && a.ResetPassword != nil
 }
 
 // NewRouter registers the console routes. It panics if a dependency is missing,
@@ -94,9 +90,9 @@ func NewRouter(d Deps) *httpx.Router {
 		panic("console: router needs a logger, a database, an authorizer and the setup, session, audit and account handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
-	// The session itself, how the account signs in and its API keys are managed
-	// only with a session, so that a leaked API key can neither sign the user
-	// out, take over the account nor issue itself a successor.
+	// The session itself and how the account signs in are managed only with a
+	// session, so that a leaked API key can neither sign the user out nor take
+	// over the account.
 	session := httpx.Authenticated.SessionOnly()
 	rt.Handle(http.MethodGet, "/livez", httpx.Public, http.HandlerFunc(live))
 	rt.Handle(http.MethodGet, "/readyz", httpx.Public, ready(d.Logger, d.DB))
@@ -111,9 +107,11 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPost, "/api/v1/session/totp/confirmation", session, d.SecondFactor.Confirm)
 	rt.Handle(http.MethodPost, "/api/v1/session/totp/recovery-codes", session,
 		httpx.Deadline(hashDeadline)(d.SecondFactor.ReplaceRecoveryCodes))
-	rt.Handle(http.MethodGet, "/api/v1/session/api-keys", session, d.APIKeys.List)
-	rt.Handle(http.MethodPost, "/api/v1/session/api-keys", session, httpx.Deadline(hashDeadline)(d.APIKeys.Create))
-	rt.Handle(http.MethodDelete, "/api/v1/session/api-keys/{id}", session, d.APIKeys.Revoke)
+	// Keys never manage keys, so that a leaked key cannot issue itself a
+	// successor.
+	rt.Handle(http.MethodGet, "/api/v1/api-keys", httpx.Require("api_keys:read").SessionOnly(), d.APIKeys.List)
+	rt.Handle(http.MethodPost, "/api/v1/api-keys", httpx.Require("api_keys:write").SessionOnly(), httpx.Deadline(hashDeadline)(d.APIKeys.Create))
+	rt.Handle(http.MethodDelete, "/api/v1/api-keys/{id}", httpx.Require("api_keys:write").SessionOnly(), d.APIKeys.Revoke)
 	rt.Handle(http.MethodGet, "/api/v1/audit-entries", httpx.Require("audit:read"), d.AuditEntries)
 	rt.Handle(http.MethodGet, "/api/v1/users", httpx.Require("users:read"), d.Accounts.List)
 	rt.Handle(http.MethodPost, "/api/v1/users", httpx.Require("users:write"), d.Accounts.Create)
@@ -121,8 +119,6 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPatch, "/api/v1/users/{id}", httpx.Require("users:write"), httpx.Deadline(hashDeadline)(d.Accounts.Update))
 	rt.Handle(http.MethodDelete, "/api/v1/users/{id}", httpx.Require("users:write"), d.Accounts.Delete)
 	rt.Handle(http.MethodPost, "/api/v1/users/{id}/activation-link", httpx.Require("users:write"), d.Accounts.IssueLink)
-	rt.Handle(http.MethodGet, "/api/v1/users/{id}/api-keys", httpx.Require("users:read"), d.Accounts.ListAPIKeys)
-	rt.Handle(http.MethodDelete, "/api/v1/users/{id}/api-keys/{key_id}", httpx.Require("users:write"), d.Accounts.RevokeAPIKey)
 	rt.Handle(http.MethodPost, "/api/v1/activation", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.Activate))
 	rt.Handle(http.MethodPost, "/api/v1/users/{id}/password-reset-link", httpx.Require("users:write"), d.Accounts.IssueResetLink)
 	rt.Handle(http.MethodPost, "/api/v1/password-reset", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.ResetPassword))

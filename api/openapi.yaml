@@ -56,7 +56,7 @@ tags:
   - name: session
     description: Sign-in, the session of the caller and sign-out.
   - name: api-keys
-    description: API keys of the caller.
+    description: API keys of the team, managed by administrators.
   - name: audit
     description: The audit log of security-relevant actions.
   - name: users
@@ -592,21 +592,22 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
-  /api/v1/session/api-keys:
+  /api/v1/api-keys:
     get:
-      operationId: listOwnAPIKeys
-      summary: List the API keys of the caller
+      operationId: listAPIKeys
+      summary: List the API keys of the team
       description: |
-        Returns the API keys of the caller, the newest first, without their
-        secrets. Expired keys are listed until the next key is created. Only a
-        session can manage API keys.
+        Returns the API keys of the team, the newest first, with the
+        administrator who created each, without their secrets. Expired keys
+        are listed until the next key is created. Only a session can manage
+        API keys.
       tags: [api-keys]
-      x-access: authenticated
+      x-access: api_keys:read
       security:
         - sessionCookie: []
       responses:
         "200":
-          description: The API keys of the caller.
+          description: The API keys of the team.
           content:
             application/json:
               schema:
@@ -614,7 +615,13 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/SessionRequired"
+          description: |
+            The caller lacks the permission, which is recorded in the audit log at most once per user,
+            permission and minute, or the request is not made with a session, which is not recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
@@ -623,23 +630,23 @@ paths:
       operationId: createAPIKey
       summary: Create an API key
       description: |
-        Creates an API key of the caller, who confirms the request with their
-        password, because a key outlives the session. The key is shown only in
-        this response; the server keeps only a hash of its secret.
+        Creates an API key of the team, which the administrator confirms with
+        their password, because a key outlives the session. The key is shown
+        only in this response; the server keeps only a hash of its secret.
 
-        The scopes must be distinct permissions that API keys may carry and the
-        role of the caller grants; currently only `audit:read`. The key holds
-        the intersection of its scopes and the current role of the caller, so
-        demoting the caller restricts it at once. `expires_at` is required and
-        at most 365 days away. A user has at most 20 keys that have not expired
-        (`409`, code `too_many_api_keys`).
+        A key acts with its scopes alone, regardless of the administrator who
+        created it, and stays valid when that account is changed or deleted.
+        The scopes must be distinct permissions that API keys may carry;
+        currently only `audit:read`. `expires_at` is required and at most three
+        years away. The team has at most 50 keys that have not expired (`409`,
+        code `too_many_api_keys`).
 
         A wrong password receives `403` with the code `wrong_password` and
         counts as a failed sign-in. New keys, wrong passwords and requests of a
         locked account are recorded in the audit log as `api_key.create`. Only
         a session can create API keys.
       tags: [api-keys]
-      x-access: authenticated
+      x-access: api_keys:write
       security:
         - sessionCookie: []
       requestBody:
@@ -661,9 +668,9 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           description: |
-            The password is wrong (`wrong_password`), the password is correct but the account is
-            locked (`account_locked`), the request is not made with a session, or the request comes
-            from another origin.
+            The caller lacks the permission, the password is wrong (`wrong_password`), the password
+            is correct but the account is locked (`account_locked`), the request is not made with a
+            session, or the request comes from another origin.
           headers:
             Retry-After:
               description: Seconds until the lock ends. Only sent for a locked account.
@@ -684,7 +691,7 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
-  /api/v1/session/api-keys/{id}:
+  /api/v1/api-keys/{id}:
     parameters:
       - name: id
         in: path
@@ -693,14 +700,14 @@ paths:
           type: string
           format: uuid
     delete:
-      operationId: revokeOwnAPIKey
-      summary: Revoke an API key of the caller
+      operationId: revokeAPIKey
+      summary: Revoke an API key
       description: |
-        Revokes an API key of the caller. It stops working with the next
-        request. The revocation is recorded in the audit log as
-        `api_key.revoke`. Only a session can revoke API keys.
+        Revokes an API key of the team, for example after it leaked. It stops
+        working with the next request. The revocation is recorded in the audit
+        log as `api_key.revoke`. Only a session can revoke API keys.
       tags: [api-keys]
-      x-access: authenticated
+      x-access: api_keys:write
       security:
         - sessionCookie: []
       responses:
@@ -709,7 +716,14 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/SessionRequired"
+          description: |
+            The caller lacks the permission, which is recorded in the audit log at most once per user,
+            permission and minute, the request is not made with a session, which is not recorded, or
+            the request comes from another origin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -1078,83 +1092,6 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
-  /api/v1/users/{id}/api-keys:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: listUserAPIKeys
-      summary: List the API keys of an account
-      description: |
-        Returns the API keys of an account, the newest first, without their
-        secrets. Reads are recorded in the audit log as `users.read`, at most
-        once per user and minute.
-      tags: [users]
-      x-access: users:read
-      security:
-        - sessionCookie: []
-      responses:
-        "200":
-          description: The API keys of the account.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/APIKeyList"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/Unavailable"
-
-  /api/v1/users/{id}/api-keys/{key_id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: key_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    delete:
-      operationId: revokeUserAPIKey
-      summary: Revoke an API key of an account
-      description: |
-        Revokes an API key of an account, for example after it leaked, without
-        deactivating the account. The key stops working with the next request.
-        The revocation is recorded in the audit log as `api_key.revoke`.
-        Deactivating an account revokes all of its keys.
-      tags: [users]
-      x-access: users:write
-      security:
-        - sessionCookie: []
-      responses:
-        "204":
-          description: The key has been revoked.
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/ForbiddenWrite"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/Unavailable"
-
   /api/v1/activation:
     post:
       operationId: activateUser
@@ -1254,7 +1191,7 @@ components:
       type: http
       scheme: bearer
       description: |
-        API key created with `POST /api/v1/session/api-keys`, in the form
+        API key created with `POST /api/v1/api-keys`, in the form
         `nyk_` followed by 84 characters of lowercase base32.
 
   schemas:
@@ -1398,7 +1335,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [user, setup, system, anonymous]
+          enum: [user, api_key, setup, system, anonymous]
         auth_method:
           type: string
           enum: [password, oidc, session, api_key, setup_token, cli, none]
@@ -1411,10 +1348,11 @@ components:
           description: Address of the account when the entry was written.
         display_name:
           type: string
-          description: Display name of the account when the entry was written.
+          description: Display name of the account, or name of the API key, when the entry was written.
         api_key_id:
           type: string
           format: uuid
+          description: The API key that acted, for the kind `api_key`.
 
     AuditResource:
       type: object
@@ -1603,7 +1541,7 @@ components:
     APIKey:
       type: object
       additionalProperties: false
-      required: [id, name, scopes, created_at, expires_at, last_used_at]
+      required: [id, name, created_by, scopes, created_at, expires_at, last_used_at]
       properties:
         id:
           type: string
@@ -1611,6 +1549,10 @@ components:
           description: The identifier of the key. It is part of the key and not secret.
         name:
           type: string
+        created_by:
+          description: The administrator who created the key, or null if the account was deleted since.
+          type: [string, "null"]
+          format: uuid
         scopes:
           type: array
           items:
@@ -1658,21 +1600,25 @@ components:
         expires_at:
           type: string
           format: date-time
-          description: When the key expires, in the future and at most 365 days away.
+          description: When the key expires, in the future and at most three years away.
         password:
           type: string
-          description: The password of the caller.
+          description: The password of the administrator.
 
     CreatedAPIKey:
       type: object
       additionalProperties: false
-      required: [id, name, scopes, created_at, expires_at, last_used_at, key]
+      required: [id, name, created_by, scopes, created_at, expires_at, last_used_at, key]
       properties:
         id:
           type: string
           format: uuid
         name:
           type: string
+        created_by:
+          description: The administrator who created the key, or null if the account was deleted since.
+          type: [string, "null"]
+          format: uuid
         scopes:
           type: array
           items:

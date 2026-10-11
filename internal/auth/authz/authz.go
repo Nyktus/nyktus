@@ -63,7 +63,10 @@ func (a *Authorizer) Authorize(r *http.Request, acc httpx.Access) (*http.Request
 		return nil, err
 	}
 
-	attrs := []slog.Attr{slog.String("user_id", p.UserID), slog.String("auth_method", string(p.Method))}
+	attrs := []slog.Attr{slog.String("auth_method", string(p.Method))}
+	if p.UserID != "" {
+		attrs = append(attrs, slog.String("user_id", p.UserID))
+	}
 	if p.APIKeyID != "" {
 		attrs = append(attrs, slog.String("api_key_id", p.APIKeyID))
 	}
@@ -115,14 +118,14 @@ func (a *Authorizer) authenticateKey(ctx context.Context, key string) (access.Pr
 	if key == "" {
 		return access.Principal{}, httpx.ErrUnauthenticated
 	}
-	k, u, err := apikey.NewStore(a.db).Authenticate(ctx, key)
+	k, err := apikey.NewStore(a.db).Authenticate(ctx, key)
 	if errors.Is(err, apikey.ErrInvalidKey) {
 		return access.Principal{}, httpx.ErrUnauthenticated
 	}
 	if err != nil {
 		return access.Principal{}, err
 	}
-	return access.Principal{UserID: u.ID, Role: u.Role, Method: audit.AuthAPIKey, APIKeyID: k.ID, Scopes: k.Scopes}, nil
+	return access.Principal{Method: audit.AuthAPIKey, APIKeyID: k.ID, Scopes: k.Scopes}, nil
 }
 
 // check decides whether p may call a route with the access acc. A route that

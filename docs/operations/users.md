@@ -4,11 +4,11 @@ Administrators create and manage the accounts of the console. There is no public
 
 | Role | Purpose |
 |---|---|
-| `admin` | Manages the installation, its accounts and settings, reads the audit log, and does everything a `user` does. |
+| `admin` | Manages the installation, its accounts, [API keys](api-keys.md) and settings, reads the audit log, and does everything a `user` does. |
 | `user` | Configures honeypots, honeytokens and scenarios and works with incidents. |
 | `viewer` | Reads decoys and incidents, but not the audit log. |
 
-Decoys and scenarios belong to the team, not to the account that created them.
+Decoys, scenarios and API keys belong to the team, not to the account that created them.
 
 The examples below call the API with the session cookie of an administrator, as described in [Sign-in and sessions](sign-in.md).
 
@@ -73,14 +73,14 @@ curl --fail-with-body --request PATCH https://nyktus.example.com/api/v1/users/<i
   --cookie cookies.txt
 ```
 
-- **Role.** A new role ends every session of the account and applies immediately, also to its [API keys](api-keys.md), which keep only what the new role grants.
-- **Deactivating** (`"status": "deactivated"`) blocks the sign-in, ends every session, revokes every [API key](api-keys.md) and removes an open activation or password reset link. The password is kept.
+- **Role.** A new role ends every session of the account and applies immediately.
+- **Deactivating** (`"status": "deactivated"`) blocks the sign-in, ends every session and removes an open activation or password reset link. The password is kept.
 - **Reactivating** (`"status": "active"`) lets the user sign in again with their password and ends a lock after failed sign-ins. An account that never set a password returns to `pending` and needs a new activation link.
 - **Second factor** (`"totp_enabled": false`), see [Removing a second factor](#removing-a-second-factor).
 
 The field `totp_enabled` of an account tells whether it has a [second factor](sign-in.md#second-factor).
 
-`DELETE /api/v1/users/<id>` deletes an account with its sessions, its API keys and its open link. Entries of the account in the [audit log](audit-log.md) keep a copy of its address and display name.
+`DELETE /api/v1/users/<id>` deletes an account with its sessions and its open link. [API keys](api-keys.md) that the account created belong to the team and stay valid. Entries of the account in the [audit log](audit-log.md) keep a copy of its address and display name.
 
 ## Resetting a password
 
@@ -151,17 +151,13 @@ nyktus admin remove-totp ada@example.com
 
 It removes the factor and the recovery codes of an active administrator and ends every session of the account, with the same configuration and rules as `reset-password`. It does not need the encryption keys. The audit log records the command line as the actor.
 
-## API keys of an account
-
-`GET /api/v1/users/<id>/api-keys` lists the API keys of an account, and `DELETE /api/v1/users/<id>/api-keys/<key-id>` revokes one, for example after it leaked. See [API keys](api-keys.md#revoking-a-key).
-
 ## At least one administrator
 
 At least one active administrator always remains. Nyktus rejects every change that would demote, deactivate or delete the last one, also when two administrators try it at the same time. Administrators cannot demote, deactivate or delete their own account; another administrator has to do it. To hand over the installation, create an account for the new administrator, and let the new administrator remove the old account.
 
 ## Audit
 
-The audit log records every creation, change, deletion, new activation link and activation of an account, every new password reset link, whether from an administrator or the command line, every password reset and change, every removal of a second factor (`user.totp_disable`) and every revocation of an API key (`api_key.revoke`). Changes name the changed fields, not their values. Reads of accounts are recorded at most once per administrator and minute, because accounts contain personal data.
+The audit log records every creation, change, deletion, new activation link and activation of an account, every new password reset link, whether from an administrator or the command line, every password reset and change, and every removal of a second factor (`user.totp_disable`). Changes name the changed fields, not their values. Reads of accounts are recorded at most once per administrator and minute, because accounts contain personal data.
 
 ## Reverse proxy
 

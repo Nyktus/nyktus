@@ -102,9 +102,11 @@ type ActorKind string
 
 // Kinds of actors.
 const (
-	// ActorUser is a signed-in user, also when acting through one of their API
-	// keys.
+	// ActorUser is a signed-in user.
 	ActorUser ActorKind = "user"
+	// ActorAPIKey is an API key. Keys belong to the team, not to a user, so a
+	// key acts on its own. The entry keeps a copy of its name.
+	ActorAPIKey ActorKind = "api_key"
 	// ActorSetup is the holder of the setup token, before the first administrator
 	// exists.
 	ActorSetup ActorKind = "setup"
@@ -148,8 +150,8 @@ type Actor struct {
 	// entry keeps a copy of the address and display name of the account, so it
 	// stays readable after the account is deleted.
 	UserID string
-	// APIKeyID identifies the key that a user acted through. It is set if and
-	// only if Method is AuthAPIKey.
+	// APIKeyID identifies the key that acted. It is set if and only if Kind is
+	// ActorAPIKey.
 	APIKeyID string
 }
 

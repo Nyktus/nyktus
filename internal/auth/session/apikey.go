@@ -6,18 +6,21 @@ package session
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/auth/apikey"
+	"nyktus.org/nyktus/internal/user"
 )
 
-// CreateAPIKey issues an API key of the signed-in principal p, who confirms it
-// with their password, and returns it with the key itself. A key outlives the
-// session, so a taken-over session must not be able to issue one without the
-// password. The caller validates the name and the scopes of spec.
+// CreateAPIKey issues an API key that the signed-in administrator p creates for
+// the team, confirmed with their password, and returns it with the key itself.
+// A key outlives the session, so a taken-over session must not be able to issue
+// one without the password. The caller validates the name and the scopes of
+// spec; the router has checked the permission.
 //
 // As with a change of password, a wrong password counts as a failed sign-in and
 // returns ErrWrongPassword, and a lock is revealed only with the correct
@@ -36,6 +39,19 @@ func (s *Service) CreateAPIKey(ctx context.Context, p access.Principal, password
 		outcome error
 	)
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		// Only administrators create keys. Their lock serializes the creations,
+		// so that the count of keys holds against the limit, and it is taken
+		// before the account, as every transaction takes them.
+		admins, err := user.NewStore(tx).LockActiveAdmins(ctx)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(admins, u.ID) {
+			// The administrator was demoted or deactivated since the request
+			// was authenticated.
+			outcome = ErrNoSession
+			return nil
+		}
 		outcome, err = lockVerified(ctx, tx, u, p, audit.ActionAPIKeyCreate)
 		if err != nil || outcome != nil {
 			return err
@@ -43,7 +59,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, p access.Principal, password
 		// A session that ended, for example by a change of password elsewhere,
 		// must not leave a key behind.
 		var exists bool
-		err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT FROM sessions WHERE id = $1 AND user_id = $2)`, p.SessionID, u.ID).Scan(&exists)
+		err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT FROM sessions WHERE id = $1 AND user_id = $2)`, p.SessionID, u.ID).Scan(&exists)
 		if err != nil {
 			return fmt.Errorf("look up session: %w", err)
 		}
@@ -69,15 +85,4 @@ func (s *Service) CreateAPIKey(ctx context.Context, p access.Principal, password
 		return apikey.Key{}, "", outcome
 	}
 	return k, key, nil
-}
-
-// APIKeys returns the API keys of the principal p.
-func (s *Service) APIKeys(ctx context.Context, p access.Principal) ([]apikey.Key, error) {
-	return apikey.NewStore(s.db).List(ctx, p.UserID)
-}
-
-// RevokeAPIKey revokes the API key id of the principal p and records it. It
-// returns apikey.ErrNotFound if p has no such key.
-func (s *Service) RevokeAPIKey(ctx context.Context, p access.Principal, id string) error {
-	return apikey.Revoke(ctx, s.db, p.Actor(), p.UserID, id)
 }

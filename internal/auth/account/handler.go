@@ -16,7 +16,6 @@ import (
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
-	"nyktus.org/nyktus/internal/auth/apikey"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/platform/httpx"
@@ -125,38 +124,6 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, u.Response())
-}
-
-type apiKeysResponse struct {
-	APIKeys []apikey.Response `json:"api_keys"`
-}
-
-// ListAPIKeys serves GET /api/v1/users/{id}/api-keys.
-func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
-	p, ok := h.principal(w, r)
-	if !ok {
-		return
-	}
-	keys, err := h.svc.APIKeys(r.Context(), p, r.PathValue("id"))
-	if err != nil {
-		h.writeError(w, r, "account: list API keys", err)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, apiKeysResponse{APIKeys: apikey.Responses(keys)})
-}
-
-// RevokeAPIKey serves DELETE /api/v1/users/{id}/api-keys/{key_id}.
-func (h *Handler) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
-	p, ok := h.principal(w, r)
-	if !ok {
-		return
-	}
-	if err := h.svc.RevokeAPIKey(r.Context(), p, r.PathValue("id"), r.PathValue("key_id")); err != nil {
-		h.writeError(w, r, "account: revoke API key", err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusNoContent)
 }
 
 type createRequest struct {
@@ -435,7 +402,7 @@ func (h *Handler) principal(w http.ResponseWriter, r *http.Request) (access.Prin
 func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, err error) {
 	var locked *session.LockedError
 	switch {
-	case errors.Is(err, user.ErrNotFound), errors.Is(err, apikey.ErrNotFound):
+	case errors.Is(err, user.ErrNotFound):
 		httpx.NotFound(w, r)
 	case errors.Is(err, user.ErrEmailTaken):
 		httpx.WriteError(w, r, http.StatusConflict, CodeEmailTaken, "email is already in use")

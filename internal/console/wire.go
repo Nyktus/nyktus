@@ -13,6 +13,7 @@ import (
 
 	"nyktus.org/nyktus/internal/audit/auditapi"
 	"nyktus.org/nyktus/internal/auth/account"
+	"nyktus.org/nyktus/internal/auth/apikey/apikeyapi"
 	"nyktus.org/nyktus/internal/auth/authz"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
@@ -47,6 +48,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		return nil, err
 	}
 	h := session.NewHandler(o.Logger, sessions)
+	k := apikeyapi.NewHandler(o.Logger, o.DB, sessions)
 	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
 	return NewHandler(Deps{
 		Logger:         o.Logger,
@@ -65,9 +67,9 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Remove:               http.HandlerFunc(h.RemoveTOTP),
 		},
 		APIKeys: APIKeys{
-			List:   http.HandlerFunc(h.ListAPIKeys),
-			Create: http.HandlerFunc(h.CreateAPIKey),
-			Revoke: http.HandlerFunc(h.RevokeAPIKey),
+			List:   http.HandlerFunc(k.List),
+			Create: http.HandlerFunc(k.Create),
+			Revoke: http.HandlerFunc(k.Revoke),
 		},
 		AuditEntries: auditapi.NewHandler(o.Logger, o.DB),
 		Accounts: Accounts{
@@ -80,8 +82,6 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Activate:       http.HandlerFunc(a.Activate),
 			IssueResetLink: http.HandlerFunc(a.IssueResetLink),
 			ResetPassword:  http.HandlerFunc(a.ResetPassword),
-			ListAPIKeys:    http.HandlerFunc(a.ListAPIKeys),
-			RevokeAPIKey:   http.HandlerFunc(a.RevokeAPIKey),
 		},
 		Origin:         o.ConsoleURL,
 		TrustedProxies: o.TrustedProxies,
