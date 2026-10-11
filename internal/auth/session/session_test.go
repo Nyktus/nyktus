@@ -309,7 +309,8 @@ func TestSession_EndsAfterIdleTimeoutMaximumAgeAndDeactivation(t *testing.T) {
 
 			d := newTestDB(t)
 			srv := startConsole(t, d)
-			createUser(t, d, "ada@example.com", "admin", "active", testPassword)
+			// Not an administrator: the last active one cannot be deactivated.
+			createUser(t, d, "ada@example.com", "viewer", "active", testPassword)
 			c := mustSignIn(t, srv)
 			d.exec(t, change)
 			if r := send(t, srv, http.MethodGet, "/api/v1/session", "", c, nil); r.status != http.StatusUnauthorized {

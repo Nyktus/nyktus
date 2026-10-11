@@ -320,6 +320,10 @@ func TestOpen_StaysClosedOnceAnAdministratorWasSeen(t *testing.T) {
 				t.Fatalf("Open() with an administrator = %v, %v; want false", open, err)
 			}
 
+			// The schema keeps the last active administrator, so the owner lifts
+			// that protection, as if the database had been restored from a backup
+			// without administrators.
+			d.exec(t, `ALTER TABLE users DISABLE TRIGGER users_keep_active_admin`)
 			d.exec(t, `DELETE FROM users`)
 			if open, err := svc.Open(t.Context()); err != nil || open {
 				t.Errorf("Open() after the administrator was removed = %v, %v; want false for the rest of the process", open, err)

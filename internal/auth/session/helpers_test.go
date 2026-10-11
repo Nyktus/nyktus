@@ -96,7 +96,7 @@ func startConsole(t *testing.T, d testDB) *httptest.Server {
 		Setup:          setup.NewService(d.console),
 		Hasher:         hasher,
 		Sessions:       testSessions,
-		Origin:         origin,
+		ConsoleURL:     origin,
 		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
 	})
 	if err != nil {

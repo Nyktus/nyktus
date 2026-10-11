@@ -177,7 +177,7 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 		Setup:          setupService,
 		Hasher:         password.NewHasher(),
 		Sessions:       session.Config{IdleTimeout: cfg.Console.SessionIdleTimeout, MaxAge: cfg.Console.SessionMaxAge},
-		Origin:         cfg.Console.URL,
+		ConsoleURL:     cfg.Console.URL,
 		TrustedProxies: cfg.TrustedProxies,
 	})
 	if err != nil {

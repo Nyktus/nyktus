@@ -307,3 +307,13 @@ func (s *Service) SignOut(ctx context.Context, p access.Principal) error {
 	}
 	return nil
 }
+
+// RevokeAll ends every session of the account userID. It runs on q, so that a
+// change that requires it, such as deactivating the account or changing its
+// role, ends the sessions in its own transaction.
+func RevokeAll(ctx context.Context, q db.Querier, userID string) error {
+	if _, err := q.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID); err != nil {
+		return fmt.Errorf("revoke sessions of user %s: %w", userID, err)
+	}
+	return nil
+}

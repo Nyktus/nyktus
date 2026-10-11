@@ -44,12 +44,12 @@ func newEnv(t *testing.T) env {
 	ownerURL, consoleURL := schematest.Console(t)
 	pool := schematest.Open(t, consoleURL)
 	h, err := console.New(t.Context(), console.Options{
-		Logger:   slog.New(slog.DiscardHandler),
-		DB:       pool,
-		Setup:    setup.NewService(pool),
-		Hasher:   hasher,
-		Sessions: session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour},
-		Origin:   "https://nyktus.example.com",
+		Logger:     slog.New(slog.DiscardHandler),
+		DB:         pool,
+		Setup:      setup.NewService(pool),
+		Hasher:     hasher,
+		Sessions:   session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour},
+		ConsoleURL: "https://nyktus.example.com",
 	})
 	if err != nil {
 		t.Fatalf("console.New() error = %v", err)
@@ -286,21 +286,23 @@ func TestListAuditEntries_PageSizeMatchesSpecification(t *testing.T) {
 	t.Parallel()
 
 	var spec struct {
-		Paths map[string]map[string]struct {
-			Parameters []struct {
-				Name   string `yaml:"name"`
-				Schema struct {
-					Maximum int `yaml:"maximum"`
-					Default int `yaml:"default"`
-				} `yaml:"schema"`
-			} `yaml:"parameters"`
+		Paths map[string]struct {
+			Get struct {
+				Parameters []struct {
+					Name   string `yaml:"name"`
+					Schema struct {
+						Maximum int `yaml:"maximum"`
+						Default int `yaml:"default"`
+					} `yaml:"schema"`
+				} `yaml:"parameters"`
+			} `yaml:"get"`
 		} `yaml:"paths"`
 	}
 	if err := yaml.Unmarshal(api.OpenAPI(), &spec); err != nil {
 		t.Fatalf("parse specification: %v", err)
 	}
 	var found bool
-	for _, p := range spec.Paths["/api/v1/audit-entries"]["get"].Parameters {
+	for _, p := range spec.Paths["/api/v1/audit-entries"].Get.Parameters {
 		if p.Name != "limit" {
 			continue
 		}

@@ -261,6 +261,7 @@ func TestRecord_StoresEveryKindOfActor(t *testing.T) {
 		{Kind: audit.ActorUser, Method: audit.AuthOIDC, UserID: userID},
 		{Kind: audit.ActorUser, Method: audit.AuthSession, UserID: userID},
 		{Kind: audit.ActorUser, Method: audit.AuthAPIKey, UserID: userID, APIKeyID: keyID},
+		{Kind: audit.ActorUser, Method: audit.AuthActivationToken, UserID: userID},
 		{Kind: audit.ActorSetup, Method: audit.AuthSetupToken},
 		{Kind: audit.ActorSystem, Method: audit.AuthCLI},
 		{Kind: audit.ActorSystem, Method: audit.AuthNone},
@@ -436,6 +437,21 @@ func TestRecord_RejectsInvalidEntries(t *testing.T) {
 			name: "anonymous with session",
 			modify: func(e *audit.Entry) {
 				e.Actor = audit.Actor{Kind: audit.ActorAnonymous, Method: audit.AuthSession}
+			},
+			constraint: "audit_entries_actor_check",
+		},
+		{
+			// Requests with an invalid activation token are not recorded.
+			name: "anonymous with activation token",
+			modify: func(e *audit.Entry) {
+				e.Actor = audit.Actor{Kind: audit.ActorAnonymous, Method: audit.AuthActivationToken}
+			},
+			constraint: "audit_entries_actor_check",
+		},
+		{
+			name: "setup with activation token",
+			modify: func(e *audit.Entry) {
+				e.Actor = audit.Actor{Kind: audit.ActorSetup, Method: audit.AuthActivationToken}
 			},
 			constraint: "audit_entries_actor_check",
 		},
@@ -711,14 +727,14 @@ func TestEntry_KeepsTheActorAsOfTheAction(t *testing.T) {
 		t.Fatalf("Record() error = %v", err)
 	}
 	_, err := pool.Exec(t.Context(), `
-UPDATE users SET email = 'jane.roe@example.com', display_name = 'Jane Roe', updated_at = now()
+UPDATE users SET display_name = 'Jane Roe', updated_at = now()
 WHERE id = $1`, actorID)
 	if err != nil {
 		t.Fatalf("update user: %v", err)
 	}
 
 	if r := readEntry(t, pool); deref(r.ActorEmail) != "jane@example.com" || deref(r.ActorDisplayName) != "Jane Doe" {
-		t.Errorf("actor = %s, %s, want the address and name at the time of the action",
+		t.Errorf("actor = %s, %s, want the name at the time of the action",
 			deref(r.ActorEmail), deref(r.ActorDisplayName))
 	}
 }

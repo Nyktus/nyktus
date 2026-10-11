@@ -16,13 +16,13 @@ curl --fail-with-body https://nyktus.example.com/api/v1/session \
 - A session ends after a period without requests (`NYKTUS_SESSION_IDLE_TIMEOUT`, default one hour) and at the latest after its maximum age (`NYKTUS_SESSION_MAX_AGE`, default 12 hours), and when the user signs out. See [Configuration](configuration.md).
 - The cookie `__Host-nyktus_session` is `Secure`, `HttpOnly` and `SameSite=Strict`. The console must therefore be reached over HTTPS. Browsers also accept the cookie on `http://localhost` and `http://127.0.0.1` during development.
 - The database stores only a hash of the session token. Signing in again ends the session that the browser held before.
-- Deactivating an account or changing its role takes effect with its next request.
+- Deactivating an account or changing its role ends its sessions. See [Managing accounts](users.md).
 
 ## Reverse proxy
 
 - `NYKTUS_CONSOLE_URL` must be exactly the address that users open in the browser, including the port if it is not the default. Requests that change state, such as a sign-in, are rejected with `403` if the browser reports another origin. This protects sessions against requests from other sites, including pages on other subdomains of your domain.
 - Pass the `Origin` header to the console unchanged.
-- Rate-limit the sign-in endpoint `POST /api/v1/session` at the proxy, per client address.
+- Rate-limit the sign-in endpoint `POST /api/v1/session` and the activation endpoint `POST /api/v1/activation` at the proxy, per client address.
 
 ## Failed sign-ins
 

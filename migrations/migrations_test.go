@@ -150,6 +150,9 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE sessions SET last_seen_at = clock_timestamp()",
 		"SELECT count(*) FROM sessions",
 		"DELETE FROM sessions",
+		"INSERT INTO activation_tokens (user_id, token_hash) SELECT id, sha256('a') FROM users WHERE email = 's@example.com'",
+		"SELECT count(*) FROM activation_tokens WHERE expires_at > clock_timestamp()",
+		"DELETE FROM activation_tokens",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -179,6 +182,12 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE sessions SET user_id = user_id",
 		"UPDATE sessions SET token_hash = token_hash",
 		"TRUNCATE sessions",
+		"UPDATE users SET email = 'z@example.com'",
+		"INSERT INTO activation_tokens (user_id, token_hash, expires_at) SELECT id, sha256('b'), now() + interval '1 year' FROM users LIMIT 1",
+		"UPDATE activation_tokens SET expires_at = now() + interval '1 year'",
+		"UPDATE activation_tokens SET user_id = user_id",
+		"TRUNCATE activation_tokens",
+		"SELECT public.users_keep_active_admin()",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -229,6 +238,12 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_column_privilege($1, 'public.sessions', 'created_at', 'UPDATE')",
 		"has_column_privilege($1, 'public.sessions', 'token_hash', 'UPDATE')",
 		"has_column_privilege($1, 'public.users', 'failed_logins', 'INSERT')",
+		"has_column_privilege($1, 'public.users', 'email', 'UPDATE')",
+		"has_function_privilege($1, 'public.users_keep_active_admin()', 'EXECUTE')",
+		"has_any_column_privilege($1, 'public.activation_tokens', 'UPDATE')",
+		"has_table_privilege($1, 'public.activation_tokens', 'TRUNCATE')",
+		"has_table_privilege($1, 'public.activation_tokens', 'REFERENCES')",
+		"has_column_privilege($1, 'public.activation_tokens', 'expires_at', 'INSERT')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

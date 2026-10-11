@@ -37,6 +37,8 @@ type Deps struct {
 	SignIn, Session, SignOut http.Handler
 	// AuditEntries lists the audit log.
 	AuditEntries http.Handler
+	// Accounts manages accounts and activates them.
+	Accounts Accounts
 	// Origin is the origin under which users reach the console, such as
 	// "https://nyktus.example.com". Requests that change state must come from it.
 	Origin string
@@ -45,12 +47,22 @@ type Deps struct {
 	TrustedProxies []netip.Prefix
 }
 
+// Accounts are the handlers of the management and activation of accounts.
+type Accounts struct {
+	List, Get, Create, Update, Delete, IssueLink, Activate http.Handler
+}
+
+func (a Accounts) complete() bool {
+	return a.List != nil && a.Get != nil && a.Create != nil && a.Update != nil &&
+		a.Delete != nil && a.IssueLink != nil && a.Activate != nil
+}
+
 // NewRouter registers the console routes. It panics if a dependency is missing,
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.AuditEntries == nil {
-		panic("console: router needs a logger, a database, an authorizer and the setup, session and audit handlers")
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.AuditEntries == nil || !d.Accounts.complete() {
+		panic("console: router needs a logger, a database, an authorizer and the setup, session, audit and account handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	rt.Handle(http.MethodGet, "/livez", httpx.Public, http.HandlerFunc(live))
@@ -60,6 +72,13 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/api/v1/session", httpx.Authenticated, d.Session)
 	rt.Handle(http.MethodDelete, "/api/v1/session", httpx.Authenticated, d.SignOut)
 	rt.Handle(http.MethodGet, "/api/v1/audit-entries", httpx.Require("audit:read"), d.AuditEntries)
+	rt.Handle(http.MethodGet, "/api/v1/users", httpx.Require("users:read"), d.Accounts.List)
+	rt.Handle(http.MethodPost, "/api/v1/users", httpx.Require("users:write"), d.Accounts.Create)
+	rt.Handle(http.MethodGet, "/api/v1/users/{id}", httpx.Require("users:read"), d.Accounts.Get)
+	rt.Handle(http.MethodPatch, "/api/v1/users/{id}", httpx.Require("users:write"), d.Accounts.Update)
+	rt.Handle(http.MethodDelete, "/api/v1/users/{id}", httpx.Require("users:write"), d.Accounts.Delete)
+	rt.Handle(http.MethodPost, "/api/v1/users/{id}/activation-link", httpx.Require("users:write"), d.Accounts.IssueLink)
+	rt.Handle(http.MethodPost, "/api/v1/activation", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.Activate))
 	return rt
 }
 

@@ -126,7 +126,7 @@ SELECT EXISTS (SELECT FROM pg_stat_activity WHERE datname = current_database() A
 		}
 		select {
 		case err := <-done:
-			t.Fatalf("the failure was recorded without waiting for the row lock: %v", err)
+			t.Fatalf("the operation completed without waiting for a row lock: %v", err)
 		default:
 		}
 	}

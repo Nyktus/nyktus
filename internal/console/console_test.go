@@ -35,7 +35,12 @@ func deps(db Pinger) Deps {
 		Logger: slog.New(slog.DiscardHandler), DB: db, Setup: http.NotFoundHandler(),
 		Authorizer: denyAll{}, SignIn: http.NotFoundHandler(), Session: http.NotFoundHandler(), SignOut: http.NotFoundHandler(),
 		AuditEntries: http.NotFoundHandler(),
-		Origin:       "https://nyktus.example.com",
+		Accounts: Accounts{
+			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
+			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(), IssueLink: http.NotFoundHandler(),
+			Activate: http.NotFoundHandler(),
+		},
+		Origin: "https://nyktus.example.com",
 	}
 }
 
@@ -84,20 +89,26 @@ func TestRoutes_MatchSpecification(t *testing.T) {
 
 // Requests that hash a password wait for a free hashing slot and must not wait
 // longer than the deadline.
-func TestSetupRoute_HasDeadline(t *testing.T) {
+func TestHashingRoutes_HaveDeadline(t *testing.T) {
 	t.Parallel()
 
-	var deadline time.Time
-	var ok bool
-	d := deps(fakePinger{})
-	d.Setup = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		deadline, ok = r.Context().Deadline()
-		w.WriteHeader(http.StatusNoContent)
-	})
-	before := time.Now()
-	NewHandler(d).ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/setup", nil))
-	if !ok || deadline.Before(before.Add(hashDeadline)) || deadline.After(time.Now().Add(hashDeadline)) {
-		t.Errorf("setup deadline = %v, %v; want %v after the request started", deadline, ok, hashDeadline)
+	for path, set := range map[string]func(*Deps, http.Handler){
+		"/api/v1/setup":      func(d *Deps, h http.Handler) { d.Setup = h },
+		"/api/v1/session":    func(d *Deps, h http.Handler) { d.SignIn = h },
+		"/api/v1/activation": func(d *Deps, h http.Handler) { d.Accounts.Activate = h },
+	} {
+		var deadline time.Time
+		var ok bool
+		d := deps(fakePinger{})
+		set(&d, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			deadline, ok = r.Context().Deadline()
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		before := time.Now()
+		NewHandler(d).ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodPost, path, nil))
+		if !ok || deadline.Before(before.Add(hashDeadline)) || deadline.After(time.Now().Add(hashDeadline)) {
+			t.Errorf("POST %s: deadline = %v, %v; want %v after the request started", path, deadline, ok, hashDeadline)
+		}
 	}
 }
 
