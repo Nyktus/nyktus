@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/auth/secondfactor"
 	"nyktus.org/nyktus/internal/platform/httpx"
@@ -203,24 +202,17 @@ func (h *Handler) RemoveTOTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// sessionPrincipal returns the principal of the request if it signed in with a
-// session. The second factor is managed only by a session, so that a leaked API
-// key cannot remove it or read new recovery codes.
+// sessionPrincipal returns the principal of a request to a route that admits
+// only sessions, so that a leaked API key cannot change how the account signs
+// in. The authorizer enforces that; a principal without a session here means
+// that the route was registered without the restriction.
 func (h *Handler) sessionPrincipal(w http.ResponseWriter, r *http.Request, op string) (access.Principal, bool) {
 	p, ok := access.PrincipalFrom(r.Context())
-	if !ok {
-		httpx.ServerError(w, r, h.logger, op, errors.New("no principal in the request context"))
+	if !ok || !p.HasSession() {
+		httpx.ServerError(w, r, h.logger, op, errors.New("no session principal in the request context"))
 		return access.Principal{}, false
 	}
-	return p, h.requireSession(w, r, p, "only a signed-in session can manage the second factor")
-}
-
-func (h *Handler) requireSession(w http.ResponseWriter, r *http.Request, p access.Principal, message string) bool {
-	if p.Method != audit.AuthSession || p.SessionID == "" {
-		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, message)
-		return false
-	}
-	return true
+	return p, true
 }
 
 // writeSecondFactorError writes the response for an error of the management of

@@ -37,6 +37,8 @@ const (
 type Access struct {
 	kind       accessKind
 	permission Permission
+	// session restricts the route to principals that signed in with a session.
+	session bool
 }
 
 // Public allows unauthenticated calls.
@@ -54,6 +56,22 @@ func Require(perm Permission) Access {
 	}
 	return Access{kind: accessPermission, permission: perm}
 }
+
+// SessionOnly returns a copy of a that admits only principals who signed in with
+// a session, never an API key. Routes that change how the account itself
+// authenticates use it, so that a leaked key cannot take over the account. It
+// panics for public access, which authenticates no one.
+func (a Access) SessionOnly() Access {
+	if a.kind != accessAuthenticated && a.kind != accessPermission {
+		panic("httpx: only authenticated access can be restricted to sessions")
+	}
+	a.session = true
+	return a
+}
+
+// RequiresSession reports whether a admits only principals who signed in with a
+// session.
+func (a Access) RequiresSession() bool { return a.session }
 
 // String describes the access requirement: "public", "authenticated" or the
 // required permission. The OpenAPI specification uses the same values.
@@ -85,7 +103,7 @@ var (
 // Authorizer authenticates requests and checks permissions for the router.
 type Authorizer interface {
 	// Authorize authenticates r and checks that the principal satisfies access,
-	// which is never Public. On success it returns the request to pass on, which
+	// which is never Public, including its restriction to sessions. On success it returns the request to pass on, which
 	// carries the principal in its context. It returns ErrUnauthenticated if r
 	// carries no valid credentials and ErrForbidden if the principal lacks the
 	// permission; every other error is answered as a server error. The router writes

@@ -59,6 +59,36 @@ func TestPrincipal_ContextAndActor(t *testing.T) {
 	}
 }
 
+func TestPrincipal_HasSession(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		p    Principal
+		want bool
+	}{
+		{Principal{Method: audit.AuthSession, SessionID: "s1"}, true},
+		{Principal{Method: audit.AuthSession}, false},
+		{Principal{Method: audit.AuthAPIKey, SessionID: "s1"}, false},
+		{Principal{}, false},
+	} {
+		if got := tt.p.HasSession(); got != tt.want {
+			t.Errorf("%+v.HasSession() = %v, want %v", tt.p, got, tt.want)
+		}
+	}
+}
+
+func TestPrincipal_AllowedFollowsTheRole(t *testing.T) {
+	t.Parallel()
+
+	for _, role := range []user.Role{user.RoleAdmin, user.RoleEditor, user.RoleViewer, ""} {
+		for _, perm := range Permissions() {
+			if got := (Principal{Role: role}).Allowed(perm); got != Allowed(role, perm) {
+				t.Errorf("Principal{Role: %q}.Allowed(%s) = %v, want %v", role, perm, got, !got)
+			}
+		}
+	}
+}
+
 func TestDeniedAction(t *testing.T) {
 	t.Parallel()
 

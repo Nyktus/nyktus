@@ -12,11 +12,8 @@ import (
 	"strconv"
 	"time"
 
-	"nyktus.org/nyktus/internal/audit"
-	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/platform/httpx"
-	"nyktus.org/nyktus/internal/platform/logging"
 	"nyktus.org/nyktus/internal/user"
 )
 
@@ -46,57 +43,19 @@ const (
 	codeNoTOTPSetup      = "no_totp_setup"
 )
 
-// Authorizer authenticates requests with the session cookie and checks the
-// permissions of the principal for the router. It implements httpx.Authorizer.
-type Authorizer struct {
-	svc *Service
-}
-
-// NewAuthorizer returns an Authorizer that resolves sessions with svc.
-func NewAuthorizer(svc *Service) *Authorizer {
-	if svc == nil {
-		panic("session: authorizer needs a service")
-	}
-	return &Authorizer{svc: svc}
-}
-
 type sessionKey struct{}
 
-// Authorize implements httpx.Authorizer. A request denied for a missing
-// permission is recorded in the audit log, at most once per user, permission and
-// audit.RepeatWindow, so that a signed-in user cannot fill the log by repeating
-// it. A request without valid credentials is not recorded, so that anonymous
-// clients cannot fill the audit log either. The access log records both.
-func (a *Authorizer) Authorize(r *http.Request, acc httpx.Access) (*http.Request, error) {
-	c, err := r.Cookie(CookieName)
-	if err != nil || c.Value == "" {
-		return nil, httpx.ErrUnauthenticated
-	}
-	ctx := r.Context()
-	sess, err := a.svc.Authenticate(ctx, c.Value)
-	if errors.Is(err, ErrNoSession) {
-		return nil, httpx.ErrUnauthenticated
-	}
-	if err != nil {
-		return nil, err
-	}
+// NewContext returns a copy of ctx that carries the session sess, which
+// authenticated the request.
+func NewContext(ctx context.Context, sess Session) context.Context {
+	return context.WithValue(ctx, sessionKey{}, sess)
+}
 
-	p := access.Principal{UserID: sess.User.ID, Role: sess.User.Role, Method: audit.AuthSession, SessionID: sess.ID}
-	logging.AddToScope(ctx, slog.String("user_id", p.UserID), slog.String("auth_method", string(p.Method)))
-	if perm, ok := acc.Permission(); ok && !access.Allowed(p.Role, perm) {
-		err := audit.NewStore(a.svc.db).RecordUnlessRepeated(ctx, audit.Entry{
-			Action:  access.DeniedAction(perm),
-			Outcome: audit.OutcomeDenied,
-			Actor:   p.Actor(),
-		}.WithRequest(ctx))
-		if err != nil {
-			return nil, err
-		}
-		return nil, httpx.ErrForbidden
-	}
-	ctx = access.WithPrincipal(ctx, p)
-	ctx = context.WithValue(ctx, sessionKey{}, sess)
-	return r.WithContext(ctx), nil
+// FromContext returns the session that authenticated the request of ctx. ok is
+// false if the request was authenticated otherwise, or not at all.
+func FromContext(ctx context.Context) (sess Session, ok bool) {
+	sess, ok = ctx.Value(sessionKey{}).(Session)
+	return sess, ok
 }
 
 // Handler serves sign-in, the current session and sign-out.
@@ -207,16 +166,12 @@ func (changePasswordRequest) LogValue() slog.Value {
 	return slog.StringValue("[redacted]")
 }
 
-// ChangePassword handles PUT /api/v1/session/password. Only a session may change
-// the password, so that a leaked API key cannot take over the account. The
-// response replaces the session cookie.
+// ChangePassword handles PUT /api/v1/session/password. The route admits only
+// sessions, so that a leaked API key cannot take over the account. The response
+// replaces the session cookie.
 func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
-	p, ok := access.PrincipalFrom(r.Context())
+	p, ok := h.sessionPrincipal(w, r, "session: change password")
 	if !ok {
-		httpx.ServerError(w, r, h.logger, "session: change password", errors.New("no principal in the request context"))
-		return
-	}
-	if !h.requireSession(w, r, p, "only a signed-in session can change the password") {
 		return
 	}
 	var req changePasswordRequest
@@ -252,7 +207,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 // Current handles GET /api/v1/session.
 func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
-	sess, ok := r.Context().Value(sessionKey{}).(Session)
+	sess, ok := FromContext(r.Context())
 	if !ok {
 		httpx.ServerError(w, r, h.logger, "session: current", errors.New("no session in the request context"))
 		return
@@ -262,9 +217,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 
 // SignOut handles DELETE /api/v1/session.
 func (h *Handler) SignOut(w http.ResponseWriter, r *http.Request) {
-	p, ok := access.PrincipalFrom(r.Context())
-	if !ok || p.SessionID == "" {
-		httpx.ServerError(w, r, h.logger, "session: sign out", errors.New("no session in the request context"))
+	p, ok := h.sessionPrincipal(w, r, "session: sign out")
+	if !ok {
 		return
 	}
 	if err := h.svc.SignOut(r.Context(), p); err != nil {

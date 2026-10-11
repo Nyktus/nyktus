@@ -55,6 +55,17 @@ type Principal struct {
 	SessionID string
 }
 
+// Allowed reports whether p holds perm.
+func (p Principal) Allowed(perm httpx.Permission) bool {
+	return Allowed(p.Role, perm)
+}
+
+// HasSession reports whether p signed in with a session, as opposed to another
+// credential such as an API key.
+func (p Principal) HasSession() bool {
+	return p.Method == audit.AuthSession && p.SessionID != ""
+}
+
 // Actor returns the principal as the actor of an audit entry.
 func (p Principal) Actor() audit.Actor {
 	return audit.Actor{Kind: audit.ActorUser, Method: p.Method, UserID: p.UserID}
