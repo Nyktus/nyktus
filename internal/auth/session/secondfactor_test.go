@@ -39,8 +39,11 @@ func jsonBody(t *testing.T, v map[string]string) string {
 
 // enableTOTP sets up and confirms a TOTP factor through the session cookie and
 // returns the secret, the recovery codes and the session cookie that replaces
-// cookie. The confirmation uses the code of the previous time step, so that the
-// codes of the current and the next one remain for the test.
+// cookie. The confirmation uses the code of the current time step, which stays
+// valid if the step advances before the server checks it; a code of the
+// previous step would then be two steps old. The step of the code is set back
+// afterwards, so that the codes of the current and the next one remain for the
+// test.
 func enableTOTP(t *testing.T, srv *httptest.Server, d testDB, cookie *http.Cookie) ([]byte, []string, *http.Cookie) {
 	t.Helper()
 	r := send(t, srv, http.MethodPost, "/api/v1/session/totp", jsonBody(t, map[string]string{"password": testPassword}), cookie, nil)
@@ -51,11 +54,15 @@ func enableTOTP(t *testing.T, srv *httptest.Server, d testDB, cookie *http.Cooki
 	if err != nil {
 		t.Fatalf("decode secret: %v", err)
 	}
+	current := step(t, d)
 	r = send(t, srv, http.MethodPost, "/api/v1/session/totp/confirmation",
-		jsonBody(t, map[string]string{"code": totp.Code(secret, step(t, d)-1)}), cookie, nil)
+		jsonBody(t, map[string]string{"code": totp.Code(secret, current)}), cookie, nil)
 	if r.status != http.StatusOK || r.cookie == nil {
 		t.Fatalf("confirm TOTP factor: status %d, body %v", r.status, r.body)
 	}
+	d.exec(t, `
+UPDATE totp_factors SET last_used_step = $1 - 1
+WHERE user_id = (SELECT user_id FROM sessions WHERE token_hash = sha256(convert_to($2, 'UTF8')))`, current, r.cookie.Value)
 	var codes []string
 	for _, c := range r.body["recovery_codes"].([]any) {
 		codes = append(codes, c.(string))
