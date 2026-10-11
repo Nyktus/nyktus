@@ -22,5 +22,7 @@ var Actions = []Action{
 	ActionSessionCreate,
 	ActionSessionDelete,
 	ActionSignInChallengeCreate,
+	ActionAPIKeyCreate,
+	ActionAPIKeyRevoke,
 	ActionAuditRead,
 }

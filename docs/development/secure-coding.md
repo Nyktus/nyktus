@@ -157,7 +157,11 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 - Keys have a fixed, recognizable prefix so that secret scanners can detect leaked keys.
 - Keys are stored as a SHA-256 hash. Lookup uses a non-secret key identifier, and the comparison is constant-time.
 - Keys carry scopes in the form `resource:action`, for example `incidents:read` or `honeytokens:write`. The effective permission is the intersection of the key's scopes and the current role of its owner, evaluated on every request. Demoting a user restricts their keys immediately.
-- Every key has an expiry date. Keys record their last use, and every write made with a key is attributable to that key in the audit log.
+- Every key has an expiry date, at most a year after its creation. Keys record their last use, and every write made with a key is attributable to that key in the audit log.
+- The scopes that keys may carry are a list of their own in `internal/auth/access`, a subset of the permissions. Keys do not manage accounts, because a key with `users:write` could take over every account through password reset links. The database checks only the form of a scope, as with audit actions; the authorizer grants nothing beyond the list.
+- Keys are created, listed and revoked only with a session, and creating one requires the password, because a key outlives the session. Routes that change how the account authenticates, such as its password, its second factor, its session or its keys, declare `SessionOnly()` and reject keys with `403`.
+- A key of an account that is not active does not authenticate, and deactivating an account deletes its keys, so that reactivating it does not revive them. A change of password keeps the keys; they are visible to the user and to administrators, who can revoke them.
+- A request with an `Authorization` header authenticates with it alone, and every invalid key receives the same `401` as a request without credentials, without an audit entry.
 - Sensors do not use API keys. They authenticate with their own per-honeypot secret.
 
 ## Authorization

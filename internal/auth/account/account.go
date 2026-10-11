@@ -31,6 +31,7 @@ import (
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/auth/apikey"
 	"nyktus.org/nyktus/internal/auth/secondfactor"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/token"
@@ -149,6 +150,29 @@ func (s *Service) recordRead(ctx context.Context, p access.Principal) error {
 	}.WithRequest(ctx))
 }
 
+// APIKeys returns the API keys of the account id and records the read like
+// List. It returns user.ErrNotFound if there is no such account.
+func (s *Service) APIKeys(ctx context.Context, p access.Principal, id string) ([]apikey.Key, error) {
+	if _, err := user.NewStore(s.db).Get(ctx, id); err != nil {
+		return nil, err
+	}
+	keys, err := apikey.NewStore(s.db).List(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.recordRead(ctx, p); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+// RevokeAPIKey revokes the API key keyID of the account id, for example after
+// it leaked, without deactivating the account. It returns apikey.ErrNotFound if
+// the account has no such key.
+func (s *Service) RevokeAPIKey(ctx context.Context, p access.Principal, id, keyID string) error {
+	return apikey.Revoke(ctx, s.db, p.Actor(), id, keyID)
+}
+
 // NewAccount describes an account to create.
 type NewAccount struct {
 	Email       string
@@ -255,6 +279,13 @@ func (s *Service) Update(ctx context.Context, p access.Principal, id string, c C
 			}
 			if slices.Contains(changed, user.FieldStatus) {
 				if err := deleteLink(ctx, tx, id); err != nil {
+					return err
+				}
+			}
+			// The keys of a deactivated account stop working at once, as its
+			// sessions do, and reactivating it does not revive them.
+			if slices.Contains(changed, user.FieldStatus) && updated.Status == user.StatusDeactivated {
+				if err := apikey.DeleteAll(ctx, tx, id); err != nil {
 					return err
 				}
 			}

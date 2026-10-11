@@ -41,6 +41,9 @@ CREATE TABLE public.audit_entries (
 	actor_user_id      uuid CONSTRAINT audit_entries_actor_user_id_fkey REFERENCES public.users (id) ON DELETE SET NULL,
 	actor_email        text,
 	actor_display_name text,
+	-- Keys are deleted when they are revoked and with their user, so there is no
+	-- foreign key: the entry that created a key names it with the same
+	-- identifier as a resource.
 	api_key_id         uuid,
 	-- Resources can be deleted while their entries remain, so there is no foreign
 	-- key. Names are never copied: the audit log must not reveal the inventory.

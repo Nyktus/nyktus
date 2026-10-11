@@ -5,6 +5,7 @@ package apispec
 
 import (
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -29,7 +30,7 @@ paths:
     get:
       operationId: getUser
       x-access: users:read
-      security: [{session: []}]
+      security: [{session: []}, {key: []}]
       responses:
         "200": {description: ok}
         "401": {description: unauthenticated}
@@ -60,12 +61,21 @@ func TestParse_ReadsOperations(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 	want := []Operation{
-		{Method: http.MethodGet, Path: "/api/v1/me", OperationID: "getMe", Access: "authenticated"},
-		{Method: http.MethodDelete, Path: "/api/v1/users/{id}", OperationID: "deleteUser", Access: "users:write"},
-		{Method: http.MethodGet, Path: "/api/v1/users/{id}", OperationID: "getUser", Access: "users:read"},
-		{Method: http.MethodGet, Path: "/livez", OperationID: "getLiveness", Access: "public"},
+		{
+			Method: http.MethodGet, Path: "/api/v1/me", OperationID: "getMe", Access: "authenticated",
+			Schemes: []string{"session"}, Statuses: []string{"200", "401"},
+		},
+		{
+			Method: http.MethodDelete, Path: "/api/v1/users/{id}", OperationID: "deleteUser", Access: "users:write",
+			Schemes: []string{"session"}, Statuses: []string{"204", "401", "403"},
+		},
+		{
+			Method: http.MethodGet, Path: "/api/v1/users/{id}", OperationID: "getUser", Access: "users:read",
+			Schemes: []string{"key", "session"}, Statuses: []string{"200", "401", "403"},
+		},
+		{Method: http.MethodGet, Path: "/livez", OperationID: "getLiveness", Access: "public", Statuses: []string{"200"}},
 	}
-	if !slices.Equal(spec.Operations, want) {
+	if !reflect.DeepEqual(spec.Operations, want) {
 		t.Errorf("Operations = %+v, want %+v", spec.Operations, want)
 	}
 }

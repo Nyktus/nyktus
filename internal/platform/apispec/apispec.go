@@ -25,6 +25,10 @@ type Operation struct {
 	Path        string
 	OperationID string
 	Access      string
+	// Schemes names the security schemes that the operation admits, sorted.
+	Schemes []string
+	// Statuses lists the documented response statuses, sorted.
+	Statuses []string
 }
 
 func (o Operation) key() string { return o.Method + " " + o.Path }
@@ -116,7 +120,20 @@ func Parse(data []byte) (*Spec, error) {
 				errs = append(errs, fmt.Errorf("%s %s: %w", method, path, err))
 				continue
 			}
-			o := Operation{Method: method, Path: path, OperationID: op.OperationID, Access: op.Access}
+			o := Operation{
+				Method: method, Path: path, OperationID: op.OperationID, Access: op.Access,
+				Statuses: slices.Sorted(maps.Keys(op.Responses)),
+			}
+			if op.Security != nil {
+				for _, requirement := range *op.Security {
+					for name := range requirement {
+						if !slices.Contains(o.Schemes, name) {
+							o.Schemes = append(o.Schemes, name)
+						}
+					}
+				}
+				slices.Sort(o.Schemes)
+			}
 			errs = append(errs, validate(o.key(), op, ids)...)
 			spec.Operations = append(spec.Operations, o)
 		}

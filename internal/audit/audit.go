@@ -71,6 +71,13 @@ const (
 	ActionSignInChallengeCreate Action = "sign_in_challenge.create"
 	// ActionSessionDelete records a sign-out.
 	ActionSessionDelete Action = "session.delete"
+	// ActionAPIKeyCreate records an attempt of a user to issue an API key,
+	// successful or not. The resource is the key, or the account if the
+	// password was wrong.
+	ActionAPIKeyCreate Action = "api_key.create"
+	// ActionAPIKeyRevoke records the revocation of an API key, by its user or an
+	// administrator. The resource is the key.
+	ActionAPIKeyRevoke Action = "api_key.revoke" //nolint:gosec // An audit action, not a credential.
 	// ActionAuditRead records a read of the audit log, which contains personal
 	// data. A request denied for lacking the permission audit:read has the same
 	// action.
