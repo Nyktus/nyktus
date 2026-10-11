@@ -4,9 +4,11 @@ Administrators create and manage the accounts of the console. There is no public
 
 | Role | Purpose |
 |---|---|
-| `admin` | Manages the installation, its accounts and the audit log. |
-| `editor` | Works with decoys and incidents. |
-| `viewer` | Reads decoys and incidents. |
+| `admin` | Manages the installation, its accounts and settings, reads the audit log, and does everything a `user` does. |
+| `user` | Configures honeypots, honeytokens and scenarios and works with incidents. |
+| `viewer` | Reads decoys and incidents, but not the audit log. |
+
+Decoys and scenarios belong to the team, not to the account that created them.
 
 The examples below call the API with the session cookie of an administrator, as described in [Sign-in and sessions](sign-in.md).
 
@@ -17,7 +19,7 @@ Create the account with its address, display name and role:
 ```sh
 curl --fail-with-body https://nyktus.example.com/api/v1/users \
   --header 'Content-Type: application/json' \
-  --data '{"email": "jane@example.com", "display_name": "Jane Doe", "role": "editor"}' \
+  --data '{"email": "jane@example.com", "display_name": "Jane Doe", "role": "user"}' \
   --cookie cookies.txt
 ```
 
@@ -25,7 +27,7 @@ The answer contains the new account, which is `pending`, and an activation link:
 
 ```json
 {
-  "user": {"id": "...", "email": "jane@example.com", "display_name": "Jane Doe", "role": "editor", "status": "pending"},
+  "user": {"id": "...", "email": "jane@example.com", "display_name": "Jane Doe", "role": "user", "status": "pending"},
   "activation": {"url": "https://nyktus.example.com/activate#token=...", "expires_at": "..."}
 }
 ```

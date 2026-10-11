@@ -16,7 +16,7 @@ import (
 func TestAllowed_FailsClosed(t *testing.T) {
 	t.Parallel()
 
-	for _, role := range []user.Role{user.RoleAdmin, user.RoleEditor, user.RoleViewer, "", "root"} {
+	for _, role := range []user.Role{user.RoleAdmin, user.RoleUser, user.RoleViewer, "", "root"} {
 		for _, perm := range []httpx.Permission{"", "unknown:action", "*:*"} {
 			if Allowed(role, perm) {
 				t.Errorf("Allowed(%q, %q) = true, want false", role, perm)
@@ -28,7 +28,7 @@ func TestAllowed_FailsClosed(t *testing.T) {
 func TestGrants_CoverEveryRoleWithValidPermissions(t *testing.T) {
 	t.Parallel()
 
-	for _, role := range []user.Role{user.RoleAdmin, user.RoleEditor, user.RoleViewer} {
+	for _, role := range []user.Role{user.RoleAdmin, user.RoleUser, user.RoleViewer} {
 		if _, ok := grants[role]; !ok {
 			t.Errorf("role %s has no entry in the grants", role)
 		}
@@ -129,7 +129,7 @@ func TestPrincipal_HasSession(t *testing.T) {
 func TestPrincipal_AllowedFollowsTheRole(t *testing.T) {
 	t.Parallel()
 
-	for _, role := range []user.Role{user.RoleAdmin, user.RoleEditor, user.RoleViewer, ""} {
+	for _, role := range []user.Role{user.RoleAdmin, user.RoleUser, user.RoleViewer, ""} {
 		for _, perm := range Permissions() {
 			if got := (Principal{Role: role}).Allowed(perm); got != Allowed(role, perm) {
 				t.Errorf("Principal{Role: %q}.Allowed(%s) = %v, want %v", role, perm, got, !got)

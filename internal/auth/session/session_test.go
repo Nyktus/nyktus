@@ -276,12 +276,12 @@ func TestSession_ReturnsTheCurrentSession(t *testing.T) {
 
 	d := newTestDB(t)
 	srv := startConsole(t, d)
-	id := createUser(t, d, "ada@example.com", "editor", "active", testPassword)
+	id := createUser(t, d, "ada@example.com", "user", "active", testPassword)
 	c := mustSignIn(t, srv)
 
 	r := send(t, srv, http.MethodGet, "/api/v1/session", "", c, nil)
 	u, _ := r.body["user"].(map[string]any)
-	if r.status != http.StatusOK || u["id"] != id || u["role"] != "editor" || r.body["expires_at"] == nil {
+	if r.status != http.StatusOK || u["id"] != id || u["role"] != "user" || r.body["expires_at"] == nil {
 		t.Errorf("GET /api/v1/session: %d %v", r.status, r.body)
 	}
 	for name, cookie := range map[string]*http.Cookie{

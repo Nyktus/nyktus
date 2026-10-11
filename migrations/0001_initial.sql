@@ -86,7 +86,7 @@ CREATE TABLE public.users (
 		AND display_name = btrim(display_name)
 		AND display_name !~ '[\x01-\x1f\x7f]'
 	),
-	CONSTRAINT users_role_check CHECK (role IN ('admin', 'editor', 'viewer')),
+	CONSTRAINT users_role_check CHECK (role IN ('admin', 'user', 'viewer')),
 	-- A pending account has been created but has not set a password yet. An active
 	-- account can sign in with its password. A deactivated account keeps its hash,
 	-- if it had one, so that it can be reactivated without a new activation link.

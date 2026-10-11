@@ -161,14 +161,14 @@ func TestUpdate_ReportsOnlyChangedFields(t *testing.T) {
 	account(t, owner, "admin@example.com", RoleAdmin, StatusActive)
 	id := account(t, owner, "jane@example.com", RoleViewer, StatusActive)
 
-	u, changed, err := update(t, pool, id, Change{DisplayName: ptr("Jane Roe"), Role: ptr(RoleEditor), Status: ptr(StatusActive)})
+	u, changed, err := update(t, pool, id, Change{DisplayName: ptr("Jane Roe"), Role: ptr(RoleUser), Status: ptr(StatusActive)})
 	if err != nil || !slices.Equal(changed, []string{FieldDisplayName, FieldRole}) {
 		t.Fatalf("Update() changed %v, error %v; want display_name and role", changed, err)
 	}
-	if u.DisplayName != "Jane Roe" || u.Role != RoleEditor || u.Status != StatusActive || !u.UpdatedAt.After(u.CreatedAt) {
+	if u.DisplayName != "Jane Roe" || u.Role != RoleUser || u.Status != StatusActive || !u.UpdatedAt.After(u.CreatedAt) {
 		t.Errorf("Update() = %+v, want the new name and role and a new update time", u)
 	}
-	u2, changed, err := update(t, pool, id, Change{DisplayName: ptr("Jane Roe"), Role: ptr(RoleEditor)})
+	u2, changed, err := update(t, pool, id, Change{DisplayName: ptr("Jane Roe"), Role: ptr(RoleUser)})
 	if err != nil || len(changed) != 0 || !u2.UpdatedAt.Equal(u.UpdatedAt) {
 		t.Errorf("Update() without a difference changed %v, error %v, updated at %v; want nothing", changed, err, u2.UpdatedAt)
 	}
@@ -257,7 +257,7 @@ func TestUpdate_RejectsInvalidInputAndUnknownAccounts(t *testing.T) {
 		{id: id, c: Change{DisplayName: ptr("Jane\u202eRoe")}, want: ErrInvalidDisplayName},
 		{id: id, c: Change{Role: ptr(Role("owner"))}, want: ErrInvalidRole},
 		{id: "00000000-0000-4000-8000-000000000000", c: Change{DisplayName: ptr("Jane")}, want: ErrNotFound},
-		{id: "not-a-uuid", c: Change{Role: ptr(RoleEditor)}, want: ErrNotFound},
+		{id: "not-a-uuid", c: Change{Role: ptr(RoleUser)}, want: ErrNotFound},
 	}
 	for _, tt := range tests {
 		if _, _, err := update(t, pool, tt.id, tt.c); !errors.Is(err, tt.want) {
@@ -286,7 +286,7 @@ func TestUpdateAndDelete_KeepTheLastActiveAdmin(t *testing.T) {
 
 	changes := map[string]func(*Store, string) error{
 		"demote": func(s *Store, id string) error {
-			_, _, err := s.Update(context.Background(), id, Change{Role: ptr(RoleEditor)})
+			_, _, err := s.Update(context.Background(), id, Change{Role: ptr(RoleUser)})
 			return err
 		},
 		"deactivate": func(s *Store, id string) error {
@@ -360,7 +360,7 @@ func TestSchema_AllowsChangesThatKeepAnActiveAdmin(t *testing.T) {
 	account(t, owner, "jane@example.com", RoleViewer, StatusActive)
 	account(t, owner, "pending@example.com", RoleAdmin, StatusPending)
 	for _, statement := range []string{
-		"UPDATE users SET role = 'editor' WHERE role = 'viewer'",
+		"UPDATE users SET role = 'user' WHERE role = 'viewer'",
 		"DELETE FROM users WHERE status = 'pending'",
 		"UPDATE users SET display_name = 'Ada' WHERE role = 'admin'",
 		"UPDATE users SET role = 'admin', status = 'active' WHERE role = 'admin'",
@@ -393,7 +393,7 @@ func TestUpdate_LocksTheActiveAdmins(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(t.Context())) }()
-	if _, _, err := NewStore(tx).Update(t.Context(), viewer, Change{Role: ptr(RoleEditor)}); err != nil {
+	if _, _, err := NewStore(tx).Update(t.Context(), viewer, Change{Role: ptr(RoleUser)}); err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
 

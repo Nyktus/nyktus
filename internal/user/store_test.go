@@ -34,7 +34,7 @@ func TestCreate_WithoutPasswordCreatesPendingUser(t *testing.T) {
 	t.Parallel()
 
 	s, _ := newStore(t)
-	u, err := s.Create(t.Context(), NewUser{Email: "Jane@Example.com", DisplayName: "Jane Doe", Role: RoleEditor})
+	u, err := s.Create(t.Context(), NewUser{Email: "Jane@Example.com", DisplayName: "Jane Doe", Role: RoleUser})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -42,7 +42,7 @@ func TestCreate_WithoutPasswordCreatesPendingUser(t *testing.T) {
 	if !uuidFormat.MatchString(u.ID) {
 		t.Errorf("ID = %q, want a random UUID", u.ID)
 	}
-	if u.Email != "jane@example.com" || u.DisplayName != "Jane Doe" || u.Role != RoleEditor {
+	if u.Email != "jane@example.com" || u.DisplayName != "Jane Doe" || u.Role != RoleUser {
 		t.Errorf("Create() = %+v, want the given fields with the address in lower case", u)
 	}
 	if u.Status != StatusPending || u.PasswordHash != "" {
@@ -207,7 +207,7 @@ func TestAdminExists_CountsAdministratorsInEveryStatus(t *testing.T) {
 		status Status
 		want   bool
 	}{
-		{name: "editor", role: RoleEditor, status: StatusActive, want: false},
+		{name: "user", role: RoleUser, status: StatusActive, want: false},
 		{name: "viewer", role: RoleViewer, status: StatusActive, want: false},
 		{name: "active admin", role: RoleAdmin, status: StatusActive, want: true},
 		{name: "pending admin", role: RoleAdmin, status: StatusPending, want: true},
