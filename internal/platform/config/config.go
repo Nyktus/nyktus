@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"nyktus.org/nyktus/internal/platform/logging"
+	"nyktus.org/nyktus/internal/platform/secretbox"
 )
 
 const prefix = "NYKTUS_"
@@ -129,6 +130,11 @@ type Serve struct {
 	// X-Forwarded-For header is believed. Empty means that only the socket
 	// address counts.
 	TrustedProxies []netip.Prefix
+	// EncryptionKeys encrypt the secrets that the instance stores and must read
+	// back, such as the secrets of second factors. They belong to the instance,
+	// not to a role, because every role that reads such a secret needs the same
+	// keys. They are read only if an enabled role uses them.
+	EncryptionKeys *secretbox.Keyring
 	Console        Console
 }
 
@@ -166,6 +172,7 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 		}
 		cfg.Console.SessionMaxAge = r.duration("SESSION_MAX_AGE", 12*time.Hour,
 			max(cfg.Console.SessionIdleTimeout, minSessionIdleTimeout), maxSessionMaxAge)
+		cfg.EncryptionKeys = r.keyring("ENCRYPTION_KEYS")
 	}
 	return cfg, r.err()
 }
@@ -344,6 +351,27 @@ func parsePrefix(s string) (netip.Prefix, error) {
 		return netip.Prefix{}, fmt.Errorf("%q is an IPv4 range in IPv6 notation; write it as an IPv4 range", s)
 	}
 	return p, nil
+}
+
+// keyring reads the keys that encrypt secrets at rest. They are required in
+// every environment: a key derived from another secret or generated at each
+// start would make the stored secrets unreadable or tie them to that secret.
+func (r *reader) keyring(name string) *secretbox.Keyring {
+	value := r.requiredSecret(name)
+	if value == "" {
+		return nil
+	}
+	k, err := secretbox.ParseKeyring(value.Value())
+	if err != nil {
+		// The error names the variable that the operator set.
+		source := prefix + name
+		if strings.TrimSpace(r.src.Getenv(source+"_FILE")) != "" {
+			source += "_FILE"
+		}
+		r.fail("%s: %w", source, err)
+		return nil
+	}
+	return k
 }
 
 // requiredSecret reads a secret either from NAME or from the file named by

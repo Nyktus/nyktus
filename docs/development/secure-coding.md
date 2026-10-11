@@ -186,7 +186,7 @@ Arbitrary ports on public hosts are allowed, because self-hosted integrations ne
 
 - Use `crypto/rand` for every value with security relevance. `math/rand` is not used for identifiers, tokens or secrets.
 - Compare secrets with `crypto/subtle.ConstantTimeCompare` or `hmac.Equal`.
-- Encrypt secrets at rest with AES-256-GCM. Stored values carry a version prefix to allow key rotation. Outside development, the key comes from configuration and is never derived from another secret.
+- Encrypt secrets at rest with AES-256-GCM through `internal/platform/secretbox`. Stored values carry the ID of their key to allow key rotation. The keys come from configuration, in development as well, and are never derived from another secret. Pass associated data that names the purpose and the owner of a value, so that a value copied into another record fails to decrypt.
 - Sign outbound webhook payloads with HMAC-SHA256 over the exact bytes sent.
 - The server validates its configuration at startup and refuses to run with missing or weak secrets outside development.
 - Secrets never appear in logs, error messages, URLs (except trigger and health secrets, which are designed for it) or client-side state.

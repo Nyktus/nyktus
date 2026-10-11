@@ -24,6 +24,7 @@ Settings of a server role are only read when the role runs. A process started wi
 | Variable | Default | Description |
 |---|---|---|
 | `NYKTUS_TRUSTED_PROXIES` | empty | Comma-separated address ranges of your reverse proxies in CIDR notation, such as `10.0.0.0/8,2001:db8::/48`. A single address stands for itself. See [Client addresses](#client-addresses). |
+| `NYKTUS_ENCRYPTION_KEYS` | required with the role `console`, secret, also in development | Keys that encrypt secrets stored in the database. See [Encryption keys](#encryption-keys). |
 
 ### Role `console`
 
@@ -38,6 +39,20 @@ Settings of a server role are only read when the role runs. A process started wi
 ## `nyktus admin`
 
 The admin commands, such as [`nyktus admin reset-password`](users.md#when-no-administrator-can-sign-in), use the settings of the console: `NYKTUS_CONSOLE_DATABASE_URL` and `NYKTUS_CONSOLE_URL`, and `NYKTUS_CONSOLE_ADDR` for the default of the URL in development.
+
+## Encryption keys
+
+Secrets that Nyktus must read back, such as the secrets of second factors, are stored encrypted with AES-256-GCM. The keys never reach the database, so a copy of the database alone does not reveal the secrets. Keep a copy of the keys in your secret store: without them, the encrypted secrets are lost.
+
+`NYKTUS_ENCRYPTION_KEYS` holds a comma-separated list of keys, each written as `<id>:<key>`. The ID is a number from 1 to 255 that is stored with every encrypted value. The key is 32 random bytes in standard base64. Generate one with:
+
+```sh
+echo "1:$(openssl rand -base64 32)"
+```
+
+The keys are required in development as well. Nyktus neither derives a key from another secret nor generates one at startup, because either would make the stored secrets unreadable once that secret or the process changes.
+
+To replace a key, put a new key with an unused ID first and keep the old one behind it, such as `2:<new key>,1:<old key>`. The first key encrypts new values; every listed key decrypts. Keep the old key listed: a value encrypted with a key that is no longer listed cannot be decrypted.
 
 ## Client addresses
 
