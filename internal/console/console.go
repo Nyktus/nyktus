@@ -72,14 +72,14 @@ type APIKeys struct {
 }
 
 // OIDC are the handlers of the sign-in through the identity provider: the
-// start, which sends the browser to the provider, and the callback, to which
-// the provider sends it back.
+// start, which sends the browser to the provider, the start of a
+// reauthentication, and the callback, to which the provider sends it back.
 type OIDC struct {
-	Authorize, Callback http.Handler
+	Authorize, Reauthenticate, Callback http.Handler
 }
 
 func (o OIDC) complete() bool {
-	return o.Authorize != nil && o.Callback != nil
+	return o.Authorize != nil && o.Reauthenticate != nil && o.Callback != nil
 }
 
 func (k APIKeys) complete() bool {
@@ -117,6 +117,7 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPost, "/api/v1/session/second-factor", httpx.Public, d.SecondFactor.CompleteSignIn)
 	rt.Handle(http.MethodGet, "/api/v1/oidc/authorize", httpx.Public, d.OIDC.Authorize)
 	rt.Handle(http.MethodGet, "/api/v1/oidc/callback", httpx.Public, d.OIDC.Callback)
+	rt.Handle(http.MethodGet, "/api/v1/oidc/reauthenticate", session, d.OIDC.Reauthenticate)
 	rt.Handle(http.MethodPost, "/api/v1/session/totp", session, httpx.Deadline(hashDeadline)(d.SecondFactor.Begin))
 	rt.Handle(http.MethodDelete, "/api/v1/session/totp", session, httpx.Deadline(hashDeadline)(d.SecondFactor.Remove))
 	rt.Handle(http.MethodPost, "/api/v1/session/totp/confirmation", session, d.SecondFactor.Confirm)

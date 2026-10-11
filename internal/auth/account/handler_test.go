@@ -15,6 +15,7 @@ import (
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/user"
 )
 
@@ -38,7 +39,8 @@ func TestWriteError_MapsExpectedErrors(t *testing.T) {
 		{user.ErrInvalidTransition, http.StatusConflict, CodeInvalidState},
 		{ErrNotPending, http.StatusConflict, CodeInvalidState},
 		{user.ErrOIDCAccount, http.StatusConflict, CodeOIDCAccount},
-		{errOIDCPassword, http.StatusConflict, CodeOIDCAccount},
+		{session.ErrReauthenticationRequired, http.StatusForbidden, CodeReauthenticationRequired},
+		{ErrPasswordRequired, http.StatusBadRequest, "invalid_request"},
 		{errors.New("database is down"), http.StatusInternalServerError, "internal_error"},
 	}
 	for _, tt := range tests {

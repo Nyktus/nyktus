@@ -31,7 +31,13 @@ The web console sends the browser to `GET /api/v1/oidc/authorize`, which forward
 - Deleting an account does not lock its user out: the next sign-in creates it again. To lock a user out, deactivate the account, or remove the user from the groups. A deactivated account stays locked out until an administrator reactivates it, even if the user is added to a group again.
 - The groups can neither demote nor deactivate the last active administrator. Such a sign-in is rejected, and the account stays as it is.
 - Accounts of the provider have no password and no second factor in Nyktus; the provider handles both. Their users cannot change a password or set up a second factor, and administrators cannot issue password reset links for them.
-- Administrators of the provider currently cannot create [API keys](api-keys.md) or remove the second factor of another account, because both are confirmed with a password. A local administrator does both.
+- Administrators of the provider confirm the actions that a local administrator confirms with the password by [signing in at the provider again](#confirming-sensitive-actions).
+
+### Confirming sensitive actions
+
+Creating an [API key](api-keys.md) and removing the second factor of another account require a fresh authentication, because a taken-over session must not be able to do either. A local administrator gives the password with the request. An administrator of the provider leaves it out and signs in at the provider again first: the web console sends the browser to `GET /api/v1/oidc/reauthenticate?return_to=<page>`, the provider asks for the credentials again, and the browser returns to the page. For the next five minutes, that session may perform these actions; afterwards, or in another session, they receive `403` with the code `reauthentication_required`.
+
+The confirmation fails, and the browser returns with `#error=reauthentication`, if the provider confirms another user, does not report that it asked for the credentials again (claim `auth_time`, which the provider must send when asked with `max_age`), or reports groups that no longer give the role of the account; the user then signs in again. Clocks of Nyktus and the provider may differ by up to a minute. Every attempt is recorded in the [audit log](audit-log.md) as `session.reauthenticate`.
 
 ### Password sign-in with an identity provider
 

@@ -15,6 +15,11 @@
 // state is kept in the database between the two requests, so that it works
 // across console processes, and is bound to the browser that started it by a
 // token in a cookie.
+//
+// A signed-in user of the provider confirms a sensitive action, which a local
+// account confirms with its password, by signing in at the provider again: a
+// reauthentication, which asks the provider to request the credentials again
+// and marks the session for session.ReauthenticationWindow.
 package oidc
 
 import (
@@ -26,6 +31,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
@@ -100,12 +106,50 @@ func NewService(d DB, provider *Provider, sessions *session.Service, groups Grou
 	return &Service{db: d, provider: provider, sessions: sessions, groups: groups}
 }
 
+// Purposes of a sign-in at the provider.
+const (
+	purposeSignIn           = "sign_in"
+	purposeReauthentication = "reauthentication"
+)
+
+// authTimeLeeway is how much earlier than the start of a reauthentication the
+// provider may report the authentication, for clocks that differ.
+const authTimeLeeway = time.Minute
+
 // Begin starts a sign-in. previous is the token of the session that the
 // browser holds, if any, which ends when the sign-in completes. It returns the
 // URL of the provider, to which the browser is sent, and the token that binds
 // the sign-in to the browser, which it keeps in a cookie. It returns
 // ErrUnavailable if the provider has not been discovered yet.
 func (s *Service) Begin(ctx context.Context, previous string) (redirect, browser string, err error) {
+	var previousHash []byte
+	if previous != "" {
+		previousHash = token.Hash(previous)
+	}
+	return s.begin(ctx, login{purpose: purposeSignIn, previousHash: previousHash})
+}
+
+// BeginReauthentication starts a reauthentication of the session sess, whose
+// account signs in through the provider. The provider is asked to request the
+// credentials again. The browser returns to returnTo, a path of the console
+// that ValidReturnTo accepts. It returns what Begin returns.
+func (s *Service) BeginReauthentication(ctx context.Context, sess session.Session, returnTo string) (redirect, browser string, err error) {
+	if !ValidReturnTo(returnTo) {
+		return "", "", errors.New("oidc: invalid return path")
+	}
+	return s.begin(ctx, login{purpose: purposeReauthentication, sessionID: sess.ID, returnTo: returnTo},
+		oauth2.SetAuthURLParam("prompt", "login"), oauth2.SetAuthURLParam("max_age", "0"))
+}
+
+// login is a sign-in at the provider between its start and its completion.
+type login struct {
+	purpose      string
+	previousHash []byte
+	sessionID    string
+	returnTo     string
+}
+
+func (s *Service) begin(ctx context.Context, l login, opts ...oauth2.AuthCodeOption) (redirect, browser string, err error) {
 	e, err := s.provider.endpoints()
 	if err != nil {
 		return "", "", err
@@ -120,17 +164,53 @@ func (s *Service) Begin(ctx context.Context, previous string) (redirect, browser
 	if _, err := s.db.Exec(ctx, `DELETE FROM oidc_logins WHERE expires_at <= clock_timestamp()`); err != nil {
 		return "", "", fmt.Errorf("delete expired sign-ins: %w", err)
 	}
-	var previousHash []byte
-	if previous != "" {
-		previousHash = token.Hash(previous)
-	}
 	_, err = s.db.Exec(ctx, `
-INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, previous_session_hash) VALUES ($1, $2, $3, $4, $5)`,
-		token.Hash(state), token.Hash(browser), nonce, verifier, previousHash)
+INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, purpose, previous_session_hash, session_id, return_to)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		token.Hash(state), token.Hash(browser), nonce, verifier, l.purpose, l.previousHash, nullable(l.sessionID), nullable(l.returnTo))
 	if err != nil {
 		return "", "", fmt.Errorf("insert sign-in: %w", err)
 	}
-	return e.oauth.AuthCodeURL(state, gooidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)), browser, nil
+	opts = append(opts, gooidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier))
+	return e.oauth.AuthCodeURL(state, opts...), browser, nil
+}
+
+func nullable(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// maxReturnToLength bounds the path to which a reauthentication returns.
+const maxReturnToLength = 512
+
+// ValidReturnTo reports whether path is a path of the console to which a
+// reauthentication may return: it starts with a single slash, so that it names
+// neither another site nor a protocol-relative one, and consists of printable
+// ASCII without backslashes, which some browsers read as slashes, and without
+// a fragment, to which the console appends its own.
+func ValidReturnTo(path string) bool {
+	if len(path) > maxReturnToLength || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return false
+	}
+	for i := range len(path) {
+		if c := path[i]; c <= ' ' || c > '~' || c == '\\' || c == '#' {
+			return false
+		}
+	}
+	return true
+}
+
+// Result is the outcome of a sign-in at the provider.
+type Result struct {
+	// ReturnTo is set for a reauthentication, also one that failed after its
+	// state was found: the path to which the browser returns.
+	ReturnTo string
+	// Session is the new session of a sign-in, or the session that a
+	// reauthentication confirmed. Token is the token of a new session.
+	Session session.Session
+	Token   string
 }
 
 // Complete completes the sign-in with the state and code with which the
@@ -139,31 +219,53 @@ INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, previou
 // at the first sign-in, and ends the session that the browser held when the
 // sign-in began.
 //
+// A reauthentication instead confirms the session that started it, if the
+// provider confirmed the same identity, with its current role, and asked for
+// its credentials again.
+//
 // It returns ErrInvalidSignIn if the sign-in does not prove an identity, a
 // *RejectedError if the identity may not sign in, and ErrUnavailable if the
 // provider has not been discovered yet. The state is consumed in every case,
 // so that it works once.
-func (s *Service) Complete(ctx context.Context, state, browser, code string) (session.Session, string, error) {
+func (s *Service) Complete(ctx context.Context, state, browser, code string) (Result, error) {
 	var (
-		nonce, verifier string
-		previous        []byte
+		nonce, verifier, purpose string
+		previous                 []byte
+		sessionID, returnTo      *string
+		startedAt                time.Time
 	)
 	err := s.db.QueryRow(ctx, `
 DELETE FROM oidc_logins
 WHERE state_hash = $1 AND browser_hash = $2 AND expires_at > clock_timestamp()
-RETURNING nonce, code_verifier, previous_session_hash`, token.Hash(state), token.Hash(browser)).Scan(&nonce, &verifier, &previous)
+RETURNING nonce, code_verifier, purpose, previous_session_hash, session_id, return_to, created_at`,
+		token.Hash(state), token.Hash(browser)).Scan(&nonce, &verifier, &purpose, &previous, &sessionID, &returnTo, &startedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return session.Session{}, "", fmt.Errorf("%w: unknown, expired or used state, or another browser", ErrInvalidSignIn)
+		return Result{}, fmt.Errorf("%w: unknown, expired or used state, or another browser", ErrInvalidSignIn)
 	}
 	if err != nil {
-		return session.Session{}, "", fmt.Errorf("consume sign-in: %w", err)
+		return Result{}, fmt.Errorf("consume sign-in: %w", err)
 	}
 
+	switch {
+	case purpose == purposeReauthentication && sessionID != nil && returnTo != nil:
+		res := Result{ReturnTo: *returnTo}
+		c, err := s.verify(ctx, code, nonce, verifier)
+		if err != nil {
+			return res, err
+		}
+		res.Session, err = s.reauthenticate(ctx, c, *sessionID, startedAt)
+		return res, err
+	case purpose != purposeSignIn:
+		// The schema rules this out; a reauthentication must never start a
+		// session.
+		return Result{}, fmt.Errorf("sign-in with purpose %q and incomplete fields", purpose)
+	}
 	c, err := s.verify(ctx, code, nonce, verifier)
 	if err != nil {
-		return session.Session{}, "", err
+		return Result{}, err
 	}
-	return s.signIn(ctx, c, previous)
+	sess, tok, err := s.signIn(ctx, c, previous)
+	return Result{Session: sess, Token: tok}, err
 }
 
 // claims are what the console takes from a verified ID token. Claims are taken
@@ -177,6 +279,9 @@ type claims struct {
 	emailVerified bool
 	name          string
 	groups        []string
+	// authTime is when the user last entered their credentials at the
+	// provider, or zero if the provider does not say.
+	authTime time.Time
 }
 
 // verify exchanges code for the tokens of the user and verifies the ID token:
@@ -222,6 +327,10 @@ func (s *Service) verify(ctx context.Context, code, nonce, verifier string) (cla
 	if !c.identity.Valid() {
 		return claims{}, fmt.Errorf("%w: the subject is empty, longer than %d characters or not printable ASCII",
 			ErrInvalidSignIn, user.MaxSubjectLength)
+	}
+	var authTime int64
+	if raw, ok := all["auth_time"]; ok && json.Unmarshal(raw, &authTime) == nil && authTime > 0 {
+		c.authTime = time.Unix(authTime, 0)
 	}
 	c.email, _ = stringClaim(all, "email")
 	c.name, _ = stringClaim(all, "name")
@@ -484,4 +593,71 @@ func displayName(name, email string) string {
 	// a valid name.
 	local, _, _ := strings.Cut(email, "@")
 	return string([]rune(local)[:min(utf8.RuneCountInString(local), user.MaxDisplayNameLength)])
+}
+
+// reauthenticate confirms the session sessionID, whose reauthentication
+// started at startedAt, with the verified identity of c.
+//
+// The provider must confirm the identity of the account of the session, with
+// the role that the account has, and must report that it asked for the
+// credentials after the reauthentication started. A role that the groups no
+// longer give is changed only by the next sign-in, so a reauthentication with
+// other groups is rejected rather than confirming the old role.
+func (s *Service) reauthenticate(ctx context.Context, c claims, sessionID string, startedAt time.Time) (session.Session, error) {
+	var (
+		sess    session.Session
+		outcome error
+	)
+	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		var userID string
+		err := tx.QueryRow(ctx, `SELECT user_id FROM sessions WHERE id = $1`, sessionID).Scan(&userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			// The session ended meanwhile; nobody is left to confirm.
+			outcome = fmt.Errorf("%w: the session ended", ErrInvalidSignIn)
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("look up session: %w", err)
+		}
+		// The account is locked, so that its role and status hold until the
+		// session is marked.
+		u, err := user.NewStore(tx).Lock(ctx, userID)
+		if err != nil {
+			return err
+		}
+		role, inGroups := s.role(c.groups)
+		var reason string
+		switch {
+		case u.Status != user.StatusActive:
+			reason = "the account is not active"
+		case u.Identity == nil || *u.Identity != c.identity:
+			reason = "the provider confirmed another user than the one of the session"
+		case c.authTime.IsZero() || c.authTime.Before(startedAt.Add(-authTimeLeeway)):
+			reason = "the provider did not report that it asked for the credentials again"
+		case !inGroups || role != u.Role:
+			reason = "the groups of the user no longer give the role of the account; the user signs in again"
+		}
+		actor := actorOf(u.ID)
+		resource := audit.Resource{Type: "session", ID: sessionID}
+		if reason != "" {
+			outcome = s.reject(c, reason)
+			return audit.NewStore(tx).Record(ctx, audit.Entry{
+				Action: audit.ActionSessionReauthenticate, Outcome: audit.OutcomeFailure, Actor: actor, Resource: resource,
+			}.WithRequest(ctx))
+		}
+		if err := session.MarkReauthenticated(ctx, tx, sessionID, u.ID); err != nil {
+			return err
+		}
+		sess = session.Session{ID: sessionID, User: u}
+		return audit.NewStore(tx).Record(ctx, audit.Entry{
+			Action: audit.ActionSessionReauthenticate, Outcome: audit.OutcomeSuccess, Actor: actor, Resource: resource,
+		}.WithRequest(ctx))
+	})
+	if err != nil {
+		return session.Session{}, fmt.Errorf("reauthenticate through the identity provider: %w", err)
+	}
+	if outcome != nil {
+		return session.Session{}, outcome
+	}
+	return sess, nil
 }

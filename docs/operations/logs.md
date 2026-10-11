@@ -28,7 +28,8 @@ With an [identity provider](sign-in.md#identity-provider), the console writes th
 |---|---|---|
 | `oidc: identity provider unreachable; sign-ins through it fail until it is discovered` | warn | The provider could not be reached at startup. `issuer`, `retry_in` until the next attempt, and `error`. |
 | `oidc: identity provider discovered` | info | The provider was reached; sign-ins through it work from now on. |
-| `oidc: sign-in rejected` | warn | The provider confirmed the user, but the sign-in was rejected. `rejection` holds the `reason`, such as a user in none of the configured groups, and the `issuer` and `subject` of the user at the provider. |
+| `oidc: reauthenticated` | info | A user of the provider signed in there again to confirm sensitive actions. `session` names the session and its account. |
+| `oidc: sign-in rejected` | warn | The provider confirmed the user, but the sign-in or reauthentication was rejected. `rejection` holds the `reason`, such as a user in none of the configured groups, and the `issuer` and `subject` of the user at the provider. |
 | `oidc: invalid sign-in` | info | The sign-in proves no identity, for example because it expired, was used before, was started in another browser or the provider did not confirm the code or token. `error` names the cause. |
 | `oidc: the identity provider returned an error` | info | The user declined or the provider refused. `error` holds the registered error code, or `unregistered`. |
 

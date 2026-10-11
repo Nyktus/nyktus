@@ -48,7 +48,7 @@ func deps(db Pinger) Deps {
 			Activate: http.NotFoundHandler(), IssueResetLink: http.NotFoundHandler(), ResetPassword: http.NotFoundHandler(),
 		},
 		APIKeys: APIKeys{List: http.NotFoundHandler(), Create: http.NotFoundHandler(), Revoke: http.NotFoundHandler()},
-		OIDC:    OIDC{Authorize: http.NotFoundHandler(), Callback: http.NotFoundHandler()},
+		OIDC:    OIDC{Authorize: http.NotFoundHandler(), Reauthenticate: http.NotFoundHandler(), Callback: http.NotFoundHandler()},
 		Origin:  "https://nyktus.example.com",
 	}
 }
@@ -143,7 +143,8 @@ func TestSessionRoutes_AdmitOnlySessions(t *testing.T) {
 
 	under := func(path, prefix string) bool { return path == prefix || strings.HasPrefix(path, prefix+"/") }
 	for _, route := range NewRouter(deps(fakePinger{})).Routes() {
-		managed := under(route.Path, "/api/v1/session") || under(route.Path, "/api/v1/api-keys")
+		managed := under(route.Path, "/api/v1/session") || under(route.Path, "/api/v1/api-keys") ||
+			route.Path == "/api/v1/oidc/reauthenticate"
 		protected := route.Access != httpx.Public
 		if want := managed && protected; route.Access.RequiresSession() != want {
 			t.Errorf("route %s %s: RequiresSession() = %v, want %v", route.Method, route.Path, route.Access.RequiresSession(), want)

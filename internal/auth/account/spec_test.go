@@ -68,7 +68,7 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		}
 	}
 
-	for _, code := range []string{CodeWrongPassword, CodeAccountLocked} {
+	for _, code := range []string{CodeWrongPassword, CodeAccountLocked, CodeReauthenticationRequired} {
 		if !strings.Contains(string(api.OpenAPI()), "`"+code+"`") {
 			t.Errorf("the specification does not name the code %s", code)
 		}

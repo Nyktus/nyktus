@@ -59,9 +59,9 @@ var (
 	// ErrInvalidToken means that the token of a link is unknown, expired, used
 	// or issued for another purpose.
 	ErrInvalidToken = errors.New("invalid link token")
-	// errOIDCPassword means that an administrator of the identity provider
-	// tried to confirm a change with a password, which they do not have.
-	errOIDCPassword = fmt.Errorf("administrator has no password: %w", user.ErrOIDCAccount)
+	// ErrPasswordRequired means that a local administrator did not confirm
+	// the removal of a second factor with their password.
+	ErrPasswordRequired = errors.New("the password of the administrator is required")
 )
 
 // resourceType names accounts in the audit log.
@@ -210,7 +210,10 @@ type Change struct {
 // administrator therefore confirms it with their own password. A wrong password
 // counts as a failed sign-in of the administrator and returns
 // session.ErrWrongPassword; a lock is revealed only with the correct password,
-// as a *session.LockedError.
+// as a *session.LockedError. A missing one returns ErrPasswordRequired. An
+// administrator of the identity provider, who has no password, confirms by
+// signing in there again within session.ReauthenticationWindow, and receives
+// session.ErrReauthenticationRequired otherwise.
 func (s *Service) Update(ctx context.Context, p access.Principal, id string, c Change) (user.User, error) {
 	// The principal is an active administrator, as the permission to manage
 	// accounts requires, so any other role or status removes one.
@@ -300,7 +303,11 @@ func (s *Service) verifyAdminPassword(ctx context.Context, p access.Principal, i
 		return user.User{}, err
 	}
 	if actor.Identity != nil {
-		return user.User{}, errOIDCPassword
+		// The sign-in at the provider is checked under the lock.
+		return actor, nil
+	}
+	if password == "" {
+		return user.User{}, ErrPasswordRequired
 	}
 	ok, err := s.verifier.Verify(ctx, password, actor.PasswordHash)
 	if err != nil {
@@ -323,8 +330,10 @@ func (s *Service) verifyAdminPassword(ctx context.Context, p access.Principal, i
 
 // lockVerifiedAdmin locks the active administrators and checks under the lock
 // that the administrator p, whose password verifyAdminPassword verified, is
-// still one of them, with the same password and not locked. It
-// returns the reason if not, and records it as a failed removal.
+// still one of them, with the same password and not locked. It returns the
+// reason if not, and records it as a failed removal. For an administrator of
+// the identity provider, it checks instead that the session of p signed in
+// there again recently.
 func (s *Service) lockVerifiedAdmin(ctx context.Context, tx pgx.Tx, p access.Principal, actor user.User, id string) (outcome, err error) {
 	users := user.NewStore(tx)
 	admins, err := users.LockActiveAdmins(ctx)
@@ -342,6 +351,18 @@ func (s *Service) lockVerifiedAdmin(ctx context.Context, tx pgx.Tx, p access.Pri
 	}
 	if err != nil {
 		return nil, err
+	}
+	if actor.Identity != nil {
+		fresh, err := session.Reauthenticated(ctx, tx, p.SessionID, actor.ID)
+		switch {
+		case errors.Is(err, session.ErrNoSession):
+			return session.ErrNoSession, nil
+		case err != nil:
+			return nil, err
+		case !fresh:
+			return session.ErrReauthenticationRequired, nil
+		}
+		return nil, nil
 	}
 	switch {
 	case state.Status != user.StatusActive:

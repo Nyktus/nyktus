@@ -484,10 +484,15 @@ CREATE TABLE public.sessions (
 	user_id      uuid NOT NULL CONSTRAINT sessions_user_id_fkey REFERENCES public.users (id) ON DELETE CASCADE,
 	created_at   timestamptz NOT NULL DEFAULT clock_timestamp(),
 	last_seen_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+	-- When the user of an account of the identity provider last signed in there
+	-- again for this session. A sensitive action, which a local account
+	-- confirms with its password, requires that it was a few minutes ago.
+	reauthenticated_at timestamptz,
 
 	CONSTRAINT sessions_token_hash_key UNIQUE (token_hash),
 	CONSTRAINT sessions_token_hash_check CHECK (octet_length(token_hash) = 32),
-	CONSTRAINT sessions_last_seen_at_check CHECK (last_seen_at >= created_at)
+	CONSTRAINT sessions_last_seen_at_check CHECK (last_seen_at >= created_at),
+	CONSTRAINT sessions_reauthenticated_at_check CHECK (reauthenticated_at >= created_at)
 );
 
 -- Signing in removes the expired sessions of the user, and deleting a user
@@ -500,9 +505,10 @@ REVOKE ALL ON public.sessions FROM PUBLIC, nyktus_console;
 
 GRANT SELECT, DELETE ON public.sessions TO nyktus_console;
 -- Identifiers and times come from the database. The console only records when a
--- session was last used.
+-- session was last used and when its user signed in at the identity provider
+-- again.
 GRANT INSERT (token_hash, user_id) ON public.sessions TO nyktus_console;
-GRANT UPDATE (last_seen_at) ON public.sessions TO nyktus_console;
+GRANT UPDATE (last_seen_at, reauthenticated_at) ON public.sessions TO nyktus_console;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
 -- result is verified instead of assumed, in both directions.
@@ -512,7 +518,8 @@ BEGIN
 		OR NOT has_table_privilege('nyktus_console', 'public.sessions', 'DELETE')
 		OR NOT has_column_privilege('nyktus_console', 'public.sessions', 'token_hash', 'INSERT')
 		OR NOT has_column_privilege('nyktus_console', 'public.sessions', 'user_id', 'INSERT')
-		OR NOT has_column_privilege('nyktus_console', 'public.sessions', 'last_seen_at', 'UPDATE') THEN
+		OR NOT has_column_privilege('nyktus_console', 'public.sessions', 'last_seen_at', 'UPDATE')
+		OR NOT has_column_privilege('nyktus_console', 'public.sessions', 'reauthenticated_at', 'UPDATE') THEN
 		RAISE EXCEPTION 'nyktus_console lacks privileges on public.sessions; run migrations as the owner of the schema';
 	END IF;
 
@@ -520,7 +527,7 @@ BEGIN
 		OR has_table_privilege('nyktus_console', 'public.sessions', 'UPDATE, TRUNCATE, REFERENCES, TRIGGER')
 		OR has_any_column_privilege('nyktus_console', 'public.sessions', 'REFERENCES')
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['id', 'created_at', 'last_seen_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['id', 'created_at', 'last_seen_at', 'reauthenticated_at']) AS c (name)
 			WHERE has_column_privilege('nyktus_console', 'public.sessions', c.name, 'INSERT')
 		)
 		OR EXISTS (
@@ -649,7 +656,8 @@ END
 $$;
 
 -- A sign-in through OpenID Connect leaves the console for the identity provider
--- and returns with a code. Its state is kept here between the two requests, so
+-- and returns with a code. So does a reauthentication, with which a signed-in
+-- user of the provider confirms a sensitive action. Its state is kept here between the two requests, so
 -- that it works across console processes. The browser that started the sign-in
 -- holds a token in a cookie, which binds the sign-in to it; the state parameter
 -- travels through the provider and names the row. Only the SHA-256 hashes of
@@ -661,14 +669,34 @@ CREATE TABLE public.oidc_logins (
 	browser_hash  bytea NOT NULL,
 	nonce         text NOT NULL,
 	code_verifier text NOT NULL,
+	purpose       text NOT NULL,
 	-- The hash of the token of the session that the browser held when the
 	-- sign-in started, which ends when the new one starts. The browser does
 	-- not send its session cookie, which is SameSite=Strict, when the provider
 	-- sends it back from another site.
 	previous_session_hash bytea,
+	-- The session that a reauthentication confirms, and the page of the
+	-- console to which the browser returns. A reauthentication ends with its
+	-- session.
+	session_id    uuid CONSTRAINT oidc_logins_session_id_fkey REFERENCES public.sessions (id) ON DELETE CASCADE,
+	return_to     text,
+	created_at    timestamptz NOT NULL DEFAULT clock_timestamp(),
 	-- The lifetime is fixed here, so that the console cannot extend it.
 	expires_at    timestamptz NOT NULL DEFAULT clock_timestamp() + interval '10 minutes',
 
+	CONSTRAINT oidc_logins_purpose_check CHECK (
+		CASE purpose
+			WHEN 'sign_in' THEN session_id IS NULL AND return_to IS NULL
+			WHEN 'reauthentication' THEN session_id IS NOT NULL AND return_to IS NOT NULL AND previous_session_hash IS NULL
+			ELSE false
+		END
+	),
+	-- A path of the console, never another site: not a URL, not
+	-- protocol-relative, and without a fragment, to which the console appends
+	-- its own.
+	CONSTRAINT oidc_logins_return_to_check CHECK (
+		char_length(return_to) <= 512 AND return_to ~ '^/([^/\\]|$)' AND return_to !~ '[#\\\x01-\x20\x7f]'
+	),
 	CONSTRAINT oidc_logins_state_hash_check CHECK (octet_length(state_hash) = 32),
 	CONSTRAINT oidc_logins_browser_hash_check CHECK (octet_length(browser_hash) = 32),
 	CONSTRAINT oidc_logins_previous_session_hash_check CHECK (octet_length(previous_session_hash) = 32),
@@ -681,18 +709,23 @@ CREATE TABLE public.oidc_logins (
 -- Starting a sign-in removes the expired ones.
 CREATE INDEX oidc_logins_expires_at_idx ON public.oidc_logins (expires_at);
 
+-- Ending a session removes its reauthentication.
+CREATE INDEX oidc_logins_session_id_idx ON public.oidc_logins (session_id);
+
 REVOKE ALL ON public.oidc_logins FROM PUBLIC, nyktus_console;
 
 -- Sign-ins are started, consumed and removed when they expire, never changed.
 GRANT SELECT, DELETE ON public.oidc_logins TO nyktus_console;
-GRANT INSERT (state_hash, browser_hash, nonce, code_verifier, previous_session_hash) ON public.oidc_logins TO nyktus_console;
+GRANT INSERT (state_hash, browser_hash, nonce, code_verifier, purpose, previous_session_hash, session_id, return_to)
+	ON public.oidc_logins TO nyktus_console;
 
 DO $$
 BEGIN
 	IF NOT has_table_privilege('nyktus_console', 'public.oidc_logins', 'SELECT')
 		OR NOT has_table_privilege('nyktus_console', 'public.oidc_logins', 'DELETE')
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['state_hash', 'browser_hash', 'nonce', 'code_verifier', 'previous_session_hash']) AS c (name)
+			SELECT FROM unnest(ARRAY['state_hash', 'browser_hash', 'nonce', 'code_verifier', 'purpose', 'previous_session_hash',
+				'session_id', 'return_to']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.oidc_logins', c.name, 'INSERT')
 		) THEN
 		RAISE EXCEPTION 'nyktus_console lacks privileges on public.oidc_logins; run migrations as the owner of the schema';
@@ -700,7 +733,8 @@ BEGIN
 
 	IF has_table_privilege('nyktus_console', 'public.oidc_logins', 'INSERT, UPDATE, TRUNCATE, REFERENCES, TRIGGER')
 		OR has_any_column_privilege('nyktus_console', 'public.oidc_logins', 'UPDATE, REFERENCES')
-		OR has_column_privilege('nyktus_console', 'public.oidc_logins', 'expires_at', 'INSERT') THEN
+		OR has_column_privilege('nyktus_console', 'public.oidc_logins', 'expires_at', 'INSERT')
+		OR has_column_privilege('nyktus_console', 'public.oidc_logins', 'created_at', 'INSERT') THEN
 		RAISE EXCEPTION 'nyktus_console has more privileges on public.oidc_logins than granted; check the default privileges of the owner';
 	END IF;
 END

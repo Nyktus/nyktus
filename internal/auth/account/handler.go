@@ -39,6 +39,9 @@ const (
 const (
 	CodeWrongPassword = "wrong_password"
 	CodeAccountLocked = "account_locked"
+	// CodeReauthenticationRequired asks an administrator of the identity
+	// provider, who has no password, to sign in there again.
+	CodeReauthenticationRequired = "reauthentication_required"
 )
 
 // defaultPageSize is the page size if the request names none.
@@ -239,9 +242,6 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		// which, with a password reset link, would take them over.
 		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "only a signed-in session can remove a second factor")
 		return
-	case c.RemoveTOTP && !req.Password.set:
-		invalid(w, r, "password is required to remove a second factor")
-		return
 	case !c.RemoveTOTP && req.Password.set:
 		invalid(w, r, "password is only used to remove a second factor")
 		return
@@ -429,9 +429,11 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, 
 		httpx.WriteError(w, r, http.StatusConflict, CodeInvalidState, "only a pending account can receive an activation link")
 	case errors.Is(err, ErrNotActive):
 		httpx.WriteError(w, r, http.StatusConflict, CodeInvalidState, "only an active account can receive a password reset link")
-	case errors.Is(err, errOIDCPassword):
-		httpx.WriteError(w, r, http.StatusConflict, CodeOIDCAccount,
-			"your account signs in through the identity provider and cannot confirm with a password")
+	case errors.Is(err, session.ErrReauthenticationRequired):
+		httpx.WriteError(w, r, http.StatusForbidden, CodeReauthenticationRequired,
+			"sign in at the identity provider again through GET /api/v1/oidc/reauthenticate, then repeat the request within 5 minutes")
+	case errors.Is(err, ErrPasswordRequired):
+		invalid(w, r, "password is required to remove a second factor")
 	case errors.Is(err, user.ErrOIDCAccount):
 		httpx.WriteError(w, r, http.StatusConflict, CodeOIDCAccount,
 			"the account signs in through the identity provider, which manages its password and role")

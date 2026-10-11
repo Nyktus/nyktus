@@ -57,10 +57,15 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 	k := apikeyapi.NewHandler(o.Logger, o.DB, sessions)
 	// The routes exist without a provider as well, so that the API is the same
 	// in every configuration; they answer that there is nothing to sign in to.
-	signInThroughProvider := OIDC{Authorize: http.HandlerFunc(httpx.NotFound), Callback: http.HandlerFunc(httpx.NotFound)}
+	notFound := http.HandlerFunc(httpx.NotFound)
+	signInThroughProvider := OIDC{Authorize: notFound, Reauthenticate: notFound, Callback: notFound}
 	if o.OIDC != nil {
 		p := oidc.NewHandler(o.Logger, oidc.NewService(o.DB, o.OIDC, sessions, o.OIDCGroups), h)
-		signInThroughProvider = OIDC{Authorize: http.HandlerFunc(p.Authorize), Callback: http.HandlerFunc(p.Callback)}
+		signInThroughProvider = OIDC{
+			Authorize:      http.HandlerFunc(p.Authorize),
+			Reauthenticate: http.HandlerFunc(p.Reauthenticate),
+			Callback:       http.HandlerFunc(p.Callback),
+		}
 	}
 	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
 	return NewHandler(Deps{
