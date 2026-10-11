@@ -36,8 +36,8 @@ info:
     the origin of the console, otherwise they receive `403`.
 
     Integrations authenticate with an API key in the header
-    `Authorization: Bearer <key>`. A request with a bearer token authenticates
-    with it alone, and a key holds the intersection of its scopes
+    `Authorization: Bearer <key>`. A request with a key authenticates with it
+    alone; other credentials in the header are ignored. A key holds the intersection of its scopes
     and the current role of its user. Operations that do not list `bearerKey`
     reject keys with `403`.
   version: 0.0.0

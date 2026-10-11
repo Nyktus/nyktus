@@ -40,9 +40,9 @@ func New(d db.Querier, sessions *session.Service) *Authorizer {
 }
 
 // Authorize implements httpx.Authorizer. A request denied for a missing
-// permission is recorded in the audit log, at most once per user, permission and
-// audit.RepeatWindow, so that a signed-in user cannot fill the log by repeating
-// it. A request without valid credentials is not recorded, so that anonymous
+// permission is recorded in the audit log, at most once per user, API key,
+// permission and audit.RepeatWindow, so that a signed-in user cannot fill the
+// log by repeating it. A request without valid credentials is not recorded, so that anonymous
 // clients cannot fill the audit log either. The access log records both.
 func (a *Authorizer) Authorize(r *http.Request, acc httpx.Access) (*http.Request, error) {
 	ctx := r.Context()
@@ -50,10 +50,10 @@ func (a *Authorizer) Authorize(r *http.Request, acc httpx.Access) (*http.Request
 		p   access.Principal
 		err error
 	)
-	// A request with a bearer token authenticates with it alone. The session
-	// cookie is then ignored, so that a request has one principal. Other
-	// schemes, such as Basic credentials that a reverse proxy passes on, are
-	// not meant for the console and are ignored.
+	// A request with an API key authenticates with it alone. The session cookie
+	// is then ignored, so that a request has one principal. Other credentials,
+	// such as Basic credentials or the bearer token of an identity-aware proxy
+	// in front of the console, are not meant for it and are ignored.
 	if key, ok := bearerToken(r.Header.Values("Authorization")); ok {
 		p, err = a.authenticateKey(ctx, key)
 	} else {
@@ -90,16 +90,17 @@ func (a *Authorizer) authenticateSession(ctx context.Context, r *http.Request) (
 	return p, session.NewContext(ctx, sess), nil
 }
 
-// bearerToken returns the token of a bearer credential (RFC 6750) among the
-// values of the Authorization header. ok reports whether there is one; key is
-// empty if the header is ambiguous, with more than one value, or the token is
-// missing.
+// bearerToken returns the API key among the values of the Authorization
+// header: a bearer token (RFC 6750) with the prefix of a key. ok reports
+// whether there is one; key is empty if the header is ambiguous, with more than
+// one value.
 func bearerToken(values []string) (key string, ok bool) {
 	for _, v := range values {
 		scheme, token, _ := strings.Cut(v, " ")
-		if strings.EqualFold(scheme, "Bearer") {
+		token = strings.TrimLeft(token, " ")
+		if strings.EqualFold(scheme, "Bearer") && strings.HasPrefix(token, apikey.Prefix) {
 			ok = true
-			key = strings.TrimLeft(token, " ")
+			key = token
 		}
 	}
 	if len(values) != 1 {

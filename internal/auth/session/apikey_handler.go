@@ -93,6 +93,11 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, apikey.ErrInvalidExpiry):
 		writeInvalidExpiry(w, r)
 		return
+	case errors.Is(err, apikey.ErrInvalidName), errors.Is(err, apikey.ErrInvalidScopes):
+		// The database checks the fields as well, in case its rules and those
+		// above ever differ.
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, err.Error())
+		return
 	case errors.Is(err, apikey.ErrTooManyKeys):
 		httpx.WriteError(w, r, http.StatusConflict, codeTooManyAPIKeys, "revoke an API key before you create another one")
 		return

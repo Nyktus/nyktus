@@ -227,7 +227,6 @@ func TestAPIKey_InvalidKeysAreUnauthenticated(t *testing.T) {
 		"revoked by an admin": bearer(leaked),
 		"deactivated account": bearer(deactivated),
 		"malformed":           bearer("nyk_secret"),
-		"no token":            {"Authorization": "Bearer"},
 	} {
 		r := send(t, srv, http.MethodGet, "/api/v1/audit-entries", "", nil, header)
 		if r.status != http.StatusUnauthorized || r.header.Get("WWW-Authenticate") != "Bearer" {
@@ -256,10 +255,12 @@ func TestAPIKey_HeaderTakesPrecedenceOverTheCookie(t *testing.T) {
 	if r := send(t, srv, http.MethodGet, "/api/v1/users", "", c, bearer(key)); r.status != http.StatusForbidden {
 		t.Errorf("key without users:read with a valid cookie: status %d, want 403", r.status)
 	}
-	// Credentials of another scheme, such as those of a reverse proxy with basic
-	// authentication, leave the session in charge.
-	if r := send(t, srv, http.MethodGet, "/api/v1/users", "", c, map[string]string{"Authorization": "Basic YWRhOnB3"}); r.status != http.StatusOK {
-		t.Errorf("basic credentials with a valid cookie: status %d, want 200", r.status)
+	// Other credentials, such as those of a reverse proxy with basic
+	// authentication or of an identity-aware proxy, leave the session in charge.
+	for _, header := range []string{"Basic YWRhOnB3", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln"} {
+		if r := send(t, srv, http.MethodGet, "/api/v1/users", "", c, map[string]string{"Authorization": header}); r.status != http.StatusOK {
+			t.Errorf("%s with a valid cookie: status %d, want 200", header, r.status)
+		}
 	}
 	// RFC 6750 allows more than one space after the scheme.
 	if r := send(t, srv, http.MethodGet, "/api/v1/audit-entries", "", nil, map[string]string{"Authorization": "Bearer   " + key}); r.status != http.StatusOK {
