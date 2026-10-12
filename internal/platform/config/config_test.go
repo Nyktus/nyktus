@@ -54,6 +54,7 @@ func TestLoadServe_Defaults(t *testing.T) {
 
 	src := fakeSource{env: map[string]string{
 		"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+		"NYKTUS_TRIGGER_URL":          "https://t.example.com",
 		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
 		"NYKTUS_ENCRYPTION_KEYS":      testKeys,
 	}}
@@ -88,7 +89,7 @@ func TestLoadServe_ReportsAllProblems(t *testing.T) {
 	if err == nil {
 		t.Fatal("LoadServe() returned no error")
 	}
-	for _, want := range []string{"NYKTUS_ENV", "NYKTUS_LOG_LEVEL", "NYKTUS_CONSOLE_ADDR", "NYKTUS_CONSOLE_URL", "NYKTUS_CONSOLE_DATABASE_URL", "NYKTUS_ENCRYPTION_KEYS"} {
+	for _, want := range []string{"NYKTUS_ENV", "NYKTUS_LOG_LEVEL", "NYKTUS_CONSOLE_ADDR", "NYKTUS_CONSOLE_URL", "NYKTUS_CONSOLE_DATABASE_URL", "NYKTUS_ENCRYPTION_KEYS", "NYKTUS_TRIGGER_URL"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not mention %s: %v", want, err)
 		}
@@ -147,6 +148,7 @@ func TestLoadServe_ConsoleURL(t *testing.T) {
 
 			env := map[string]string{
 				"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+				"NYKTUS_TRIGGER_URL":          "https://t.example.com",
 				"NYKTUS_CONSOLE_URL":          tt.value,
 				"NYKTUS_ENCRYPTION_KEYS":      testKeys,
 			}
@@ -199,6 +201,7 @@ func TestLoadServe_SessionDurations(t *testing.T) {
 
 			env := map[string]string{
 				"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+				"NYKTUS_TRIGGER_URL":          "https://t.example.com",
 				"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
 				"NYKTUS_SESSION_IDLE_TIMEOUT": tt.idle,
 				"NYKTUS_SESSION_MAX_AGE":      tt.maxAge,
@@ -228,6 +231,7 @@ func TestLoadServe_EncryptionKeys(t *testing.T) {
 		return map[string]string{
 			"NYKTUS_ENV":                  "development",
 			"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+			"NYKTUS_TRIGGER_URL":          "https://t.example.com",
 			"NYKTUS_ENCRYPTION_KEYS":      keys,
 		}
 	}
@@ -253,7 +257,10 @@ func TestLoadServe_EncryptionKeys(t *testing.T) {
 	}
 
 	src := fakeSource{
-		env:   map[string]string{"NYKTUS_ENV": "development", "NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus", "NYKTUS_ENCRYPTION_KEYS_FILE": "/run/secrets/keys"},
+		env: map[string]string{
+			"NYKTUS_ENV": "development", "NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+			"NYKTUS_TRIGGER_URL": "http://localhost:8081", "NYKTUS_ENCRYPTION_KEYS_FILE": "/run/secrets/keys",
+		},
 		files: map[string]string{"/run/secrets/keys": testKeys + "\n"},
 	}
 	if _, err := LoadServe(src.source(), []Role{RoleConsole}); err != nil {
@@ -433,5 +440,64 @@ func TestParseRoles(t *testing.T) {
 
 	if _, err := ParseRoles("console,unknown"); err == nil {
 		t.Error("ParseRoles() accepted an unknown role")
+	}
+}
+
+func TestLoadServe_TriggerURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		development bool
+		value       string
+		want        string
+		err         string
+	}{
+		{name: "https", value: "https://t.example.com", want: "https://t.example.com"},
+		{name: "trailing slash", value: "https://t.example.com/", want: "https://t.example.com"},
+		{name: "port", value: "https://t.example.com:8443", want: "https://t.example.com:8443"},
+		{name: "required in production", err: "NYKTUS_TRIGGER_URL is required"},
+		// The console shows the URLs of honeytokens in every environment.
+		{name: "required in development", development: true, err: "NYKTUS_TRIGGER_URL is required"},
+		{name: "http in production", value: "http://t.example.com", err: "NYKTUS_TRIGGER_URL: must start with https://"},
+		{name: "http in development", development: true, value: "http://localhost:8081", want: "http://localhost:8081"},
+		{name: "host of the console with another port in development", development: true, value: "https://nyktus.example.com:8443", want: "https://nyktus.example.com:8443"},
+		{name: "path", value: "https://t.example.com/t", err: "NYKTUS_TRIGGER_URL: must consist of scheme, host and port only"},
+		{name: "query", value: "https://t.example.com?a", err: "NYKTUS_TRIGGER_URL: must consist of scheme, host and port only"},
+		{name: "user information", value: "https://u@t.example.com", err: "NYKTUS_TRIGGER_URL: must consist of scheme, host and port only"},
+		{name: "address of the console", value: "https://nyktus.example.com/", err: "NYKTUS_TRIGGER_URL: must name another host than NYKTUS_CONSOLE_URL"},
+		{name: "host of the console in other case", value: "https://NYKTUS.example.com", err: "must name another host than NYKTUS_CONSOLE_URL"},
+		{name: "host of the console with a port", value: "https://nyktus.example.com:8443", err: "must name another host than NYKTUS_CONSOLE_URL"},
+		{name: "host of the console with the default port", value: "https://nyktus.example.com:443", err: "must name another host than NYKTUS_CONSOLE_URL"},
+		{name: "subdomain of the console", value: "https://t.nyktus.example.com", want: "https://t.nyktus.example.com"},
+		{name: "address of the console in development", development: true, value: "https://nyktus.example.com", err: "must name another host than NYKTUS_CONSOLE_URL"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := map[string]string{
+				"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+				"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+				"NYKTUS_TRIGGER_URL":          tt.value,
+				"NYKTUS_ENCRYPTION_KEYS":      testKeys,
+			}
+			if tt.development {
+				env["NYKTUS_ENV"] = "development"
+			}
+			cfg, err := LoadServe(fakeSource{env: env}.source(), []Role{RoleConsole})
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.err) {
+					t.Errorf("LoadServe() error = %v, want it to contain %q", err, tt.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadServe() error = %v", err)
+			}
+			if cfg.Console.TriggerURL != tt.want {
+				t.Errorf("Console.TriggerURL = %q, want %q", cfg.Console.TriggerURL, tt.want)
+			}
+		})
 	}
 }

@@ -117,6 +117,10 @@ type Console struct {
 	OIDC *OIDC
 	// LocalLogin says which accounts sign in with a password.
 	LocalLogin LocalLogin
+	// TriggerURL is the public address of the trigger, such as
+	// "https://t.example.com", without a trailing slash. The URL of a
+	// honeytoken is this address followed by its trigger value.
+	TriggerURL string
 }
 
 // LocalLogin says which accounts sign in with a password.
@@ -219,6 +223,7 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 			max(cfg.Console.SessionIdleTimeout, minSessionIdleTimeout), maxSessionMaxAge)
 		cfg.Console.OIDC = r.oidc(cfg.Environment)
 		cfg.Console.LocalLogin = r.localLogin(cfg.Console.OIDC != nil)
+		cfg.Console.TriggerURL = r.triggerURL("TRIGGER_URL", cfg.Environment, cfg.Console.URL)
 		cfg.EncryptionKeys = r.keyring("ENCRYPTION_KEYS")
 	}
 	return cfg, r.err()
@@ -312,16 +317,42 @@ func (r *reader) duration(name string, fallback, lowest, highest time.Duration) 
 // consoleURL reads the external address of the console. It is required outside
 // development, because links handed out to users must reach the console through
 // its reverse proxy. In development, it defaults to the listen address.
-//
-// Only the scheme, host and port are accepted. The console serves its routes at
-// the root, and user information, a query or a fragment would end up in front of
-// the paths and fragments that the console appends.
 func (r *reader) consoleURL(name string, env Environment, addr string) string {
+	if r.get(name) == "" && env == Development {
+		return developmentURL(addr)
+	}
+	return r.origin(name, env)
+}
+
+// triggerURL reads the public address of the trigger, which the URLs of
+// honeytokens start with. It is required in every environment, because the
+// console shows these URLs. Its host must differ from the host of the console:
+// every placed URL names it, and a decoy that leads to the console would reveal
+// it. In development, both may run on one host with different ports.
+func (r *reader) triggerURL(name string, env Environment, consoleURL string) string {
+	u := r.origin(name, env)
+	if u == "" || consoleURL == "" {
+		return u
+	}
+	trigger, errTrigger := url.Parse(u)
+	console, errConsole := url.Parse(consoleURL)
+	same := strings.EqualFold(trigger.Hostname(), console.Hostname())
+	if env == Development {
+		same = strings.EqualFold(u, consoleURL)
+	}
+	if errTrigger == nil && errConsole == nil && same {
+		r.fail("%s%s: must name another host than %sCONSOLE_URL; the trigger is reached from the internet, the console must not be", prefix, name, prefix)
+		return ""
+	}
+	return u
+}
+
+// origin reads a required address that consists of scheme, host and port only.
+// Nyktus appends paths to it, and user information, a query or a fragment would
+// end up in front of them. It must use https outside development.
+func (r *reader) origin(name string, env Environment) string {
 	value := r.get(name)
 	if value == "" {
-		if env == Development {
-			return developmentURL(addr)
-		}
 		r.fail("%s%s is required", prefix, name)
 		return ""
 	}

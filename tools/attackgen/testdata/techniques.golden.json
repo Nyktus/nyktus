@@ -1,0 +1,7 @@
+{
+"version": "1.0",
+"techniques": [
+{"id":"T0001","name":"Parent Technique","tactics":["Initial Access","Credential Access"]},
+{"id":"T0001.001","name":"Parent Technique: Sub Technique","tactics":["Credential Access"]}
+]
+}

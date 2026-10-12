@@ -26,4 +26,7 @@ var Actions = []Action{
 	ActionAPIKeyCreate,
 	ActionAPIKeyRevoke,
 	ActionAuditRead,
+	ActionHoneytokenCreate,
+	ActionHoneytokenUpdate,
+	ActionHoneytokenDelete,
 }

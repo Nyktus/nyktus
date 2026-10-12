@@ -54,6 +54,7 @@ func newEnv(t *testing.T) env {
 		Sessions:   session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour},
 		Keys:       secretboxtest.Keyring(t),
 		ConsoleURL: consoleURL,
+		TriggerURL: "https://t.example.net",
 	})
 	if err != nil {
 		t.Fatalf("console.New() error = %v", err)

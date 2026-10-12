@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,9 @@ type ListQuery struct {
 	Limit int
 	// After is the cursor of the previous page, or nil for the first page.
 	After *Cursor
+	// Filters holds the filter parameters that the request gave, by name. The
+	// handler validates their values.
+	Filters map[string]string
 }
 
 var (
@@ -36,14 +40,15 @@ var (
 
 var errInvalidCursor = errors.New("cursor is invalid; use the next_cursor of a previous response")
 
-// DecodeListQuery reads the parameters limit and cursor of a list request. A
-// missing limit is defaultLimit; a limit outside [1, maxLimit] is rejected.
-// Unknown and repeated parameters are rejected, as unknown fields of a request
-// body are, and so is a query that cannot be parsed, which url.URL.Query would
-// silently drop. On failure it writes the error response and returns false; the
-// handler must then return.
-func DecodeListQuery(w http.ResponseWriter, r *http.Request, defaultLimit, maxLimit int) (ListQuery, bool) {
-	q, err := parseListQuery(r.URL.RawQuery, defaultLimit, maxLimit)
+// DecodeListQuery reads the parameters limit and cursor of a list request, and
+// the filter parameters that the list accepts. A missing limit is
+// defaultLimit; a limit outside [1, maxLimit] is rejected. Unknown and repeated
+// parameters are rejected, as unknown fields of a request body are, and so is a
+// query that cannot be parsed, which url.URL.Query would silently drop. On
+// failure it writes the error response and returns false; the handler must then
+// return.
+func DecodeListQuery(w http.ResponseWriter, r *http.Request, defaultLimit, maxLimit int, filters ...string) (ListQuery, bool) {
+	q, err := parseListQuery(r.URL.RawQuery, defaultLimit, maxLimit, filters)
 	if err != nil {
 		WriteError(w, r, http.StatusBadRequest, CodeInvalidRequest, err.Error())
 		return ListQuery{}, false
@@ -51,15 +56,16 @@ func DecodeListQuery(w http.ResponseWriter, r *http.Request, defaultLimit, maxLi
 	return q, true
 }
 
-func parseListQuery(raw string, defaultLimit, maxLimit int) (ListQuery, error) {
+func parseListQuery(raw string, defaultLimit, maxLimit int, filters []string) (ListQuery, error) {
 	query, err := url.ParseQuery(raw)
 	if err != nil {
 		return ListQuery{}, errors.New("query string is invalid")
 	}
+	known := append([]string{"limit", "cursor"}, filters...)
 	// The messages do not repeat the parameter names, which the client chose.
 	for name, values := range query {
-		if name != "limit" && name != "cursor" {
-			return ListQuery{}, errors.New("unknown query parameter; use limit and cursor")
+		if !slices.Contains(known, name) {
+			return ListQuery{}, errors.New("unknown query parameter; use " + strings.Join(known[:len(known)-1], ", ") + " and " + known[len(known)-1])
 		}
 		if len(values) != 1 {
 			return ListQuery{}, errors.New("query parameters must be given once")
@@ -67,6 +73,14 @@ func parseListQuery(raw string, defaultLimit, maxLimit int) (ListQuery, error) {
 	}
 
 	q := ListQuery{Limit: defaultLimit}
+	for _, name := range filters {
+		if s, ok := query[name]; ok {
+			if q.Filters == nil {
+				q.Filters = map[string]string{}
+			}
+			q.Filters[name] = s[0]
+		}
+	}
 	if s, ok := query["limit"]; ok {
 		// One spelling per number: no sign and no leading zeros, which
 		// strconv.Atoi would accept.

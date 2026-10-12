@@ -52,6 +52,7 @@ catalog/            pinned, signed release of the official catalog, embedded at 
 migrations/         PostgreSQL migrations
 web/                web console
 deploy/             reference deployment configuration
+tools/              generators for embedded data, run by developers, never by the server
 docs/               user documentation
 docs/development/   contributor documentation and guidelines
 ```

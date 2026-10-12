@@ -104,7 +104,7 @@ func ParseName(s string) (string, error) {
 }
 
 // ValidateScopes checks the scopes of a new key: one to MaxScopes distinct
-// permissions that keys may carry.
+// permissions that keys may carry, each with the scopes it requires.
 func ValidateScopes(scopes []httpx.Permission) error {
 	if len(scopes) == 0 || len(scopes) > MaxScopes {
 		return ErrInvalidScopes
@@ -112,6 +112,9 @@ func ValidateScopes(scopes []httpx.Permission) error {
 	keyScopes := access.KeyScopes()
 	for i, s := range scopes {
 		if !slices.Contains(keyScopes, s) || slices.Contains(scopes[:i], s) {
+			return ErrInvalidScopes
+		}
+		if required, ok := access.KeyScopeRequires(s); ok && !slices.Contains(scopes, required) {
 			return ErrInvalidScopes
 		}
 	}

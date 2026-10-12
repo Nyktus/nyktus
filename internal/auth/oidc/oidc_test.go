@@ -93,6 +93,7 @@ func newUndiscoveredEnv(t *testing.T) env {
 		Sessions:   session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour},
 		Keys:       secretboxtest.Keyring(t),
 		ConsoleURL: consoleURL,
+		TriggerURL: "https://t.example.net",
 		OIDC:       provider,
 		OIDCGroups: groups,
 	})
@@ -342,7 +343,7 @@ func TestRoutes_NotFoundWithoutAProvider(t *testing.T) {
 	pool := schematest.Open(t, consoleDBURL)
 	h, err := console.New(t.Context(), console.Options{
 		Logger: slog.New(slog.DiscardHandler), DB: pool, Setup: setup.NewService(pool), Hasher: hasher,
-		Sessions: session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour}, Keys: secretboxtest.Keyring(t), ConsoleURL: consoleURL,
+		Sessions: session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour}, Keys: secretboxtest.Keyring(t), ConsoleURL: consoleURL, TriggerURL: "https://t.example.net",
 	})
 	if err != nil {
 		t.Fatalf("console.New() error = %v", err)
