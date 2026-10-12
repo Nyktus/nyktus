@@ -267,6 +267,12 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE honeytokens SET id = gen_random_uuid()",
 		"UPDATE honeytokens SET created_at = now()",
 		"TRUNCATE honeytokens",
+		"SELECT count(*) FROM events",
+		"INSERT INTO events (resource_type, resource_id, honeytoken_type, method) VALUES ('honeytoken', gen_random_uuid(), 'web_url', 'GET')",
+		"DELETE FROM events",
+		"SELECT count(*) FROM event_jobs",
+		"INSERT INTO event_jobs (event_id) VALUES (gen_random_uuid())",
+		"SELECT * FROM public.record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -356,6 +362,10 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_column_privilege($1, 'public.honeytokens', 'type', 'UPDATE')",
 		"has_column_privilege($1, 'public.honeytokens', 'trigger_value', 'UPDATE')",
 		"has_column_privilege($1, 'public.honeytokens', 'created_at', 'UPDATE')",
+		"has_table_privilege($1, 'public.events', 'SELECT')",
+		"has_table_privilege($1, 'public.events', 'INSERT')",
+		"has_table_privilege($1, 'public.event_jobs', 'INSERT')",
+		"has_function_privilege($1, 'public.record_honeytoken_request(text, text, inet, text, text, text)', 'EXECUTE')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

@@ -38,7 +38,7 @@ The trigger answers a failed request like any other, so the log is the only plac
 | Message | Level | Content |
 |---|---|---|
 | `trigger: recording failed` | error | The database could not record the request, for example because it was unreachable or slower than two seconds. `error` names the cause. |
-| `trigger: recorder panicked` | error | A programming error; `panic` and `stack` describe it. |
+| `trigger: handler panicked` | error | A programming error; `panic` and `stack` describe it. The client still receives the regular answer. |
 | `trigger: requests not recorded` | warn | Requests of the honeytoken `honeytoken_id` beyond its [limit of events](honeytokens.md#events) in the last minute; `requests` is their number. |
 
 ## Sign-in through an identity provider

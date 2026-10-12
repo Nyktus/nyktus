@@ -1140,6 +1140,22 @@ REVOKE ALL ON public.events, public.event_jobs FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text)
 	FROM PUBLIC, nyktus_console;
 
+-- REVOKE only warns when the executing role lacks the grant option, so the
+-- result is verified instead of assumed. An event that the console could write
+-- would have no job, or a job no event.
+DO $$
+BEGIN
+	IF has_table_privilege('nyktus_console', 'public.events', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+		OR has_any_column_privilege('nyktus_console', 'public.events', 'SELECT, INSERT, UPDATE, REFERENCES')
+		OR has_table_privilege('nyktus_console', 'public.event_jobs', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+		OR has_any_column_privilege('nyktus_console', 'public.event_jobs', 'SELECT, INSERT, UPDATE, REFERENCES')
+		OR has_function_privilege('nyktus_console',
+			'public.record_honeytoken_request(text, text, inet, text, text, text)', 'EXECUTE') THEN
+		RAISE EXCEPTION 'nyktus_console has privileges on events; check the default privileges of the owner';
+	END IF;
+END
+$$;
+
 -- The trigger reaches nothing but its function. Everything in the schema is
 -- revoked here, at its end, including the table of the migration runner, so
 -- that default privileges set by an operator cannot widen the trigger beyond

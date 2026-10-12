@@ -283,16 +283,18 @@ func TestRunRoles_AFailedRoleStopsTheOthers(t *testing.T) {
 	defer cancel()
 	failure := errors.New("listener failed")
 	stopped := make(chan struct{})
-	err := runRoles(ctx, []func(context.Context) error{
-		func(ctx context.Context) error {
+	err := runRoles(ctx, []role{
+		func(ctx context.Context, started func(), _ <-chan struct{}) error {
+			started()
 			<-ctx.Done()
 			close(stopped)
-			return nil
+			// A stopped role may fail as a consequence; only the cause counts.
+			return fmt.Errorf("serve: %w", ctx.Err())
 		},
-		func(context.Context) error { return failure },
+		func(context.Context, func(), <-chan struct{}) error { return failure },
 	})
-	if !errors.Is(err, failure) {
-		t.Errorf("runRoles() error = %v, want the failure of the role", err)
+	if err != failure { //nolint:errorlint // the error must be the failure itself, without the consequence.
+		t.Errorf("runRoles() error = %v, want only the failure of the role", err)
 	}
 	if ctx.Err() != nil {
 		t.Error("runRoles waited for the deadline instead of stopping the other role")
@@ -301,6 +303,49 @@ func TestRunRoles_AFailedRoleStopsTheOthers(t *testing.T) {
 	case <-stopped:
 	default:
 		t.Error("the other role was still running when runRoles returned")
+	}
+}
+
+// A role waits for the others before a step that a failed start must not leave
+// behind, such as a setup token.
+func TestRunRoles_AllStartedOnlyOnceEveryRoleStarted(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	failure := errors.New("listener failed")
+	var proceeded bool
+	err := runRoles(ctx, []role{
+		func(ctx context.Context, started func(), allStarted <-chan struct{}) error {
+			started()
+			select {
+			case <-allStarted:
+				proceeded = true
+			case <-ctx.Done():
+			}
+			return nil
+		},
+		func(context.Context, func(), <-chan struct{}) error { return failure },
+	})
+	if !errors.Is(err, failure) || proceeded {
+		t.Errorf("runRoles() = %v, proceeded = %v; want the failure, and the first role never to proceed", err, proceeded)
+	}
+
+	err = runRoles(ctx, []role{
+		func(_ context.Context, started func(), allStarted <-chan struct{}) error {
+			started()
+			started()
+			<-allStarted
+			return nil
+		},
+		func(_ context.Context, started func(), allStarted <-chan struct{}) error {
+			started()
+			<-allStarted
+			return nil
+		},
+	})
+	if err != nil || ctx.Err() != nil {
+		t.Errorf("runRoles() = %v, deadline %v; want both roles to proceed", err, ctx.Err())
 	}
 }
 
@@ -393,4 +438,54 @@ func TestRun_ServesTheTrigger(t *testing.T) {
 			t.Errorf("exit code = %d, want %d", code, exitOK)
 		}
 	})
+}
+
+// In a process with several roles, the console issues the setup token only once
+// every role has started. Here another role never starts, so the console must
+// stop without a token: with an early token, it either issues one or fails
+// while issuing it when the process stops.
+func TestServeConsole_IssuesNoSetupTokenBeforeEveryRoleStarted(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, consoleURL := schematest.Console(t)
+	env := map[string]string{
+		"NYKTUS_CONSOLE_DATABASE_URL": consoleURL,
+		"NYKTUS_TRIGGER_URL":          "https://t.example.com",
+		"NYKTUS_CONSOLE_ADDR":         "127.0.0.1:0",
+		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+		"NYKTUS_ENCRYPTION_KEYS":      testKeys(t),
+	}
+	cfg, err := config.LoadServe(source(env), []config.Role{config.RoleConsole})
+	if err != nil {
+		t.Fatalf("LoadServe() error = %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	started := make(chan struct{})
+	var stdout bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- serveConsole(ctx, cfg, slog.New(slog.DiscardHandler), &stdout, func() { close(started) }, make(chan struct{}))
+	}()
+	select {
+	case <-started:
+	case err := <-done:
+		t.Fatalf("serveConsole() = %v before it started", err)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("serveConsole() = %v, want nil after the stop", err)
+	}
+
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want no setup URL", stdout.String())
+	}
+	var tokens int
+	if err := schematest.Open(t, ownerURL).QueryRow(t.Context(), "SELECT count(*) FROM setup_tokens").Scan(&tokens); err != nil {
+		t.Fatalf("count setup tokens: %v", err)
+	}
+	if tokens != 0 {
+		t.Errorf("%d setup tokens issued, want none", tokens)
+	}
 }

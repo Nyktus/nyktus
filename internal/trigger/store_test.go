@@ -62,24 +62,39 @@ func (f fixture) count(t *testing.T, query string, args ...any) int {
 
 func ptr(s string) *string { return &s }
 
-// The trigger refuses to start with a login that holds the privileges of the
-// console, or that cannot record requests.
+// The trigger refuses to start with a login that can do more than record
+// requests, or that cannot record them.
 func TestCheckPrivileges(t *testing.T) {
 	t.Parallel()
 
 	ownerURL, triggerURL := schematest.Trigger(t)
-	_, consoleURL := dbtest.Role(t, ownerURL, "console", "IN ROLE "+pgx.Identifier{schematest.ConsoleRole}.Sanitize())
-	_, bothURL := dbtest.Role(t, ownerURL, "both",
-		"IN ROLE "+pgx.Identifier{schematest.ConsoleRole}.Sanitize()+", "+pgx.Identifier{schematest.TriggerRole}.Sanitize())
-
 	if err := CheckPrivileges(t.Context(), schematest.Open(t, triggerURL)); err != nil {
 		t.Errorf("CheckPrivileges(trigger) = %v, want nil", err)
 	}
-	if err := CheckPrivileges(t.Context(), schematest.Open(t, consoleURL)); !errors.Is(err, ErrPrivileges) || !strings.Contains(err.Error(), "cannot execute") {
-		t.Errorf("CheckPrivileges(console) = %v, want ErrPrivileges for the missing function", err)
+
+	console := pgx.Identifier{schematest.ConsoleRole}.Sanitize()
+	trigger := pgx.Identifier{schematest.TriggerRole}.Sanitize()
+	tests := []struct {
+		suffix, attributes string
+		grant              string
+		want               string
+	}{
+		{suffix: "console", attributes: "IN ROLE " + console, want: "cannot execute"},
+		{suffix: "both", attributes: "IN ROLE " + console + ", " + trigger, want: "member of [" + schematest.ConsoleRole + "]"},
+		// A member that does not inherit can still switch to the role.
+		{suffix: "noinherit", attributes: "IN ROLE " + trigger, grant: "GRANT " + console + " TO %s WITH INHERIT FALSE", want: "member of [" + schematest.ConsoleRole + "]"},
+		{suffix: "table", attributes: "IN ROLE " + trigger, grant: "GRANT SELECT ON public.honeytokens TO %s", want: "tables [honeytokens]"},
+		{suffix: "function", attributes: "IN ROLE " + trigger, grant: "GRANT EXECUTE ON FUNCTION public.attack_technique_ids_valid(text[]) TO %s", want: "attack_technique_ids_valid"},
+		{suffix: "create", attributes: "IN ROLE " + trigger, grant: "GRANT CREATE ON SCHEMA public TO %s", want: "create objects"},
 	}
-	if err := CheckPrivileges(t.Context(), schematest.Open(t, bothURL)); !errors.Is(err, ErrPrivileges) || !strings.Contains(err.Error(), "honeytokens") {
-		t.Errorf("CheckPrivileges(console and trigger) = %v, want ErrPrivileges naming the tables", err)
+	for _, tt := range tests {
+		name, roleURL := dbtest.Role(t, ownerURL, tt.suffix, tt.attributes)
+		if tt.grant != "" {
+			dbtest.Exec(t, ownerURL, strings.ReplaceAll(tt.grant, "%s", pgx.Identifier{name}.Sanitize()))
+		}
+		if err := CheckPrivileges(t.Context(), schematest.Open(t, roleURL)); !errors.Is(err, ErrPrivileges) || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("CheckPrivileges(%s) = %v, want ErrPrivileges containing %q", tt.suffix, err, tt.want)
+		}
 	}
 }
 

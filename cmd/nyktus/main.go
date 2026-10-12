@@ -152,12 +152,16 @@ func serve(ctx context.Context, args []string, src config.Source, stdout, stderr
 		slog.String("environment", string(cfg.Environment)),
 	)
 
-	var runners []func(context.Context) error
+	var runners []role
 	if cfg.Has(config.RoleConsole) {
-		runners = append(runners, func(ctx context.Context) error { return serveConsole(ctx, cfg, logger, stdout) })
+		runners = append(runners, func(ctx context.Context, started func(), allStarted <-chan struct{}) error {
+			return serveConsole(ctx, cfg, logger, stdout, started, allStarted)
+		})
 	}
 	if cfg.Has(config.RoleTrigger) {
-		runners = append(runners, func(ctx context.Context) error { return serveTrigger(ctx, cfg, logger) })
+		runners = append(runners, func(ctx context.Context, started func(), _ <-chan struct{}) error {
+			return serveTrigger(ctx, cfg, logger, started)
+		})
 	}
 	if err := runRoles(ctx, runners); err != nil {
 		return logFailure(ctx, logger, "serve", err)
@@ -165,27 +169,54 @@ func serve(ctx context.Context, args []string, src config.Source, stdout, stderr
 	return nil
 }
 
+// role runs a server role until ctx is canceled. It calls started once it
+// accepts requests. Steps that must not happen when another role of the process
+// fails to start, such as issuing a setup token, wait for allStarted, which is
+// closed once every role has started.
+type role func(ctx context.Context, started func(), allStarted <-chan struct{}) error
+
 // runRoles runs the roles of the process side by side until ctx is canceled or
 // one of them fails. A failed role stops the others, so that a process never
-// runs with only part of the roles it was started with.
-func runRoles(ctx context.Context, roles []func(context.Context) error) error {
+// runs with only part of the roles it was started with. It returns the error of
+// the role that failed first; the others fail only because they were stopped.
+func runRoles(ctx context.Context, roles []role) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errs := make([]error, len(roles))
-	var wg sync.WaitGroup
-	for i, role := range roles {
+	allStarted := make(chan struct{})
+	var (
+		mu       sync.Mutex
+		pending  = len(roles)
+		firstErr error
+		wg       sync.WaitGroup
+	)
+	for _, r := range roles {
+		var once sync.Once
+		started := func() {
+			once.Do(func() {
+				mu.Lock()
+				defer mu.Unlock()
+				if pending--; pending == 0 {
+					close(allStarted)
+				}
+			})
+		}
 		wg.Go(func() {
-			if errs[i] = role(ctx); errs[i] != nil {
+			if err := r(ctx, started, allStarted); err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
 				cancel()
 			}
 		})
 	}
 	wg.Wait()
-	return errors.Join(errs...)
+	return firstErr
 }
 
-func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, stdout io.Writer) error {
+func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, stdout io.Writer, started func(), allStarted <-chan struct{}) error {
 	pool, err := db.Open(ctx, cfg.Console.DatabaseURL.Value(), db.Options{})
 	if err != nil {
 		return fmt.Errorf("console: %w", err)
@@ -247,7 +278,15 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 		return fmt.Errorf("console: %w", err)
 	}
 	// The setup token is issued only once the console can accept the request that
-	// uses it, so that a start that fails leaves no valid token behind.
+	// uses it, and every other role of the process has started, so that a start
+	// that fails leaves no valid token behind.
+	started()
+	select {
+	case <-allStarted:
+	case <-ctx.Done():
+		_ = ln.Close()
+		return nil
+	}
 	if err := announceSetup(ctx, setupService, cfg.Console.URL, logger, stdout); err != nil {
 		_ = ln.Close()
 		return fmt.Errorf("console: %w", err)
@@ -265,7 +304,7 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 // waits for a free connection instead of exhausting the database.
 const triggerMaxConns = 10
 
-func serveTrigger(ctx context.Context, cfg config.Serve, logger *slog.Logger) error {
+func serveTrigger(ctx context.Context, cfg config.Serve, logger *slog.Logger, started func()) error {
 	pool, err := db.Open(ctx, cfg.Trigger.DatabaseURL.Value(), db.Options{MaxConns: triggerMaxConns})
 	if err != nil {
 		return fmt.Errorf("trigger: %w", err)
@@ -296,6 +335,7 @@ func serveTrigger(ctx context.Context, cfg config.Serve, logger *slog.Logger) er
 	runCtx, stop := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	wg.Go(func() { h.Run(runCtx) })
+	started()
 	err = httpx.Serve(ctx, httpx.NewServer(h, logger), ln)
 	stop()
 	wg.Wait()

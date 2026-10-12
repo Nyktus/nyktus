@@ -5,7 +5,6 @@ package trigger
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -95,9 +94,50 @@ func New(o Options) *Handler {
 	return h
 }
 
-// ServeHTTP implements http.Handler.
+// ServeHTTP implements http.Handler. A panic is answered with the default
+// response, so that it looks like every other answer; net/http would abort the
+// connection instead.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.next.ServeHTTP(w, r)
+	aw := &answerWriter{ResponseWriter: w}
+	defer h.recoverPanic(aw, r)
+	h.next.ServeHTTP(aw, r)
+}
+
+// recoverPanic must be deferred directly, because recover only stops a panic
+// when it is called by the deferred function itself.
+func (h *Handler) recoverPanic(w *answerWriter, r *http.Request) {
+	v := recover()
+	if v == nil {
+		return
+	}
+	if v == http.ErrAbortHandler { //nolint:errorlint // recover returns the panic value itself, never a wrapped error.
+		panic(v)
+	}
+	h.logger.ErrorContext(r.Context(), "trigger: handler panicked",
+		slog.String("panic", fmt.Sprint(v)),
+		slog.String("stack", string(debug.Stack())),
+	)
+	if w.answered {
+		// A truncated answer must not look complete.
+		panic(http.ErrAbortHandler)
+	}
+	h.answer(w, r.URL.Path, "")
+}
+
+// answerWriter remembers whether the answer has started.
+type answerWriter struct {
+	http.ResponseWriter
+	answered bool
+}
+
+func (w *answerWriter) WriteHeader(status int) {
+	w.answered = true
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *answerWriter) Write(b []byte) (int, error) {
+	w.answered = true
+	return w.ResponseWriter.Write(b)
 }
 
 // Run logs the requests that the limit of events kept from being recorded, at
@@ -157,17 +197,7 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	status := http.StatusFound
-	if strings.HasSuffix(path, imageSuffix) {
-		status = http.StatusOK
-		writeImage(w)
-	} else {
-		target := h.defaultRedirect
-		if res.RedirectURL != "" {
-			target = res.RedirectURL
-		}
-		writeRedirect(w, target)
-	}
+	status := h.answer(w, path, res.RedirectURL)
 
 	// The path holds the trigger value, so it stays out of the log.
 	attrs = append(attrs, slog.Int("status", status), slog.Duration("duration", time.Since(start)))
@@ -177,20 +207,22 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	h.logger.LogAttrs(r.Context(), slog.LevelInfo, "trigger: request", attrs...)
 }
 
-// errPanicked reports that the recorder panicked. The panic is logged where it
-// is recovered, and the request is answered like any other.
-var errPanicked = errors.New("recorder panicked")
+// answer writes the answer for the form of path: the image for a path that ends
+// with ".gif", otherwise a redirect to redirectURL or the default target. It
+// returns the status code.
+func (h *Handler) answer(w http.ResponseWriter, path, redirectURL string) int {
+	if strings.HasSuffix(strings.ToLower(path), imageSuffix) {
+		writeImage(w)
+		return http.StatusOK
+	}
+	if redirectURL == "" {
+		redirectURL = h.defaultRedirect
+	}
+	writeRedirect(w, redirectURL)
+	return http.StatusFound
+}
 
-func (h *Handler) record(ctx context.Context, req Request) (res Result, err error) {
-	defer func() {
-		if v := recover(); v != nil {
-			h.logger.ErrorContext(ctx, "trigger: recorder panicked",
-				slog.String("panic", fmt.Sprint(v)),
-				slog.String("stack", string(debug.Stack())),
-			)
-			res, err = Result{}, errPanicked
-		}
-	}()
+func (h *Handler) record(ctx context.Context, req Request) (Result, error) {
 	// A client that closes the connection right after its request must not
 	// cancel the recording, or it could request a honeytoken without leaving an
 	// event.

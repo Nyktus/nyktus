@@ -145,6 +145,31 @@ func TestTrigger_IdenticalResponsesForEveryOutcome(t *testing.T) {
 	}
 }
 
+// A panic anywhere in the handler is answered like every other request, not
+// with an aborted connection.
+func TestTrigger_PanicIsAnsweredWithTheDefaultResponse(t *testing.T) {
+	t.Parallel()
+
+	ok, _ := newServer(t, &fakeRecorder{})
+	want := fetch(t, ok, http.MethodGet, "/"+value, nil, nil)
+	wantImage := fetch(t, ok, http.MethodGet, "/"+value+".gif", nil, nil)
+
+	var log bytes.Buffer
+	h := New(Options{Logger: slog.New(slog.NewJSONHandler(&log, nil)), Recorder: &fakeRecorder{}, DefaultRedirect: defaultRedirect})
+	h.next = http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("handler failed") })
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	if got := fetch(t, srv, http.MethodGet, "/"+value, nil, nil); !got.equal(want) {
+		t.Errorf("response after a panic = %+v, want %+v", got, want)
+	}
+	if got := fetch(t, srv, http.MethodGet, "/"+value+".gif", nil, nil); !got.equal(wantImage) {
+		t.Errorf("image after a panic = %+v, want %+v", got, wantImage)
+	}
+	if !strings.Contains(log.String(), `"msg":"trigger: handler panicked"`) {
+		t.Errorf("log = %s, want the panic", log.String())
+	}
+}
+
 // The only difference the trigger may show is the redirect target that the
 // operator configured for a honeytoken, and only in the Location header.
 func TestTrigger_ConfiguredRedirectChangesOnlyTheLocation(t *testing.T) {
