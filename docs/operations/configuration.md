@@ -4,7 +4,7 @@ Nyktus reads its configuration from environment variables once at startup and re
 
 Every variable that holds a secret can instead be read from a file: set the same name with the suffix `_FILE` to the path of the file, for example `NYKTUS_CONSOLE_DATABASE_URL_FILE=/run/secrets/console-db`. A trailing line break in the file is ignored. Setting both forms is an error.
 
-Settings of a server role are only read when the role runs. A process started with `--roles=console` does not need the settings of other roles.
+Settings of a server role are only read when the role runs. A process started with `--roles=console` does not need the settings of other roles. `nyktus serve` without `--roles` runs every role, `console` and `trigger`, and needs the settings of both.
 
 ## All commands
 
@@ -37,6 +37,16 @@ Settings of a server role are only read when the role runs. A process started wi
 | `NYKTUS_SESSION_IDLE_TIMEOUT` | `1h` | A session ends after this long without a request. Between `5m` and `24h`. See [Sign-in and sessions](sign-in.md). |
 | `NYKTUS_SESSION_MAX_AGE` | `12h` | A session ends this long after sign-in, however active it is. Between the idle timeout and `720h` (30 days). |
 | `NYKTUS_LOCAL_LOGIN` | `admins` with an identity provider, `all` otherwise | Which accounts sign in with a password: `all`, `admins` or `off`. `admins` and `off` require an identity provider. See [Sign-in and sessions](sign-in.md#password-sign-in-with-an-identity-provider). |
+
+### Role `trigger`
+
+The trigger answers the URLs of [honeytokens](honeytokens.md) and records their requests. It is reached from the internet, usually through your reverse proxy. Its public address, `NYKTUS_TRIGGER_URL`, is a setting of the console, which hands out the URLs; the trigger answers every host name.
+
+| Variable | Default | Description |
+|---|---|---|
+| `NYKTUS_TRIGGER_ADDR` | `127.0.0.1:8081` | Address and port the trigger listens on. |
+| `NYKTUS_TRIGGER_DATABASE_URL` | required, secret | Connection URL of the trigger's login role. See [Database setup](database.md). |
+| `NYKTUS_TRIGGER_DEFAULT_REDIRECT` | required | Where the trigger sends a client that it does not send to the `redirect_url` of a honeytoken, such as `https://www.example.com/`: requests of unknown URLs, of `/` and other paths, and requests it failed to record. The same rules as for `redirect_url` apply: a host name, not an IP address, no user information, at most 2048 characters. `https` is required, `http` is allowed in development. There is no default, because a target built into Nyktus would be the same in every installation and give the trigger away. Choose a public page outside Nyktus: a target on the host of the trigger would redirect in a loop, and one on the host of the console would lead every visitor of the trigger to it. See [What the trigger answers](honeytokens.md#what-the-trigger-answers). |
 
 ### Sign-in through an identity provider
 
@@ -75,7 +85,7 @@ To replace a key, put a new key with an unused ID first and keep the old one beh
 
 ## Client addresses
 
-Nyktus records the address of the client in the audit log. By default, it uses the address of the connection. Behind a reverse proxy, that is the address of the proxy.
+Nyktus records the address of the client in the audit log and in the events of honeytokens. By default, it uses the address of the connection. Behind a reverse proxy, that is the address of the proxy.
 
 List the addresses of your reverse proxies in `NYKTUS_TRUSTED_PROXIES`. For a connection from one of these addresses, Nyktus reads the `X-Forwarded-For` header from right to left, skips the addresses of trusted proxies and takes the first other address as the client. A chain of several proxies works as long as all of them are listed. Entries may carry a port, such as `192.0.2.1:4711` or `[2001:db8::1]:4711`. `X-Real-IP` is ignored.
 

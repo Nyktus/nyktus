@@ -8,6 +8,9 @@ A new installation has no accounts. The first administrator is created through a
 2. Set `NYKTUS_CONSOLE_URL` to the address under which users reach the console, such as `https://nyktus.example.com`. The setup URL starts with it. See [Configuration](configuration.md).
 3. Set `NYKTUS_TRIGGER_URL` to the public address of the trigger, such as `https://t.example.net`. The URLs of [honeytokens](honeytokens.md) start with it.
 4. Generate the [encryption keys](configuration.md#encryption-keys) and set `NYKTUS_ENCRYPTION_KEYS` or `NYKTUS_ENCRYPTION_KEYS_FILE`.
+5. For the trigger, which answers the URLs of honeytokens, set `NYKTUS_TRIGGER_DATABASE_URL` and `NYKTUS_TRIGGER_DEFAULT_REDIRECT`. See [Configuration](configuration.md#role-trigger).
+
+The steps below start the console alone with `--roles=console`. `nyktus serve` without `--roles` starts the console and the trigger in one process; start the trigger alone with `--roles=trigger` where it runs on a host of its own.
 
 ## Create the first administrator
 

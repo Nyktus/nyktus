@@ -21,8 +21,19 @@ import (
 	"nyktus.org/nyktus/migrations"
 )
 
-// ConsoleRole is the group role of the console.
-const ConsoleRole = "nyktus_console"
+// Group roles of the server roles.
+const (
+	ConsoleRole = "nyktus_console"
+	TriggerRole = "nyktus_trigger"
+)
+
+// GroupRoles creates the group roles of all server roles, as the operator does
+// before the first migration.
+func GroupRoles(tb testing.TB) {
+	tb.Helper()
+	dbtest.GroupRole(tb, ConsoleRole)
+	dbtest.GroupRole(tb, TriggerRole)
+}
 
 // New creates a database with all migrations applied, like "nyktus migrate" on a
 // fresh installation, and returns a URL that connects as its owner.
@@ -30,7 +41,7 @@ func New(tb testing.TB) string {
 	tb.Helper()
 
 	dbURL := dbtest.New(tb)
-	dbtest.GroupRole(tb, ConsoleRole)
+	GroupRoles(tb)
 
 	all, err := migrate.Load(migrations.FS)
 	if err != nil {
@@ -57,6 +68,16 @@ func Console(tb testing.TB) (ownerURL, consoleURL string) {
 	ownerURL = New(tb)
 	_, consoleURL = dbtest.Role(tb, ownerURL, "console", "IN ROLE "+pgx.Identifier{ConsoleRole}.Sanitize())
 	return ownerURL, consoleURL
+}
+
+// Trigger creates a migrated database and returns the URL of a login role that is
+// a member of the trigger's group role, as the trigger connects in production.
+func Trigger(tb testing.TB) (ownerURL, triggerURL string) {
+	tb.Helper()
+
+	ownerURL = New(tb)
+	_, triggerURL = dbtest.Role(tb, ownerURL, "trigger", "IN ROLE "+pgx.Identifier{TriggerRole}.Sanitize())
+	return ownerURL, triggerURL
 }
 
 // Open connects to dbURL and closes the pool when the test ends. The pool holds

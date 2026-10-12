@@ -1,8 +1,8 @@
 # Honeytokens
 
-A honeytoken is a URL that nobody has a reason to open. You place it where only an intruder would find it, for example as a link in a document on a file share or as an image in a mail template, and Nyktus raises an event when it is requested.
+A honeytoken is a URL that nobody has a reason to open. You place it where only an intruder would find it, for example as a link in a document on a file share or as an image in a mail template, and Nyktus records an event when it is requested.
 
-> The trigger, which answers the URLs and records the events, is not part of this version yet. You can create and manage honeytokens and their URLs; requests of the URLs are not recorded yet.
+> This version records the events of honeytokens, but neither shows them in the console nor raises alerts yet.
 
 ## Types
 
@@ -15,7 +15,7 @@ A QR code is a `web_url` shown as a QR code: generate the code from its `trigger
 
 ## The trigger URL
 
-Every honeytoken has a trigger value of 128 random bits, 26 characters of lowercase letters and digits. Its URL is the [address of the trigger](#choosing-the-address-of-the-trigger) followed by the value, such as `https://t.example.net/q3xwz7a2kfm4ub6tyc5nre2lpa`. The response of every request contains both as `trigger_value` and `trigger_url`.
+Every honeytoken has a trigger value of 128 random bits, 26 characters of lowercase letters and digits. Its URL is the [address of the trigger](#choosing-the-address-of-the-trigger) followed by the value, such as `https://t.example.net/q3xwz7a2kfm4ub6tyc5nre2lpa`. The URL of a `web_image` ends with `.gif`, such as `https://t.example.net/q3xwz7a2kfm4ub6tyc5nre2lpa.gif`. The response of every request contains both as `trigger_value` and `trigger_url`. Place the `trigger_url` exactly as it is.
 
 The value cannot be changed. If a URL has been exposed to people who should not trigger it, such as in a screenshot, create a new honeytoken, place its URL, and delete the old one.
 
@@ -73,10 +73,39 @@ The answer is the new honeytoken with status `201`:
 
 - `GET /api/v1/honeytokens` lists honeytokens from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `type=web_url` or `type=web_image` and `enabled=true` or `enabled=false` narrow the list.
 - `GET /api/v1/honeytokens/<id>` returns one honeytoken.
-- `PATCH /api/v1/honeytokens/<id>` changes `name`, `notes`, `enabled`, `redirect_url` or `techniques`. Members that you leave out stay unchanged; `"redirect_url": null` removes the redirect, and `"techniques": []` removes the techniques. Disable a honeytoken instead of deleting it while you are unsure whether its URL is still placed somewhere.
-- `DELETE /api/v1/honeytokens/<id>` deletes a honeytoken. Remove its URL from where you placed it as well, so that it does not mislead your team later.
+- `PATCH /api/v1/honeytokens/<id>` changes `name`, `notes`, `enabled`, `redirect_url` or `techniques`. Members that you leave out stay unchanged; `"redirect_url": null` removes the redirect, and `"techniques": []` removes the techniques. Disable a honeytoken instead of deleting it while you are unsure whether its URL is still placed somewhere: a disabled honeytoken records no events, but still answers as before.
+- `DELETE /api/v1/honeytokens/<id>` deletes a honeytoken. Its events remain. Remove its URL from where you placed it as well: once the honeytoken is deleted, a request of the URL is answered like any unknown URL and no longer recorded.
 
 Every role reads honeytokens; viewers cannot change them.
+
+## What the trigger answers
+
+The trigger answers every request without revealing whether its URL belongs to a honeytoken. Its answer depends only on the form of the URL, never on whether the value exists, whether the honeytoken is enabled or of which type it is, or whether recording the request failed:
+
+- A URL that ends with `.gif` receives a transparent image of one pixel.
+- Every other URL receives a redirect (`302`) to the `redirect_url` of its honeytoken, or to the default target `NYKTUS_TRIGGER_DEFAULT_REDIRECT` (see [Configuration](configuration.md#role-trigger)). This includes unknown values, `/`, `/robots.txt` and every other path.
+
+The trigger reads URLs in any case, so a URL that was written in upper case on its way, for example in a QR code, still counts. The `redirect_url` is the only difference a client can see, and only someone who already knows the URL sees it. A disabled honeytoken keeps redirecting to its `redirect_url`, so that disabling it changes nothing for whoever opens it. No answer carries a header that names Nyktus, and every answer is sent with `Cache-Control: no-store`, so that a second request reaches the trigger as well.
+
+Put a reverse proxy in front of the trigger. It answers malformed requests, which would otherwise reach the HTTP server of Nyktus, and it can limit the rate of requests. Do not let it add headers that name your organization or software to the answers of the trigger.
+
+## Events
+
+The trigger records an event for every `GET` and `HEAD` request of an enabled honeytoken, whichever form of the URL was requested. Other methods receive the same answer and are not recorded, and neither are requests of disabled honeytokens.
+
+An event holds:
+
+| Field | Content |
+|---|---|
+| Honeytoken | Its identifier and type, and the [techniques](#techniques) it had when it was requested. The event keeps them when you change or delete the honeytoken. |
+| Time | When the trigger recorded the request. |
+| Client address | The address of the client, as described in [Client addresses](configuration.md#client-addresses). |
+| Method | `GET` or `HEAD`. |
+| `User-Agent`, `Referer`, `Accept-Language` | The headers of the request, up to 512, 1024 and 128 bytes. Control characters and invalid characters are replaced. The client chooses these headers, so treat them as claims, not facts. The `Referer` often shows where an image was embedded. |
+
+Nothing else is recorded: no body, no cookies, no other headers.
+
+At most 10 events per honeytoken and minute are recorded, so that a flood of requests for one known URL cannot fill the database. The trigger counts the requests beyond the limit and logs their number once a minute as `trigger: requests not recorded` with the identifier of the honeytoken.
 
 ## Choosing the address of the trigger
 

@@ -47,7 +47,8 @@ linters:
               desc: use log/slog through the logging package
         # The internet-facing trigger resolves one trigger value at a time
         # through a database function. It never imports the inventory, so that
-        # a compromised trigger host cannot list the decoys.
+        # a compromised trigger host cannot list the decoys, and never the
+        # alerting, so that it holds no channel or credential of an alert.
         trigger:
           list-mode: lax
           files:
@@ -55,6 +56,8 @@ linters:
           deny:
             - pkg: nyktus.org/nyktus/internal/honeytoken
               desc: the trigger never reads the inventory; it resolves single trigger values through a database function
+            - pkg: nyktus.org/nyktus/internal/alerting
+              desc: the trigger records events and their jobs; the worker processes them and sends alerts
         # Test-only dependencies must never reach the binaries.
         test-only:
           list-mode: lax

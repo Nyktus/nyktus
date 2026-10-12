@@ -2109,7 +2109,9 @@ components:
         trigger_url:
           type: string
           format: uri
-          description: The URL to place, the public address of the trigger followed by the trigger value.
+          description: |
+            The URL to place: the public address of the trigger followed by
+            `/` and the trigger value, and for a `web_image` by `.gif`.
         created_at:
           type: string
           format: date-time
