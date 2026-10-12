@@ -42,6 +42,7 @@ func TestApply_FailsWithoutSchemaOwnership(t *testing.T) {
 	t.Parallel()
 
 	dbURL := dbtest.New(t)
+	schematest.GroupRoles(t)
 	role, roleURL := dbtest.Role(t, dbURL, "migrator", "")
 	dbtest.Exec(t, dbURL, "GRANT CREATE ON SCHEMA public TO "+pgx.Identifier{role}.Sanitize())
 
@@ -51,30 +52,38 @@ func TestApply_FailsWithoutSchemaOwnership(t *testing.T) {
 	}
 }
 
-func TestApply_FailsWithoutConsoleRole(t *testing.T) {
+func TestApply_FailsWithoutGroupRole(t *testing.T) {
 	t.Parallel()
 
-	// Roles are global to the server, and other tests create nyktus_console, so
-	// the migrations refer to a role that certainly does not exist instead.
-	missing := "nyktus_missing_" + strings.ToLower(rand.Text())
-	all := load(t)
-	for i := range all {
-		all[i].SQL = strings.ReplaceAll(all[i].SQL, schematest.ConsoleRole, missing)
-	}
+	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole} {
+		t.Run(role, func(t *testing.T) {
+			t.Parallel()
 
-	dbURL := dbtest.New(t)
-	err := apply(t, dbURL, all)
-	want := "database role " + missing + " does not exist; create the server roles with deploy/postgres/roles.sql"
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("Apply() error = %v, want it to contain %q", err, want)
-	}
+			// Roles are global to the server, and other tests create the group
+			// roles, so the migrations refer to a role that certainly does not
+			// exist instead.
+			missing := "nyktus_missing_" + strings.ToLower(rand.Text())
+			all := load(t)
+			for i := range all {
+				all[i].SQL = strings.ReplaceAll(all[i].SQL, role, missing)
+			}
 
-	var table *string
-	if err := schematest.Open(t, dbURL).QueryRow(t.Context(), "SELECT to_regclass('public.users')::text").Scan(&table); err != nil {
-		t.Fatalf("query table: %v", err)
-	}
-	if table != nil {
-		t.Error("the failed migration left the users table behind")
+			dbURL := dbtest.New(t)
+			schematest.GroupRoles(t)
+			err := apply(t, dbURL, all)
+			want := "database role " + missing + " does not exist; create the server roles with deploy/postgres/roles.sql"
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("Apply() error = %v, want it to contain %q", err, want)
+			}
+
+			var table *string
+			if err := schematest.Open(t, dbURL).QueryRow(t.Context(), "SELECT to_regclass('public.users')::text").Scan(&table); err != nil {
+				t.Fatalf("query table: %v", err)
+			}
+			if table != nil {
+				t.Error("the failed migration left the users table behind")
+			}
+		})
 	}
 }
 
@@ -89,7 +98,7 @@ func TestApply_FailsWithoutUTF8Encoding(t *testing.T) {
 	name := pgx.Identifier{strings.TrimPrefix(u.Path, "/") + "_ascii"}.Sanitize()
 	dbtest.Exec(t, dbURL, "CREATE DATABASE "+name+" ENCODING 'SQL_ASCII' TEMPLATE template0 LOCALE 'C'")
 	t.Cleanup(func() { dbtest.Exec(t, dbURL, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)") })
-	dbtest.GroupRole(t, schematest.ConsoleRole)
+	schematest.GroupRoles(t)
 
 	u.Path = "/" + strings.TrimPrefix(u.Path, "/") + "_ascii"
 	err = apply(t, u.String(), load(t))
@@ -98,7 +107,7 @@ func TestApply_FailsWithoutUTF8Encoding(t *testing.T) {
 	}
 }
 
-func TestRolesScript_CreatesConsoleRoleIdempotently(t *testing.T) {
+func TestRolesScript_CreatesGroupRolesIdempotently(t *testing.T) {
 	t.Parallel()
 
 	script, err := os.ReadFile("../deploy/postgres/roles.sql")
@@ -108,13 +117,15 @@ func TestRolesScript_CreatesConsoleRoleIdempotently(t *testing.T) {
 	dbURL := dbtest.New(t)
 	dbtest.Exec(t, dbURL, string(script), string(script))
 
-	var canLogin bool
-	err = schematest.Open(t, dbURL).QueryRow(t.Context(), "SELECT rolcanlogin FROM pg_roles WHERE rolname = $1", schematest.ConsoleRole).Scan(&canLogin)
-	if err != nil {
-		t.Fatalf("query role %s: %v", schematest.ConsoleRole, err)
-	}
-	if canLogin {
-		t.Errorf("role %s can log in, want a group role", schematest.ConsoleRole)
+	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole} {
+		var canLogin bool
+		err = schematest.Open(t, dbURL).QueryRow(t.Context(), "SELECT rolcanlogin FROM pg_roles WHERE rolname = $1", role).Scan(&canLogin)
+		if err != nil {
+			t.Fatalf("query role %s: %v", role, err)
+		}
+		if canLogin {
+			t.Errorf("role %s can log in, want a group role", role)
+		}
 	}
 }
 
@@ -274,7 +285,7 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 	t.Parallel()
 
 	dbURL := dbtest.New(t)
-	dbtest.GroupRole(t, schematest.ConsoleRole)
+	schematest.GroupRoles(t)
 	console := pgx.Identifier{schematest.ConsoleRole}.Sanitize()
 	dbtest.Exec(t, dbURL,
 		"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "+console,

@@ -20,6 +20,27 @@ The console writes one record with the message `http: request` per request:
 
 Requests without valid credentials, such as a failed setup attempt or a request without a session, are recorded only here, not in the [audit log](audit-log.md). The access log is the place to look for them.
 
+## Trigger
+
+The trigger writes one record with the message `trigger: request` per request. It never logs the requested path, because the path holds the value of a honeytoken.
+
+| Field | Content |
+|---|---|
+| `method` | HTTP method. |
+| `outcome` | `recorded` (an event was stored), `unknown` (the value belongs to no honeytoken), `disabled`, `limited` (the honeytoken reached its limit of events), `failed` (recording failed; see the error record before it), or `not_looked_up` (the path holds no value, or the method is not recorded). |
+| `honeytoken_id` | The identifier of the honeytoken, unless its value is unknown. |
+| `status` | `302` or `200`. |
+| `duration` | Time to answer, in nanoseconds. |
+| `client_ip` | Address of the client. |
+
+The trigger answers a failed request like any other, so the log is the only place where a failure shows:
+
+| Message | Level | Content |
+|---|---|---|
+| `trigger: recording failed` | error | The database could not record the request, for example because it was unreachable or slower than two seconds. `error` names the cause. |
+| `trigger: recorder panicked` | error | A programming error; `panic` and `stack` describe it. |
+| `trigger: requests not recorded` | warn | Requests of the honeytoken `honeytoken_id` beyond its [limit of events](honeytokens.md#events) in the last minute; `requests` is their number. |
+
 ## Sign-in through an identity provider
 
 With an [identity provider](sign-in.md#identity-provider), the console writes these records:
@@ -35,4 +56,4 @@ With an [identity provider](sign-in.md#identity-provider), the console writes th
 
 ## Personal data
 
-The access log contains client addresses and account identifiers, which are personal data. The records of rejected sign-ins through the identity provider contain the subject of the user at the provider. Keep it only as long as you need it to investigate incidents, and restrict access to it like access to the [audit log](audit-log.md).
+The access logs of the console and the trigger contain client addresses, and the access log of the console account identifiers, which are personal data. The records of rejected sign-ins through the identity provider contain the subject of the user at the provider. Keep it only as long as you need it to investigate incidents, and restrict access to it like access to the [audit log](audit-log.md).

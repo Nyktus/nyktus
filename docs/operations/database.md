@@ -9,6 +9,10 @@ Nyktus stores all state in PostgreSQL 16 or later. Each server role connects wit
 | `nyktus_owner` (any name) | Login | Owns the database and the `public` schema. Runs `nyktus migrate`. Never used by a running server. |
 | `nyktus_console` | Group, created by the setup script | Receives the privileges of the console role through migrations. |
 | Console login (any name) | Login, member of `nyktus_console` | The console connects with it through `NYKTUS_CONSOLE_DATABASE_URL`. |
+| `nyktus_trigger` | Group, created by the setup script | Receives the privileges of the trigger role through migrations: it can call the one function that records a request, and read or write no table. |
+| Trigger login (any name) | Login, member of `nyktus_trigger` | The trigger connects with it through `NYKTUS_TRIGGER_DATABASE_URL`. |
+
+The trigger is reached from the internet. Its role cannot read honeytokens: it hands one requested value at a time to a database function, which records the request and returns only the redirect target of the honeytoken. Whoever takes over the host of the trigger can test a URL they already know, but cannot list the decoys.
 
 Migrations grant privileges to the group roles but never create roles, so the owner does not need `CREATEROLE`. A migration that needs a group role that does not exist stops with an error that names the role.
 
@@ -42,13 +46,14 @@ Creating a database owned by another role needs more than `CREATEROLE`: it requi
    ALTER SCHEMA public OWNER TO nyktus_owner;
    ```
 
-3. Create the login role of the console as a member of its group role:
+3. Create the login roles of the console and the trigger as members of their group roles:
 
    ```sql
    CREATE ROLE nyktus_console_login LOGIN PASSWORD '...' IN ROLE nyktus_console;
+   CREATE ROLE nyktus_trigger_login LOGIN PASSWORD '...' IN ROLE nyktus_trigger;
    ```
 
-   The login role receives its privileges by inheriting them from the group role. Do not create it with `NOINHERIT`.
+   The login roles receive their privileges by inheriting them from the group roles. Do not create them with `NOINHERIT`.
 
 4. Apply the migrations as the owner:
 
@@ -69,6 +74,16 @@ Creating a database owned by another role needs more than `CREATEROLE`: it requi
    `NYKTUS_CONSOLE_URL` is the address under which users reach the console, `NYKTUS_TRIGGER_URL` the public address of the trigger, with which the URLs of [honeytokens](honeytokens.md) start. The file named by `NYKTUS_ENCRYPTION_KEYS_FILE` holds the [encryption keys](configuration.md#encryption-keys). See [Configuration](configuration.md).
 
    On the first start, the console prints a URL for creating the first administrator. See [First start](first-start.md).
+
+6. Start the trigger with its login role:
+
+   ```sh
+   NYKTUS_TRIGGER_DATABASE_URL='postgres://nyktus_trigger_login:...@db/nyktus' \
+   NYKTUS_TRIGGER_DEFAULT_REDIRECT='https://www.example.com/' \
+     nyktus serve --roles=trigger
+   ```
+
+   When the trigger runs on a host of its own, for example in a DMZ, allow the database connections from that host only for the trigger's login role, over TLS.
 
 ## Privilege check
 

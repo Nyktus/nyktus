@@ -81,7 +81,7 @@ func (h *Handler) response(t honeytoken.Honeytoken) response {
 		RedirectURL:  t.RedirectURL,
 		Techniques:   techniques,
 		TriggerValue: t.TriggerValue,
-		TriggerURL:   h.triggerURL + "/" + t.TriggerValue,
+		TriggerURL:   h.triggerURL + t.TriggerPath(),
 		CreatedAt:    t.CreatedAt,
 		UpdatedAt:    t.UpdatedAt,
 	}

@@ -23,3 +23,15 @@ EXCEPTION
 		NULL;
 END
 $$;
+
+-- Group role of the trigger, which answers requests from the internet. It can
+-- only call the function that records a request; its login role is a member of
+-- it.
+DO $$
+BEGIN
+	CREATE ROLE nyktus_trigger NOLOGIN;
+EXCEPTION
+	WHEN duplicate_object OR unique_violation THEN
+		NULL;
+END
+$$;
