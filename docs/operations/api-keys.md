@@ -25,7 +25,7 @@ with `api-key.json`:
 ```
 
 - **The key is shown only in this response.** Nyktus keeps only a hash of its secret. A lost key cannot be recovered; revoke it and create a new one.
-- **Scopes.** Keys currently carry only `audit:read`, for reading the [audit log](audit-log.md). Keys never manage accounts or keys, not even by reading them.
+- **Scopes.** Keys carry `audit:read`, for reading the [audit log](audit-log.md), and `honeytokens:read` and `honeytokens:write`, for reading and managing [honeytokens](honeytokens.md), for example to roll them out by script. `honeytokens:write` requires `honeytokens:read`, because a key that changes honeytokens receives them in the responses. Honeytokens are part of the inventory: give integrations that only read the audit log, such as a SIEM, keys without the honeytoken scopes. Keys never manage accounts or keys, not even by reading them.
 - **Expiry.** Every key expires, at the latest three years after it is created. There is no default; choose a period that suits the integration and your rotation policy. Nyktus does not yet remind anyone before a key expires.
 - **Limit.** The team has at most 50 keys that have not expired. Creating a key deletes the expired keys.
 - **Password.** A wrong password counts as a failed sign-in, as with a change of password.

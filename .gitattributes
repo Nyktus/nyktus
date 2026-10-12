@@ -7,3 +7,4 @@
 
 go.sum            linguist-generated
 package-lock.json linguist-generated
+internal/attack/techniques.json linguist-generated

@@ -46,6 +46,6 @@ Please do not report vulnerabilities through public issues. See [SECURITY.md](SE
 
 ## License
 
-Nyktus is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). The deception catalog is published separately under CC BY-SA 4.0, with an additional permission that lets you use generated decoys without attribution.
+Nyktus is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). The deception catalog is published separately under CC BY-SA 4.0, with an additional permission that lets you use generated decoys without attribution. Third-party data that Nyktus ships, such as MITRE ATT&CK, is listed with its notices in [NOTICE](NOTICE).
 
 MITRE, ATT&CK and MITRE Engage are trademarks of The MITRE Corporation. Nyktus is not affiliated with or endorsed by MITRE.

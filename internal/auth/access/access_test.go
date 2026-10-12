@@ -158,3 +158,52 @@ func TestDeniedAction(t *testing.T) {
 		t.Errorf("DeniedAction() = %q, want audit.read", got)
 	}
 }
+
+// Every role reads the honeytokens; only viewers cannot change them. A key
+// with only the scope to read them cannot change them either.
+func TestHoneytokens_ReadByEveryRoleWrittenByAdminsAndUsers(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		role        user.Role
+		read, write bool
+	}{
+		{user.RoleAdmin, true, true},
+		{user.RoleUser, true, true},
+		{user.RoleViewer, true, false},
+		{"", false, false},
+	} {
+		if got := Allowed(tt.role, "honeytokens:read"); got != tt.read {
+			t.Errorf("Allowed(%q, honeytokens:read) = %v, want %v", tt.role, got, tt.read)
+		}
+		if got := Allowed(tt.role, "honeytokens:write"); got != tt.write {
+			t.Errorf("Allowed(%q, honeytokens:write) = %v, want %v", tt.role, got, tt.write)
+		}
+	}
+	// Viewers only read.
+	for _, perm := range Permissions() {
+		if Allowed(user.RoleViewer, perm) && !strings.HasSuffix(string(perm), ":read") {
+			t.Errorf("viewers hold %s", perm)
+		}
+	}
+
+	key := Principal{Method: audit.AuthAPIKey, APIKeyID: "k1", Scopes: []httpx.Permission{"honeytokens:read"}}
+	if !key.Allowed("honeytokens:read") || key.Allowed("honeytokens:write") {
+		t.Error("a key with honeytokens:read must read and not write honeytokens")
+	}
+}
+
+// A scope can only require a scope that keys may carry, or no key could carry
+// the first one.
+func TestKeyScopeRequires_NamesScopesKeysMayCarry(t *testing.T) {
+	t.Parallel()
+
+	for perm, required := range keyScopeRequires {
+		if !slices.Contains(keyScopes, perm) || !slices.Contains(keyScopes, required) {
+			t.Errorf("%s requires %s; both must be scopes that keys may carry", perm, required)
+		}
+	}
+	if got, ok := KeyScopeRequires("honeytokens:write"); !ok || got != "honeytokens:read" {
+		t.Errorf("KeyScopeRequires(honeytokens:write) = %s, %v", got, ok)
+	}
+}

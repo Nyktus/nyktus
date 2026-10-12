@@ -40,6 +40,7 @@ func startConsole(t *testing.T, d testDB) (srv *httptest.Server, tok setup.Token
 		Sessions:       session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour},
 		Keys:           secretboxtest.Keyring(t),
 		ConsoleURL:     "https://nyktus.example.com",
+		TriggerURL:     "https://t.example.net",
 		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
 	})
 	if err != nil {

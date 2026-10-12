@@ -19,6 +19,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
+	"nyktus.org/nyktus/internal/honeytoken/honeytokenapi"
 	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/platform/secretbox"
 )
@@ -44,6 +45,9 @@ type Options struct {
 	// one. OIDCGroups map its groups to roles.
 	OIDC       *oidc.Provider
 	OIDCGroups oidc.Groups
+	// TriggerURL is the public address of the trigger, such as
+	// "https://t.example.com". The URLs of honeytokens start with it.
+	TriggerURL string
 }
 
 // New wires the console and returns its HTTP handler. It computes the dummy
@@ -68,6 +72,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		}
 	}
 	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
+	t := honeytokenapi.NewHandler(o.Logger, o.DB, o.TriggerURL)
 	return NewHandler(Deps{
 		Logger:         o.Logger,
 		DB:             o.DB,
@@ -101,6 +106,13 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Activate:       http.HandlerFunc(a.Activate),
 			IssueResetLink: http.HandlerFunc(a.IssueResetLink),
 			ResetPassword:  http.HandlerFunc(a.ResetPassword),
+		},
+		Honeytokens: Honeytokens{
+			List:   http.HandlerFunc(t.List),
+			Get:    http.HandlerFunc(t.Get),
+			Create: http.HandlerFunc(t.Create),
+			Update: http.HandlerFunc(t.Update),
+			Delete: http.HandlerFunc(t.Delete),
 		},
 		Origin:         o.ConsoleURL,
 		TrustedProxies: o.TrustedProxies,

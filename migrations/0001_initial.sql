@@ -130,7 +130,10 @@ CREATE TABLE public.users (
 -- and with it in the logs of proxies.
 CREATE INDEX users_created_at_id_idx ON public.users (created_at DESC, id DESC);
 
-CREATE FUNCTION public.users_set_updated_at() RETURNS trigger
+-- A new row takes its creation time as the time of its last change, so that a
+-- row that was never changed has equal times. A second clock_timestamp() in a
+-- default would differ.
+CREATE FUNCTION public.set_updated_at() RETURNS trigger
 	LANGUAGE plpgsql
 	SET search_path = ''
 AS $$
@@ -142,7 +145,7 @@ $$;
 
 CREATE TRIGGER users_set_updated_at
 	BEFORE INSERT ON public.users
-	FOR EACH ROW EXECUTE FUNCTION public.users_set_updated_at();
+	FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 -- At least one active administrator must remain once one exists. Without one,
 -- nobody could manage the installation, and once no account with the role admin
@@ -198,7 +201,7 @@ CREATE TRIGGER users_keep_active_admin
 REVOKE ALL ON public.users FROM PUBLIC, nyktus_console;
 -- A trigger function runs with the rights of the role that fires the trigger, and
 -- needs no grant for it. Nobody calls them directly.
-REVOKE ALL ON FUNCTION public.users_set_updated_at() FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.set_updated_at() FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.users_keep_active_admin() FROM PUBLIC, nyktus_console;
 
 -- The console reaches no table without the schema. It is granted with the first
@@ -237,7 +240,7 @@ BEGIN
 	IF has_table_privilege('nyktus_console', 'public.users', 'INSERT')
 		OR has_table_privilege('nyktus_console', 'public.users', 'UPDATE, TRUNCATE, REFERENCES, TRIGGER')
 		OR has_any_column_privilege('nyktus_console', 'public.users', 'REFERENCES')
-		OR has_function_privilege('nyktus_console', 'public.users_set_updated_at()', 'EXECUTE')
+		OR has_function_privilege('nyktus_console', 'public.set_updated_at()', 'EXECUTE')
 		OR has_function_privilege('nyktus_console', 'public.users_keep_active_admin()', 'EXECUTE')
 		OR EXISTS (
 			SELECT FROM unnest(ARRAY['id', 'created_at', 'updated_at', 'failed_logins', 'locked_until']) AS c (name)
@@ -872,6 +875,130 @@ BEGIN
 		OR has_any_column_privilege('nyktus_console', 'public.account_links', 'UPDATE, REFERENCES')
 		OR has_column_privilege('nyktus_console', 'public.account_links', 'expires_at', 'INSERT') THEN
 		RAISE EXCEPTION 'nyktus_console has more privileges on public.account_links than granted; check the default privileges of the owner';
+	END IF;
+END
+$$;
+
+-- Identifiers of MITRE ATT&CK techniques and sub-techniques, such as T1003 and
+-- T1003.001. The application checks them against the bundled list of the
+-- pinned ATT&CK version; the database checks only their form, so that a newer
+-- version needs no migration.
+CREATE FUNCTION public.attack_technique_ids_valid(ids text[]) RETURNS boolean
+	LANGUAGE sql IMMUTABLE STRICT
+	SET search_path = ''
+	RETURN coalesce(array_ndims(ids), 1) = 1
+		AND NOT EXISTS (
+			SELECT FROM unnest(ids) AS t (id)
+			WHERE t.id IS NULL OR t.id !~ '^T[0-9]{4}(\.[0-9]{3})?$'
+		)
+		AND cardinality(ids) = (SELECT count(DISTINCT t.id) FROM unnest(ids) AS t (id));
+
+-- A honeytoken raises an event when its trigger value is requested. The value
+-- is part of the URL that is placed in the monitored environment, so it is not
+-- a secret towards the readers of the console, who see it again whenever they
+-- need it. Towards everyone else it is: whoever knows it can trigger the
+-- honeytoken, and whoever reads this table knows every decoy.
+CREATE TABLE public.honeytokens (
+	id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	-- A honeytoken keeps its type: a placed URL cannot turn into an image.
+	type          text NOT NULL,
+	name          text NOT NULL,
+	-- Where and why the honeytoken was placed, for the team that cleans up or
+	-- triages an incident.
+	notes         text NOT NULL DEFAULT '',
+	enabled       boolean NOT NULL DEFAULT true,
+	-- The page that a click on a URL leads to, so that the click raises no
+	-- suspicion. Only URLs are clicked.
+	redirect_url  text,
+	-- The ATT&CK techniques that a trigger of the honeytoken suggests.
+	techniques    text[] NOT NULL DEFAULT '{}',
+	-- 128 bits from crypto/rand in lowercase base32 without padding, which is a
+	-- valid DNS label. A new value means a new honeytoken, because the old one
+	-- stays placed, so the value cannot be changed.
+	trigger_value text NOT NULL,
+	created_at    timestamptz NOT NULL DEFAULT clock_timestamp(),
+	-- Set by the trigger below on insert, as for accounts.
+	updated_at    timestamptz NOT NULL,
+
+	CONSTRAINT honeytokens_type_check CHECK (type IN ('web_url', 'web_image')),
+	CONSTRAINT honeytokens_name_check CHECK (
+		char_length(name) BETWEEN 1 AND 100
+		AND name = btrim(name)
+		AND name !~ '[\x01-\x1f\x7f]'
+	),
+	-- Notes may span several lines.
+	CONSTRAINT honeytokens_notes_check CHECK (
+		char_length(notes) <= 2000
+		AND notes !~ '[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]'
+	),
+	-- The application validates the URL in full; the schema keeps other types
+	-- free of a redirect and the URL free of spaces, line breaks and other
+	-- schemes.
+	CONSTRAINT honeytokens_redirect_url_check CHECK (
+		(redirect_url IS NULL OR type = 'web_url')
+		AND octet_length(redirect_url) <= 2048
+		AND redirect_url ~ '^https?://[\x21-\x7e]+$'
+	),
+	CONSTRAINT honeytokens_techniques_check CHECK (
+		cardinality(techniques) <= 20 AND public.attack_technique_ids_valid(techniques)
+	),
+	CONSTRAINT honeytokens_trigger_value_key UNIQUE (trigger_value),
+	CONSTRAINT honeytokens_trigger_value_check CHECK (trigger_value ~ '^[a-z2-7]{26}$'),
+	CONSTRAINT honeytokens_updated_at_check CHECK (updated_at >= created_at)
+);
+
+-- The console lists honeytokens from the newest to the oldest, a page at a
+-- time, continuing after the last honeytoken of the previous page.
+CREATE INDEX honeytokens_created_at_id_idx ON public.honeytokens (created_at DESC, id DESC);
+
+CREATE TRIGGER honeytokens_set_updated_at
+	BEFORE INSERT ON public.honeytokens
+	FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- Default privileges set by an operator could grant more than this migration
+-- intends, so everything is revoked before the grants.
+REVOKE ALL ON public.honeytokens FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.attack_technique_ids_valid(text[]) FROM PUBLIC, nyktus_console;
+
+-- The console evaluates the check of the techniques when it writes. It creates,
+-- lists, changes and deletes honeytokens; it cannot change the type or the
+-- trigger value of one, and identifiers and creation times come from the
+-- database.
+GRANT EXECUTE ON FUNCTION public.attack_technique_ids_valid(text[]) TO nyktus_console;
+GRANT SELECT, DELETE ON public.honeytokens TO nyktus_console;
+GRANT INSERT (type, name, notes, enabled, redirect_url, techniques, trigger_value) ON public.honeytokens TO nyktus_console;
+GRANT UPDATE (name, notes, enabled, redirect_url, techniques, updated_at) ON public.honeytokens TO nyktus_console;
+
+-- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
+-- result is verified instead of assumed, in both directions.
+DO $$
+BEGIN
+	IF NOT has_table_privilege('nyktus_console', 'public.honeytokens', 'SELECT')
+		OR NOT has_table_privilege('nyktus_console', 'public.honeytokens', 'DELETE')
+		OR NOT has_function_privilege('nyktus_console', 'public.attack_technique_ids_valid(text[])', 'EXECUTE')
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['type', 'name', 'notes', 'enabled', 'redirect_url', 'techniques',
+				'trigger_value']) AS c (name)
+			WHERE NOT has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'INSERT')
+		)
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['name', 'notes', 'enabled', 'redirect_url', 'techniques', 'updated_at']) AS c (name)
+			WHERE NOT has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'UPDATE')
+		) THEN
+		RAISE EXCEPTION 'nyktus_console lacks privileges on public.honeytokens; run migrations as the owner of the schema';
+	END IF;
+
+	IF has_table_privilege('nyktus_console', 'public.honeytokens', 'INSERT, UPDATE, TRUNCATE, REFERENCES, TRIGGER')
+		OR has_any_column_privilege('nyktus_console', 'public.honeytokens', 'REFERENCES')
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['id', 'created_at', 'updated_at']) AS c (name)
+			WHERE has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'INSERT')
+		)
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['id', 'type', 'trigger_value', 'created_at']) AS c (name)
+			WHERE has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'UPDATE')
+		) THEN
+		RAISE EXCEPTION 'nyktus_console has more privileges on public.honeytokens than granted; check the default privileges of the owner';
 	END IF;
 END
 $$;

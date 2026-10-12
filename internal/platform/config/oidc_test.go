@@ -14,6 +14,7 @@ import (
 func consoleEnv(extra map[string]string) map[string]string {
 	env := map[string]string{
 		"NYKTUS_CONSOLE_DATABASE_URL": "postgres://console@db/nyktus",
+		"NYKTUS_TRIGGER_URL":          "https://t.example.com",
 		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
 		"NYKTUS_ENCRYPTION_KEYS":      testKeys,
 	}

@@ -208,6 +208,7 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 		},
 		Keys:           cfg.EncryptionKeys,
 		ConsoleURL:     cfg.Console.URL,
+		TriggerURL:     cfg.Console.TriggerURL,
 		TrustedProxies: cfg.TrustedProxies,
 		OIDC:           provider,
 		OIDCGroups:     groups,

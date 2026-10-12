@@ -86,6 +86,13 @@ const (
 	// data. A request denied for lacking the permission audit:read has the same
 	// action.
 	ActionAuditRead Action = "audit.read"
+	// ActionHoneytokenCreate records the creation of a honeytoken.
+	ActionHoneytokenCreate Action = "honeytoken.create"
+	// ActionHoneytokenUpdate records a change of a honeytoken, with the names of
+	// the changed fields.
+	ActionHoneytokenUpdate Action = "honeytoken.update"
+	// ActionHoneytokenDelete records the deletion of a honeytoken.
+	ActionHoneytokenDelete Action = "honeytoken.delete"
 )
 
 // Outcome is the result of an action.

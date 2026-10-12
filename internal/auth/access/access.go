@@ -21,16 +21,35 @@ import (
 // grants lists the permissions of each role. A permission appears here when the
 // first route that requires it is added.
 var grants = map[user.Role][]httpx.Permission{
-	user.RoleAdmin:  {"api_keys:read", "api_keys:write", "audit:read", "users:read", "users:write"},
-	user.RoleUser:   {},
-	user.RoleViewer: {},
+	user.RoleAdmin: {
+		"api_keys:read", "api_keys:write", "audit:read", "honeytokens:read", "honeytokens:write", "users:read", "users:write",
+	},
+	user.RoleUser:   {"honeytokens:read", "honeytokens:write"},
+	user.RoleViewer: {"honeytokens:read"},
 }
 
 // keyScopes lists the permissions that an API key may carry as scopes. Keys do
 // not manage accounts or keys, not even by reading them: a leaked key with
 // users:write could take over every account through password reset links, and
-// one with api_keys:write could issue itself a successor.
-var keyScopes = []httpx.Permission{"audit:read"}
+// one with api_keys:write could issue itself a successor. Keys may manage
+// honeytokens, so that they can be rolled out by script; reading them is
+// reading the inventory, so integrations that only need other data get keys
+// without these scopes.
+var keyScopes = []httpx.Permission{"audit:read", "honeytokens:read", "honeytokens:write"}
+
+// keyScopeRequires names the scopes that a key may carry only together with
+// another one. A key that changes honeytokens receives the honeytoken in every
+// response, also to a change that changes nothing, so it reads them anyway;
+// requiring the scope to read them keeps the scopes of a key honest about what
+// it can see.
+var keyScopeRequires = map[httpx.Permission]httpx.Permission{"honeytokens:write": "honeytokens:read"}
+
+// KeyScopeRequires returns the scope that a key must carry as well to carry
+// perm, if there is one.
+func KeyScopeRequires(perm httpx.Permission) (httpx.Permission, bool) {
+	required, ok := keyScopeRequires[perm]
+	return required, ok
+}
 
 // KeyScopes returns the permissions that an API key may carry as scopes.
 func KeyScopes() []httpx.Permission {

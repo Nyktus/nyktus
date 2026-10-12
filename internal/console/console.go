@@ -46,6 +46,8 @@ type Deps struct {
 	AuditEntries http.Handler
 	// Accounts manages accounts and activates them.
 	Accounts Accounts
+	// Honeytokens manages the honeytokens of the team.
+	Honeytokens Honeytokens
 	// Origin is the origin under which users reach the console, such as
 	// "https://nyktus.example.com". Requests that change state must come from it.
 	Origin string
@@ -69,6 +71,15 @@ type SecondFactor struct {
 // APIKeys are the handlers of the management of the API keys of the team.
 type APIKeys struct {
 	List, Create, Revoke http.Handler
+}
+
+// Honeytokens are the handlers of the management of the honeytokens.
+type Honeytokens struct {
+	List, Get, Create, Update, Delete http.Handler
+}
+
+func (h Honeytokens) complete() bool {
+	return h.List != nil && h.Get != nil && h.Create != nil && h.Update != nil && h.Delete != nil
 }
 
 // OIDC are the handlers of the sign-in through the identity provider: the
@@ -99,8 +110,8 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || !d.Accounts.complete() {
-		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit and account handlers")
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || !d.Accounts.complete() || !d.Honeytokens.complete() {
+		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, account and honeytoken handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	// The session itself and how the account signs in are managed only with a
@@ -138,6 +149,11 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPost, "/api/v1/activation", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.Activate))
 	rt.Handle(http.MethodPost, "/api/v1/users/{id}/password-reset-link", httpx.Require("users:write"), d.Accounts.IssueResetLink)
 	rt.Handle(http.MethodPost, "/api/v1/password-reset", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.ResetPassword))
+	rt.Handle(http.MethodGet, "/api/v1/honeytokens", httpx.Require("honeytokens:read"), d.Honeytokens.List)
+	rt.Handle(http.MethodPost, "/api/v1/honeytokens", httpx.Require("honeytokens:write"), d.Honeytokens.Create)
+	rt.Handle(http.MethodGet, "/api/v1/honeytokens/{id}", httpx.Require("honeytokens:read"), d.Honeytokens.Get)
+	rt.Handle(http.MethodPatch, "/api/v1/honeytokens/{id}", httpx.Require("honeytokens:write"), d.Honeytokens.Update)
+	rt.Handle(http.MethodDelete, "/api/v1/honeytokens/{id}", httpx.Require("honeytokens:write"), d.Honeytokens.Delete)
 	return rt
 }
 

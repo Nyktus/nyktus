@@ -86,3 +86,35 @@ func TestDecodeListQuery_DoesNotRepeatParameterNames(t *testing.T) {
 		t.Error("the error repeats the unknown parameter name")
 	}
 }
+
+// A list accepts the filter parameters it names, once each, and still rejects
+// every other parameter.
+func TestDecodeListQuery_AcceptsDeclaredFilters(t *testing.T) {
+	t.Parallel()
+
+	decode := func(query string, filters ...string) (ListQuery, *httptest.ResponseRecorder, bool) {
+		rec := httptest.NewRecorder()
+		q, ok := DecodeListQuery(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/items?"+query, nil), 50, 200, filters...)
+		return q, rec, ok
+	}
+
+	q, rec, ok := decode("type=web_url&limit=5&enabled=", "type", "enabled")
+	if !ok || q.Limit != 5 || len(q.Filters) != 2 || q.Filters["type"] != "web_url" || q.Filters["enabled"] != "" {
+		t.Errorf("decode() = %+v, %v (%s)", q, ok, rec.Body)
+	}
+	if q, _, ok := decode("limit=5", "type"); !ok || q.Filters != nil {
+		t.Errorf("decode() without filters = %+v, %v; want no filters", q, ok)
+	}
+	for _, query := range []string{"type=a&type=b", "state=x", "type=a"} {
+		filters := []string{"type", "enabled"}
+		if query == "type=a" {
+			filters = nil
+		}
+		if _, rec, ok := decode(query, filters...); ok || rec.Code != http.StatusBadRequest {
+			t.Errorf("decode(%q, %v) accepted", query, filters)
+		}
+	}
+	if _, rec, _ := decode("state=x", "type", "enabled"); !strings.Contains(rec.Body.String(), "use limit, cursor, type and enabled") {
+		t.Errorf("error %s does not name the parameters of the list", rec.Body)
+	}
+}

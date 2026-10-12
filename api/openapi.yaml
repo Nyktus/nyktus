@@ -62,6 +62,8 @@ tags:
     description: The audit log of security-relevant actions.
   - name: users
     description: Management of accounts by administrators, and their activation.
+  - name: honeytokens
+    description: Honeytokens of the team, which raise an event when their URL is requested.
 
 paths:
   /livez:
@@ -1345,6 +1347,215 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/honeytokens:
+    get:
+      operationId: listHoneytokens
+      summary: List honeytokens
+      description: |
+        Returns honeytokens from the newest to the oldest, a page at a time. To
+        read the next page, pass the `next_cursor` of a response as `cursor`,
+        with the same filters.
+
+        Honeytokens are part of the inventory: whoever reads them knows which
+        URLs to avoid. Give integrations that do not manage honeytokens keys
+        without the scope `honeytokens:read`.
+      tags: [honeytokens]
+      x-access: honeytokens:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      parameters:
+        - name: limit
+          in: query
+          description: Number of honeytokens per page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+        - name: type
+          in: query
+          description: Lists only honeytokens of this type.
+          schema:
+            type: string
+            enum: [web_url, web_image]
+        - name: enabled
+          in: query
+          description: Lists only enabled (`true`) or disabled (`false`) honeytokens.
+          schema:
+            type: string
+            enum: ["true", "false"]
+      responses:
+        "200":
+          description: A page of honeytokens.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HoneytokenPage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createHoneytoken
+      summary: Create a honeytoken
+      description: |
+        Creates a honeytoken with a new trigger value of 128 random bits. Place
+        its `trigger_url` where an attacker would find it. The trigger value
+        cannot be changed: to replace a URL that has been exposed, create a new
+        honeytoken and delete the old one.
+
+        The audit log records the creation as `honeytoken.create`.
+      tags: [honeytokens]
+      x-access: honeytokens:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateHoneytokenRequest"
+      responses:
+        "201":
+          description: The honeytoken has been created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Honeytoken"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/honeytokens/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getHoneytoken
+      summary: Get a honeytoken
+      tags: [honeytokens]
+      x-access: honeytokens:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The honeytoken.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Honeytoken"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateHoneytoken
+      summary: Change a honeytoken
+      description: |
+        Changes the name, the notes, the state, the redirect or the techniques
+        of a honeytoken. Members that are left out stay unchanged. The type and
+        the trigger value cannot be changed. `redirect_url: null` removes the
+        redirect.
+
+        The audit log records the names of the changed fields as
+        `honeytoken.update`, not their values. A request that changes no value
+        is not recorded.
+      tags: [honeytokens]
+      x-access: honeytokens:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateHoneytokenRequest"
+      responses:
+        "200":
+          description: The honeytoken after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Honeytoken"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteHoneytoken
+      summary: Delete a honeytoken
+      description: |
+        Deletes a honeytoken. Its URL stops raising events, and the trigger
+        answers it like any unknown URL. Remove the placed URL as well, so that
+        it does not mislead your own team. The audit log records the deletion as
+        `honeytoken.delete`.
+      tags: [honeytokens]
+      x-access: honeytokens:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "204":
+          description: The honeytoken has been deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1768,9 +1979,12 @@ components:
           minItems: 1
           maxItems: 16
           uniqueItems: true
+          description: |
+            The permissions of the key. `honeytokens:write` requires `honeytokens:read`, because a key that
+            changes honeytokens receives them in the responses.
           items:
             type: string
-            enum: [audit:read]
+            enum: [audit:read, honeytokens:read, honeytokens:write]
         expires_at:
           type: string
           format: date-time
@@ -1854,6 +2068,133 @@ components:
           items:
             type: string
             pattern: "^[a-z2-7]{4}-[a-z2-7]{4}-[a-z2-7]{4}-[a-z2-7]{4}$"
+
+    Honeytoken:
+      type: object
+      additionalProperties: false
+      required: [id, type, name, notes, enabled, redirect_url, techniques, trigger_value, trigger_url, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [web_url, web_image]
+          description: |
+            `web_url` is triggered when the URL is opened, for example through a link or a QR code, and
+            redirects the browser. `web_image` is triggered when the URL is loaded as an image, for example
+            when a document or mail that embeds it is opened.
+        name:
+          type: string
+        notes:
+          type: string
+          description: Where and why the honeytoken was placed. Empty if there are none.
+        enabled:
+          type: boolean
+          description: Whether a request of the URL raises an event.
+        redirect_url:
+          description: Where the URL of a `web_url` redirects, or null for the default target of the trigger.
+          type: [string, "null"]
+          format: uri
+        techniques:
+          type: array
+          description: Identifiers of the MITRE ATT&CK techniques that a trigger suggests.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        trigger_value:
+          type: string
+          pattern: "^[a-z2-7]{26}$"
+          description: The value that triggers the honeytoken. It is part of `trigger_url` and cannot be changed.
+        trigger_url:
+          type: string
+          format: uri
+          description: The URL to place, the public address of the trigger followed by the trigger value.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    HoneytokenPage:
+      type: object
+      additionalProperties: false
+      required: [honeytokens]
+      properties:
+        honeytokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/Honeytoken"
+        next_cursor:
+          type: string
+          description: Cursor of the next page. Absent on the last page.
+
+    CreateHoneytokenRequest:
+      type: object
+      additionalProperties: false
+      required: [type, name]
+      properties:
+        type:
+          type: string
+          enum: [web_url, web_image]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Printable characters without leading or trailing spaces.
+        notes:
+          type: string
+          maxLength: 2000
+          default: ""
+          description: Where and why the honeytoken is placed. Line breaks and tabs are allowed.
+        enabled:
+          type: boolean
+          default: true
+        redirect_url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: |
+            Only for `web_url`: where the URL redirects. An `http` or `https` URL with a lowercase scheme, in
+            printable ASCII, whose host is a name, not an IP address, and without user information.
+        techniques:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          default: []
+          description: Identifiers of techniques of the ATT&CK version that the server bundles, such as `T1078` or `T1003.001`.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+
+    UpdateHoneytokenRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        notes:
+          type: string
+          maxLength: 2000
+        enabled:
+          type: boolean
+        redirect_url:
+          description: Only for `web_url`. null removes the redirect.
+          type: [string, "null"]
+          format: uri
+          maxLength: 2048
+        techniques:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          description: Replaces the techniques. An empty list removes them.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
 
     Error:
       type: object

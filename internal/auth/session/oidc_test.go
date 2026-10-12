@@ -56,6 +56,7 @@ func startConsoleWith(t *testing.T, d testDB, cfg session.Config) *httptest.Serv
 		Sessions:       cfg,
 		Keys:           secretboxtest.Keyring(t),
 		ConsoleURL:     origin,
+		TriggerURL:     "https://t.example.net",
 		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")},
 	})
 	if err != nil {

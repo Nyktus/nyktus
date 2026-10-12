@@ -5,7 +5,6 @@ package account
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -172,42 +171,17 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, createResponse{User: created.Response(), Activation: newLinkResponse(link)})
 }
 
-// field is a member of a request that may be left out but, if present, must
-// not be null. A null would otherwise be indistinguishable from an absent
-// member and silently change nothing.
-type field[T any] struct {
-	set   bool
-	value T
-}
-
-var errNull = errors.New("null is not allowed")
-
-func (f *field[T]) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		return errNull
-	}
-	f.set = true
-	return json.Unmarshal(b, &f.value)
-}
-
-func (f field[T]) ptr() *T {
-	if !f.set {
-		return nil
-	}
-	return &f.value
-}
-
 // updateRequest lists every field that a change may contain. Each field is
 // validated on its own and has the same consequences as a dedicated operation
 // would have, so the request is not a generic update.
 type updateRequest struct {
-	DisplayName field[string]      `json:"display_name"`
-	Role        field[user.Role]   `json:"role"`
-	Status      field[user.Status] `json:"status"`
-	TOTPEnabled field[bool]        `json:"totp_enabled"`
+	DisplayName httpx.Optional[string]      `json:"display_name"`
+	Role        httpx.Optional[user.Role]   `json:"role"`
+	Status      httpx.Optional[user.Status] `json:"status"`
+	TOTPEnabled httpx.Optional[bool]        `json:"totp_enabled"`
 	// Password confirms the removal of a second factor: it is the password of
 	// the administrator.
-	Password field[string] `json:"password"`
+	Password httpx.Optional[string] `json:"password"`
 }
 
 // LogValue keeps the password out of logs.
@@ -226,15 +200,15 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := Change{
-		Change:     user.Change{DisplayName: req.DisplayName.ptr(), Role: req.Role.ptr(), Status: req.Status.ptr()},
-		RemoveTOTP: req.TOTPEnabled.set,
-		Password:   req.Password.value,
+		Change:     user.Change{DisplayName: req.DisplayName.Ptr(), Role: req.Role.Ptr(), Status: req.Status.Ptr()},
+		RemoveTOTP: req.TOTPEnabled.Set,
+		Password:   req.Password.Value,
 	}
 	switch {
 	case c.DisplayName == nil && c.Role == nil && c.Status == nil && !c.RemoveTOTP:
 		invalid(w, r, "request must change display_name, role, status or totp_enabled")
 		return
-	case req.TOTPEnabled.set && req.TOTPEnabled.value:
+	case req.TOTPEnabled.Set && req.TOTPEnabled.Value:
 		invalid(w, r, "totp_enabled can only be false; users enable their second factor themselves")
 		return
 	case c.RemoveTOTP && (p.Method != audit.AuthSession || p.SessionID == ""):
@@ -242,7 +216,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		// which, with a password reset link, would take them over.
 		httpx.WriteError(w, r, http.StatusForbidden, httpx.CodeForbidden, "only a signed-in session can remove a second factor")
 		return
-	case !c.RemoveTOTP && req.Password.set:
+	case !c.RemoveTOTP && req.Password.Set:
 		invalid(w, r, "password is only used to remove a second factor")
 		return
 	case c.DisplayName != nil && !validDisplayName(*c.DisplayName):

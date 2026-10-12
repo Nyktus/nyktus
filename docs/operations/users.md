@@ -5,7 +5,7 @@ Administrators create and manage the accounts of the console. There is no public
 | Role | Purpose |
 |---|---|
 | `admin` | Manages the installation, its accounts, [API keys](api-keys.md) and settings, reads the audit log, and does everything a `user` does. |
-| `user` | Configures honeypots, honeytokens and scenarios and works with incidents. |
+| `user` | Configures honeypots, [honeytokens](honeytokens.md) and scenarios and works with incidents. |
 | `viewer` | Reads decoys and incidents, but not the audit log. |
 
 Decoys, scenarios and API keys belong to the team, not to the account that created them.
