@@ -174,6 +174,11 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, purpose, session_id, return_to) SELECT sha256('t'), sha256('b'), repeat('n', 43), repeat('v', 43), 'reauthentication', id, '/settings' FROM sessions",
 		"SELECT count(*) FROM oidc_logins WHERE expires_at > clock_timestamp()",
 		"DELETE FROM oidc_logins",
+		"INSERT INTO honeytokens (type, name, notes, enabled, redirect_url, techniques, trigger_value) VALUES ('web_url', 'h', '', true, 'https://example.com', '{T1078}', repeat('a', 26))",
+		"UPDATE honeytokens SET name = 'i', notes = 'n', enabled = false, redirect_url = NULL, techniques = '{}', updated_at = clock_timestamp()",
+		"SELECT count(*) FROM honeytokens",
+		"SELECT public.attack_technique_ids_valid('{T1078}')",
+		"DELETE FROM honeytokens",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -210,7 +215,7 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE account_links SET purpose = 'password_reset'",
 		"TRUNCATE account_links",
 		"SELECT public.users_keep_active_admin()",
-		"SELECT public.users_set_updated_at()",
+		"SELECT public.set_updated_at()",
 		"INSERT INTO sign_in_challenges (token_hash, user_id, expires_at) SELECT sha256('d'), id, now() + interval '1 year' FROM users LIMIT 1",
 		"UPDATE sign_in_challenges SET expires_at = now() + interval '1 year'",
 		"UPDATE sign_in_challenges SET user_id = user_id",
@@ -243,6 +248,14 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, purpose, created_at) VALUES (sha256('u'), sha256('b'), repeat('n', 43), repeat('v', 43), 'sign_in', now() - interval '1 day')",
 		"INSERT INTO sessions (token_hash, user_id, reauthenticated_at) SELECT sha256('v'), id, now() FROM users LIMIT 1",
 		"TRUNCATE oidc_logins",
+		"INSERT INTO honeytokens (id, type, name, trigger_value) VALUES (gen_random_uuid(), 'web_url', 'h', repeat('b', 26))",
+		"INSERT INTO honeytokens (type, name, trigger_value, created_at) VALUES ('web_url', 'h', repeat('c', 26), now() - interval '1 day')",
+		"INSERT INTO honeytokens (type, name, trigger_value, updated_at) VALUES ('web_url', 'h', repeat('d', 26), now())",
+		"UPDATE honeytokens SET type = 'web_image'",
+		"UPDATE honeytokens SET trigger_value = repeat('e', 26)",
+		"UPDATE honeytokens SET id = gen_random_uuid()",
+		"UPDATE honeytokens SET created_at = now()",
+		"TRUNCATE honeytokens",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -295,7 +308,7 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_column_privilege($1, 'public.users', 'failed_logins', 'INSERT')",
 		"has_column_privilege($1, 'public.users', 'email', 'UPDATE')",
 		"has_function_privilege($1, 'public.users_keep_active_admin()', 'EXECUTE')",
-		"has_function_privilege($1, 'public.users_set_updated_at()', 'EXECUTE')",
+		"has_function_privilege($1, 'public.set_updated_at()', 'EXECUTE')",
 		"has_any_column_privilege($1, 'public.account_links', 'UPDATE')",
 		"has_table_privilege($1, 'public.account_links', 'TRUNCATE')",
 		"has_table_privilege($1, 'public.account_links', 'REFERENCES')",
@@ -323,6 +336,15 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_table_privilege($1, 'public.oidc_logins', 'TRUNCATE')",
 		"has_table_privilege($1, 'public.oidc_logins', 'REFERENCES')",
 		"has_column_privilege($1, 'public.oidc_logins', 'expires_at', 'INSERT')",
+		"has_table_privilege($1, 'public.honeytokens', 'TRUNCATE')",
+		"has_table_privilege($1, 'public.honeytokens', 'REFERENCES')",
+		"has_table_privilege($1, 'public.honeytokens', 'TRIGGER')",
+		"has_column_privilege($1, 'public.honeytokens', 'id', 'INSERT')",
+		"has_column_privilege($1, 'public.honeytokens', 'created_at', 'INSERT')",
+		"has_column_privilege($1, 'public.honeytokens', 'updated_at', 'INSERT')",
+		"has_column_privilege($1, 'public.honeytokens', 'type', 'UPDATE')",
+		"has_column_privilege($1, 'public.honeytokens', 'trigger_value', 'UPDATE')",
+		"has_column_privilege($1, 'public.honeytokens', 'created_at', 'UPDATE')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

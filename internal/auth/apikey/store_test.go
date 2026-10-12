@@ -284,6 +284,11 @@ func TestValidateScopes(t *testing.T) {
 		{[]httpx.Permission{"audit:read", "audit:read"}, false},
 		{nil, false},
 		{[]httpx.Permission{"*:*"}, false},
+		{[]httpx.Permission{"honeytokens:read"}, true},
+		{[]httpx.Permission{"honeytokens:write", "honeytokens:read"}, true},
+		// A key that changes honeytokens reads them in the responses.
+		{[]httpx.Permission{"honeytokens:write"}, false},
+		{[]httpx.Permission{"audit:read", "honeytokens:write"}, false},
 	} {
 		if err := apikey.ValidateScopes(tt.scopes); (err == nil) != tt.ok {
 			t.Errorf("ValidateScopes(%v) error = %v, want ok %v", tt.scopes, err, tt.ok)

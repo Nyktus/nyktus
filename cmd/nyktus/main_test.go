@@ -202,6 +202,7 @@ func TestRun_FailedStartIssuesNoSetupToken(t *testing.T) {
 
 	env := map[string]string{
 		"NYKTUS_CONSOLE_DATABASE_URL": consoleURL,
+		"NYKTUS_TRIGGER_URL":          "https://t.example.com",
 		"NYKTUS_CONSOLE_ADDR":         occupied.Addr().String(),
 		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
 		"NYKTUS_ENCRYPTION_KEYS":      testKeys(t),
@@ -245,6 +246,7 @@ INSERT INTO users (email, display_name, role, status) VALUES ('ada@example.com',
 	}
 	env := map[string]string{
 		"NYKTUS_CONSOLE_DATABASE_URL": consoleURL,
+		"NYKTUS_TRIGGER_URL":          "https://t.example.com",
 		"NYKTUS_CONSOLE_ADDR":         "127.0.0.1:0",
 		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
 		"NYKTUS_ENCRYPTION_KEYS":      testKeys(t),

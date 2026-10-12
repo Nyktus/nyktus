@@ -61,11 +61,12 @@ Creating a database owned by another role needs more than `CREATEROLE`: it requi
    ```sh
    NYKTUS_CONSOLE_DATABASE_URL='postgres://nyktus_console_login:...@db/nyktus' \
    NYKTUS_CONSOLE_URL='https://nyktus.example.com' \
+   NYKTUS_TRIGGER_URL='https://t.example.net' \
    NYKTUS_ENCRYPTION_KEYS_FILE=/run/secrets/nyktus-keys \
      nyktus serve --roles=console
    ```
 
-   `NYKTUS_CONSOLE_URL` is the address under which users reach the console. The file named by `NYKTUS_ENCRYPTION_KEYS_FILE` holds the [encryption keys](configuration.md#encryption-keys). See [Configuration](configuration.md).
+   `NYKTUS_CONSOLE_URL` is the address under which users reach the console, `NYKTUS_TRIGGER_URL` the public address of the trigger, with which the URLs of [honeytokens](honeytokens.md) start. The file named by `NYKTUS_ENCRYPTION_KEYS_FILE` holds the [encryption keys](configuration.md#encryption-keys). See [Configuration](configuration.md).
 
    On the first start, the console prints a URL for creating the first administrator. See [First start](first-start.md).
 

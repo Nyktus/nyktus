@@ -144,6 +144,7 @@ Prefer the standard library. A new dependency needs the justification described 
 
 - The `toolchain` directive in `go.mod` names the minimum Go release with all known standard library fixes. Raise it when `govulncheck` reports a vulnerability fixed in a newer Go release.
 - Development tools such as linters and scanners are pinned in the `Makefile` and run through `go run`. They are never added to `go.mod`, so they do not enter the dependency graph of the product.
+- Reference data from third parties, such as the techniques of MITRE ATT&CK, is embedded at build time, never loaded at runtime. A generator under `tools/` produces it from a release pinned by version and SHA-256 digest, and the generated file is committed, so that an update is a reviewable diff: change the pin, run the generator, and check what was added, renamed or removed. Its notice goes into `NOTICE`.
 
 ## Documentation
 
