@@ -144,3 +144,60 @@ func TestCheckLeastPrivilege(t *testing.T) {
 		})
 	}
 }
+
+// A role that answers requests from the internet passes the check only while it
+// can execute its function and nothing else.
+func TestCheckFunctionOnly(t *testing.T) {
+	t.Parallel()
+
+	dbURL := dbtest.New(t)
+	group, _ := dbtest.Role(t, dbURL, "group", "")
+	other, _ := dbtest.Role(t, dbURL, "other", "")
+	groupIdent, otherIdent := pgx.Identifier{group}.Sanitize(), pgx.Identifier{other}.Sanitize()
+	dbtest.Exec(t, dbURL,
+		"REVOKE ALL ON SCHEMA public FROM PUBLIC",
+		"CREATE TABLE public.inventory (id int)",
+		"CREATE FUNCTION public.record(v text) RETURNS int LANGUAGE sql AS 'SELECT 1'",
+		"CREATE FUNCTION public.other() RETURNS int LANGUAGE sql AS 'SELECT 1'",
+		"REVOKE ALL ON FUNCTION public.record(text), public.other() FROM PUBLIC",
+		"GRANT USAGE ON SCHEMA public TO "+groupIdent,
+		"GRANT EXECUTE ON FUNCTION public.record(text) TO "+groupIdent,
+	)
+	const function = "public.record(text)"
+
+	tests := []struct {
+		suffix, attributes string
+		grant              string
+		// want is empty if the role must pass.
+		want string
+	}{
+		{suffix: "member", attributes: "IN ROLE " + groupIdent},
+		{suffix: "outsider", want: "cannot execute public.record(text)"},
+		{suffix: "usage", grant: "GRANT USAGE ON SCHEMA public TO %s", want: "cannot execute public.record(text)"},
+		{suffix: "both", attributes: "IN ROLE " + groupIdent + ", " + otherIdent, want: "member of [" + other + "]"},
+		// A member that does not inherit can still switch to the role.
+		{suffix: "noinherit", attributes: "IN ROLE " + groupIdent, grant: "GRANT " + otherIdent + " TO %s WITH INHERIT FALSE", want: "member of [" + other + "]"},
+		{suffix: "table", attributes: "IN ROLE " + groupIdent, grant: "GRANT SELECT ON public.inventory TO %s", want: "tables [inventory]"},
+		{suffix: "column", attributes: "IN ROLE " + groupIdent, grant: "GRANT SELECT (id) ON public.inventory TO %s", want: "tables [inventory]"},
+		{suffix: "function", attributes: "IN ROLE " + groupIdent, grant: "GRANT EXECUTE ON FUNCTION public.other() TO %s", want: "execute [other()]"},
+		{suffix: "create", attributes: "IN ROLE " + groupIdent, grant: "GRANT CREATE ON SCHEMA public TO %s", want: "create objects"},
+	}
+	for _, tt := range tests {
+		name, roleURL := dbtest.Role(t, dbURL, tt.suffix, tt.attributes)
+		if tt.grant != "" {
+			dbtest.Exec(t, dbURL, strings.ReplaceAll(tt.grant, "%s", pgx.Identifier{name}.Sanitize()))
+		}
+		pool, err := Open(t.Context(), roleURL, Options{MaxConns: 1})
+		if err != nil {
+			t.Fatalf("Open(%s) error = %v", tt.suffix, err)
+		}
+		err = CheckFunctionOnly(t.Context(), pool, group, function)
+		pool.Close()
+		switch {
+		case tt.want == "" && err != nil:
+			t.Errorf("CheckFunctionOnly(%s) = %v, want nil", tt.suffix, err)
+		case tt.want != "" && (!errors.Is(err, ErrRolePrivileges) || !strings.Contains(err.Error(), tt.want)):
+			t.Errorf("CheckFunctionOnly(%s) = %v, want ErrRolePrivileges containing %q", tt.suffix, err, tt.want)
+		}
+	}
+}
