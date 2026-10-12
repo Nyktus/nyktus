@@ -4,14 +4,17 @@
 package trigger
 
 import (
+	"errors"
 	"net/http"
 	"net/netip"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"nyktus.org/nyktus/internal/platform/dbtest"
 	"nyktus.org/nyktus/internal/platform/schematest"
 )
 
@@ -58,6 +61,27 @@ func (f fixture) count(t *testing.T, query string, args ...any) int {
 }
 
 func ptr(s string) *string { return &s }
+
+// The trigger refuses to start with a login that holds the privileges of the
+// console, or that cannot record requests.
+func TestCheckPrivileges(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, triggerURL := schematest.Trigger(t)
+	_, consoleURL := dbtest.Role(t, ownerURL, "console", "IN ROLE "+pgx.Identifier{schematest.ConsoleRole}.Sanitize())
+	_, bothURL := dbtest.Role(t, ownerURL, "both",
+		"IN ROLE "+pgx.Identifier{schematest.ConsoleRole}.Sanitize()+", "+pgx.Identifier{schematest.TriggerRole}.Sanitize())
+
+	if err := CheckPrivileges(t.Context(), schematest.Open(t, triggerURL)); err != nil {
+		t.Errorf("CheckPrivileges(trigger) = %v, want nil", err)
+	}
+	if err := CheckPrivileges(t.Context(), schematest.Open(t, consoleURL)); !errors.Is(err, ErrPrivileges) || !strings.Contains(err.Error(), "cannot execute") {
+		t.Errorf("CheckPrivileges(console) = %v, want ErrPrivileges for the missing function", err)
+	}
+	if err := CheckPrivileges(t.Context(), schematest.Open(t, bothURL)); !errors.Is(err, ErrPrivileges) || !strings.Contains(err.Error(), "honeytokens") {
+		t.Errorf("CheckPrivileges(console and trigger) = %v, want ErrPrivileges naming the tables", err)
+	}
+}
 
 func TestStore_RecordsARequestOfAnEnabledHoneytoken(t *testing.T) {
 	t.Parallel()

@@ -233,7 +233,7 @@ func TestTrigger_AnswersEverythingElseWithoutLookingItUp(t *testing.T) {
 	before := len(rec.recorded())
 
 	for _, path := range []string{
-		"/", "/robots.txt", "/favicon.ico", "/" + strings.ToUpper(value), "/" + value + "/", "/" + value + "a",
+		"/", "/robots.txt", "/favicon.ico", "/" + value + "/", "/" + value + "a",
 		"/" + value + "?x=1&token=" + value, "//" + value, "/./" + value, "/a/../" + value, "/" + value + ".png",
 	} {
 		if got := fetch(t, srv, http.MethodGet, path, nil, nil); !got.equal(want) {
@@ -301,6 +301,42 @@ func TestTrigger_RecordsTheRequest(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("recorded %+v, want %+v", got, want)
+	}
+}
+
+// A URL can be written in upper case on its way, for example in the
+// alphanumeric mode of a QR code. Its requests still count.
+func TestTrigger_ReadsURLsInAnyCase(t *testing.T) {
+	t.Parallel()
+
+	rec := &fakeRecorder{}
+	srv, _ := newServer(t, rec)
+	if got, want := fetch(t, srv, http.MethodGet, "/"+strings.ToUpper(value), nil, nil), fetch(t, srv, http.MethodGet, "/x", nil, nil); !got.equal(want) {
+		t.Errorf("upper case URL = %+v, want %+v", got, want)
+	}
+	if got, want := fetch(t, srv, http.MethodGet, "/"+strings.ToUpper(value)+".GIF", nil, nil), fetch(t, srv, http.MethodGet, "/x.gif", nil, nil); !got.equal(want) {
+		t.Errorf("upper case image = %+v, want %+v", got, want)
+	}
+	if got := rec.recorded(); len(got) != 2 || got[0].Value != value || got[1].Value != value {
+		t.Errorf("looked up %+v, want the value in lower case twice", got)
+	}
+}
+
+// A client that closes the connection right after its request must not keep
+// it from being recorded.
+func TestTrigger_RecordingOutlivesTheClient(t *testing.T) {
+	t.Parallel()
+
+	var canceled error
+	h := New(Options{Logger: slog.New(slog.DiscardHandler), Recorder: recorderFunc(func(ctx context.Context, _ Request) (Result, error) {
+		canceled = ctx.Err()
+		return Result{Outcome: OutcomeRecorded}, nil
+	}), DefaultRedirect: defaultRedirect})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(ctx, http.MethodGet, "/"+value, nil))
+	if canceled != nil {
+		t.Errorf("recording ran with a canceled context: %v", canceled)
 	}
 }
 

@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/platform/config"
 	"nyktus.org/nyktus/internal/platform/dbtest"
@@ -332,6 +334,23 @@ func TestRun_ServesTheTrigger(t *testing.T) {
 		}
 		if !strings.Contains(stderr.String(), "excessive privileges") {
 			t.Errorf("stderr = %q, want the privilege check to fail", stderr.String())
+		}
+	})
+
+	// A login with the privileges of the console would put the inventory
+	// within reach of the internet-facing host.
+	t.Run("refuses a login of the console", func(t *testing.T) {
+		env := maps.Clone(env)
+		_, consoleURL := dbtest.Role(t, ownerURL, "console", "IN ROLE "+pgx.Identifier{schematest.ConsoleRole}.Sanitize())
+		env["NYKTUS_TRIGGER_DATABASE_URL"] = consoleURL
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		defer cancel()
+		var stderr bytes.Buffer
+		if code := run(ctx, []string{"serve", "--roles=trigger"}, source(env), &bytes.Buffer{}, &stderr); code != exitFailure {
+			t.Fatalf("exit code = %d, want %d; stderr: %s", code, exitFailure, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "cannot execute record_honeytoken_request") {
+			t.Errorf("stderr = %q, want the privilege check of the trigger to fail", stderr.String())
 		}
 	})
 

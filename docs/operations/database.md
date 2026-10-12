@@ -88,3 +88,5 @@ Creating a database owned by another role needs more than `CREATEROLE`: it requi
 ## Privilege check
 
 Outside development, the server refuses to start if a role's login can bypass the privilege separation: if it is a superuser, can bypass row-level security, can create roles or databases, can start replication, is a member of `pg_read_all_data`, `pg_write_all_data`, `pg_read_server_files`, `pg_write_server_files` or `pg_execute_server_program`, or owns the database or the schema. Use the login roles from the setup above, not the owner.
+
+The trigger additionally refuses to start unless its login can record requests and can access no table, for example when `NYKTUS_TRIGGER_DATABASE_URL` names the login of the console by mistake.

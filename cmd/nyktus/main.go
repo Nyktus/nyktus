@@ -276,6 +276,9 @@ func serveTrigger(ctx context.Context, cfg config.Serve, logger *slog.Logger) er
 		if err := db.CheckLeastPrivilege(ctx, pool); err != nil {
 			return fmt.Errorf("trigger: %w", err)
 		}
+		if err := trigger.CheckPrivileges(ctx, pool); err != nil {
+			return fmt.Errorf("trigger: %w", err)
+		}
 	}
 
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Trigger.Addr)

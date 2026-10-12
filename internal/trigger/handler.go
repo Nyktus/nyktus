@@ -123,7 +123,10 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	attrs := make([]slog.Attr, 0, 6)
 	attrs = append(attrs, slog.String("method", r.Method))
 	var res Result
-	value, ok := triggerValue(r.URL.Path)
+	// Paths are compared in lower case: a URL can be written in upper case on
+	// its way, for example in the alphanumeric mode of a QR code.
+	path := strings.ToLower(r.URL.Path)
+	value, ok := triggerValue(path)
 	switch {
 	case !ok || (r.Method != http.MethodGet && r.Method != http.MethodHead):
 		attrs = append(attrs, slog.String("outcome", "not_looked_up"))
@@ -155,7 +158,7 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := http.StatusFound
-	if strings.HasSuffix(r.URL.Path, imageSuffix) {
+	if strings.HasSuffix(path, imageSuffix) {
 		status = http.StatusOK
 		writeImage(w)
 	} else {
@@ -188,12 +191,15 @@ func (h *Handler) record(ctx context.Context, req Request) (res Result, err erro
 			res, err = Result{}, errPanicked
 		}
 	}()
-	ctx, cancel := context.WithTimeout(ctx, recordTimeout)
+	// A client that closes the connection right after its request must not
+	// cancel the recording, or it could request a honeytoken without leaving an
+	// event.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
 	defer cancel()
 	return h.recorder.Record(ctx, req)
 }
 
-// triggerValue extracts the trigger value from the path of a URL of a
+// triggerValue extracts the trigger value from the lowercase path of a URL of a
 // honeytoken, "/<value>" or "/<value>.gif". Other paths, such as "/" or
 // "/robots.txt", hold no value and are answered without asking the database.
 func triggerValue(path string) (string, bool) {

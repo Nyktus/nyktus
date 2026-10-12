@@ -85,7 +85,7 @@ The trigger answers every request without revealing whether its URL belongs to a
 - A URL that ends with `.gif` receives a transparent image of one pixel.
 - Every other URL receives a redirect (`302`) to the `redirect_url` of its honeytoken, or to the default target `NYKTUS_TRIGGER_DEFAULT_REDIRECT` (see [Configuration](configuration.md#role-trigger)). This includes unknown values, `/`, `/robots.txt` and every other path.
 
-The `redirect_url` is the only difference a client can see, and only someone who already knows the URL sees it. A disabled honeytoken keeps redirecting to its `redirect_url`, so that disabling it changes nothing for whoever opens it. No answer carries a header that names Nyktus, and every answer is sent with `Cache-Control: no-store`, so that a second request reaches the trigger as well.
+The trigger reads URLs in any case, so a URL that was written in upper case on its way, for example in a QR code, still counts. The `redirect_url` is the only difference a client can see, and only someone who already knows the URL sees it. A disabled honeytoken keeps redirecting to its `redirect_url`, so that disabling it changes nothing for whoever opens it. No answer carries a header that names Nyktus, and every answer is sent with `Cache-Control: no-store`, so that a second request reaches the trigger as well.
 
 Put a reverse proxy in front of the trigger. It answers malformed requests, which would otherwise reach the HTTP server of Nyktus, and it can limit the rate of requests. Do not let it add headers that name your organization or software to the answers of the trigger.
 
