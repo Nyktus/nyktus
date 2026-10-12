@@ -98,6 +98,17 @@ type Honeytoken struct {
 	UpdatedAt    time.Time
 }
 
+// TriggerPath returns the path of the URL of the honeytoken. The URL of an image
+// ends with ".gif": the trigger answers every such request with an image and
+// every other one with a redirect, so that its answer never depends on whether
+// a value belongs to a honeytoken or of which type it is.
+func (h Honeytoken) TriggerPath() string {
+	if h.Type == TypeWebImage {
+		return "/" + h.TriggerValue + ".gif"
+	}
+	return "/" + h.TriggerValue
+}
+
 // LogValue names the honeytoken by its identifier and type. Its name, notes and
 // trigger value are inventory and stay out of logs.
 func (h Honeytoken) LogValue() slog.Value {

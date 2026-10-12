@@ -116,6 +116,9 @@ func TestCreate_ReturnsTheHoneytokenWithItsTriggerURL(t *testing.T) {
 		raw["techniques"] == nil || len(raw["techniques"].([]any)) != 0 {
 		t.Errorf("POST minimal = %d %s", rec.Code, rec.Body)
 	}
+	if want := triggerURL + "/" + raw["trigger_value"].(string) + ".gif"; raw["trigger_url"] != want {
+		t.Errorf("trigger_url of an image = %v, want %q", raw["trigger_url"], want)
+	}
 	if got := f.create(t, `{"type": "web_url", "name": "Off", "enabled": false}`); got.Enabled {
 		t.Error("POST with enabled false created an enabled honeytoken")
 	}

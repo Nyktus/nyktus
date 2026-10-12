@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/logging"
 	"nyktus.org/nyktus/internal/platform/secretbox"
 )
@@ -39,10 +40,11 @@ type Role string
 // Implemented server roles.
 const (
 	RoleConsole Role = "console"
+	RoleTrigger Role = "trigger"
 )
 
 // Roles lists every implemented role in a stable order.
-var Roles = []Role{RoleConsole}
+var Roles = []Role{RoleConsole, RoleTrigger}
 
 // ParseRoles parses a comma-separated list of role names. An empty list selects
 // all roles.
@@ -123,6 +125,19 @@ type Console struct {
 	TriggerURL string
 }
 
+// Trigger holds the settings of the trigger role, which answers the requests of
+// honeytokens from the internet. Its public address, NYKTUS_TRIGGER_URL, is a
+// setting of the console, which hands out the URLs; the trigger answers every
+// host name.
+type Trigger struct {
+	Addr        string
+	DatabaseURL Secret
+	// DefaultRedirect is where the trigger sends every client that it does not
+	// send to the redirect target of a honeytoken: requests of unknown values
+	// and other paths, and requests it failed to record.
+	DefaultRedirect string
+}
+
 // LocalLogin says which accounts sign in with a password.
 type LocalLogin string
 
@@ -185,6 +200,7 @@ type Serve struct {
 	// keys. They are read only if an enabled role uses them.
 	EncryptionKeys *secretbox.Keyring
 	Console        Console
+	Trigger        Trigger
 }
 
 // Has reports whether role is enabled.
@@ -225,6 +241,13 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 		cfg.Console.LocalLogin = r.localLogin(cfg.Console.OIDC != nil)
 		cfg.Console.TriggerURL = r.triggerURL("TRIGGER_URL", cfg.Environment, cfg.Console.URL)
 		cfg.EncryptionKeys = r.keyring("ENCRYPTION_KEYS")
+	}
+	if cfg.Has(RoleTrigger) {
+		cfg.Trigger = Trigger{
+			Addr:            r.addr("TRIGGER_ADDR", "127.0.0.1:8081"),
+			DatabaseURL:     r.requiredSecret("TRIGGER_DATABASE_URL"),
+			DefaultRedirect: r.redirect("TRIGGER_DEFAULT_REDIRECT", cfg.Environment),
+		}
 	}
 	return cfg, r.err()
 }
@@ -369,6 +392,26 @@ func (r *reader) origin(name string, env Environment) string {
 		r.fail("%s%s: must consist of scheme, host and port only, such as https://nyktus.example.com", prefix, name)
 	default:
 		return u.Scheme + "://" + u.Host
+	}
+	return ""
+}
+
+// redirect reads the default target of the trigger. It follows the rules of the
+// redirect target of a honeytoken, and must use https outside development. It
+// has no default: a target built into Nyktus would be the same in every
+// installation and identify the trigger as Nyktus.
+func (r *reader) redirect(name string, env Environment) string {
+	value := r.get(name)
+	switch {
+	case value == "":
+		r.fail("%s%s is required", prefix, name)
+	case honeytoken.ValidateRedirectURL(value) != nil:
+		r.fail("%s%s: must be an http or https URL of up to %d printable ASCII characters whose host is a name, not an IP address, without user information",
+			prefix, name, honeytoken.MaxRedirectURLLength)
+	case !strings.HasPrefix(value, "https://") && env != Development:
+		r.fail("%s%s: must start with https:// (http:// is allowed in development only)", prefix, name)
+	default:
+		return value
 	}
 	return ""
 }
