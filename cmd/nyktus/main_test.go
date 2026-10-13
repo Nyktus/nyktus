@@ -313,7 +313,9 @@ INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repe
 		select {
 		case code := <-exited:
 			t.Fatalf("worker exited with %d before it processed the event; stderr: %s", code, stderr.String())
-		default:
+		case <-time.After(10 * time.Millisecond):
+			// A pause between the queries spares the database that other
+			// tests share.
 		}
 	}
 	cancel()

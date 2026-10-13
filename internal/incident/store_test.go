@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/platform/dbtest"
 	"nyktus.org/nyktus/internal/platform/schematest"
@@ -170,7 +171,7 @@ func TestStore_OpensAnIncidentWithItsAlert(t *testing.T) {
 	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')", value)
 
 	p := f.process(t)
-	if !p.Opened || p.ResourceType != ResourceHoneytoken || p.ResourceID != id || p.Severity != SeverityMedium || p.IncidentID == "" {
+	if !p.Opened || p.ResourceType != honeytoken.ResourceType || p.ResourceID != id || p.Severity != SeverityMedium || p.IncidentID == "" {
 		t.Errorf("ProcessNext() = %+v, want an opened incident of the honeytoken with severity medium", p)
 	}
 	got := f.incident(t, p.IncidentID)
@@ -348,6 +349,64 @@ func TestStore_EventIsAssignedOnlyOnce(t *testing.T) {
 	}
 	if f.eventIncident(t, eventID) != first.IncidentID || f.count(t, "SELECT count(*) FROM incidents") != 1 || f.incident(t, first.IncidentID).count != 1 {
 		t.Error("the assigned event was assigned again or changed an incident")
+	}
+}
+
+// A job that runs out of time, here because another transaction holds its
+// incident, is postponed like any failed job, although its connection was
+// broken off with it.
+func TestStore_JobThatRunsOutOfTimeIsPostponed(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	id, _ := f.honeytoken(t, "web_url", nil)
+	f.event(t, id, "web_url", nil, time.Now())
+	first := f.process(t)
+	eventID := f.event(t, id, "web_url", nil, time.Now())
+
+	tx, err := f.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(t.Context()) }()
+	if _, err := tx.Exec(t.Context(), "SELECT FROM incidents WHERE id = $1 FOR UPDATE", first.IncidentID); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	_, found, err := f.store.ProcessNext(ctx, func() {})
+	var jobErr *JobError
+	if !found || !errors.As(err, &jobErr) || jobErr.EventID != eventID || jobErr.Attempts != 1 {
+		t.Fatalf("ProcessNext() = found %v, %v; want a JobError of the event after one attempt", found, err)
+	}
+	if err := tx.Rollback(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(t, "SELECT count(*) FROM event_jobs WHERE event_id = $1 AND attempts = 1 AND not_before > clock_timestamp()", eventID); n != 1 {
+		t.Errorf("%d postponed jobs of the event, want 1", n)
+	}
+	if f.eventIncident(t, eventID) != "" || f.incident(t, first.IncidentID).count != 1 {
+		t.Error("the attempt that ran out of time assigned the event")
+	}
+}
+
+// A stopping worker cancels its search for a job, but a job that it has taken
+// runs to its end.
+func TestStore_TakenJobOutlivesTheStop(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	id, _ := f.honeytoken(t, "web_url", nil)
+	eventID := f.event(t, id, "web_url", nil, time.Now())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	p, found, err := f.store.ProcessNext(ctx, cancel)
+	if !found || err != nil || p.EventID != eventID || !p.Opened {
+		t.Fatalf("ProcessNext() canceled after the claim = %+v, found %v, %v; want the event processed", p, found, err)
+	}
+	if _, found, err := f.store.ProcessNext(ctx, func() {}); found || err == nil {
+		t.Errorf("ProcessNext() on a canceled context = found %v, %v; want a failed search", found, err)
 	}
 }
 
@@ -619,16 +678,16 @@ INSERT INTO incidents (resource_type, resource_id, status, severity, severity_ov
 VALUES ($1, gen_random_uuid(), $2, $3, $4, now(), now(),
 	CASE WHEN $2 <> 'open' THEN clock_timestamp() END, CASE WHEN $2 = 'closed' THEN clock_timestamp() END)`
 	for _, status := range Statuses {
-		if _, err := f.owner.Exec(t.Context(), insert, ResourceHoneytoken, status, SeverityLow, nil); err != nil {
+		if _, err := f.owner.Exec(t.Context(), insert, honeytoken.ResourceType, status, SeverityLow, nil); err != nil {
 			t.Errorf("status %s: %v", status, err)
 		}
 	}
 	for _, severity := range Severities {
-		if _, err := f.owner.Exec(t.Context(), insert, ResourceHoneytoken, StatusOpen, SeverityLow, severity); err != nil {
+		if _, err := f.owner.Exec(t.Context(), insert, honeytoken.ResourceType, StatusOpen, SeverityLow, severity); err != nil {
 			t.Errorf("override %s: %v", severity, err)
 		}
 		f.exec(t, "DELETE FROM incidents WHERE status = 'open'")
-		_, err := f.owner.Exec(t.Context(), insert, ResourceHoneytoken, StatusOpen, severity, nil)
+		_, err := f.owner.Exec(t.Context(), insert, honeytoken.ResourceType, StatusOpen, severity, nil)
 		if severity == SeverityInfo {
 			if err == nil {
 				t.Error("an incident took info as its severity")

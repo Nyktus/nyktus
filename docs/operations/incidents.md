@@ -43,7 +43,7 @@ The worker looks for new events every second and processes a backlog without wai
 
 An event is assigned to its incident in the same transaction that marks it as processed, so no event is lost or processed twice, also when a worker stops in the middle. If an event cannot be processed, the worker logs `incident: event not processed` and tries it again later, after 2 seconds at first and up to an hour after repeated failures; other events are not held up. While the database is unreachable, the worker logs `worker: job failed` and tries again after up to 30 seconds. See [Logs](logs.md#worker).
 
-When the worker stops, it takes no further events and gives those in progress up to 10 seconds to finish. An event that does not finish stays unprocessed and is taken up again by the next worker.
+When the worker stops, it takes no further events and gives those in progress up to 15 seconds to finish or to be postponed. An event that does not finish stays unprocessed and is taken up again by the next worker.
 
 ## Personal data
 

@@ -62,9 +62,6 @@ func higher(a, b Severity) Severity {
 	return a
 }
 
-// ResourceHoneytoken is the type of resource of the events of honeytokens.
-const ResourceHoneytoken = "honeytoken"
-
 // honeytokenSeverity is the severity that an event of a honeytoken suggests,
 // by its type. Without knowing what the honeytoken pretends to be, it only
 // reflects how much harmless traffic triggers it.
@@ -82,7 +79,7 @@ var honeytokenSeverity = map[honeytoken.Type]Severity{
 // eventSeverity returns the severity that an event of a resource suggests.
 // honeytokenType is the type of the honeytoken that the event froze.
 func eventSeverity(resourceType string, honeytokenType *string) (Severity, error) {
-	if resourceType != ResourceHoneytoken || honeytokenType == nil {
+	if resourceType != honeytoken.ResourceType || honeytokenType == nil {
 		return "", fmt.Errorf("no severity for events of resource type %q", resourceType)
 	}
 	s, ok := honeytokenSeverity[honeytoken.Type(*honeytokenType)]

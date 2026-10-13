@@ -20,10 +20,12 @@ import (
 // Queue hands out jobs.
 type Queue interface {
 	// Process processes the next job that is due, if there is one. It calls
-	// claimed once it holds the job and before it processes it, so that the
-	// worker can look for the next job meanwhile. It returns false if no job
-	// was due. An error means that the queue could not be reached or the job
-	// could not be completed; the job then stays.
+	// claimed once it holds the job, so that the worker can look for the next
+	// job meanwhile. Canceling ctx must end the search for a job, but not a
+	// job that was taken: the job runs to its end within the deadline of ctx,
+	// so that a stopping worker completes its transaction. It returns false if
+	// no job was due. An error means that the queue could not be reached or
+	// the job could not be completed; the job then stays.
 	Process(ctx context.Context, claimed func()) (bool, error)
 }
 
@@ -91,7 +93,8 @@ func (w *Worker) Run(ctx context.Context) {
 	defer wg.Wait()
 
 	slots := make(chan struct{}, w.concurrency)
-	failures := 0
+	// backoff is the wait after the next failure in a row.
+	backoff := w.pollInterval
 	for {
 		select {
 		case slots <- struct{}{}:
@@ -100,6 +103,7 @@ func (w *Worker) Run(ctx context.Context) {
 		}
 		// Both cases can be ready; a stopped worker takes no new job.
 		if ctx.Err() != nil {
+			<-slots
 			return
 		}
 
@@ -114,20 +118,23 @@ func (w *Worker) Run(ctx context.Context) {
 		select {
 		case <-claimed:
 			// The job is in progress; the next one may be due as well.
-			failures = 0
+			backoff = w.pollInterval
 			continue
 		case o := <-ended:
 			switch {
 			case o.err != nil && !o.claimed:
-				failures++
-				wait = min(w.pollInterval<<min(failures-1, 30), w.maxBackoff)
+				wait = backoff
+				backoff = min(backoff*2, w.maxBackoff)
 			case o.found:
-				failures = 0
+				backoff = w.pollInterval
 				continue
 			default:
-				failures = 0
+				backoff = w.pollInterval
 				wait = w.pollInterval
 			}
+		}
+		if ctx.Err() != nil {
+			return
 		}
 		select {
 		case <-w.after(wait):
@@ -137,12 +144,11 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
-// attempt takes and processes one job. The job runs on a context of its own,
-// so that a stop lets it end its transaction within its deadline instead of
-// cutting it off; a transaction that is cut off rolls back and leaves the job
-// for later.
+// attempt takes and processes one job within the job timeout. A stop ends the
+// search, and the queue lets a job that was taken run to its end within the
+// timeout.
 func (w *Worker) attempt(ctx context.Context, claimed chan<- struct{}) outcome {
-	jobCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.jobTimeout)
+	jobCtx, cancel := context.WithTimeout(ctx, w.jobTimeout)
 	defer cancel()
 
 	var o outcome

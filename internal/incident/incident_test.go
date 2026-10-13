@@ -17,7 +17,7 @@ func TestEventSeverity_CoversEveryHoneytokenType(t *testing.T) {
 
 	for _, typ := range honeytoken.Types {
 		s := string(typ)
-		got, err := eventSeverity(ResourceHoneytoken, &s)
+		got, err := eventSeverity(honeytoken.ResourceType, &s)
 		if err != nil || !slices.Contains(Severities, got) || got == SeverityInfo {
 			t.Errorf("eventSeverity(%s) = %q, %v; want a severity above info", typ, got, err)
 		}
@@ -31,10 +31,10 @@ func TestEventSeverity_RejectsUnknownEvents(t *testing.T) {
 	t.Parallel()
 
 	unknown := "qr_code"
-	if _, err := eventSeverity(ResourceHoneytoken, &unknown); err == nil {
+	if _, err := eventSeverity(honeytoken.ResourceType, &unknown); err == nil {
 		t.Error("eventSeverity() accepted an unknown honeytoken type")
 	}
-	if _, err := eventSeverity(ResourceHoneytoken, nil); err == nil {
+	if _, err := eventSeverity(honeytoken.ResourceType, nil); err == nil {
 		t.Error("eventSeverity() accepted a honeytoken event without type")
 	}
 	webURL := string(honeytoken.TypeWebURL)

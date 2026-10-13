@@ -196,17 +196,7 @@ func TestRun_NeverExceedsItsConcurrency(t *testing.T) {
 	t.Parallel()
 
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue()
-		w := New(Options{
-			Logger: slog.New(slog.DiscardHandler), Queue: q, Concurrency: 2,
-			PollInterval: time.Second, MaxBackoff: time.Second, JobTimeout: 10 * time.Second,
-		})
-		ctx, cancel := context.WithCancel(t.Context())
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			w.Run(ctx)
-		}()
+		q, cancel, done := runInBubble(t, 2)
 
 		first := <-q.calls
 		first.claimed()
@@ -308,35 +298,69 @@ func TestRun_LogsAJobThatFailedAfterItsClaim(t *testing.T) {
 	}
 }
 
-// A stopped worker takes no new job, but lets the job in progress end with a
-// live context within its deadline, and returns only after it.
-func TestRun_StopLetsTheJobInProgressEnd(t *testing.T) {
+// runInBubble runs a worker on a fake queue inside the current synctest
+// bubble. stop cancels it; done is closed when Run has returned.
+func runInBubble(t *testing.T, concurrency int) (q *fakeQueue, stop context.CancelFunc, done <-chan struct{}) {
+	t.Helper()
+	q = newFakeQueue()
+	w := New(Options{
+		Logger: slog.New(slog.DiscardHandler), Queue: q, Concurrency: concurrency,
+		PollInterval: time.Second, MaxBackoff: time.Second, JobTimeout: 10 * time.Second,
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	ch := make(chan struct{})
+	go func() {
+		defer close(ch)
+		w.Run(ctx)
+	}()
+	return q, cancel, ch
+}
+
+// A stopped worker takes no new job and returns only after the job in
+// progress has ended. The job keeps the deadline of the job timeout.
+func TestRun_StopWaitsForTheJobInProgress(t *testing.T) {
 	t.Parallel()
-	h := start(t, 2)
 
-	c := h.queue.next(t)
-	c.claimed()
-	// The worker looks for the next job at once; that attempt finds none.
-	h.queue.next(t).reply <- result{}
-	h.cancel()
+	synctest.Test(t, func(t *testing.T) {
+		q, stop, done := runInBubble(t, 2)
+		c := <-q.calls
+		c.claimed()
+		// The worker looks for the next job at once; that attempt finds none.
+		(<-q.calls).reply <- result{}
+		synctest.Wait()
+		stop()
+		synctest.Wait()
 
-	select {
-	case <-h.done:
-		t.Fatal("Run returned while a job was in progress")
-	case <-c.ctx.Done():
-		t.Fatal("the job in progress was canceled")
-	case <-h.clock.waits:
-		// The worker started to wait before it saw the stop; it ends the wait.
-	}
-	if c.ctx.Err() != nil {
-		t.Fatal("the job in progress was canceled")
-	}
-	deadline, ok := c.ctx.Deadline()
-	if !ok || time.Until(deadline) > 10*time.Second {
-		t.Errorf("job deadline = %v, %v; want at most the job timeout", deadline, ok)
-	}
-	c.reply <- result{found: true}
-	<-h.done
+		select {
+		case <-done:
+			t.Fatal("Run returned while a job was in progress")
+		default:
+		}
+		if deadline, ok := c.ctx.Deadline(); !ok || time.Until(deadline) > 10*time.Second {
+			t.Errorf("job deadline = %v, %v; want at most the job timeout", deadline, ok)
+		}
+		c.reply <- result{found: true}
+		<-done
+	})
+}
+
+// A stop ends the search for a job, so that a stopped worker takes no job that
+// it would then have to finish.
+func TestRun_StopEndsTheSearchForAJob(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		q, stop, done := runInBubble(t, 1)
+		c := <-q.calls
+		stop()
+		synctest.Wait()
+		// Before the deadline of the job, which would cancel it as well.
+		if !errors.Is(c.ctx.Err(), context.Canceled) {
+			t.Errorf("search context error = %v after the stop, want context.Canceled", c.ctx.Err())
+		}
+		c.reply <- result{err: c.ctx.Err()}
+		<-done
+	})
 }
 
 func (h *harness) logged() string {

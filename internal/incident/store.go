@@ -97,15 +97,22 @@ func (e *JobError) Unwrap() error { return e.Err }
 // the resource in between, which needs a human closing it within moments.
 const openRounds = 3
 
+// postponeTimeout bounds recording a failed attempt. It runs on a context of
+// its own, because the attempt may have failed on the deadline of its context.
+const postponeTimeout = 5 * time.Second
+
 // ProcessNext processes the job of an event that is due, if there is one: it
 // assigns the event to the open incident of its resource, or opens one with
-// its alert, and deletes the job, all in one transaction. It calls claimed
-// once it holds the job, before it processes it. found is false if no job was
-// due.
+// its alert, and deletes the job, all in one transaction. It calls claimed once
+// it holds the job. found is false if no job was due.
+//
+// Canceling ctx ends the search for a job, but not a job that was taken: it
+// runs to its end within the deadline of ctx, so that a stopping worker
+// completes its transaction instead of cutting it off.
 //
 // If the event cannot be processed, the job stays and is due again later, and
 // ProcessNext returns a *JobError. Other errors mean that the database could
-// not be reached or the transaction failed; the job stays as well.
+// not be reached; the job stays as well.
 func (s *Store) ProcessNext(ctx context.Context, claimed func()) (p Processed, found bool, err error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -115,13 +122,12 @@ func (s *Store) ProcessNext(ctx context.Context, claimed func()) (p Processed, f
 
 	// SKIP LOCKED lets concurrent workers take different jobs instead of
 	// waiting for each other.
-	var attempts int
 	err = tx.QueryRow(ctx, `
-SELECT event_id, attempts FROM public.event_jobs
+SELECT event_id FROM public.event_jobs
 WHERE not_before <= statement_timestamp()
 ORDER BY not_before
 LIMIT 1
-FOR UPDATE SKIP LOCKED`).Scan(&p.EventID, &attempts)
+FOR UPDATE SKIP LOCKED`).Scan(&p.EventID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Processed{}, false, nil
 	}
@@ -129,42 +135,53 @@ FOR UPDATE SKIP LOCKED`).Scan(&p.EventID, &attempts)
 		return Processed{}, false, fmt.Errorf("process event job: %w", err)
 	}
 	claimed()
+	ctx, cancel := withoutCancel(ctx)
+	defer cancel()
 
-	// The event is processed in a savepoint, so that a failure can be
-	// recorded on the job, which stays locked meanwhile.
-	sp, err := tx.Begin(ctx)
-	if err != nil {
-		return Processed{}, true, fmt.Errorf("process event %s: %w", p.EventID, err)
+	err = s.assign(ctx, tx, &p)
+	if err == nil {
+		err = tx.Commit(ctx)
 	}
-	if err := s.assign(ctx, sp, &p); err != nil {
-		_ = sp.Rollback(ctx)
-		return Processed{}, true, s.postpone(ctx, tx, p.EventID, attempts, err)
+	if err == nil {
+		return p, true, nil
 	}
-	if err := sp.Commit(ctx); err != nil {
-		return Processed{}, true, fmt.Errorf("process event %s: %w", p.EventID, err)
+	_ = tx.Rollback(ctx)
+	return Processed{}, true, s.postpone(ctx, p.EventID, err)
+}
+
+// withoutCancel returns a context that keeps the values and the deadline of
+// ctx, but is not canceled with it.
+func withoutCancel(ctx context.Context) (context.Context, context.CancelFunc) {
+	detached := context.WithoutCancel(ctx)
+	if deadline, ok := ctx.Deadline(); ok {
+		return context.WithDeadline(detached, deadline)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return Processed{}, true, fmt.Errorf("process event %s: %w", p.EventID, err)
-	}
-	return p, true, nil
+	return detached, func() {}
 }
 
 // postpone records a failed attempt on the job of eventID and postpones it, so
 // that a job that keeps failing does not hold up the jobs behind it. The wait
 // doubles with every attempt, from two seconds up to an hour.
-func (s *Store) postpone(ctx context.Context, tx pgx.Tx, eventID string, attempts int, cause error) error {
-	jobErr := &JobError{EventID: eventID, Attempts: attempts + 1, Err: cause}
-	err := tx.QueryRow(ctx, `
+//
+// The attempt has ended its transaction, which may have broken its connection,
+// so the job is updated in a transaction of its own. Another worker may take
+// the job in between; then this attempt is not counted.
+func (s *Store) postpone(ctx context.Context, eventID string, cause error) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), postponeTimeout)
+	defer cancel()
+
+	jobErr := &JobError{EventID: eventID, Err: cause}
+	err := s.db.QueryRow(ctx, `
 UPDATE public.event_jobs
 SET attempts = attempts + 1,
 	not_before = clock_timestamp() + least(interval '1 second' * power(2, least(attempts + 1, 12)), interval '1 hour')
 WHERE event_id = $1
-RETURNING not_before`, eventID).Scan(&jobErr.Retry)
-	if err != nil {
-		return fmt.Errorf("process event %s: %w; defer job: %w", eventID, cause, err)
+RETURNING attempts, not_before`, eventID).Scan(&jobErr.Attempts, &jobErr.Retry)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("process event %s: %w; another worker completed the job meanwhile", eventID, cause)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("process event %s: %w; defer job: %w", eventID, cause, err)
+	if err != nil {
+		return fmt.Errorf("process event %s: %w; postpone job: %w", eventID, cause, err)
 	}
 	return jobErr
 }
