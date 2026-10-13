@@ -43,10 +43,11 @@ const (
 	RoleConsole Role = "console"
 	RoleTrigger Role = "trigger"
 	RoleDNS     Role = "dns"
+	RoleWorker  Role = "worker"
 )
 
 // Roles lists every implemented role in a stable order.
-var Roles = []Role{RoleConsole, RoleTrigger, RoleDNS}
+var Roles = []Role{RoleConsole, RoleTrigger, RoleDNS, RoleWorker}
 
 // ParseRoles parses a comma-separated list of role names. The list is required:
 // the roles are meant for different hosts, and some of them listen on the
@@ -174,6 +175,18 @@ type DNS struct {
 	TTL time.Duration
 }
 
+// Worker holds the settings of the worker role, which correlates events into
+// incidents. It listens on no port.
+type Worker struct {
+	DatabaseURL Secret
+	// Concurrency bounds the jobs that the worker processes at a time, and
+	// with them its connections to the database.
+	Concurrency int
+}
+
+// maxWorkerConcurrency bounds the connections of the worker.
+const maxWorkerConcurrency = 32
+
 // Limits of the DNS settings.
 const (
 	maxDNSTTL = time.Hour
@@ -250,6 +263,7 @@ type Serve struct {
 	Console        Console
 	Trigger        Trigger
 	DNS            DNS
+	Worker         Worker
 }
 
 // Has reports whether role is enabled.
@@ -321,6 +335,12 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 			AnswerIPv4:       r.answerAddr("DNS_ANSWER_IPV4", false),
 			AnswerIPv6:       r.answerAddr("DNS_ANSWER_IPV6", true),
 			TTL:              r.ttl("DNS_TTL"),
+		}
+	}
+	if cfg.Has(RoleWorker) {
+		cfg.Worker = Worker{
+			DatabaseURL: r.requiredSecret("WORKER_DATABASE_URL"),
+			Concurrency: r.integer("WORKER_CONCURRENCY", 4, 1, maxWorkerConcurrency),
 		}
 	}
 	return cfg, r.err()

@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -144,47 +145,74 @@ WHERE r.rolname = current_user
 	return fmt.Errorf("%w: role %q %s", ErrExcessivePrivileges, name, reason)
 }
 
-// ErrRolePrivileges is returned when a role that may only execute one function
-// holds other privileges, or lacks that one.
+// ErrRolePrivileges is returned when a role holds privileges beyond its scope,
+// or lacks a function of it.
 var ErrRolePrivileges = errors.New("database role holds other privileges than its group role")
 
-// CheckFunctionOnly returns ErrRolePrivileges unless the connected role can
-// execute function and do nothing else in schema public: it must not access any
-// table, create objects in the schema, execute another function of the schema,
-// or be a member of a role other than groupRole. function is a signature such as
-// "public.record(text, inet)".
+// Scope is everything that the members of a group role may reach in schema
+// public.
+type Scope struct {
+	// GroupRole is the group role whose member the login must be, and of no
+	// other role.
+	GroupRole string
+	// Tables are the names of the tables that the role may access, such as
+	// "events". The check does not ask which privileges it holds on them.
+	Tables []string
+	// Functions are the signatures of the functions that the role must be able
+	// to execute, such as "public.record(text, inet)". It may execute no other.
+	Functions []string
+}
+
+// CheckScope returns ErrRolePrivileges unless the connected role stays within
+// s: it must be able to execute the functions of s, must not access a table
+// other than those of s, execute another function of the schema, create
+// objects in it, or be a member of a role other than the group role.
 //
-// The roles that answer requests from the internet hold nothing but their
-// recording function. A login with the privileges of the console, set up by
-// mistake, would put the inventory within reach of whoever takes over their
-// host; a login without the function would answer every request and record
-// none.
+// A login with the privileges of another server role, set up by mistake,
+// would put data within reach of whoever takes over the host of this role,
+// such as the inventory for the roles that answer requests from the internet.
 //
 // Membership counts even without inheritance, because a member can switch to
 // the role with SET ROLE.
-func CheckFunctionOnly(ctx context.Context, q Querier, groupRole, function string) error {
-	// Without USAGE on the schema, the signature cannot be resolved, so a role
-	// that is no member of groupRole would fail with a permission error instead.
+func CheckScope(ctx context.Context, q Querier, s Scope) error {
+	// Without USAGE on the schema, the signatures cannot be resolved, so a role
+	// that is no member of the group role would fail with a permission error
+	// instead.
 	var canUse bool
 	if err := q.QueryRow(ctx, `SELECT has_schema_privilege('public', 'USAGE')`).Scan(&canUse); err != nil {
-		return fmt.Errorf("check privileges of %s: %w", groupRole, err)
+		return fmt.Errorf("check privileges of %s: %w", s.GroupRole, err)
+	}
+	if !canUse && len(s.Functions) > 0 {
+		return fmt.Errorf("%w: it cannot execute %s; connect as a member of %s", ErrRolePrivileges, strings.Join(s.Functions, ", "), s.GroupRole)
 	}
 	if !canUse {
-		return fmt.Errorf("%w: it cannot execute %s; connect as a member of %s", ErrRolePrivileges, function, groupRole)
+		return fmt.Errorf("%w: it cannot use schema public; connect as a member of %s", ErrRolePrivileges, s.GroupRole)
 	}
 
 	var (
-		canExecute, canCreate bool
-		tables, functions     []string
-		roles                 []string
+		canCreate                  bool
+		missing, tables, functions []string
+		roles                      []string
 	)
+	tableNames, signatures := s.Tables, s.Functions
+	if tableNames == nil {
+		tableNames = []string{}
+	}
+	if signatures == nil {
+		signatures = []string{}
+	}
 	err := q.QueryRow(ctx, `
-SELECT has_function_privilege($1::regprocedure, 'EXECUTE'),
-	has_schema_privilege('public', 'CREATE'),
+SELECT has_schema_privilege('public', 'CREATE'),
+	ARRAY(
+		SELECT f FROM unnest($2::text[]) AS f
+		WHERE NOT has_function_privilege(f::regprocedure, 'EXECUTE')
+		ORDER BY 1
+	),
 	ARRAY(
 		SELECT c.relname::text FROM pg_catalog.pg_class AS c
 		WHERE c.relnamespace = 'public'::regnamespace
 			AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+			AND c.relname <> ALL ($1::text[])
 			AND (has_table_privilege(c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
 				OR has_any_column_privilege(c.oid, 'SELECT, INSERT, UPDATE, REFERENCES'))
 		ORDER BY 1
@@ -192,23 +220,23 @@ SELECT has_function_privilege($1::regprocedure, 'EXECUTE'),
 	ARRAY(
 		SELECT p.oid::regprocedure::text FROM pg_catalog.pg_proc AS p
 		WHERE p.pronamespace = 'public'::regnamespace
-			AND p.oid <> $1::regprocedure
+			AND p.oid <> ALL (ARRAY(SELECT f::regprocedure FROM unnest($2::text[]) AS f))
 			AND has_function_privilege(p.oid, 'EXECUTE')
 		ORDER BY 1
 	),
 	ARRAY(
 		SELECT r.rolname::text FROM pg_catalog.pg_roles AS r
 		WHERE pg_has_role(current_user, r.oid, 'MEMBER')
-			AND r.rolname NOT IN (current_user, $2)
+			AND r.rolname NOT IN (current_user, $3)
 		ORDER BY 1
-	)`, function, groupRole).Scan(&canExecute, &canCreate, &tables, &functions, &roles)
+	)`, tableNames, signatures, s.GroupRole).Scan(&canCreate, &missing, &tables, &functions, &roles)
 	switch {
 	case err != nil:
-		return fmt.Errorf("check privileges of %s: %w", groupRole, err)
-	case !canExecute:
-		return fmt.Errorf("%w: it cannot execute %s; connect as a member of %s", ErrRolePrivileges, function, groupRole)
+		return fmt.Errorf("check privileges of %s: %w", s.GroupRole, err)
+	case len(missing) > 0:
+		return fmt.Errorf("%w: it cannot execute %s; connect as a member of %s", ErrRolePrivileges, strings.Join(missing, ", "), s.GroupRole)
 	case len(roles) > 0:
-		return fmt.Errorf("%w: it is a member of %v; connect with a login that is a member of %s only", ErrRolePrivileges, roles, groupRole)
+		return fmt.Errorf("%w: it is a member of %v; connect with a login that is a member of %s only", ErrRolePrivileges, roles, s.GroupRole)
 	case len(tables) > 0:
 		return fmt.Errorf("%w: it can access the tables %v", ErrRolePrivileges, tables)
 	case len(functions) > 0:
@@ -217,4 +245,15 @@ SELECT has_function_privilege($1::regprocedure, 'EXECUTE'),
 		return fmt.Errorf("%w: it can create objects in schema public", ErrRolePrivileges)
 	}
 	return nil
+}
+
+// CheckFunctionOnly returns ErrRolePrivileges unless the connected role can
+// execute function and do nothing else in schema public, as CheckScope
+// describes. function is a signature such as "public.record(text, inet)".
+//
+// The roles that answer requests from the internet hold nothing but their
+// recording function. A login without the function would answer every request
+// and record none.
+func CheckFunctionOnly(ctx context.Context, q Querier, groupRole, function string) error {
+	return CheckScope(ctx, q, Scope{GroupRole: groupRole, Functions: []string{function}})
 }

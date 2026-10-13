@@ -66,7 +66,7 @@ func TestRun_ExitCodes(t *testing.T) {
 		{name: "version", args: []string{"version"}, want: exitOK},
 		{name: "help", args: []string{"help"}, want: exitOK},
 		{name: "serve with unknown flag", args: []string{"serve", "--verbose"}, want: exitUsage},
-		{name: "serve with unknown role", args: []string{"serve", "--roles=worker"}, want: exitUsage},
+		{name: "serve with unknown role", args: []string{"serve", "--roles=sensor"}, want: exitUsage},
 		{name: "serve without roles", args: []string{"serve"}, want: exitUsage},
 		{name: "serve with positional argument", args: []string{"serve", "extra"}, want: exitUsage},
 		{name: "serve flag help", args: []string{"serve", "-h"}, want: exitOK},
@@ -89,11 +89,11 @@ func TestRun_ConfigurationErrorsNameEveryProblem(t *testing.T) {
 
 	var stderr bytes.Buffer
 	env := map[string]string{"NYKTUS_ENV": "staging"}
-	run(t.Context(), []string{"serve", "--roles=console,trigger,dns"}, source(env), &bytes.Buffer{}, &stderr)
+	run(t.Context(), []string{"serve", "--roles=console,trigger,dns,worker"}, source(env), &bytes.Buffer{}, &stderr)
 
 	for _, want := range []string{
 		"NYKTUS_ENV", "NYKTUS_CONSOLE_DATABASE_URL", "NYKTUS_TRIGGER_DATABASE_URL", "NYKTUS_TRIGGER_DEFAULT_REDIRECT",
-		"NYKTUS_DNS_DATABASE_URL", "NYKTUS_DNS_ZONES", "NYKTUS_DNS_NAMESERVERS",
+		"NYKTUS_DNS_DATABASE_URL", "NYKTUS_DNS_ZONES", "NYKTUS_DNS_NAMESERVERS", "NYKTUS_WORKER_DATABASE_URL",
 	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("stderr does not mention %s: %s", want, stderr.String())
@@ -276,6 +276,72 @@ INSERT INTO users (email, display_name, role, status) VALUES ('ada@example.com',
 	}
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q, want no setup URL", stdout.String())
+	}
+}
+
+// A worker started with its own login processes the events that the trigger
+// recorded, and stops when its context ends.
+func TestRun_WorkerProcessesRecordedEvents(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, workerURL := schematest.Worker(t)
+	owner := schematest.Open(t, ownerURL)
+	if _, err := owner.Exec(t.Context(), `
+INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repeat('a', 26))`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(t.Context(), "SELECT * FROM record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')"); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	env := map[string]string{"NYKTUS_WORKER_DATABASE_URL": workerURL}
+	var stderr bytes.Buffer
+	exited := make(chan int, 1)
+	go func() { exited <- run(ctx, []string{"serve", "--roles=worker"}, source(env), &bytes.Buffer{}, &stderr) }()
+
+	// The worker looks for jobs right after it started.
+	for {
+		var incidents int
+		if err := owner.QueryRow(ctx, "SELECT count(*) FROM incidents").Scan(&incidents); err != nil {
+			t.Fatalf("count incidents: %v", err)
+		}
+		if incidents == 1 {
+			break
+		}
+		select {
+		case code := <-exited:
+			t.Fatalf("worker exited with %d before it processed the event; stderr: %s", code, stderr.String())
+		default:
+		}
+	}
+	cancel()
+	if code := <-exited; code != exitOK {
+		t.Errorf("exit code = %d, want %d; stderr: %s", code, exitOK, stderr.String())
+	}
+	for _, want := range []string{`"msg":"worker: started"`, `"msg":"incident: opened"`, `"msg":"worker: stopped"`} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("log does not contain %s: %s", want, stderr.String())
+		}
+	}
+}
+
+// Outside development, the worker refuses a login that reaches more than its
+// tables, such as the console's.
+func TestRun_WorkerRefusesTheLoginOfTheConsole(t *testing.T) {
+	t.Parallel()
+
+	_, consoleURL := schematest.Console(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	env := map[string]string{"NYKTUS_WORKER_DATABASE_URL": consoleURL}
+	var stderr bytes.Buffer
+	if code := run(ctx, []string{"serve", "--roles=worker"}, source(env), &bytes.Buffer{}, &stderr); code != exitFailure {
+		t.Fatalf("exit code = %d, want %d; stderr: %s", code, exitFailure, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "member of [nyktus_console]") {
+		t.Errorf("stderr = %q, want it to name the console role", stderr.String())
 	}
 }
 

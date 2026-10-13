@@ -201,3 +201,62 @@ func TestCheckFunctionOnly(t *testing.T) {
 		}
 	}
 }
+
+// A role that works on tables passes the check only while it reaches no table
+// beyond its own and can execute its functions and no other.
+func TestCheckScope(t *testing.T) {
+	t.Parallel()
+
+	dbURL := dbtest.New(t)
+	group, _ := dbtest.Role(t, dbURL, "group", "")
+	groupIdent := pgx.Identifier{group}.Sanitize()
+	dbtest.Exec(t, dbURL,
+		"REVOKE ALL ON SCHEMA public FROM PUBLIC",
+		"CREATE TABLE public.jobs (id int)",
+		"CREATE TABLE public.inventory (id int)",
+		"CREATE FUNCTION public.valid(v text) RETURNS boolean LANGUAGE sql AS 'SELECT true'",
+		"CREATE FUNCTION public.other() RETURNS int LANGUAGE sql AS 'SELECT 1'",
+		"REVOKE ALL ON FUNCTION public.valid(text), public.other() FROM PUBLIC",
+		"GRANT USAGE ON SCHEMA public TO "+groupIdent,
+		"GRANT SELECT, DELETE ON public.jobs TO "+groupIdent,
+		"GRANT EXECUTE ON FUNCTION public.valid(text) TO "+groupIdent,
+	)
+	withFunction := Scope{GroupRole: group, Tables: []string{"jobs"}, Functions: []string{"public.valid(text)"}}
+	tablesOnly := Scope{GroupRole: group, Tables: []string{"jobs"}}
+
+	tests := []struct {
+		suffix, attributes, grant string
+		scope                     Scope
+		// want is empty if the role must pass.
+		want string
+	}{
+		{suffix: "member", attributes: "IN ROLE " + groupIdent, scope: withFunction},
+		{suffix: "outsider", scope: withFunction, want: "cannot execute public.valid(text)"},
+		{suffix: "outsidertables", scope: tablesOnly, want: "cannot use schema public"},
+		{suffix: "nofunction", attributes: "IN ROLE " + groupIdent, scope: Scope{GroupRole: group, Tables: []string{"jobs"}, Functions: []string{"public.other()"}}, want: "cannot execute public.other()"},
+		{suffix: "table", attributes: "IN ROLE " + groupIdent, scope: withFunction, grant: "GRANT SELECT ON public.inventory TO %s", want: "tables [inventory]"},
+		{suffix: "column", attributes: "IN ROLE " + groupIdent, scope: withFunction, grant: "GRANT UPDATE (id) ON public.inventory TO %s", want: "tables [inventory]"},
+		// Functions the scope does not name count, even if the group may
+		// execute them.
+		{suffix: "function", attributes: "IN ROLE " + groupIdent, scope: tablesOnly, want: "execute [valid(text)]"},
+		{suffix: "create", attributes: "IN ROLE " + groupIdent, scope: withFunction, grant: "GRANT CREATE ON SCHEMA public TO %s", want: "create objects"},
+	}
+	for _, tt := range tests {
+		name, roleURL := dbtest.Role(t, dbURL, tt.suffix, tt.attributes)
+		if tt.grant != "" {
+			dbtest.Exec(t, dbURL, strings.ReplaceAll(tt.grant, "%s", pgx.Identifier{name}.Sanitize()))
+		}
+		pool, err := Open(t.Context(), roleURL, Options{MaxConns: 1})
+		if err != nil {
+			t.Fatalf("Open(%s) error = %v", tt.suffix, err)
+		}
+		err = CheckScope(t.Context(), pool, tt.scope)
+		pool.Close()
+		switch {
+		case tt.want == "" && err != nil:
+			t.Errorf("CheckScope(%s) = %v, want nil", tt.suffix, err)
+		case tt.want != "" && (!errors.Is(err, ErrRolePrivileges) || !strings.Contains(err.Error(), tt.want)):
+			t.Errorf("CheckScope(%s) = %v, want ErrRolePrivileges containing %q", tt.suffix, err, tt.want)
+		}
+	}
+}
