@@ -1021,7 +1021,16 @@ CREATE TABLE public.events (
 	resource_id     uuid NOT NULL,
 	honeytoken_type text,
 	techniques      text[] NOT NULL DEFAULT '{}',
-	occurred_at     timestamptz NOT NULL DEFAULT clock_timestamp(),
+	-- When the request arrived. The trigger records at once; the DNS role
+	-- answers first and passes how long the query waited, which the recording
+	-- function keeps within the window below. Both times are set by
+	-- the recording functions from one reading of the clock, because two
+	-- defaults would read it twice in an order that nothing guarantees.
+	occurred_at     timestamptz NOT NULL,
+	-- When the event was written. The limit of events per honeytoken counts
+	-- this time, which the DNS role cannot choose, so that a compromised host
+	-- cannot evade the limit with earlier times.
+	recorded_at     timestamptz NOT NULL,
 	-- How the request arrived: 'http' at the trigger, 'dns' at the DNS role.
 	-- The columns of the other channel stay empty.
 	channel         text NOT NULL,
@@ -1058,6 +1067,10 @@ CREATE TABLE public.events (
 		cardinality(techniques) <= 20 AND public.attack_technique_ids_valid(techniques)
 	),
 	CONSTRAINT events_channel_check CHECK (channel IN ('http', 'dns')),
+	-- A query waits at most five minutes to be recorded.
+	CONSTRAINT events_occurred_at_check CHECK (
+		occurred_at <= recorded_at AND occurred_at >= recorded_at - interval '5 minutes'
+	),
 	-- The columns of a channel are set exactly for its events.
 	CONSTRAINT events_http_check CHECK (
 		(channel = 'http') = (method IS NOT NULL)
@@ -1090,8 +1103,9 @@ CREATE TABLE public.events (
 	CONSTRAINT events_dns_transport_check CHECK (dns_transport IN ('udp', 'tcp'))
 );
 
--- The limit of events per honeytoken counts its events of the last minute.
-CREATE INDEX events_resource_id_occurred_at_idx ON public.events (resource_id, occurred_at);
+-- The limit of events per honeytoken counts its events written in the last
+-- minute.
+CREATE INDEX events_resource_id_recorded_at_idx ON public.events (resource_id, recorded_at);
 
 -- The outbox: every event has a job that processes it, written in the same
 -- transaction, so that no event goes unprocessed.
@@ -1118,7 +1132,7 @@ BEGIN
 			SELECT FROM public.events AS e
 			WHERE e.resource_id = honeytoken_id
 				AND e.resource_type = 'honeytoken'
-				AND e.occurred_at >= statement_timestamp() - interval '1 minute'
+				AND e.recorded_at >= statement_timestamp() - interval '1 minute'
 			LIMIT 10
 		) AS recent
 	) >= 10;
@@ -1152,6 +1166,7 @@ AS $$
 DECLARE
 	h record;
 	new_event_id uuid;
+	now_at timestamptz := clock_timestamp();
 BEGIN
 	SELECT t.id, t.type, t.enabled, t.techniques, t.redirect_url INTO h
 	FROM public.honeytokens AS t
@@ -1172,10 +1187,10 @@ BEGIN
 		RETURN;
 	END IF;
 
-	INSERT INTO public.events (resource_type, resource_id, honeytoken_type, techniques, channel, client_ip,
-		method, user_agent, referer, accept_language)
-	VALUES ('honeytoken', h.id, h.type, h.techniques, 'http', request_client_ip,
-		request_method, request_user_agent, request_referer, request_accept_language)
+	INSERT INTO public.events (resource_type, resource_id, honeytoken_type, techniques, occurred_at, recorded_at,
+		channel, client_ip, method, user_agent, referer, accept_language)
+	VALUES ('honeytoken', h.id, h.type, h.techniques, now_at, now_at,
+		'http', request_client_ip, request_method, request_user_agent, request_referer, request_accept_language)
 	RETURNING id INTO new_event_id;
 	INSERT INTO public.event_jobs (event_id) VALUES (new_event_id);
 	outcome := 'recorded';
@@ -1187,6 +1202,12 @@ $$;
 -- function, which resolves one trigger value and writes the event and its job
 -- in one transaction if the honeytoken is enabled. It returns nothing that the
 -- answer could depend on: the DNS role answers before it records.
+--
+-- The DNS role passes how long the query waited, measured with its own clock,
+-- so that the time of the event does not depend on the clocks of two hosts
+-- agreeing. The delay is kept between zero and five minutes, so that a
+-- compromised DNS role cannot write events into the future or the distant
+-- past.
 CREATE FUNCTION public.record_dns_query(
 	requested_value text,
 	query_zone text,
@@ -1194,6 +1215,7 @@ CREATE FUNCTION public.record_dns_query(
 	query_type text,
 	query_transport text,
 	query_resolver_ip inet,
+	query_delay interval,
 	OUT outcome text,
 	OUT honeytoken_id uuid
 )
@@ -1204,6 +1226,7 @@ AS $$
 DECLARE
 	h record;
 	new_event_id uuid;
+	now_at timestamptz := clock_timestamp();
 BEGIN
 	SELECT t.id, t.type, t.enabled, t.techniques INTO h
 	FROM public.honeytokens AS t
@@ -1223,10 +1246,11 @@ BEGIN
 		RETURN;
 	END IF;
 
-	INSERT INTO public.events (resource_type, resource_id, honeytoken_type, techniques, channel, client_ip,
-		dns_zone, dns_prefix, dns_qtype, dns_transport)
-	VALUES ('honeytoken', h.id, h.type, h.techniques, 'dns', query_resolver_ip,
-		query_zone, query_prefix, query_type, query_transport)
+	INSERT INTO public.events (resource_type, resource_id, honeytoken_type, techniques, occurred_at, recorded_at,
+		channel, client_ip, dns_zone, dns_prefix, dns_qtype, dns_transport)
+	VALUES ('honeytoken', h.id, h.type, h.techniques,
+		now_at - least(greatest(coalesce(query_delay, interval '0'), interval '0'), interval '5 minutes'), now_at,
+		'dns', query_resolver_ip, query_zone, query_prefix, query_type, query_transport)
 	RETURNING id INTO new_event_id;
 	INSERT INTO public.event_jobs (event_id) VALUES (new_event_id);
 	outcome := 'recorded';
@@ -1239,7 +1263,7 @@ REVOKE ALL ON public.events, public.event_jobs FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.honeytoken_event_limit_reached(uuid) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text)
 	FROM PUBLIC, nyktus_console;
-REVOKE ALL ON FUNCTION public.record_dns_query(text, text, text, text, text, inet) FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.record_dns_query(text, text, text, text, text, inet, interval) FROM PUBLIC, nyktus_console;
 
 -- REVOKE only warns when the executing role lacks the grant option, so the
 -- result is verified instead of assumed. An event that the console could write
@@ -1254,7 +1278,7 @@ BEGIN
 		OR has_function_privilege('nyktus_console',
 			'public.record_honeytoken_request(text, text, inet, text, text, text)', 'EXECUTE')
 		OR has_function_privilege('nyktus_console',
-			'public.record_dns_query(text, text, text, text, text, inet)', 'EXECUTE') THEN
+			'public.record_dns_query(text, text, text, text, text, inet, interval)', 'EXECUTE') THEN
 		RAISE EXCEPTION 'nyktus_console has privileges on events; check the default privileges of the owner';
 	END IF;
 END
@@ -1269,7 +1293,7 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM nyktus_trigger, nyktus_dns;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM nyktus_trigger, nyktus_dns;
 GRANT USAGE ON SCHEMA public TO nyktus_trigger, nyktus_dns;
 GRANT EXECUTE ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text) TO nyktus_trigger;
-GRANT EXECUTE ON FUNCTION public.record_dns_query(text, text, text, text, text, inet) TO nyktus_dns;
+GRANT EXECUTE ON FUNCTION public.record_dns_query(text, text, text, text, text, inet, interval) TO nyktus_dns;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
 -- result is verified instead of assumed, in both directions.
@@ -1280,7 +1304,7 @@ DECLARE
 BEGIN
 	FOR role_name, function_name IN VALUES
 		('nyktus_trigger', 'public.record_honeytoken_request(text, text, inet, text, text, text)'),
-		('nyktus_dns', 'public.record_dns_query(text, text, text, text, text, inet)')
+		('nyktus_dns', 'public.record_dns_query(text, text, text, text, text, inet, interval)')
 	LOOP
 		IF NOT has_schema_privilege(role_name, 'public', 'USAGE')
 			OR NOT has_function_privilege(role_name, function_name, 'EXECUTE') THEN

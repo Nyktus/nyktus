@@ -18,6 +18,7 @@ package dns
 import (
 	"context"
 	"net/netip"
+	"time"
 )
 
 // Query is what the DNS role records about a query of a name that holds a
@@ -39,6 +40,10 @@ type Query struct {
 	// Resolver is the address that sent the query, usually a resolver that
 	// asks on behalf of its clients, or the zero Addr if it is unknown.
 	Resolver netip.Addr
+	// ReceivedAt is when the DNS role received the query. The query is
+	// recorded later; the event keeps the time it arrived, from how long it
+	// waited.
+	ReceivedAt time.Time
 }
 
 // Outcome says what became of a query.

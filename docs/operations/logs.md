@@ -60,7 +60,7 @@ Other queries, such as those of names without a value or outside the zones, are 
 |---|---|---|
 | `dns: recording failed` | error | The database could not record the query, for example because it was unreachable or slower than two seconds. `error` names the cause. |
 | `dns: handler panicked` | error | A programming error; `panic` and `stack` describe it. |
-| `dns: queries not recorded` | warn | Logged once a minute. With `reason` `limit`: queries of the honeytoken `honeytoken_id` beyond its [limit of events](honeytokens.md#events). With `reason` `queue_full`: queries that arrived while too many others were waiting to be recorded, for example during a flood. `queries` is their number. |
+| `dns: queries not recorded` | warn | Logged once a minute. With `reason` `limit`: queries of the honeytoken `honeytoken_id` beyond its [limit of events](honeytokens.md#events). With `reason` `queue_full`: queries that arrived while too many others were waiting to be recorded, for example during a flood. With `reason` `stale`: queries that waited more than five minutes to be recorded, for example while the database was unreachable. `queries` is their number. |
 
 ## Sign-in through an identity provider
 

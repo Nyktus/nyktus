@@ -23,9 +23,10 @@ const (
 	// recordTimeout bounds the wait for the database. The answer has already
 	// been written, so it only bounds how long a recording takes.
 	recordTimeout = 2 * time.Second
-	// recorders is the number of goroutines that record queries, matching the
-	// connections of the database pool.
-	recorders = 10
+	// maxRecordDelay is how long a query may wait to be recorded. The database
+	// accepts no longer delay, so that a recording cannot move an event far
+	// into the past; an older query is dropped and counted in the log.
+	maxRecordDelay = 5 * time.Minute
 	// maxQueued bounds the queries that wait to be recorded, so that a burst
 	// is recorded in full while a flood cannot grow the memory without bound.
 	// A query that finds the queue full is answered as always but not
@@ -72,6 +73,9 @@ type Options struct {
 	AnswerIPv4, AnswerIPv6 netip.Addr
 	// TTL is the time to live of every record, in whole seconds.
 	TTL time.Duration
+	// Recorders is the number of queries recorded at a time, at most the
+	// connections of the database pool.
+	Recorders int
 	// Serial is the serial number of the SOA records.
 	Serial uint32
 }
@@ -86,6 +90,8 @@ type Handler struct {
 	ttl         uint32
 	serial      uint32
 	limiter     *sourceLimiter
+	recorders   int
+	now         func() time.Time
 
 	// queue holds the queries to record. closed, under mu, keeps a handler
 	// that outlives the shutdown of the servers from sending on the closed
@@ -101,23 +107,25 @@ type Handler struct {
 // unrecorded queries are logged and the rate limits forget idle sources. The
 // queries are recorded while Serve runs.
 func New(o Options) *Handler {
-	if o.Logger == nil || o.Recorder == nil || len(o.Zones) == 0 || len(o.Nameservers) == 0 {
-		panic("dns: missing logger, recorder, zones or name servers")
+	if o.Logger == nil || o.Recorder == nil || len(o.Zones) == 0 || len(o.Nameservers) == 0 || o.Recorders < 1 {
+		panic("dns: missing logger, recorder, zones, name servers or recorders")
 	}
 	if o.TTL < 0 || o.TTL%time.Second != 0 || o.TTL > time.Hour {
 		panic("dns: TTL must be whole seconds up to an hour")
 	}
 	h := &Handler{
-		logger:   o.Logger,
-		recorder: o.Recorder,
-		ipv4:     o.AnswerIPv4,
-		ipv6:     o.AnswerIPv6,
-		ttl:      uint32(o.TTL / time.Second),
-		serial:   o.Serial,
-		limiter:  newSourceLimiter(),
-		queue:    make(chan Query, maxQueued),
-		limited:  counter{counts: map[string]int{}},
-		dropped:  counter{counts: map[string]int{}},
+		logger:    o.Logger,
+		recorder:  o.Recorder,
+		ipv4:      o.AnswerIPv4,
+		ipv6:      o.AnswerIPv6,
+		ttl:       uint32(o.TTL / time.Second),
+		serial:    o.Serial,
+		limiter:   newSourceLimiter(),
+		recorders: o.Recorders,
+		now:       time.Now,
+		queue:     make(chan Query, maxQueued),
+		limited:   counter{counts: map[string]int{}},
+		dropped:   counter{counts: map[string]int{}},
 	}
 	for _, z := range o.Zones {
 		h.zones = append(h.zones, dns.Fqdn(z))
@@ -156,7 +164,7 @@ func (h *Handler) Run(ctx context.Context) {
 func (h *Handler) startRecording(ctx context.Context) (stop func()) {
 	ctx = context.WithoutCancel(ctx)
 	var wg sync.WaitGroup
-	for range recorders {
+	for range h.recorders {
 		wg.Go(func() {
 			for q := range h.queue {
 				h.record(ctx, q)
@@ -177,8 +185,8 @@ func (h *Handler) flush(ctx context.Context) {
 		h.logger.WarnContext(ctx, "dns: queries not recorded",
 			slog.String("honeytoken_id", id), slog.Int("queries", n), slog.String("reason", "limit"))
 	}
-	if n := h.dropped.take()[""]; n > 0 {
-		h.logger.WarnContext(ctx, "dns: queries not recorded", slog.Int("queries", n), slog.String("reason", "queue_full"))
+	for reason, n := range h.dropped.take() {
+		h.logger.WarnContext(ctx, "dns: queries not recorded", slog.Int("queries", n), slog.String("reason", reason))
 	}
 }
 
@@ -206,6 +214,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 	}
 
+	received := h.now()
 	m, query, ok := h.answer(r)
 	if transport == "udp" {
 		limitSize(m, r)
@@ -220,6 +229,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 	query.Transport = transport
 	query.Resolver = source
+	query.ReceivedAt = received
 	h.recordLater(query)
 }
 
@@ -363,19 +373,23 @@ func (h *Handler) recordLater(q Query) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	if h.closed {
-		h.dropped.add("")
+		h.dropped.add(reasonQueueFull)
 		return
 	}
 	select {
 	case h.queue <- q:
 	default:
-		h.dropped.add("")
+		h.dropped.add(reasonQueueFull)
 	}
 }
 
 func (h *Handler) record(ctx context.Context, q Query) {
 	defer h.recoverPanic()
-	start := time.Now()
+	start := h.now()
+	if start.Sub(q.ReceivedAt) > maxRecordDelay {
+		h.dropped.add(reasonStale)
+		return
+	}
 	ctx, cancel := context.WithTimeout(ctx, recordTimeout)
 	defer cancel()
 	res, err := h.recorder.Record(ctx, q)
@@ -384,7 +398,7 @@ func (h *Handler) record(ctx context.Context, q Query) {
 	attrs := []slog.Attr{
 		slog.String("qtype", q.QType),
 		slog.String("transport", q.Transport),
-		slog.Duration("duration", time.Since(start)),
+		slog.Duration("duration", h.now().Sub(start)),
 	}
 	if q.Resolver.IsValid() {
 		attrs = append(attrs, slog.String("resolver_ip", q.Resolver.String()))
@@ -518,6 +532,15 @@ func unescapeLabel(label string) []byte {
 }
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+// Reasons why a query was not recorded, besides the limit of its honeytoken.
+const (
+	// reasonQueueFull means that too many queries were waiting to be
+	// recorded, or that the recording had stopped.
+	reasonQueueFull = "queue_full"
+	// reasonStale means that the query waited longer than maxRecordDelay.
+	reasonStale = "stale"
+)
 
 // counter counts queries by a key between two logs.
 type counter struct {

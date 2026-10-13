@@ -108,7 +108,7 @@ func expectDenied(t *testing.T, pool *pgxpool.Pool, statement string) {
 // Functions that the internet-facing roles may execute, one each.
 const (
 	triggerFunction = "public.record_honeytoken_request(text, text, inet, text, text, text)"
-	dnsFunction     = "public.record_dns_query(text, text, text, text, text, inet)"
+	dnsFunction     = "public.record_dns_query(text, text, text, text, text, inet, interval)"
 )
 
 // rolePrivileges reports every privilege of a group role on the objects of the

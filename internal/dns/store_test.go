@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -265,5 +266,58 @@ func TestDNS_IdenticalAnswersWithTheDatabase(t *testing.T) {
 	s.stop()
 	if n := f.count(t, "SELECT count(*) FROM events WHERE channel = 'dns'"); n != 16 {
 		t.Errorf("%d events, want 16: two networks, four types and two enabled values", n)
+	}
+}
+
+// The event keeps the time the query arrived, from how long it waited, within
+// the five minutes that the database accepts: a negative delay counts as none,
+// a longer one as five minutes.
+func TestStore_KeepsTheTimeOfReceiptWithinTheWindow(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	for _, tt := range []struct {
+		name      string
+		received  time.Duration // before now; negative is in the future
+		wantDelay time.Duration // how long before writing the event occurred
+	}{
+		{"now", 0, 0},
+		{"four minutes ago", 4 * time.Minute, 4 * time.Minute},
+		{"negative delay", -time.Hour, 0},
+		{"ten minutes ago", 10 * time.Minute, 5 * time.Minute},
+	} {
+		id, v := f.honeytoken(t, "dns", true, nil)
+		q := dnsQuery(v)
+		q.ReceivedAt = time.Now().Add(-tt.received)
+		if res, err := f.store.Record(t.Context(), q); err != nil || res.Outcome != OutcomeRecorded {
+			t.Fatalf("%s: Record() = %+v, %v", tt.name, res, err)
+		}
+		var delay time.Duration
+		if err := f.owner.QueryRow(t.Context(), "SELECT recorded_at - occurred_at FROM events WHERE resource_id = $1", id).Scan(&delay); err != nil {
+			t.Fatal(err)
+		}
+		if diff := delay - tt.wantDelay; diff < -2*time.Second || diff > 2*time.Second {
+			t.Errorf("%s: event occurred %v before it was written, want about %v", tt.name, delay, tt.wantDelay)
+		}
+	}
+}
+
+// The limit counts the time of writing, which the DNS role cannot choose:
+// events that claim to have occurred minutes ago still count.
+func TestStore_LimitCountsTheTimeOfWriting(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	_, v := f.honeytoken(t, "dns", true, nil)
+	q := dnsQuery(v)
+	q.ReceivedAt = time.Now().Add(-4 * time.Minute)
+	for i := range 11 {
+		want := OutcomeRecorded
+		if i >= 10 {
+			want = OutcomeLimited
+		}
+		if res, err := f.store.Record(t.Context(), q); err != nil || res.Outcome != want {
+			t.Errorf("query %d: Record() = %+v, %v; want %s", i, res, err, want)
+		}
 	}
 }

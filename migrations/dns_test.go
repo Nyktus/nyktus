@@ -16,7 +16,7 @@ import (
 	"nyktus.org/nyktus/internal/platform/schematest"
 )
 
-const recordQuery = "SELECT * FROM public.record_dns_query(repeat('a', 26), 'd.example.com', '', 'A', 'udp', NULL)"
+const recordQuery = "SELECT * FROM public.record_dns_query(repeat('a', 26), 'd.example.com', '', 'A', 'udp', NULL, interval '0')"
 
 func TestDNSRole_PassesLeastPrivilegeCheck(t *testing.T) {
 	t.Parallel()
@@ -117,10 +117,10 @@ func TestSchema_ChecksEventsOfChannels(t *testing.T) {
 	t.Parallel()
 
 	pool := schematest.Open(t, schematest.New(t))
-	const insert = `INSERT INTO events (resource_type, resource_id, honeytoken_type, channel, method, user_agent,
-	dns_zone, dns_prefix, dns_qtype, dns_transport) VALUES ('honeytoken', gen_random_uuid(), 'dns', $1, $2, $3, $4, $5, $6, $7)`
-	httpRow := []any{"http", "GET", "", nil, nil, nil, nil}
-	dnsRow := []any{"dns", nil, "", "d.example.com", "vpn", "A", "udp"}
+	const insert = `INSERT INTO events (resource_type, resource_id, honeytoken_type, occurred_at, recorded_at, channel, method, user_agent,
+	dns_zone, dns_prefix, dns_qtype, dns_transport) VALUES ('honeytoken', gen_random_uuid(), 'dns', now() - $8::interval, now(), $1, $2, $3, $4, $5, $6, $7)`
+	httpRow := []any{"http", "GET", "", nil, nil, nil, nil, "0s"}
+	dnsRow := []any{"dns", nil, "", "d.example.com", "vpn", "A", "udp", "5m"}
 	with := func(row []any, i int, v any) []any {
 		args := append([]any(nil), row...)
 		args[i] = v
@@ -153,6 +153,8 @@ func TestSchema_ChecksEventsOfChannels(t *testing.T) {
 		{"type in lower case", with(dnsRow, 5, "a"), "events_dns_qtype_check"},
 		{"long type", with(dnsRow, 5, strings.Repeat("A", 17)), "events_dns_qtype_check"},
 		{"unknown transport", with(dnsRow, 6, "quic"), "events_dns_transport_check"},
+		{"occurred after it was recorded", with(dnsRow, 7, "-1s"), "events_occurred_at_check"},
+		{"occurred more than five minutes before", with(dnsRow, 7, "5m 1s"), "events_occurred_at_check"},
 	} {
 		_, err := pool.Exec(t.Context(), insert, tt.args...)
 		var pgErr *pgconn.PgError

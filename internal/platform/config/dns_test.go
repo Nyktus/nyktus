@@ -28,7 +28,7 @@ func TestLoadServe_DNSDefaults(t *testing.T) {
 		t.Fatalf("LoadServe() error = %v", err)
 	}
 	d := cfg.DNS
-	if d.Addr != "127.0.0.1:8053" || d.DatabaseURL.Value() != "postgres://dns@db/nyktus" || d.TTL != time.Minute {
+	if d.Addr != "127.0.0.1:8053" || d.DatabaseURL.Value() != "postgres://dns@db/nyktus" || d.TTL != time.Minute || d.DatabaseMaxConns != 10 {
 		t.Errorf("DNS = %+v, want loopback port 8053, the database URL and a TTL of one minute", d)
 	}
 	if d.AnswerIPv4.IsValid() || d.AnswerIPv6.IsValid() {
@@ -51,6 +51,7 @@ func TestLoadServe_DNSSettings(t *testing.T) {
 	env["NYKTUS_DNS_ANSWER_IPV4"] = "203.0.113.7"
 	env["NYKTUS_DNS_ANSWER_IPV6"] = "2001:db8::7"
 	env["NYKTUS_DNS_TTL"] = "5m"
+	env["NYKTUS_DNS_DATABASE_MAX_CONNS"] = "25"
 	src := fakeSource{env: env, files: map[string]string{"/run/secrets/dns": "postgres://dns@db/nyktus\n"}}
 	cfg, err := LoadServe(src.source(), []Role{RoleDNS})
 	if err != nil {
@@ -66,7 +67,7 @@ func TestLoadServe_DNSSettings(t *testing.T) {
 	if d.AnswerIPv4 != netip.MustParseAddr("203.0.113.7") || d.AnswerIPv6 != netip.MustParseAddr("2001:db8::7") {
 		t.Errorf("answer addresses = %v, %v", d.AnswerIPv4, d.AnswerIPv6)
 	}
-	if d.Addr != "0.0.0.0:53" || d.TTL != 5*time.Minute || d.DatabaseURL.Value() != "postgres://dns@db/nyktus" {
+	if d.Addr != "0.0.0.0:53" || d.TTL != 5*time.Minute || d.DatabaseURL.Value() != "postgres://dns@db/nyktus" || d.DatabaseMaxConns != 25 {
 		t.Errorf("DNS = %+v", d)
 	}
 }
@@ -100,6 +101,9 @@ func TestLoadServe_DNSRejectsInvalidSettings(t *testing.T) {
 		{name: "TTL negative", variable: "NYKTUS_DNS_TTL", value: "-1s", want: "between"},
 		{name: "TTL fraction", variable: "NYKTUS_DNS_TTL", value: "1500ms", want: "whole seconds"},
 		{name: "address without port", variable: "NYKTUS_DNS_ADDR", value: "127.0.0.1", want: "NYKTUS_DNS_ADDR"},
+		{name: "connections not a number", variable: "NYKTUS_DNS_DATABASE_MAX_CONNS", value: "ten", want: "not a whole number"},
+		{name: "no connections", variable: "NYKTUS_DNS_DATABASE_MAX_CONNS", value: "0", want: "between 1 and 100"},
+		{name: "too many connections", variable: "NYKTUS_DNS_DATABASE_MAX_CONNS", value: "101", want: "between 1 and 100"},
 		{name: "no database", variable: "NYKTUS_DNS_DATABASE_URL", value: "", want: "NYKTUS_DNS_DATABASE_URL or NYKTUS_DNS_DATABASE_URL_FILE is required"},
 	}
 	for _, tt := range tests {

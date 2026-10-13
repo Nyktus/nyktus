@@ -109,7 +109,7 @@ An event of the trigger holds:
 
 Nothing else is recorded: no body, no cookies, no other headers.
 
-An event of the DNS role holds the honeytoken, the time at which it was recorded, and:
+An event of the DNS role holds the honeytoken, the time at which the query arrived, and:
 
 | Field | Content |
 |---|---|
@@ -118,7 +118,7 @@ An event of the DNS role holds the honeytoken, the time at which it was recorded
 | Prefix | The labels in front of the value, such as `vpn` for `vpn.q3xwz7a2kfm4ub6tyc5nre2lpa.d.example.net`, up to 200 characters. Characters other than letters, digits, `-` and `_` are replaced with `?`. The name itself is not stored. |
 | Type and transport | The type of the query, such as `A`, `AAAA` or `MX`, and whether it came over UDP or TCP. |
 
-The DNS role answers first and records afterwards, so under load the recorded time can lie a few seconds after the query. A lookup usually reaches Nyktus as several queries, for example `A` and `AAAA`, and resolvers repeat queries. Each one is an event.
+The DNS role answers first and records afterwards. A query that cannot be recorded within five minutes, for example while the database is unreachable, is dropped and counted in the [log](logs.md#dns). A lookup usually reaches Nyktus as several queries, for example `A` and `AAAA`, and resolvers repeat queries. Each one is an event.
 
 At most 10 events per honeytoken and minute are recorded, over HTTP and DNS together, so that a flood of requests for one known URL or name cannot fill the database. The trigger and the DNS role count the requests beyond the limit and log their number once a minute as `trigger: requests not recorded` or `dns: queries not recorded` with the identifier of the honeytoken.
 

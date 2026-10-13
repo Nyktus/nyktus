@@ -89,7 +89,7 @@ func TestTriggerNames_AreRecordedByTheDNSRole(t *testing.T) {
 	rec := &queryRecorder{}
 	h := dns.New(dns.Options{
 		Logger: slog.New(slog.DiscardHandler), Recorder: rec, Zones: zones,
-		Nameservers: []string{"ns1.example.net"}, TTL: time.Minute,
+		Nameservers: []string{"ns1.example.net"}, TTL: time.Minute, Recorders: 1,
 	})
 	lc := net.ListenConfig{}
 	pc, err := lc.ListenPacket(t.Context(), "udp", "127.0.0.1:0")

@@ -57,6 +57,7 @@ The DNS role answers the zones delegated to it as an authoritative name server a
 |---|---|---|
 | `NYKTUS_DNS_ADDR` | `127.0.0.1:8053` | Address and port the DNS role listens on, over UDP and TCP. |
 | `NYKTUS_DNS_DATABASE_URL` | required, secret | Connection URL of the DNS role's login role. See [Database setup](database.md). |
+| `NYKTUS_DNS_DATABASE_MAX_CONNS` | `10` | Connections of the DNS role to the database, between 1 and 100, and with them the queries it records at a time. The DNS role answers first and queues up to 1024 queries for recording. Raise it only if the log shows `dns: queries not recorded` with `reason` `queue_full` without a flood, and allow the connections in PostgreSQL. |
 | `NYKTUS_DNS_ZONES` | required | Comma-separated zones to answer, such as `d.example.net,cdn-assets.example.org`. A DNS honeytoken has its trigger value as a name under each of them. A zone must not contain another. Set the same list for the console. See [Zones](dns.md#zones). |
 | `NYKTUS_DNS_NAMESERVERS` | required | Comma-separated host names of the name servers of the zones, at most 8, such as `ns1.example.net`. The answers name them in NS and SOA records. They must lie outside the zones. |
 | `NYKTUS_DNS_ANSWER_IPV4` | none | The IPv4 address with which every name of the zones resolves. Without it, names have no IPv4 address. There is no default, because an address built into Nyktus would identify it. |

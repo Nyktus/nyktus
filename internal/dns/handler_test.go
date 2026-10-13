@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/netip"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -61,6 +62,7 @@ func testOptions(rec Recorder) Options {
 		AnswerIPv6:  netip.MustParseAddr("2001:db8::7"),
 		TTL:         time.Minute,
 		Serial:      1760000000,
+		Recorders:   10,
 	}
 }
 
@@ -409,6 +411,10 @@ func TestDNS_RecordsTheQueriesOfValues(t *testing.T) {
 
 	got := map[string]Query{}
 	for _, q := range rec.recorded() {
+		if q.ReceivedAt.IsZero() {
+			t.Errorf("%+v carries no time of receipt", q)
+		}
+		q.ReceivedAt = time.Time{}
 		got[q.Transport+" "+q.QType] = q
 	}
 	loopback := netip.MustParseAddr("127.0.0.1")
@@ -804,4 +810,84 @@ type checkingRecorder struct {
 func (r *checkingRecorder) Record(ctx context.Context, q Query) (Result, error) {
 	r.check(ctx)
 	return r.inner.Record(ctx, q)
+}
+
+// A query keeps the time it was received, and one that waited longer than the
+// database accepts is dropped and counted in the log.
+func TestDNS_DropsQueriesThatWaitedTooLong(t *testing.T) {
+	t.Parallel()
+	rec := &fakeRecorder{}
+	var logs bytes.Buffer
+	o := testOptions(rec)
+	o.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	h := New(o)
+	start := time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
+	var mu sync.Mutex
+	clock := start
+	h.now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return clock
+	}
+	w := func() *fakeWriter { return &fakeWriter{remote: &net.TCPAddr{IP: net.IPv4(192, 0, 2, 1), Port: 4000}} }
+
+	h.ServeDNS(w(), question(value+"."+zone+".", dns.TypeA))
+	mu.Lock()
+	clock = start.Add(maxRecordDelay)
+	mu.Unlock()
+	h.ServeDNS(w(), question("vpn."+value+"."+zone+".", dns.TypeA))
+	mu.Lock()
+	clock = start.Add(maxRecordDelay + time.Second)
+	mu.Unlock()
+	h.startRecording(t.Context())()
+
+	got := rec.recorded()
+	if len(got) != 1 || got[0].Prefix != "vpn" || !got[0].ReceivedAt.Equal(start.Add(maxRecordDelay)) {
+		t.Errorf("recorded %+v, want only the query that waited one second, with its time of receipt", got)
+	}
+	h.flush(t.Context())
+	if !strings.Contains(logs.String(), `"queries":1,"reason":"stale"`) {
+		t.Errorf("log = %s, want one stale query", logs.String())
+	}
+}
+
+// No more queries are recorded at a time than there are recorders.
+func TestDNS_RecordsAsManyQueriesAtATimeAsConfigured(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	var mu sync.Mutex
+	inFlight, peak := 0, 0
+	rec := &fakeRecorder{behavior: func(Query) (Result, error) {
+		mu.Lock()
+		inFlight++
+		peak = max(peak, inFlight)
+		mu.Unlock()
+		<-release
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		return Result{Outcome: OutcomeRecorded}, nil
+	}}
+	o := testOptions(rec)
+	o.Recorders = 3
+	h := New(o)
+	for range 8 {
+		h.ServeDNS(&fakeWriter{remote: &net.TCPAddr{IP: net.IPv4(192, 0, 2, 1), Port: 4000}}, question(value+"."+zone+".", dns.TypeA))
+	}
+	stop := h.startRecording(t.Context())
+	// Wait until the recorders are busy; then no further one may start.
+	for {
+		mu.Lock()
+		n := inFlight
+		mu.Unlock()
+		if n >= 3 {
+			break
+		}
+		runtime.Gosched()
+	}
+	close(release)
+	stop()
+	if peak != 3 || len(rec.recorded()) != 8 {
+		t.Errorf("peak %d, recorded %d; want 3 at a time and all 8", peak, len(rec.recorded()))
+	}
 }

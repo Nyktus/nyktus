@@ -7,13 +7,14 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"time"
 
 	"nyktus.org/nyktus/internal/platform/db"
 )
 
 // recordFunction is the database function through which the DNS role records
 // queries, the only privilege of its database role.
-const recordFunction = "public.record_dns_query(text, text, text, text, text, inet)"
+const recordFunction = "public.record_dns_query(text, text, text, text, text, inet, interval)"
 
 // Store records queries through the database function record_dns_query.
 type Store struct {
@@ -46,8 +47,8 @@ func (s *Store) Record(ctx context.Context, q Query) (Result, error) {
 	)
 	err := s.q.QueryRow(ctx, `
 SELECT outcome, honeytoken_id
-FROM public.record_dns_query($1, $2, $3, $4, $5, $6)`,
-		q.Value, q.Zone, q.Prefix, q.QType, q.Transport, ip,
+FROM public.record_dns_query($1, $2, $3, $4, $5, $6, $7)`,
+		q.Value, q.Zone, q.Prefix, q.QType, q.Transport, ip, delay(q.ReceivedAt),
 	).Scan(&outcome, &honeytokenID)
 	if err != nil {
 		return Result{}, fmt.Errorf("record query: %w", err)
@@ -63,4 +64,15 @@ FROM public.record_dns_query($1, $2, $3, $4, $5, $6)`,
 		res.HoneytokenID = *honeytokenID
 	}
 	return res, nil
+}
+
+// delay returns how long a query received at t has waited, measured with the
+// monotonic clock of the process, or nil for the zero time, which the database
+// records as the time of writing.
+func delay(t time.Time) *time.Duration {
+	if t.IsZero() {
+		return nil
+	}
+	d := time.Since(t)
+	return &d
 }

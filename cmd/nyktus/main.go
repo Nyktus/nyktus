@@ -354,12 +354,10 @@ func serveTrigger(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 	return nil
 }
 
-// dnsMaxConns bounds the connections of the DNS role, as for the trigger. The
-// DNS role records at most as many queries at a time.
-const dnsMaxConns = 10
-
 func serveDNS(ctx context.Context, cfg config.Serve, logger *slog.Logger, started func()) error {
-	pool, err := db.Open(ctx, cfg.DNS.DatabaseURL.Value(), db.Options{MaxConns: dnsMaxConns})
+	// The DNS role records as many queries at a time as it holds connections,
+	// so that no recording waits for one.
+	pool, err := db.Open(ctx, cfg.DNS.DatabaseURL.Value(), db.Options{MaxConns: int32(cfg.DNS.DatabaseMaxConns)}) //nolint:gosec // The configuration bounds it to 100.
 	if err != nil {
 		return fmt.Errorf("dns: %w", err)
 	}
@@ -395,6 +393,7 @@ func serveDNS(ctx context.Context, cfg config.Serve, logger *slog.Logger, starte
 		AnswerIPv4:  cfg.DNS.AnswerIPv4,
 		AnswerIPv6:  cfg.DNS.AnswerIPv6,
 		TTL:         cfg.DNS.TTL,
+		Recorders:   cfg.DNS.DatabaseMaxConns,
 		// The serial changes with every start, as with a zone that is edited;
 		// a constant would be the same in every installation.
 		Serial: uint32(time.Now().Unix()), //nolint:gosec // The serial wraps around by design (RFC 1982).

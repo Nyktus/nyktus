@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -158,6 +159,9 @@ type Trigger struct {
 type DNS struct {
 	Addr        string
 	DatabaseURL Secret
+	// DatabaseMaxConns bounds the connections to the database, and with them
+	// the queries recorded at a time.
+	DatabaseMaxConns int
 	// Zones are the zones to answer, in lower case without a trailing dot.
 	Zones []string
 	// Nameservers are the host names of the name servers of the zones, which
@@ -177,6 +181,9 @@ const (
 	// trigger value and a few labels in front of it.
 	maxZoneLength  = 200
 	maxNameservers = 8
+	// maxDNSDatabaseConns bounds the connections of the DNS role, which is
+	// reached from the internet and must not exhaust the database.
+	maxDNSDatabaseConns = 100
 )
 
 // LocalLogin says which accounts sign in with a password.
@@ -306,13 +313,14 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 			zones = cfg.Console.DNSZones
 		}
 		cfg.DNS = DNS{
-			Addr:        r.addr("DNS_ADDR", "127.0.0.1:8053"),
-			DatabaseURL: r.requiredSecret("DNS_DATABASE_URL"),
-			Zones:       zones,
-			Nameservers: r.nameservers("DNS_NAMESERVERS", zones),
-			AnswerIPv4:  r.answerAddr("DNS_ANSWER_IPV4", false),
-			AnswerIPv6:  r.answerAddr("DNS_ANSWER_IPV6", true),
-			TTL:         r.ttl("DNS_TTL"),
+			Addr:             r.addr("DNS_ADDR", "127.0.0.1:8053"),
+			DatabaseURL:      r.requiredSecret("DNS_DATABASE_URL"),
+			DatabaseMaxConns: r.integer("DNS_DATABASE_MAX_CONNS", 10, 1, maxDNSDatabaseConns),
+			Zones:            zones,
+			Nameservers:      r.nameservers("DNS_NAMESERVERS", zones),
+			AnswerIPv4:       r.answerAddr("DNS_ANSWER_IPV4", false),
+			AnswerIPv6:       r.answerAddr("DNS_ANSWER_IPV6", true),
+			TTL:              r.ttl("DNS_TTL"),
 		}
 	}
 	return cfg, r.err()
@@ -382,6 +390,24 @@ func (r *reader) addr(name, fallback string) string {
 		r.fail("%s%s: %w", prefix, name, err)
 	}
 	return addr
+}
+
+// integer reads a whole number within [lowest, highest].
+func (r *reader) integer(name string, fallback, lowest, highest int) int {
+	value := r.get(name)
+	if value == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(value)
+	switch {
+	case err != nil:
+		r.fail("%s%s: %q is not a whole number", prefix, name, value)
+	case n < lowest || n > highest:
+		r.fail("%s%s: must be between %d and %d, got %d", prefix, name, lowest, highest, n)
+	default:
+		return n
+	}
+	return fallback
 }
 
 // duration reads a duration in the notation of Go, such as "90m" or "12h", within
