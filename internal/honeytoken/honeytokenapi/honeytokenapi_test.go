@@ -24,6 +24,8 @@ import (
 
 const triggerURL = "https://t.example.com"
 
+var dnsZones = []string{"d.example.com", "e.example.org"}
+
 type fixture struct {
 	h         *Handler
 	owner     *pgxpool.Pool
@@ -31,6 +33,11 @@ type fixture struct {
 }
 
 func newFixture(t *testing.T) fixture {
+	t.Helper()
+	return newFixtureWithZones(t, dnsZones)
+}
+
+func newFixtureWithZones(t *testing.T, zones []string) fixture {
 	t.Helper()
 	ownerURL, consoleURL := schematest.Console(t)
 	owner := schematest.Open(t, ownerURL)
@@ -43,7 +50,7 @@ RETURNING id`).Scan(&id)
 		t.Fatal(err)
 	}
 	return fixture{
-		h:         NewHandler(slog.New(slog.DiscardHandler), schematest.Open(t, consoleURL), triggerURL),
+		h:         NewHandler(slog.New(slog.DiscardHandler), schematest.Open(t, consoleURL), triggerURL, zones),
 		owner:     owner,
 		principal: access.Principal{UserID: id, Role: user.RoleUser, Method: audit.AuthSession, SessionID: "s1"},
 	}
@@ -104,8 +111,11 @@ func TestCreate_ReturnsTheHoneytokenWithItsTriggerURL(t *testing.T) {
 		got.RedirectURL == nil || *got.RedirectURL != "https://wiki.example.com/finance" || !slices.Equal(got.Techniques, []string{"T1213"}) {
 		t.Errorf("POST = %+v", got)
 	}
-	if got.TriggerURL != triggerURL+"/"+got.TriggerValue || len(got.TriggerValue) != 26 {
-		t.Errorf("trigger_url = %q, trigger_value = %q; want the address of the trigger and the value", got.TriggerURL, got.TriggerValue)
+	if got.TriggerURL == nil || *got.TriggerURL != triggerURL+"/"+got.TriggerValue || len(got.TriggerValue) != 26 {
+		t.Errorf("trigger_url = %v, trigger_value = %q; want the address of the trigger and the value", got.TriggerURL, got.TriggerValue)
+	}
+	if got.TriggerNames == nil || len(got.TriggerNames) != 0 {
+		t.Errorf("trigger_names = %#v, want an empty list for a URL", got.TriggerNames)
 	}
 
 	// Without the optional members, a honeytoken is enabled and has no notes,
@@ -130,7 +140,7 @@ func TestCreate_RejectsInvalidRequests(t *testing.T) {
 
 	for _, body := range []string{
 		`{"name": "a"}`,
-		`{"type": "dns", "name": "a"}`,
+		`{"type": "dns", "name": "a", "redirect_url": "https://example.com"}`,
 		`{"type": "qr_code", "name": "a"}`,
 		`{"type": "web_url"}`,
 		`{"type": "web_url", "name": null}`,
@@ -165,7 +175,7 @@ func TestGet(t *testing.T) {
 	created := f.create(t, `{"type": "web_url", "name": "a"}`)
 
 	rec := f.serve(t, f.h.Get, http.MethodGet, "/api/v1/honeytokens/"+created.ID, created.ID, "")
-	if got := decode[response](t, rec); rec.Code != http.StatusOK || got.ID != created.ID || got.TriggerURL != created.TriggerURL {
+	if got := decode[response](t, rec); rec.Code != http.StatusOK || got.ID != created.ID || *got.TriggerURL != *created.TriggerURL {
 		t.Errorf("GET = %d %s", rec.Code, rec.Body)
 	}
 	for _, id := range []string{"00000000-0000-4000-8000-000000000000", "not-a-uuid"} {
@@ -218,7 +228,10 @@ func TestList_PagesAndFilters(t *testing.T) {
 	if got, _ := list("type=web_image"); got.Honeytokens == nil {
 		t.Error("an empty list is null, want []")
 	}
-	for _, query := range []string{"type=dns", "type=", "enabled=yes", "enabled=1", "type=web_url&type=web_image", "name=u", "limit=201"} {
+	if got, code := list("type=dns"); code != http.StatusOK || len(got.Honeytokens) != 0 {
+		t.Errorf("GET ?type=dns = %d %v, want an empty list", code, ids(got))
+	}
+	for _, query := range []string{"type=txt", "type=", "enabled=yes", "enabled=1", "type=web_url&type=web_image", "name=u", "limit=201"} {
 		if _, code := list(query); code != http.StatusBadRequest {
 			t.Errorf("GET ?%s = %d, want 400", query, code)
 		}
@@ -303,5 +316,52 @@ func TestResponse_HasTheDocumentedMembers(t *testing.T) {
 	want := slices.Sorted(maps.Keys(specSchemas(t)["Honeytoken"].Properties))
 	if !slices.Equal(got, want) {
 		t.Errorf("members %v, documented %v", got, want)
+	}
+}
+
+// A DNS honeytoken has a name under every zone of the DNS role instead of a
+// URL, in the order of the zones.
+func TestCreate_DNSHoneytokenHasANameUnderEveryZone(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeytokens", "", `{"type": "dns", "name": "Jump host"}`)
+	raw := decode[map[string]any](t, rec)
+	if rec.Code != http.StatusCreated || raw["type"] != "dns" {
+		t.Fatalf("POST = %d %s", rec.Code, rec.Body)
+	}
+	if v, ok := raw["trigger_url"]; !ok || v != nil {
+		t.Errorf("trigger_url = %v (present %v), want null", v, ok)
+	}
+	value := raw["trigger_value"].(string)
+	want := []any{value + ".d.example.com", value + ".e.example.org"}
+	if got, _ := raw["trigger_names"].([]any); !slices.Equal(got, want) {
+		t.Errorf("trigger_names = %v, want %v", raw["trigger_names"], want)
+	}
+
+	// A DNS honeytoken never redirects.
+	id := raw["id"].(string)
+	rec = f.serve(t, f.h.Update, http.MethodPatch, "/", id, `{"redirect_url": "https://example.com"}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "web_url") {
+		t.Errorf("PATCH redirect of a DNS honeytoken = %d %s, want 400", rec.Code, rec.Body)
+	}
+}
+
+// Without the zones of the DNS role, a DNS honeytoken would have no name to
+// place, so the console refuses to create one; the other types still work.
+func TestCreate_DNSHoneytokenNeedsZones(t *testing.T) {
+	t.Parallel()
+	f := newFixtureWithZones(t, nil)
+
+	rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeytokens", "", `{"type": "dns", "name": "Jump host"}`)
+	if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != codeDNSNotConfigured {
+		t.Errorf("POST dns without zones = %d %s, want 422 %s", rec.Code, rec.Body, codeDNSNotConfigured)
+	}
+	var n int
+	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM honeytokens`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("%d honeytokens, %v; want none", n, err)
+	}
+	if got := f.create(t, `{"type": "web_url", "name": "a"}`); got.TriggerURL == nil {
+		t.Error("a URL was not created without zones")
 	}
 }

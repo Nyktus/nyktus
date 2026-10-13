@@ -55,6 +55,20 @@ Trigger endpoints receive requests for honeytokens. Their responses must not tel
 - **One process, all roles.** A process that runs several roles issues the setup token only after every role has started, so that a role that fails to start leaves no valid token behind.
 - **Bounded recording.** At most a fixed number of events per honeytoken and minute is stored; further requests are counted in memory and logged. Header values are cut to fixed lengths and stripped of control characters before they are stored, and the path, which holds the value, never reaches the log.
 
+### DNS
+
+The DNS role is a trigger endpoint as well. The rules above apply where they are not specific to HTTP; in addition:
+
+- **Form, not state.** The answer depends only on the form of the query and the rate of its source: every name under a zone receives the same records, the configured addresses for `A` and `AAAA` and no data with the SOA record otherwise. The configured addresses have no built-in default, because one would be the same in every installation. Names are compared in lower case, because resolvers randomize the case (DNS 0x20), and the question is returned as it was asked.
+- **Answer first.** Nothing in the answer depends on the result of the recording, so the answer is written before the query is recorded. Response times are therefore equal for every value, and a slow database never delays an answer. Queries wait for recording in a bounded queue and are recorded with a deadline of their own, detached from the server; a query that finds the queue full, or waited more than five minutes, is counted in the log, not recorded. The event keeps the time the query arrived: the DNS role passes how long the query waited, measured with its own monotonic clock so that the clocks of two hosts need not agree, and the database accepts a delay of at most five minutes. The limit of events counts the time of writing, which the database sets, so that a compromised DNS role cannot evade it with earlier times.
+- **What is a hit.** A query is recorded if the label directly below a zone is a trigger value, whatever its type, also with further labels in front of it: a resolver that minimizes the names it sends asks for `<value>.<zone>` first. The event stores the zone, the labels in front of the value with every character other than a letter, a digit, `-` or `_` replaced, the type and the transport, never the full name.
+- **Authoritative only.** Names outside the zones, classes other than `IN` (such as `version.bind` in `CHAOS`) and zone transfers receive `REFUSED`; opcodes other than `QUERY` receive `NOTIMP`; responses receive no answer. The DNS role is never a resolver.
+- **No amplification.** An answer over UDP is never larger than the buffer of the client or three times the query; a larger one is truncated, so that the client repeats it over TCP. UDP queries are limited per source network; beyond the limit, every second query receives an empty truncated answer and the others none. The table of sources is bounded; a source that finds it full is treated as over its limit. TCP connections are bounded in number, lifetime and queries.
+- **Panics.** The server of the DNS library does not recover panics, so the handler and every recording recover their own.
+- **The resolver is the client.** The recorded address is the source of the query, usually a resolver. The EDNS client subnet is not stored: anyone who sends a query directly can fill it.
+- **Logs.** The queried name holds the trigger value and never reaches the log.
+- **Accepted limits.** The DNS library answers malformed messages and messages without exactly one question itself, and its behavior in such corner cases can identify a server built on it, as it does for the many name servers that use it, but not Nyktus. Repeated lookups that a resolver answers from its cache within the TTL never reach the DNS role.
+
 ### Health endpoints
 
 Operators can poll the health of a honeytoken or honeypot. This deliberately reveals state, so it is fenced:
@@ -296,7 +310,7 @@ Before requesting review, check every item that applies to your change:
 - [ ] All input is validated at the boundary.
 - [ ] Every new route declares its authentication and permission. Permission is checked before the resource is loaded. The route and its `401`/`403` responses are documented in the OpenAPI specification.
 - [ ] Secrets are masked after creation and absent from logs and errors.
-- [ ] Trigger responses are identical for every outcome. Trigger code resolves single values only and never enumerates the inventory.
+- [ ] Trigger responses, over HTTP and DNS, are identical for every outcome. Trigger code resolves single values only and never enumerates the inventory.
 - [ ] Health checks cannot create events, incidents or alerts.
 - [ ] Outbound requests to user-supplied URLs use the SSRF-guarded client.
 - [ ] SQL is parameterized. Constraint errors are mapped by SQLSTATE.

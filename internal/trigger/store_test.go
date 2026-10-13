@@ -164,7 +164,7 @@ func TestStore_LimitsEventsPerHoneytokenAndMinute(t *testing.T) {
 	}
 
 	// Events older than a minute no longer count.
-	if _, err := f.owner.Exec(t.Context(), "UPDATE events SET occurred_at = occurred_at - interval '61 seconds'"); err != nil {
+	if _, err := f.owner.Exec(t.Context(), "UPDATE events SET occurred_at = occurred_at - interval '61 seconds', recorded_at = recorded_at - interval '61 seconds'"); err != nil {
 		t.Fatal(err)
 	}
 	if res, err := f.store.Record(t.Context(), Request{Value: value, Method: http.MethodHead}); err != nil || res.Outcome != OutcomeRecorded {
@@ -197,7 +197,7 @@ SELECT count(*) FROM (
 	SELECT FROM public.events AS e
 	WHERE e.resource_id = $1
 		AND e.resource_type = 'honeytoken'
-		AND e.occurred_at >= statement_timestamp() - interval '1 minute'
+		AND e.recorded_at >= statement_timestamp() - interval '1 minute'
 	LIMIT 10
 ) AS recent`); err != nil {
 		t.Fatal(err)
@@ -220,7 +220,7 @@ SELECT count(*) FROM (
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(plan.String(), "Index Cond: ((resource_id = $1) AND (occurred_at >= (statement_timestamp()") {
+	if !strings.Contains(plan.String(), "Index Cond: ((resource_id = $1) AND (recorded_at >= (statement_timestamp()") {
 		t.Errorf("plan does not seek into the index by honeytoken and time:\n%s", plan.String())
 	}
 }

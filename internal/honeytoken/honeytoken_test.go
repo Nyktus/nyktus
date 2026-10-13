@@ -136,10 +136,15 @@ func TestSpec_RedirectOnlyForURLs(t *testing.T) {
 	if err := (Spec{Type: TypeWebURL, Name: "a", RedirectURL: &target}).validate(); err != nil {
 		t.Errorf("web_url with redirect: %v", err)
 	}
-	if err := (Spec{Type: TypeWebImage, Name: "a", RedirectURL: &target}).validate(); !errors.Is(err, ErrRedirectNotAllowed) {
-		t.Errorf("web_image with redirect: %v, want ErrRedirectNotAllowed", err)
+	for _, typ := range []Type{TypeWebImage, TypeDNS} {
+		if err := (Spec{Type: typ, Name: "a", RedirectURL: &target}).validate(); !errors.Is(err, ErrRedirectNotAllowed) {
+			t.Errorf("%s with redirect: %v, want ErrRedirectNotAllowed", typ, err)
+		}
+		if err := (Spec{Type: typ, Name: "a"}).validate(); err != nil {
+			t.Errorf("%s without redirect: %v", typ, err)
+		}
 	}
-	for _, typ := range []Type{"", "dns", "qr_code", "WEB_URL"} {
+	for _, typ := range []Type{"", "txt", "qr_code", "WEB_URL", "DNS"} {
 		if err := (Spec{Type: typ, Name: "a"}).validate(); !errors.Is(err, ErrInvalidType) {
 			t.Errorf("type %q: %v, want ErrInvalidType", typ, err)
 		}

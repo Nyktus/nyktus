@@ -55,7 +55,7 @@ func TestApply_FailsWithoutSchemaOwnership(t *testing.T) {
 func TestApply_FailsWithoutGroupRole(t *testing.T) {
 	t.Parallel()
 
-	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole} {
+	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole, schematest.DNSRole} {
 		t.Run(role, func(t *testing.T) {
 			t.Parallel()
 
@@ -114,10 +114,17 @@ func TestRolesScript_CreatesGroupRolesIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read roles script: %v", err)
 	}
+	// Group roles are global and other tests create them, so their presence
+	// proves nothing about the script; the script must create each of them.
+	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole, schematest.DNSRole} {
+		if !strings.Contains(string(script), "CREATE ROLE "+role+" NOLOGIN;") {
+			t.Errorf("the roles script does not create %s", role)
+		}
+	}
 	dbURL := dbtest.New(t)
 	dbtest.Exec(t, dbURL, string(script), string(script))
 
-	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole} {
+	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole, schematest.DNSRole} {
 		var canLogin bool
 		err = schematest.Open(t, dbURL).QueryRow(t.Context(), "SELECT rolcanlogin FROM pg_roles WHERE rolname = $1", role).Scan(&canLogin)
 		if err != nil {
@@ -273,6 +280,8 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM event_jobs",
 		"INSERT INTO event_jobs (event_id) VALUES (gen_random_uuid())",
 		"SELECT * FROM public.record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')",
+		"SELECT * FROM public.record_dns_query(repeat('a', 26), 'd.example.com', '', 'A', 'udp', NULL, interval '0')",
+		"SELECT public.honeytoken_event_limit_reached(gen_random_uuid())",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -366,6 +375,8 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_table_privilege($1, 'public.events', 'INSERT')",
 		"has_table_privilege($1, 'public.event_jobs', 'INSERT')",
 		"has_function_privilege($1, 'public.record_honeytoken_request(text, text, inet, text, text, text)', 'EXECUTE')",
+		"has_function_privilege($1, 'public.record_dns_query(text, text, text, text, text, inet, interval)', 'EXECUTE')",
+		"has_function_privilege($1, 'public.honeytoken_event_limit_reached(uuid)', 'EXECUTE')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

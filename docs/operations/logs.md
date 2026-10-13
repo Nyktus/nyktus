@@ -41,6 +41,27 @@ The trigger answers a failed request like any other, so the log is the only plac
 | `trigger: handler panicked` | error | A programming error; `panic` and `stack` describe it. The client still receives the regular answer. |
 | `trigger: requests not recorded` | warn | Requests of the honeytoken `honeytoken_id` beyond its [limit of events](honeytokens.md#events) in the last minute; `requests` is their number. |
 
+## DNS
+
+The DNS role writes one record with the message `dns: query` per query of a name that holds a trigger value, once the query is recorded. It never logs the queried name, because the name holds the value of a honeytoken.
+
+| Field | Content |
+|---|---|
+| `outcome` | `recorded`, `unknown`, `disabled`, `limited` or `failed`, as for the trigger. |
+| `honeytoken_id` | The identifier of the honeytoken, unless its value is unknown. |
+| `qtype` | The type of the query, such as `A` or `TYPE65280`. |
+| `transport` | `udp` or `tcp`. |
+| `resolver_ip` | The address that sent the query, usually a resolver that asks on behalf of its clients, not the attacker. |
+| `duration` | Time to record, in nanoseconds. The answer was sent before. |
+
+Other queries, such as those of names without a value or outside the zones, are logged at level `debug` only, with `rcode`, `transport` and `resolver_ip`.
+
+| Message | Level | Content |
+|---|---|---|
+| `dns: recording failed` | error | The database could not record the query, for example because it was unreachable or slower than two seconds. `error` names the cause. |
+| `dns: handler panicked` | error | A programming error; `panic` and `stack` describe it. |
+| `dns: queries not recorded` | warn | Logged once a minute. With `reason` `limit`: queries of the honeytoken `honeytoken_id` beyond its [limit of events](honeytokens.md#events). With `reason` `queue_full`: queries that arrived while too many others were waiting to be recorded, for example during a flood. With `reason` `stale`: queries that waited more than five minutes to be recorded, for example while the database was unreachable. `queries` is their number. |
+
 ## Sign-in through an identity provider
 
 With an [identity provider](sign-in.md#identity-provider), the console writes these records:
@@ -56,4 +77,4 @@ With an [identity provider](sign-in.md#identity-provider), the console writes th
 
 ## Personal data
 
-The access logs of the console and the trigger contain client addresses, and the access log of the console account identifiers, which are personal data. The records of rejected sign-ins through the identity provider contain the subject of the user at the provider. Keep it only as long as you need it to investigate incidents, and restrict access to it like access to the [audit log](audit-log.md).
+The access logs of the console and the trigger and the records of the DNS role contain client and resolver addresses, and the access log of the console account identifiers, which are personal data. The records of rejected sign-ins through the identity provider contain the subject of the user at the provider. Keep it only as long as you need it to investigate incidents, and restrict access to it like access to the [audit log](audit-log.md).
