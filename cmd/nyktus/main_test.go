@@ -394,7 +394,7 @@ func TestRun_ServesTheTrigger(t *testing.T) {
 		if code := run(ctx, []string{"serve", "--roles=trigger"}, source(env), &bytes.Buffer{}, &stderr); code != exitFailure {
 			t.Fatalf("exit code = %d, want %d; stderr: %s", code, exitFailure, stderr.String())
 		}
-		if !strings.Contains(stderr.String(), "cannot execute record_honeytoken_request") {
+		if !strings.Contains(stderr.String(), "cannot execute public.record_honeytoken_request(") {
 			t.Errorf("stderr = %q, want the privilege check of the trigger to fail", stderr.String())
 		}
 	})
