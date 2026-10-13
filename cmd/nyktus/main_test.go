@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/miekg/dns"
 
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/platform/config"
@@ -65,10 +66,11 @@ func TestRun_ExitCodes(t *testing.T) {
 		{name: "version", args: []string{"version"}, want: exitOK},
 		{name: "help", args: []string{"help"}, want: exitOK},
 		{name: "serve with unknown flag", args: []string{"serve", "--verbose"}, want: exitUsage},
-		{name: "serve with unknown role", args: []string{"serve", "--roles=dns"}, want: exitUsage},
+		{name: "serve with unknown role", args: []string{"serve", "--roles=worker"}, want: exitUsage},
+		{name: "serve without roles", args: []string{"serve"}, want: exitUsage},
 		{name: "serve with positional argument", args: []string{"serve", "extra"}, want: exitUsage},
 		{name: "serve flag help", args: []string{"serve", "-h"}, want: exitOK},
-		{name: "serve without configuration", args: []string{"serve"}, want: exitFailure},
+		{name: "serve without configuration", args: []string{"serve", "--roles=console"}, want: exitFailure},
 		{name: "migrate without configuration", args: []string{"migrate"}, want: exitFailure},
 	}
 	for _, tt := range tests {
@@ -87,9 +89,12 @@ func TestRun_ConfigurationErrorsNameEveryProblem(t *testing.T) {
 
 	var stderr bytes.Buffer
 	env := map[string]string{"NYKTUS_ENV": "staging"}
-	run(t.Context(), []string{"serve"}, source(env), &bytes.Buffer{}, &stderr)
+	run(t.Context(), []string{"serve", "--roles=console,trigger,dns"}, source(env), &bytes.Buffer{}, &stderr)
 
-	for _, want := range []string{"NYKTUS_ENV", "NYKTUS_CONSOLE_DATABASE_URL", "NYKTUS_TRIGGER_DATABASE_URL", "NYKTUS_TRIGGER_DEFAULT_REDIRECT"} {
+	for _, want := range []string{
+		"NYKTUS_ENV", "NYKTUS_CONSOLE_DATABASE_URL", "NYKTUS_TRIGGER_DATABASE_URL", "NYKTUS_TRIGGER_DEFAULT_REDIRECT",
+		"NYKTUS_DNS_DATABASE_URL", "NYKTUS_DNS_ZONES", "NYKTUS_DNS_NAMESERVERS",
+	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("stderr does not mention %s: %s", want, stderr.String())
 		}
@@ -431,6 +436,81 @@ func TestRun_ServesTheTrigger(t *testing.T) {
 		_ = res.Body.Close()
 		if res.StatusCode != http.StatusFound || res.Header.Get("Location") != "https://www.example.com/" {
 			t.Errorf("GET = %d %s, want a redirect to the default target", res.StatusCode, res.Header.Get("Location"))
+		}
+
+		cancel()
+		if code := <-done; code != exitOK {
+			t.Errorf("exit code = %d, want %d", code, exitOK)
+		}
+	})
+}
+
+func TestRun_ServesTheDNSRole(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, dnsURL := schematest.DNS(t)
+	// UDP and TCP listen on the same port; a free TCP port is usually free for
+	// UDP as well.
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	env := map[string]string{
+		"NYKTUS_DNS_ADDR":        addr,
+		"NYKTUS_DNS_ZONES":       "d.example.com",
+		"NYKTUS_DNS_NAMESERVERS": "ns1.example.net",
+		"NYKTUS_DNS_ANSWER_IPV4": "203.0.113.7",
+	}
+
+	// A login with the privileges of the console would put the inventory
+	// within reach of the internet-facing host.
+	t.Run("refuses a login of the console", func(t *testing.T) {
+		env := maps.Clone(env)
+		_, consoleURL := dbtest.Role(t, ownerURL, "console", "IN ROLE "+pgx.Identifier{schematest.ConsoleRole}.Sanitize())
+		env["NYKTUS_DNS_DATABASE_URL"] = consoleURL
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		defer cancel()
+		var stderr bytes.Buffer
+		if code := run(ctx, []string{"serve", "--roles=dns"}, source(env), &bytes.Buffer{}, &stderr); code != exitFailure {
+			t.Fatalf("exit code = %d, want %d; stderr: %s", code, exitFailure, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "cannot execute public.record_dns_query(") {
+			t.Errorf("stderr = %q, want the privilege check of the DNS role to fail", stderr.String())
+		}
+	})
+
+	t.Run("serves with its role", func(t *testing.T) {
+		env := maps.Clone(env)
+		env["NYKTUS_DNS_DATABASE_URL"] = dnsURL
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		defer cancel()
+		logR, logW := io.Pipe()
+		done := make(chan int, 1)
+		go func() {
+			done <- run(ctx, []string{"serve", "--roles=dns"}, source(env), &bytes.Buffer{}, logW)
+			_ = logW.Close()
+		}()
+		lines := bufio.NewScanner(logR)
+		for lines.Scan() {
+			if strings.Contains(lines.Text(), `"msg":"dns: listening"`) {
+				break
+			}
+		}
+		go func() { _, _ = io.Copy(io.Discard, logR) }()
+
+		for _, network := range []string{"udp", "tcp"} {
+			q := new(dns.Msg)
+			q.SetQuestion("aaaaaaaaaaaaaaaaaaaaaaaaaa.d.example.com.", dns.TypeA)
+			client := &dns.Client{Net: network, Timeout: 5 * time.Second}
+			res, _, err := client.ExchangeContext(ctx, q, addr)
+			if err != nil {
+				t.Fatalf("%s: query: %v", network, err)
+			}
+			if res.Rcode != dns.RcodeSuccess || len(res.Answer) != 1 || res.Answer[0].(*dns.A).A.String() != "203.0.113.7" {
+				t.Errorf("%s: answer = %v, want the configured address", network, res)
+			}
 		}
 
 		cancel()

@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package honeytoken manages honeytokens: trigger primitives that raise an
-// event when their trigger value is requested.
+// event when their trigger value is requested or resolved.
 //
 // Honeytokens are part of the inventory, the most sensitive data of Nyktus:
 // whoever reads it can avoid every decoy. Only the console manages them. The
-// internet-facing trigger never imports this package; it resolves one trigger
-// value at a time through a database function.
+// internet-facing trigger and DNS role never import this package; they resolve
+// one trigger value at a time through a database function.
 package honeytoken
 
 import (
@@ -39,10 +39,14 @@ const (
 	// TypeWebImage is an image that is triggered when it is loaded, for example
 	// when a document or mail that embeds it is opened.
 	TypeWebImage Type = "web_image"
+	// TypeDNS is a host name that is triggered when it is resolved, for example
+	// by a tool that connects to a host from a configuration file. It has a
+	// name under every zone of the DNS role instead of a URL.
+	TypeDNS Type = "dns"
 )
 
 // Types lists every type, in the order in which documentation names them.
-var Types = []Type{TypeWebURL, TypeWebImage}
+var Types = []Type{TypeWebURL, TypeWebImage, TypeDNS}
 
 // Valid reports whether t is a known type.
 func (t Type) Valid() bool {
@@ -98,15 +102,34 @@ type Honeytoken struct {
 	UpdatedAt    time.Time
 }
 
-// TriggerPath returns the path of the URL of the honeytoken. The URL of an image
-// ends with ".gif": the trigger answers every such request with an image and
-// every other one with a redirect, so that its answer never depends on whether
-// a value belongs to a honeytoken or of which type it is.
+// TriggerPath returns the path of the URL of the honeytoken, or "" for a type
+// without a URL. The URL of an image ends with ".gif": the trigger answers every
+// such request with an image and every other one with a redirect, so that its
+// answer never depends on whether a value belongs to a honeytoken or of which
+// type it is.
 func (h Honeytoken) TriggerPath() string {
-	if h.Type == TypeWebImage {
+	switch h.Type {
+	case TypeWebImage:
 		return "/" + h.TriggerValue + ".gif"
+	case TypeDNS:
+		return ""
+	default:
+		return "/" + h.TriggerValue
 	}
-	return "/" + h.TriggerValue
+}
+
+// TriggerNames returns the host names of a DNS honeytoken, its trigger value
+// under each of zones, and none for every other type. The value is a valid DNS
+// label, and the DNS role finds it as the label directly below a zone.
+func (h Honeytoken) TriggerNames(zones []string) []string {
+	if h.Type != TypeDNS {
+		return []string{}
+	}
+	names := make([]string, len(zones))
+	for i, zone := range zones {
+		names[i] = h.TriggerValue + "." + zone
+	}
+	return names
 }
 
 // LogValue names the honeytoken by its identifier and type. Its name, notes and

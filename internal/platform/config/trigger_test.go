@@ -4,23 +4,9 @@
 package config
 
 import (
-	"slices"
 	"strings"
 	"testing"
 )
-
-func TestParseRoles_AllRolesByDefault(t *testing.T) {
-	t.Parallel()
-
-	roles, err := ParseRoles("")
-	if err != nil || !slices.Equal(roles, []Role{RoleConsole, RoleTrigger}) {
-		t.Errorf("ParseRoles(\"\") = %v, %v; want console and trigger", roles, err)
-	}
-	roles, err = ParseRoles("trigger")
-	if err != nil || !slices.Equal(roles, []Role{RoleTrigger}) {
-		t.Errorf("ParseRoles(\"trigger\") = %v, %v; want trigger", roles, err)
-	}
-}
 
 func TestLoadServe_TriggerDefaults(t *testing.T) {
 	t.Parallel()

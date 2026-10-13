@@ -25,6 +25,7 @@ import (
 const (
 	ConsoleRole = "nyktus_console"
 	TriggerRole = "nyktus_trigger"
+	DNSRole     = "nyktus_dns"
 )
 
 // GroupRoles creates the group roles of all server roles, as the operator does
@@ -33,6 +34,7 @@ func GroupRoles(tb testing.TB) {
 	tb.Helper()
 	dbtest.GroupRole(tb, ConsoleRole)
 	dbtest.GroupRole(tb, TriggerRole)
+	dbtest.GroupRole(tb, DNSRole)
 }
 
 // New creates a database with all migrations applied, like "nyktus migrate" on a
@@ -78,6 +80,16 @@ func Trigger(tb testing.TB) (ownerURL, triggerURL string) {
 	ownerURL = New(tb)
 	_, triggerURL = dbtest.Role(tb, ownerURL, "trigger", "IN ROLE "+pgx.Identifier{TriggerRole}.Sanitize())
 	return ownerURL, triggerURL
+}
+
+// DNS creates a migrated database and returns the URL of a login role that is a
+// member of the DNS role's group role, as the DNS role connects in production.
+func DNS(tb testing.TB) (ownerURL, dnsURL string) {
+	tb.Helper()
+
+	ownerURL = New(tb)
+	_, dnsURL = dbtest.Role(tb, ownerURL, "dns", "IN ROLE "+pgx.Identifier{DNSRole}.Sanitize())
+	return ownerURL, dnsURL
 }
 
 // Open connects to dbURL and closes the pool when the test ends. The pool holds

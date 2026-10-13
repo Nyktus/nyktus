@@ -4,8 +4,8 @@
 -- The schema of Nyktus. Until the first release it lives in this one file and is
 -- changed in place; released versions add numbered migrations after it.
 
--- The console and the trigger connect as members of the group roles
--- nyktus_console and nyktus_trigger. Operators create the group roles before the
+-- The console, the trigger and the DNS role connect as members of the group roles
+-- nyktus_console, nyktus_trigger and nyktus_dns. Operators create the group roles before the
 -- first migration, so that the migrating role does not need CREATEROLE. A missing
 -- role stops the migration here with a clear message instead of failing at the
 -- first GRANT.
@@ -13,7 +13,7 @@ DO $$
 DECLARE
 	role_name text;
 BEGIN
-	FOREACH role_name IN ARRAY ARRAY['nyktus_console', 'nyktus_trigger'] LOOP
+	FOREACH role_name IN ARRAY ARRAY['nyktus_console', 'nyktus_trigger', 'nyktus_dns'] LOOP
 		IF to_regrole(role_name) IS NULL THEN
 			RAISE EXCEPTION 'database role % does not exist; create the server roles with deploy/postgres/roles.sql before running migrations', role_name;
 		END IF;
@@ -898,8 +898,9 @@ CREATE FUNCTION public.attack_technique_ids_valid(ids text[]) RETURNS boolean
 		)
 		AND cardinality(ids) = (SELECT count(DISTINCT t.id) FROM unnest(ids) AS t (id));
 
--- A honeytoken raises an event when its trigger value is requested. The value
--- is part of the URL that is placed in the monitored environment, so it is not
+-- A honeytoken raises an event when its trigger value is requested or resolved.
+-- The value is part of the URL or name that is placed in the monitored
+-- environment, so it is not
 -- a secret towards the readers of the console, who see it again whenever they
 -- need it. Towards everyone else it is: whoever knows it can trigger the
 -- honeytoken, and whoever reads this table knows every decoy.
@@ -925,7 +926,7 @@ CREATE TABLE public.honeytokens (
 	-- Set by the trigger below on insert, as for accounts.
 	updated_at    timestamptz NOT NULL,
 
-	CONSTRAINT honeytokens_type_check CHECK (type IN ('web_url', 'web_image')),
+	CONSTRAINT honeytokens_type_check CHECK (type IN ('web_url', 'web_image', 'dns')),
 	CONSTRAINT honeytokens_name_check CHECK (
 		char_length(name) BETWEEN 1 AND 100
 		AND name = btrim(name)
@@ -1008,11 +1009,12 @@ BEGIN
 END
 $$;
 
--- An event is a recorded request of a honeytoken. It is evidence and outlives
--- the honeytoken: it names it by type and identifier without a foreign key, as
--- the audit log names resources, and keeps a copy of the type and the
--- techniques that the honeytoken had when it was requested. Name and notes are
--- not copied, so that events do not become a second copy of the inventory.
+-- An event is a recorded request of a honeytoken, over HTTP or DNS. It is
+-- evidence and outlives the honeytoken: it names it by type and identifier
+-- without a foreign key, as the audit log names resources, and keeps a copy of
+-- the type and the techniques that the honeytoken had when it was requested.
+-- Name and notes are not copied, so that events do not become a second copy of
+-- the inventory, and neither is the trigger value.
 CREATE TABLE public.events (
 	id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 	resource_type   text NOT NULL,
@@ -1020,24 +1022,52 @@ CREATE TABLE public.events (
 	honeytoken_type text,
 	techniques      text[] NOT NULL DEFAULT '{}',
 	occurred_at     timestamptz NOT NULL DEFAULT clock_timestamp(),
+	-- How the request arrived: 'http' at the trigger, 'dns' at the DNS role.
+	-- The columns of the other channel stay empty.
+	channel         text NOT NULL,
 	-- The address of the client as the trigger determined it, or NULL if it is
-	-- unknown.
+	-- unknown. For a DNS query, it is the address of the resolver that asked,
+	-- not of whoever looked up the name: resolvers ask on behalf of their
+	-- clients.
 	client_ip       inet,
-	method          text NOT NULL,
+	method          text,
 	-- Headers of the request. Whoever sends a request chooses them, so they are
 	-- untrusted: they describe what the client claimed, not what it is. The
 	-- trigger shortens them and replaces control characters.
 	user_agent      text NOT NULL DEFAULT '',
 	referer         text NOT NULL DEFAULT '',
 	accept_language text NOT NULL DEFAULT '',
+	-- The zone under which the name was queried, and the labels in front of
+	-- the trigger value, such as 'vpn' for 'vpn.<value>.<zone>'. Both are
+	-- chosen by whoever sends the query and are untrusted. The DNS role
+	-- replaces every character of a label other than a letter, a digit, '-' or
+	-- '_' with '?'.
+	dns_zone        text,
+	dns_prefix      text,
+	-- The type of the query, such as 'A' or 'TYPE65280', and whether it came
+	-- over UDP or TCP.
+	dns_qtype       text,
+	dns_transport   text,
 
 	CONSTRAINT events_resource_type_check CHECK (resource_type IN ('honeytoken')),
 	CONSTRAINT events_honeytoken_type_check CHECK (
 		(resource_type = 'honeytoken') = (honeytoken_type IS NOT NULL)
-		AND honeytoken_type IN ('web_url', 'web_image')
+		AND honeytoken_type IN ('web_url', 'web_image', 'dns')
 	),
 	CONSTRAINT events_techniques_check CHECK (
 		cardinality(techniques) <= 20 AND public.attack_technique_ids_valid(techniques)
+	),
+	CONSTRAINT events_channel_check CHECK (channel IN ('http', 'dns')),
+	-- The columns of a channel are set exactly for its events.
+	CONSTRAINT events_http_check CHECK (
+		(channel = 'http') = (method IS NOT NULL)
+		AND (channel = 'http' OR (user_agent = '' AND referer = '' AND accept_language = ''))
+	),
+	CONSTRAINT events_dns_check CHECK (
+		(channel = 'dns') = (dns_zone IS NOT NULL)
+		AND (channel = 'dns') = (dns_prefix IS NOT NULL)
+		AND (channel = 'dns') = (dns_qtype IS NOT NULL)
+		AND (channel = 'dns') = (dns_transport IS NOT NULL)
 	),
 	-- Only requests that read a honeytoken are recorded.
 	CONSTRAINT events_method_check CHECK (method IN ('GET', 'HEAD')),
@@ -1049,7 +1079,15 @@ CREATE TABLE public.events (
 	),
 	CONSTRAINT events_accept_language_check CHECK (
 		octet_length(accept_language) <= 128 AND accept_language !~ '[\x01-\x1f\x7f]'
-	)
+	),
+	CONSTRAINT events_dns_zone_check CHECK (
+		octet_length(dns_zone) <= 200 AND dns_zone ~ '^[a-z0-9-]+(\.[a-z0-9-]+)+$'
+	),
+	CONSTRAINT events_dns_prefix_check CHECK (
+		octet_length(dns_prefix) <= 200 AND dns_prefix ~ '^([a-z0-9_?-]+(\.[a-z0-9_?-]+)*)?$'
+	),
+	CONSTRAINT events_dns_qtype_check CHECK (dns_qtype ~ '^[A-Z0-9-]{1,16}$'),
+	CONSTRAINT events_dns_transport_check CHECK (dns_transport IN ('udp', 'tcp'))
 );
 
 -- The limit of events per honeytoken counts its events of the last minute.
@@ -1062,6 +1100,31 @@ CREATE TABLE public.event_jobs (
 	created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
+-- At most 10 events per honeytoken and minute are recorded, over HTTP and DNS
+-- together, so that a flood of requests for one known value cannot fill the
+-- database; the outcome "limited" lets the trigger and the DNS role count the
+-- rest. Concurrent requests can exceed the limit slightly, which is accepted.
+-- The window starts at statement_timestamp(), so that the index can be used.
+-- Only the recording functions below call this function, with the rights of
+-- the owner.
+CREATE FUNCTION public.honeytoken_event_limit_reached(honeytoken_id uuid) RETURNS boolean
+	LANGUAGE plpgsql
+	STABLE
+	SET search_path = ''
+AS $$
+BEGIN
+	RETURN (
+		SELECT count(*) FROM (
+			SELECT FROM public.events AS e
+			WHERE e.resource_id = honeytoken_id
+				AND e.resource_type = 'honeytoken'
+				AND e.occurred_at >= statement_timestamp() - interval '1 minute'
+			LIMIT 10
+		) AS recent
+	) >= 10;
+END
+$$;
+
 -- The trigger answers requests from the internet and must never be able to read
 -- the inventory. It records a request through this function, which resolves one
 -- trigger value, writes the event and its job in one transaction if the
@@ -1071,12 +1134,6 @@ CREATE TABLE public.event_jobs (
 --
 -- A disabled honeytoken still returns its redirect target, so that disabling
 -- it does not change what a client sees.
---
--- At most 10 events per honeytoken and minute are recorded, so that a flood of
--- requests for one known value cannot fill the database; the outcome "limited"
--- lets the trigger count the rest. Concurrent requests can exceed the limit
--- slightly, which is accepted. The window starts at statement_timestamp(), so
--- that the index can be used.
 CREATE FUNCTION public.record_honeytoken_request(
 	requested_value text,
 	request_method text,
@@ -1110,24 +1167,66 @@ BEGIN
 		outcome := 'disabled';
 		RETURN;
 	END IF;
-
-	IF (
-		SELECT count(*) FROM (
-			SELECT FROM public.events AS e
-			WHERE e.resource_id = h.id
-				AND e.resource_type = 'honeytoken'
-				AND e.occurred_at >= statement_timestamp() - interval '1 minute'
-			LIMIT 10
-		) AS recent
-	) >= 10 THEN
+	IF public.honeytoken_event_limit_reached(h.id) THEN
 		outcome := 'limited';
 		RETURN;
 	END IF;
 
-	INSERT INTO public.events (resource_type, resource_id, honeytoken_type, techniques, client_ip, method,
-		user_agent, referer, accept_language)
-	VALUES ('honeytoken', h.id, h.type, h.techniques, request_client_ip, request_method,
-		request_user_agent, request_referer, request_accept_language)
+	INSERT INTO public.events (resource_type, resource_id, honeytoken_type, techniques, channel, client_ip,
+		method, user_agent, referer, accept_language)
+	VALUES ('honeytoken', h.id, h.type, h.techniques, 'http', request_client_ip,
+		request_method, request_user_agent, request_referer, request_accept_language)
+	RETURNING id INTO new_event_id;
+	INSERT INTO public.event_jobs (event_id) VALUES (new_event_id);
+	outcome := 'recorded';
+END
+$$;
+
+-- The DNS role answers queries from the internet and, like the trigger, must
+-- never be able to read the inventory. It records a query through this
+-- function, which resolves one trigger value and writes the event and its job
+-- in one transaction if the honeytoken is enabled. It returns nothing that the
+-- answer could depend on: the DNS role answers before it records.
+CREATE FUNCTION public.record_dns_query(
+	requested_value text,
+	query_zone text,
+	query_prefix text,
+	query_type text,
+	query_transport text,
+	query_resolver_ip inet,
+	OUT outcome text,
+	OUT honeytoken_id uuid
+)
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = ''
+AS $$
+DECLARE
+	h record;
+	new_event_id uuid;
+BEGIN
+	SELECT t.id, t.type, t.enabled, t.techniques INTO h
+	FROM public.honeytokens AS t
+	WHERE t.trigger_value = requested_value;
+	IF NOT FOUND THEN
+		outcome := 'unknown';
+		RETURN;
+	END IF;
+
+	honeytoken_id := h.id;
+	IF NOT h.enabled THEN
+		outcome := 'disabled';
+		RETURN;
+	END IF;
+	IF public.honeytoken_event_limit_reached(h.id) THEN
+		outcome := 'limited';
+		RETURN;
+	END IF;
+
+	INSERT INTO public.events (resource_type, resource_id, honeytoken_type, techniques, channel, client_ip,
+		dns_zone, dns_prefix, dns_qtype, dns_transport)
+	VALUES ('honeytoken', h.id, h.type, h.techniques, 'dns', query_resolver_ip,
+		query_zone, query_prefix, query_type, query_transport)
 	RETURNING id INTO new_event_id;
 	INSERT INTO public.event_jobs (event_id) VALUES (new_event_id);
 	outcome := 'recorded';
@@ -1135,10 +1234,12 @@ END
 $$;
 
 -- The console reads no events yet. Nobody writes them except through the
--- function above.
+-- functions above.
 REVOKE ALL ON public.events, public.event_jobs FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.honeytoken_event_limit_reached(uuid) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text)
 	FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.record_dns_query(text, text, text, text, text, inet) FROM PUBLIC, nyktus_console;
 
 -- REVOKE only warns when the executing role lacks the grant option, so the
 -- result is verified instead of assumed. An event that the console could write
@@ -1149,51 +1250,62 @@ BEGIN
 		OR has_any_column_privilege('nyktus_console', 'public.events', 'SELECT, INSERT, UPDATE, REFERENCES')
 		OR has_table_privilege('nyktus_console', 'public.event_jobs', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
 		OR has_any_column_privilege('nyktus_console', 'public.event_jobs', 'SELECT, INSERT, UPDATE, REFERENCES')
+		OR has_function_privilege('nyktus_console', 'public.honeytoken_event_limit_reached(uuid)', 'EXECUTE')
 		OR has_function_privilege('nyktus_console',
-			'public.record_honeytoken_request(text, text, inet, text, text, text)', 'EXECUTE') THEN
+			'public.record_honeytoken_request(text, text, inet, text, text, text)', 'EXECUTE')
+		OR has_function_privilege('nyktus_console',
+			'public.record_dns_query(text, text, text, text, text, inet)', 'EXECUTE') THEN
 		RAISE EXCEPTION 'nyktus_console has privileges on events; check the default privileges of the owner';
 	END IF;
 END
 $$;
 
--- The trigger reaches nothing but its function. Everything in the schema is
--- revoked here, at its end, including the table of the migration runner, so
--- that default privileges set by an operator cannot widen the trigger beyond
--- it.
-REVOKE ALL ON ALL TABLES IN SCHEMA public FROM nyktus_trigger;
-REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM nyktus_trigger;
-REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM nyktus_trigger;
-GRANT USAGE ON SCHEMA public TO nyktus_trigger;
+-- The trigger and the DNS role reach nothing but their function. Everything in
+-- the schema is revoked here, at its end, including the table of the migration
+-- runner, so that default privileges set by an operator cannot widen them
+-- beyond it.
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM nyktus_trigger, nyktus_dns;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM nyktus_trigger, nyktus_dns;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM nyktus_trigger, nyktus_dns;
+GRANT USAGE ON SCHEMA public TO nyktus_trigger, nyktus_dns;
 GRANT EXECUTE ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text) TO nyktus_trigger;
+GRANT EXECUTE ON FUNCTION public.record_dns_query(text, text, text, text, text, inet) TO nyktus_dns;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
 -- result is verified instead of assumed, in both directions.
 DO $$
+DECLARE
+	role_name text;
+	function_name text;
 BEGIN
-	IF NOT has_schema_privilege('nyktus_trigger', 'public', 'USAGE')
-		OR NOT has_function_privilege('nyktus_trigger',
-			'public.record_honeytoken_request(text, text, inet, text, text, text)', 'EXECUTE') THEN
-		RAISE EXCEPTION 'nyktus_trigger lacks privileges on public.record_honeytoken_request; run migrations as the owner of the schema';
-	END IF;
+	FOR role_name, function_name IN VALUES
+		('nyktus_trigger', 'public.record_honeytoken_request(text, text, inet, text, text, text)'),
+		('nyktus_dns', 'public.record_dns_query(text, text, text, text, text, inet)')
+	LOOP
+		IF NOT has_schema_privilege(role_name, 'public', 'USAGE')
+			OR NOT has_function_privilege(role_name, function_name, 'EXECUTE') THEN
+			RAISE EXCEPTION '% lacks privileges on %; run migrations as the owner of the schema', role_name, function_name;
+		END IF;
 
-	IF has_schema_privilege('nyktus_trigger', 'public', 'CREATE')
-		OR EXISTS (
-			SELECT FROM pg_catalog.pg_class AS c
-			WHERE c.relnamespace = 'public'::regnamespace
-				AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
-				AND CASE c.relkind
-					WHEN 'S' THEN has_sequence_privilege('nyktus_trigger', c.oid, 'USAGE, SELECT, UPDATE')
-					ELSE has_table_privilege('nyktus_trigger', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
-						OR has_any_column_privilege('nyktus_trigger', c.oid, 'SELECT, INSERT, UPDATE, REFERENCES')
-				END
-		)
-		OR EXISTS (
-			SELECT FROM pg_catalog.pg_proc AS p
-			WHERE p.pronamespace = 'public'::regnamespace
-				AND p.oid <> 'public.record_honeytoken_request(text, text, inet, text, text, text)'::regprocedure
-				AND has_function_privilege('nyktus_trigger', p.oid, 'EXECUTE')
-		) THEN
-		RAISE EXCEPTION 'nyktus_trigger has more privileges than granted; check the default privileges of the owner';
-	END IF;
+		IF has_schema_privilege(role_name, 'public', 'CREATE')
+			OR EXISTS (
+				SELECT FROM pg_catalog.pg_class AS c
+				WHERE c.relnamespace = 'public'::regnamespace
+					AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+					AND CASE c.relkind
+						WHEN 'S' THEN has_sequence_privilege(role_name, c.oid, 'USAGE, SELECT, UPDATE')
+						ELSE has_table_privilege(role_name, c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+							OR has_any_column_privilege(role_name, c.oid, 'SELECT, INSERT, UPDATE, REFERENCES')
+					END
+			)
+			OR EXISTS (
+				SELECT FROM pg_catalog.pg_proc AS p
+				WHERE p.pronamespace = 'public'::regnamespace
+					AND p.oid <> function_name::regprocedure
+					AND has_function_privilege(role_name, p.oid, 'EXECUTE')
+			) THEN
+			RAISE EXCEPTION '% has more privileges than granted; check the default privileges of the owner', role_name;
+		END IF;
+	END LOOP;
 END
 $$;

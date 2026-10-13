@@ -103,7 +103,7 @@ func TestStore_Create_ValidatesBeforeWriting(t *testing.T) {
 		spec honeytoken.Spec
 		err  error
 	}{
-		{honeytoken.Spec{Type: "dns", Name: "a"}, honeytoken.ErrInvalidType},
+		{honeytoken.Spec{Type: "txt", Name: "a"}, honeytoken.ErrInvalidType},
 		{honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: " a"}, honeytoken.ErrInvalidName},
 		{honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "a", Notes: "\x00"}, honeytoken.ErrInvalidNotes},
 		{honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "a", RedirectURL: ptr("https://127.0.0.1")}, honeytoken.ErrInvalidRedirectURL},
@@ -441,7 +441,7 @@ func TestSchema_ChecksHoneytokens(t *testing.T) {
 		args       []any
 		constraint string
 	}{
-		{"unknown type", with(0, "dns"), "honeytokens_type_check"},
+		{"unknown type", with(0, "txt"), "honeytokens_type_check"},
 		{"empty name", with(1, ""), "honeytokens_name_check"},
 		{"long name", with(1, string(slices.Repeat([]byte("x"), 101))), "honeytokens_name_check"},
 		{"name with spaces around", with(1, " a"), "honeytokens_name_check"},
@@ -449,6 +449,7 @@ func TestSchema_ChecksHoneytokens(t *testing.T) {
 		{"long notes", with(2, string(slices.Repeat([]byte("x"), 2001))), "honeytokens_notes_check"},
 		{"notes with escape", with(2, "a\x1bb"), "honeytokens_notes_check"},
 		{"redirect of an image", append([]any{"web_image"}, with(3, "https://example.com")[1:]...), "honeytokens_redirect_url_check"},
+		{"redirect of a DNS name", append([]any{"dns"}, with(3, "https://example.com")[1:]...), "honeytokens_redirect_url_check"},
 		{"redirect to another scheme", with(3, "javascript:alert(1)"), "honeytokens_redirect_url_check"},
 		{"redirect with a space", with(3, "https://example.com/a b"), "honeytokens_redirect_url_check"},
 		{"long redirect", with(3, "https://"+string(slices.Repeat([]byte("a"), 2041))), "honeytokens_redirect_url_check"},

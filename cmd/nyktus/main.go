@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"nyktus.org/nyktus/internal/auth/oidc"
 	"nyktus.org/nyktus/internal/auth/password"
@@ -23,6 +24,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
+	nyktusdns "nyktus.org/nyktus/internal/dns"
 	"nyktus.org/nyktus/internal/platform/buildinfo"
 	"nyktus.org/nyktus/internal/platform/config"
 	"nyktus.org/nyktus/internal/platform/db"
@@ -132,7 +134,7 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 func serve(ctx context.Context, args []string, src config.Source, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	rolesFlag := fs.String("roles", "", "comma-separated roles to run (default: all)")
+	rolesFlag := fs.String("roles", "", "comma-separated roles to run: console, trigger, dns (required)")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -161,6 +163,11 @@ func serve(ctx context.Context, args []string, src config.Source, stdout, stderr
 	if cfg.Has(config.RoleTrigger) {
 		runners = append(runners, func(ctx context.Context, started func(), _ <-chan struct{}) error {
 			return serveTrigger(ctx, cfg, logger, started)
+		})
+	}
+	if cfg.Has(config.RoleDNS) {
+		runners = append(runners, func(ctx context.Context, started func(), _ <-chan struct{}) error {
+			return serveDNS(ctx, cfg, logger, started)
 		})
 	}
 	if err := runRoles(ctx, runners); err != nil {
@@ -269,6 +276,7 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 		Keys:           cfg.EncryptionKeys,
 		ConsoleURL:     cfg.Console.URL,
 		TriggerURL:     cfg.Console.TriggerURL,
+		DNSZones:       cfg.Console.DNSZones,
 		TrustedProxies: cfg.TrustedProxies,
 		OIDC:           provider,
 		OIDCGroups:     groups,
@@ -343,6 +351,64 @@ func serveTrigger(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 		return fmt.Errorf("trigger: %w", err)
 	}
 	logger.InfoContext(ctx, "trigger: stopped")
+	return nil
+}
+
+// dnsMaxConns bounds the connections of the DNS role, as for the trigger. The
+// DNS role records at most as many queries at a time.
+const dnsMaxConns = 10
+
+func serveDNS(ctx context.Context, cfg config.Serve, logger *slog.Logger, started func()) error {
+	pool, err := db.Open(ctx, cfg.DNS.DatabaseURL.Value(), db.Options{MaxConns: dnsMaxConns})
+	if err != nil {
+		return fmt.Errorf("dns: %w", err)
+	}
+	defer pool.Close()
+
+	if cfg.Environment != config.Development {
+		if err := db.CheckLeastPrivilege(ctx, pool); err != nil {
+			return fmt.Errorf("dns: %w", err)
+		}
+		if err := nyktusdns.CheckPrivileges(ctx, pool); err != nil {
+			return fmt.Errorf("dns: %w", err)
+		}
+	}
+
+	lc := net.ListenConfig{}
+	pc, err := lc.ListenPacket(ctx, "udp", cfg.DNS.Addr)
+	if err != nil {
+		return fmt.Errorf("dns: %w", err)
+	}
+	ln, err := lc.Listen(ctx, "tcp", cfg.DNS.Addr)
+	if err != nil {
+		_ = pc.Close()
+		return fmt.Errorf("dns: %w", err)
+	}
+	logger.InfoContext(ctx, "dns: listening",
+		slog.String("udp_addr", pc.LocalAddr().String()), slog.String("tcp_addr", ln.Addr().String()))
+
+	h := nyktusdns.New(nyktusdns.Options{
+		Logger:      logger,
+		Recorder:    nyktusdns.NewStore(pool),
+		Zones:       cfg.DNS.Zones,
+		Nameservers: cfg.DNS.Nameservers,
+		AnswerIPv4:  cfg.DNS.AnswerIPv4,
+		AnswerIPv6:  cfg.DNS.AnswerIPv6,
+		TTL:         cfg.DNS.TTL,
+		// The serial changes with every start, as with a zone that is edited;
+		// a constant would be the same in every installation.
+		Serial: uint32(time.Now().Unix()), //nolint:gosec // The serial wraps around by design (RFC 1982).
+	})
+	runCtx, stop := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	wg.Go(func() { h.Run(runCtx) })
+	err = nyktusdns.Serve(ctx, h, pc, ln, started)
+	stop()
+	wg.Wait()
+	if err != nil {
+		return fmt.Errorf("dns: %w", err)
+	}
+	logger.InfoContext(ctx, "dns: stopped")
 	return nil
 }
 

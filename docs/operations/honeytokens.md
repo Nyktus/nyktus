@@ -1,6 +1,6 @@
 # Honeytokens
 
-A honeytoken is a URL that nobody has a reason to open. You place it where only an intruder would find it, for example as a link in a document on a file share or as an image in a mail template, and Nyktus records an event when it is requested.
+A honeytoken is a URL or host name that nobody has a reason to open or resolve. You place it where only an intruder would find it, for example as a link in a document on a file share, as an image in a mail template or as a host in a configuration file, and Nyktus records an event when it is requested or resolved.
 
 > This version records the events of honeytokens, but neither shows them in the console nor raises alerts yet.
 
@@ -10,12 +10,15 @@ A honeytoken is a URL that nobody has a reason to open. You place it where only 
 |---|---|---|
 | `web_url` | the URL is opened, for example by clicking a link | a link in a document, a wiki page, a bookmark, a configuration file, or a QR code |
 | `web_image` | the URL is loaded as an image | an image embedded in a document, a mail or an HTML page, which the viewer loads when it opens it |
+| `dns` | one of its host names is resolved | a host in an SSH configuration, a connection string, a VPN profile or a script, which a tool resolves before it connects; see [DNS honeytokens](dns.md) |
 
 A QR code is a `web_url` shown as a QR code: generate the code from its `trigger_url`. A `web_url` redirects the browser after the request, so that a click leads to a page instead of an error; set the target with `redirect_url`.
 
 ## The trigger URL
 
 Every honeytoken has a trigger value of 128 random bits, 26 characters of lowercase letters and digits. Its URL is the [address of the trigger](#choosing-the-address-of-the-trigger) followed by the value, such as `https://t.example.net/q3xwz7a2kfm4ub6tyc5nre2lpa`. The URL of a `web_image` ends with `.gif`, such as `https://t.example.net/q3xwz7a2kfm4ub6tyc5nre2lpa.gif`. The response of every request contains both as `trigger_value` and `trigger_url`. Place the `trigger_url` exactly as it is.
+
+A `dns` honeytoken has no URL: its `trigger_url` is `null`, and `trigger_names` lists its host names, the value under each [zone of the DNS role](dns.md#zones), such as `q3xwz7a2kfm4ub6tyc5nre2lpa.d.example.net`. Place any of them. While the console knows no zone, the list is empty. For the other types, `trigger_names` is empty.
 
 The value cannot be changed. If a URL has been exposed to people who should not trigger it, such as in a screenshot, create a new honeytoken, place its URL, and delete the old one.
 
@@ -44,7 +47,7 @@ with `honeytoken.json`:
 
 | Field | Rules |
 |---|---|
-| `type` | Required. `web_url` or `web_image`. It cannot be changed later. |
+| `type` | Required. `web_url`, `web_image` or `dns`. It cannot be changed later. A `dns` honeytoken needs the zones of the DNS role; without `NYKTUS_DNS_ZONES`, the console answers `422` with the code `dns_not_configured`. |
 | `name` | Required. 1 to 100 printable characters without leading or trailing spaces. |
 | `notes` | Optional. Where and why the honeytoken is placed, up to 2000 characters; line breaks and tabs are allowed. Notes help whoever cleans up decoys or triages an incident. |
 | `enabled` | Optional, `true` by default. |
@@ -64,6 +67,7 @@ The answer is the new honeytoken with status `201`:
   "techniques": ["T1039", "T1083"],
   "trigger_value": "q3xwz7a2kfm4ub6tyc5nre2lpa",
   "trigger_url": "https://t.example.net/q3xwz7a2kfm4ub6tyc5nre2lpa",
+  "trigger_names": [],
   "created_at": "2026-10-12T09:30:00Z",
   "updated_at": "2026-10-12T09:30:00Z"
 }
@@ -71,7 +75,7 @@ The answer is the new honeytoken with status `201`:
 
 ## Listing, changing and deleting
 
-- `GET /api/v1/honeytokens` lists honeytokens from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `type=web_url` or `type=web_image` and `enabled=true` or `enabled=false` narrow the list.
+- `GET /api/v1/honeytokens` lists honeytokens from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `type=web_url`, `type=web_image` or `type=dns` and `enabled=true` or `enabled=false` narrow the list.
 - `GET /api/v1/honeytokens/<id>` returns one honeytoken.
 - `PATCH /api/v1/honeytokens/<id>` changes `name`, `notes`, `enabled`, `redirect_url` or `techniques`. Members that you leave out stay unchanged; `"redirect_url": null` removes the redirect, and `"techniques": []` removes the techniques. Disable a honeytoken instead of deleting it while you are unsure whether its URL is still placed somewhere: a disabled honeytoken records no events, but still answers as before.
 - `DELETE /api/v1/honeytokens/<id>` deletes a honeytoken. Its events remain. Remove its URL from where you placed it as well: once the honeytoken is deleted, a request of the URL is answered like any unknown URL and no longer recorded.
@@ -91,9 +95,9 @@ Put a reverse proxy in front of the trigger. It answers malformed requests, whic
 
 ## Events
 
-The trigger records an event for every `GET` and `HEAD` request of an enabled honeytoken, whichever form of the URL was requested. Other methods receive the same answer and are not recorded, and neither are requests of disabled honeytokens.
+The trigger records an event for every `GET` and `HEAD` request of an enabled honeytoken, whichever form of the URL was requested. Other methods receive the same answer and are not recorded, and neither are requests of disabled honeytokens. The [DNS role](dns.md) records an event for every query of a name that holds the value of an enabled honeytoken, whatever the type of the query. Both record a value of any type: only whoever found it knows it.
 
-An event holds:
+An event of the trigger holds:
 
 | Field | Content |
 |---|---|
@@ -105,7 +109,18 @@ An event holds:
 
 Nothing else is recorded: no body, no cookies, no other headers.
 
-At most 10 events per honeytoken and minute are recorded, so that a flood of requests for one known URL cannot fill the database. The trigger counts the requests beyond the limit and logs their number once a minute as `trigger: requests not recorded` with the identifier of the honeytoken.
+An event of the DNS role holds the honeytoken, the time at which it was recorded, and:
+
+| Field | Content |
+|---|---|
+| Resolver address | The address that sent the query. This is usually a resolver of the network or provider of whoever looked up the name, not their own address. |
+| Zone | The zone under which the name was queried. |
+| Prefix | The labels in front of the value, such as `vpn` for `vpn.q3xwz7a2kfm4ub6tyc5nre2lpa.d.example.net`, up to 200 characters. Characters other than letters, digits, `-` and `_` are replaced with `?`. The name itself is not stored. |
+| Type and transport | The type of the query, such as `A`, `AAAA` or `MX`, and whether it came over UDP or TCP. |
+
+The DNS role answers first and records afterwards, so under load the recorded time can lie a few seconds after the query. A lookup usually reaches Nyktus as several queries, for example `A` and `AAAA`, and resolvers repeat queries. Each one is an event.
+
+At most 10 events per honeytoken and minute are recorded, over HTTP and DNS together, so that a flood of requests for one known URL or name cannot fill the database. The trigger and the DNS role count the requests beyond the limit and log their number once a minute as `trigger: requests not recorded` or `dns: queries not recorded` with the identifier of the honeytoken.
 
 ## Choosing the address of the trigger
 

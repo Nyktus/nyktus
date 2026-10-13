@@ -35,3 +35,15 @@ EXCEPTION
 		NULL;
 END
 $$;
+
+-- Group role of the DNS role, which answers queries from the internet. It can
+-- only call the function that records a query; its login role is a member of
+-- it.
+DO $$
+BEGIN
+	CREATE ROLE nyktus_dns NOLOGIN;
+EXCEPTION
+	WHEN duplicate_object OR unique_violation THEN
+		NULL;
+END
+$$;

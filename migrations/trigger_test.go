@@ -105,9 +105,15 @@ func expectDenied(t *testing.T, pool *pgxpool.Pool, statement string) {
 	}
 }
 
-// triggerPrivileges reports every privilege of the trigger's group role on the
-// objects of the schema, except the one it is granted.
-func triggerPrivileges(t *testing.T, dbURL string) []string {
+// Functions that the internet-facing roles may execute, one each.
+const (
+	triggerFunction = "public.record_honeytoken_request(text, text, inet, text, text, text)"
+	dnsFunction     = "public.record_dns_query(text, text, text, text, text, inet)"
+)
+
+// rolePrivileges reports every privilege of a group role on the objects of the
+// schema, except EXECUTE on function, the one it is granted.
+func rolePrivileges(t *testing.T, dbURL, role, function string) []string {
 	t.Helper()
 	rows, err := schematest.Open(t, dbURL).Query(t.Context(), `
 SELECT c.relname || ': ' || p.privilege
@@ -120,10 +126,10 @@ UNION ALL
 SELECT f.oid::regprocedure::text || ': EXECUTE'
 FROM pg_proc AS f
 WHERE f.pronamespace = 'public'::regnamespace
-	AND f.oid <> 'public.record_honeytoken_request(text, text, inet, text, text, text)'::regprocedure
+	AND f.oid <> $2::regprocedure
 	AND has_function_privilege($1, f.oid, 'EXECUTE')
 UNION ALL
-SELECT 'schema public: CREATE' WHERE has_schema_privilege($1, 'public', 'CREATE')`, schematest.TriggerRole)
+SELECT 'schema public: CREATE' WHERE has_schema_privilege($1, 'public', 'CREATE')`, role, function)
 	if err != nil {
 		t.Fatalf("query privileges: %v", err)
 	}
@@ -137,7 +143,7 @@ SELECT 'schema public: CREATE' WHERE has_schema_privilege($1, 'public', 'CREATE'
 func TestTriggerRole_HasNoPrivilegesBeyondItsFunction(t *testing.T) {
 	t.Parallel()
 
-	if held := triggerPrivileges(t, schematest.New(t)); len(held) > 0 {
+	if held := rolePrivileges(t, schematest.New(t), schematest.TriggerRole, triggerFunction); len(held) > 0 {
 		t.Errorf("nyktus_trigger holds %v, want nothing beyond EXECUTE on record_honeytoken_request", held)
 	}
 }
@@ -158,7 +164,7 @@ func TestApply_IgnoresDefaultPrivilegesOfTheTrigger(t *testing.T) {
 	if err := apply(t, dbURL, load(t)); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	if held := triggerPrivileges(t, dbURL); len(held) > 0 {
+	if held := rolePrivileges(t, dbURL, schematest.TriggerRole, triggerFunction); len(held) > 0 {
 		t.Errorf("nyktus_trigger holds %v, want nothing beyond EXECUTE on record_honeytoken_request", held)
 	}
 }

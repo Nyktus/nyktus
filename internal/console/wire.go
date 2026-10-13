@@ -48,6 +48,9 @@ type Options struct {
 	// TriggerURL is the public address of the trigger, such as
 	// "https://t.example.com". The URLs of honeytokens start with it.
 	TriggerURL string
+	// DNSZones are the zones of the DNS role, under which DNS honeytokens have
+	// their names. Empty if DNS honeytokens are not set up.
+	DNSZones []string
 }
 
 // New wires the console and returns its HTTP handler. It computes the dummy
@@ -72,7 +75,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		}
 	}
 	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
-	t := honeytokenapi.NewHandler(o.Logger, o.DB, o.TriggerURL)
+	t := honeytokenapi.NewHandler(o.Logger, o.DB, o.TriggerURL, o.DNSZones)
 	return NewHandler(Deps{
 		Logger:         o.Logger,
 		DB:             o.DB,

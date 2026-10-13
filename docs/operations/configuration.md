@@ -4,7 +4,7 @@ Nyktus reads its configuration from environment variables once at startup and re
 
 Every variable that holds a secret can instead be read from a file: set the same name with the suffix `_FILE` to the path of the file, for example `NYKTUS_CONSOLE_DATABASE_URL_FILE=/run/secrets/console-db`. A trailing line break in the file is ignored. Setting both forms is an error.
 
-Settings of a server role are only read when the role runs. A process started with `--roles=console` does not need the settings of other roles. `nyktus serve` without `--roles` runs every role, `console` and `trigger`, and needs the settings of both.
+Settings of a server role are only read when the role runs. A process started with `--roles=console` does not need the settings of other roles. `nyktus serve` requires `--roles`, a comma-separated list of `console`, `trigger` and `dns`: some roles listen on the internet, so a process never starts a role that nobody asked for. A process that runs several roles needs the settings of each.
 
 ## All commands
 
@@ -34,6 +34,7 @@ Settings of a server role are only read when the role runs. A process started wi
 | `NYKTUS_CONSOLE_URL` | required; in development `http://` and the listen address | Address under which users reach the console, usually through your reverse proxy, such as `https://nyktus.example.com`. Links that the console hands out, such as the [setup URL](first-start.md) and [activation and password reset links](users.md), start with it. Scheme, host and port only: `https` is required, `http` is allowed in development. |
 | `NYKTUS_CONSOLE_DATABASE_URL` | required, secret | Connection URL of the console's login role. See [Database setup](database.md). |
 | `NYKTUS_TRIGGER_URL` | required, also in development | Public address of the trigger, such as `https://t.example.net`. The URL of a [honeytoken](honeytokens.md) is this address followed by its trigger value, so it is what an attacker sees. Scheme, host and port only: `https` is required, `http` is allowed in development. Its host must differ from that of `NYKTUS_CONSOLE_URL`; in development, a different port suffices. See [Choosing the address of the trigger](honeytokens.md#choosing-the-address-of-the-trigger). |
+| `NYKTUS_DNS_ZONES` | empty | The zones of the [DNS role](dns.md), as for the role `dns`. The console shows the names of DNS honeytokens under them; without zones, it refuses to create DNS honeytokens. No zone may hold the host of `NYKTUS_CONSOLE_URL` or `NYKTUS_TRIGGER_URL`. |
 | `NYKTUS_SESSION_IDLE_TIMEOUT` | `1h` | A session ends after this long without a request. Between `5m` and `24h`. See [Sign-in and sessions](sign-in.md). |
 | `NYKTUS_SESSION_MAX_AGE` | `12h` | A session ends this long after sign-in, however active it is. Between the idle timeout and `720h` (30 days). |
 | `NYKTUS_LOCAL_LOGIN` | `admins` with an identity provider, `all` otherwise | Which accounts sign in with a password: `all`, `admins` or `off`. `admins` and `off` require an identity provider. See [Sign-in and sessions](sign-in.md#password-sign-in-with-an-identity-provider). |
@@ -47,6 +48,20 @@ The trigger answers the URLs of [honeytokens](honeytokens.md) and records their 
 | `NYKTUS_TRIGGER_ADDR` | `127.0.0.1:8081` | Address and port the trigger listens on. |
 | `NYKTUS_TRIGGER_DATABASE_URL` | required, secret | Connection URL of the trigger's login role. See [Database setup](database.md). |
 | `NYKTUS_TRIGGER_DEFAULT_REDIRECT` | required | Where the trigger sends a client that it does not send to the `redirect_url` of a honeytoken, such as `https://www.example.com/`: requests of unknown URLs, of `/` and other paths, and requests it failed to record. The same rules as for `redirect_url` apply: a host name, not an IP address, no user information, at most 2048 characters. `https` is required, `http` is allowed in development. There is no default, because a target built into Nyktus would be the same in every installation and give the trigger away. Choose a public page outside Nyktus: a target on the host of the trigger would redirect in a loop, and one on the host of the console would lead every visitor of the trigger to it. See [What the trigger answers](honeytokens.md#what-the-trigger-answers). |
+
+### Role `dns`
+
+The DNS role answers the zones delegated to it as an authoritative name server and records the queries of [DNS honeytokens](dns.md). It is reached from the internet on port 53, usually through a port mapping of the container.
+
+| Variable | Default | Description |
+|---|---|---|
+| `NYKTUS_DNS_ADDR` | `127.0.0.1:8053` | Address and port the DNS role listens on, over UDP and TCP. |
+| `NYKTUS_DNS_DATABASE_URL` | required, secret | Connection URL of the DNS role's login role. See [Database setup](database.md). |
+| `NYKTUS_DNS_ZONES` | required | Comma-separated zones to answer, such as `d.example.net,cdn-assets.example.org`. A DNS honeytoken has its trigger value as a name under each of them. A zone must not contain another. Set the same list for the console. See [Zones](dns.md#zones). |
+| `NYKTUS_DNS_NAMESERVERS` | required | Comma-separated host names of the name servers of the zones, at most 8, such as `ns1.example.net`. The answers name them in NS and SOA records. They must lie outside the zones. |
+| `NYKTUS_DNS_ANSWER_IPV4` | none | The IPv4 address with which every name of the zones resolves. Without it, names have no IPv4 address. There is no default, because an address built into Nyktus would identify it. |
+| `NYKTUS_DNS_ANSWER_IPV6` | none | The IPv6 address with which every name of the zones resolves. |
+| `NYKTUS_DNS_TTL` | `1m` | How long resolvers may cache an answer, also a negative one, in whole seconds between `0s` and `1h`. See [Caching](dns.md#caching). |
 
 ### Sign-in through an identity provider
 
