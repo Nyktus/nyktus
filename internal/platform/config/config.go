@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,28 +42,38 @@ type Role string
 const (
 	RoleConsole Role = "console"
 	RoleTrigger Role = "trigger"
+	RoleDNS     Role = "dns"
 )
 
 // Roles lists every implemented role in a stable order.
-var Roles = []Role{RoleConsole, RoleTrigger}
+var Roles = []Role{RoleConsole, RoleTrigger, RoleDNS}
 
-// ParseRoles parses a comma-separated list of role names. An empty list selects
-// all roles.
+// ParseRoles parses a comma-separated list of role names. The list is required:
+// the roles are meant for different hosts, and some of them listen on the
+// internet, so a process never starts a role that nobody asked for.
 func ParseRoles(s string) ([]Role, error) {
 	if strings.TrimSpace(s) == "" {
-		return slices.Clone(Roles), nil
+		return nil, fmt.Errorf("--roles is required; choose from %s", joinRoles(Roles))
 	}
 	var roles []Role
 	for name := range strings.SplitSeq(s, ",") {
 		role := Role(strings.TrimSpace(name))
 		if !slices.Contains(Roles, role) {
-			return nil, fmt.Errorf("unknown role %q", role)
+			return nil, fmt.Errorf("unknown role %q; choose from %s", role, joinRoles(Roles))
 		}
 		if !slices.Contains(roles, role) {
 			roles = append(roles, role)
 		}
 	}
 	return roles, nil
+}
+
+func joinRoles(roles []Role) string {
+	names := make([]string, len(roles))
+	for i, r := range roles {
+		names[i] = string(r)
+	}
+	return strings.Join(names, ", ")
 }
 
 // Secret holds a sensitive value. Its string, Go-syntax and log representations are
@@ -123,6 +134,10 @@ type Console struct {
 	// "https://t.example.com", without a trailing slash. The URL of a
 	// honeytoken is this address followed by its trigger value.
 	TriggerURL string
+	// DNSZones are the zones that the DNS role answers, in lower case without a
+	// trailing dot. The names of a DNS honeytoken are its trigger value under
+	// each of them. Empty if DNS honeytokens are not set up.
+	DNSZones []string
 }
 
 // Trigger holds the settings of the trigger role, which answers the requests of
@@ -137,6 +152,39 @@ type Trigger struct {
 	// and other paths, and requests it failed to record.
 	DefaultRedirect string
 }
+
+// DNS holds the settings of the DNS role, which answers the zones delegated to
+// it as an authoritative name server and records the queries of DNS
+// honeytokens.
+type DNS struct {
+	Addr        string
+	DatabaseURL Secret
+	// DatabaseMaxConns bounds the connections to the database, and with them
+	// the queries recorded at a time.
+	DatabaseMaxConns int
+	// Zones are the zones to answer, in lower case without a trailing dot.
+	Zones []string
+	// Nameservers are the host names of the name servers of the zones, which
+	// the answers name in NS and SOA records. They lie outside the zones.
+	Nameservers []string
+	// AnswerIPv4 and AnswerIPv6 are the addresses with which every name of the
+	// zones resolves, or the zero Addr for no address of that family.
+	AnswerIPv4, AnswerIPv6 netip.Addr
+	// TTL is the time to live of every answer, also of negative answers.
+	TTL time.Duration
+}
+
+// Limits of the DNS settings.
+const (
+	maxDNSTTL = time.Hour
+	// maxZoneLength leaves room in a name of at most 253 characters for the
+	// trigger value and a few labels in front of it.
+	maxZoneLength  = 200
+	maxNameservers = 8
+	// maxDNSDatabaseConns bounds the connections of the DNS role, which is
+	// reached from the internet and must not exhaust the database.
+	maxDNSDatabaseConns = 100
+)
 
 // LocalLogin says which accounts sign in with a password.
 type LocalLogin string
@@ -201,6 +249,7 @@ type Serve struct {
 	EncryptionKeys *secretbox.Keyring
 	Console        Console
 	Trigger        Trigger
+	DNS            DNS
 }
 
 // Has reports whether role is enabled.
@@ -240,6 +289,7 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 		cfg.Console.OIDC = r.oidc(cfg.Environment)
 		cfg.Console.LocalLogin = r.localLogin(cfg.Console.OIDC != nil)
 		cfg.Console.TriggerURL = r.triggerURL("TRIGGER_URL", cfg.Environment, cfg.Console.URL)
+		cfg.Console.DNSZones = r.zones("DNS_ZONES", false, cfg.Console.URL, cfg.Console.TriggerURL)
 		cfg.EncryptionKeys = r.keyring("ENCRYPTION_KEYS")
 	}
 	if cfg.Has(RoleTrigger) {
@@ -247,6 +297,30 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 			Addr:            r.addr("TRIGGER_ADDR", "127.0.0.1:8081"),
 			DatabaseURL:     r.requiredSecret("TRIGGER_DATABASE_URL"),
 			DefaultRedirect: r.redirect("TRIGGER_DEFAULT_REDIRECT", cfg.Environment),
+		}
+	}
+	if cfg.Has(RoleDNS) {
+		// A process with the console has read the zones already, checked
+		// against its addresses; reading them again would report every
+		// problem twice.
+		var zones []string
+		switch {
+		case !cfg.Has(RoleConsole):
+			zones = r.zones("DNS_ZONES", true)
+		case r.get("DNS_ZONES") == "":
+			r.fail("%sDNS_ZONES is required", prefix)
+		default:
+			zones = cfg.Console.DNSZones
+		}
+		cfg.DNS = DNS{
+			Addr:             r.addr("DNS_ADDR", "127.0.0.1:8053"),
+			DatabaseURL:      r.requiredSecret("DNS_DATABASE_URL"),
+			DatabaseMaxConns: r.integer("DNS_DATABASE_MAX_CONNS", 10, 1, maxDNSDatabaseConns),
+			Zones:            zones,
+			Nameservers:      r.nameservers("DNS_NAMESERVERS", zones),
+			AnswerIPv4:       r.answerAddr("DNS_ANSWER_IPV4", false),
+			AnswerIPv6:       r.answerAddr("DNS_ANSWER_IPV6", true),
+			TTL:              r.ttl("DNS_TTL"),
 		}
 	}
 	return cfg, r.err()
@@ -316,6 +390,24 @@ func (r *reader) addr(name, fallback string) string {
 		r.fail("%s%s: %w", prefix, name, err)
 	}
 	return addr
+}
+
+// integer reads a whole number within [lowest, highest].
+func (r *reader) integer(name string, fallback, lowest, highest int) int {
+	value := r.get(name)
+	if value == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(value)
+	switch {
+	case err != nil:
+		r.fail("%s%s: %q is not a whole number", prefix, name, value)
+	case n < lowest || n > highest:
+		r.fail("%s%s: must be between %d and %d, got %d", prefix, name, lowest, highest, n)
+	default:
+		return n
+	}
+	return fallback
 }
 
 // duration reads a duration in the notation of Go, such as "90m" or "12h", within
@@ -635,4 +727,151 @@ func (r *reader) requiredSecret(name string) Secret {
 		r.fail("%s or %s is required", key, fileKey)
 	}
 	return Secret(value)
+}
+
+// zones reads the zones of the DNS role. A zone must not contain another, and
+// must not hold the host of one of the given URLs: Nyktus would answer that
+// host itself, and a DNS honeytoken would name the console or the trigger.
+// A zone below such a host is allowed.
+func (r *reader) zones(name string, required bool, urls ...string) []string {
+	entries := r.list(name)
+	if len(entries) == 0 {
+		if required {
+			r.fail("%s%s is required", prefix, name)
+		}
+		return nil
+	}
+	zones := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		zone, err := parseDomainName(entry)
+		if err != nil {
+			r.fail("%s%s: %w", prefix, name, err)
+			continue
+		}
+		if len(zone) > maxZoneLength {
+			r.fail("%s%s: %q is longer than %d characters", prefix, name, entry, maxZoneLength)
+			continue
+		}
+		if i := slices.IndexFunc(zones, func(z string) bool { return inZone(z, zone) || inZone(zone, z) }); i >= 0 {
+			r.fail("%s%s: %q and %q overlap; a zone must not contain another", prefix, name, zones[i], zone)
+			continue
+		}
+		zones = append(zones, zone)
+	}
+	for _, raw := range urls {
+		u, err := url.Parse(raw)
+		if raw == "" || err != nil {
+			continue
+		}
+		host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+		for _, zone := range zones {
+			if inZone(host, zone) {
+				r.fail("%s%s: %q contains %s, the host of %s; choose a zone that holds neither the console nor the trigger",
+					prefix, name, zone, host, raw)
+			}
+		}
+	}
+	return zones
+}
+
+// nameservers reads the name servers of the zones. They must lie outside the
+// zones: a name server inside would need an address record in the zone, and
+// the DNS role answers every name of its zones in the same way.
+func (r *reader) nameservers(name string, zones []string) []string {
+	entries := r.list(name)
+	switch {
+	case len(entries) == 0:
+		r.fail("%s%s is required", prefix, name)
+		return nil
+	case len(entries) > maxNameservers:
+		r.fail("%s%s: at most %d name servers", prefix, name, maxNameservers)
+		return nil
+	}
+	servers := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		server, err := parseDomainName(entry)
+		if err != nil {
+			r.fail("%s%s: %w", prefix, name, err)
+			continue
+		}
+		if i := slices.IndexFunc(zones, func(z string) bool { return inZone(server, z) }); i >= 0 {
+			r.fail("%s%s: %q lies in the zone %q; name servers must lie outside the zones", prefix, name, server, zones[i])
+			continue
+		}
+		if !slices.Contains(servers, server) {
+			servers = append(servers, server)
+		}
+	}
+	return servers
+}
+
+// answerAddr reads an optional address of one family with which every name of
+// the zones resolves. There is no default: an address built into Nyktus would
+// be the same in every installation and identify its name servers.
+func (r *reader) answerAddr(name string, ipv6 bool) netip.Addr {
+	value := r.get(name)
+	if value == "" {
+		return netip.Addr{}
+	}
+	addr, err := netip.ParseAddr(value)
+	switch {
+	case err != nil || addr.Zone() != "":
+		r.fail("%s%s: %q is not an IP address", prefix, name, value)
+	case ipv6 && (!addr.Is6() || addr.Is4In6()):
+		r.fail("%s%s: %q is not an IPv6 address", prefix, name, value)
+	case !ipv6 && !addr.Is4():
+		r.fail("%s%s: %q is not an IPv4 address", prefix, name, value)
+	default:
+		return addr
+	}
+	return netip.Addr{}
+}
+
+// ttl reads the time to live of DNS answers in whole seconds. Shorter times let
+// more repeated lookups through the caches of resolvers.
+func (r *reader) ttl(name string) time.Duration {
+	d := r.duration(name, time.Minute, 0, maxDNSTTL)
+	if d%time.Second != 0 {
+		r.fail("%s%s: must be whole seconds, got %v", prefix, name, d)
+		return time.Minute
+	}
+	return d
+}
+
+// parseDomainName returns a host name in lower case without a trailing dot. It
+// accepts letters, digits and hyphens in labels of up to 63 characters, at
+// least two labels, and no address.
+func parseDomainName(s string) (string, error) {
+	name := strings.ToLower(strings.TrimSuffix(s, "."))
+	labels := strings.Split(name, ".")
+	if len(name) > 253 || len(labels) < 2 {
+		return "", fmt.Errorf("%q is not a domain name with at least two labels", s)
+	}
+	for _, label := range labels {
+		if !validLabel(label) {
+			return "", fmt.Errorf("%q is not a domain name: labels consist of 1 to 63 letters, digits and hyphens, without a hyphen at either end", s)
+		}
+	}
+	if strings.Trim(labels[len(labels)-1], "0123456789") == "" {
+		return "", fmt.Errorf("%q is an address, not a domain name", s)
+	}
+	return name, nil
+}
+
+func validLabel(label string) bool {
+	if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+		return false
+	}
+	for i := range len(label) {
+		if c := label[i]; (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// inZone reports whether name is zone or lies below it. Both are in lower case
+// without a trailing dot.
+func inZone(name, zone string) bool {
+	return name == zone || strings.HasSuffix(name, "."+zone)
 }

@@ -18,6 +18,10 @@ import (
 	"nyktus.org/nyktus/internal/platform/httpx"
 )
 
+// codeDNSNotConfigured answers the creation of a DNS honeytoken while the
+// console knows no zone of the DNS role.
+const codeDNSNotConfigured = "dns_not_configured"
+
 // defaultPageSize is the page size if the request names none.
 const defaultPageSize = 50
 
@@ -39,20 +43,25 @@ type Handler struct {
 	// "https://t.example.com", to which the trigger value of a honeytoken is
 	// appended.
 	triggerURL string
+	// dnsZones are the zones of the DNS role, under which the trigger value of
+	// a DNS honeytoken is a name. Without them, DNS honeytokens cannot be
+	// created.
+	dnsZones []string
 }
 
 // NewHandler returns the handlers of the honeytokens. triggerURL is the public
-// address of the trigger, with scheme, host and port only.
-func NewHandler(logger *slog.Logger, d honeytoken.DB, triggerURL string) *Handler {
+// address of the trigger, with scheme, host and port only; dnsZones are the
+// zones of the DNS role, in lower case without a trailing dot, or none.
+func NewHandler(logger *slog.Logger, d honeytoken.DB, triggerURL string, dnsZones []string) *Handler {
 	if logger == nil || d == nil || triggerURL == "" {
 		panic("honeytokenapi: handler needs a logger, a database and the address of the trigger")
 	}
-	return &Handler{logger: logger, db: d, triggerURL: triggerURL}
+	return &Handler{logger: logger, db: d, triggerURL: triggerURL, dnsZones: dnsZones}
 }
 
 // response is the representation of a honeytoken. The trigger value is not a
-// secret towards the readers of the inventory: it is part of the URL that they
-// place, and they need it again for every placement.
+// secret towards the readers of the inventory: it is part of the URL or name
+// that they place, and they need it again for every placement.
 type response struct {
 	ID           string          `json:"id"`
 	Type         honeytoken.Type `json:"type"`
@@ -62,7 +71,8 @@ type response struct {
 	RedirectURL  *string         `json:"redirect_url"`
 	Techniques   []string        `json:"techniques"`
 	TriggerValue string          `json:"trigger_value"`
-	TriggerURL   string          `json:"trigger_url"`
+	TriggerURL   *string         `json:"trigger_url"`
+	TriggerNames []string        `json:"trigger_names"`
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
 }
@@ -71,6 +81,10 @@ func (h *Handler) response(t honeytoken.Honeytoken) response {
 	techniques := t.Techniques
 	if techniques == nil {
 		techniques = []string{}
+	}
+	var triggerURL *string
+	if path := t.TriggerPath(); path != "" {
+		triggerURL = new(h.triggerURL + path)
 	}
 	return response{
 		ID:           t.ID,
@@ -81,7 +95,8 @@ func (h *Handler) response(t honeytoken.Honeytoken) response {
 		RedirectURL:  t.RedirectURL,
 		Techniques:   techniques,
 		TriggerValue: t.TriggerValue,
-		TriggerURL:   h.triggerURL + t.TriggerPath(),
+		TriggerURL:   triggerURL,
+		TriggerNames: t.TriggerNames(h.dnsZones),
 		CreatedAt:    t.CreatedAt,
 		UpdatedAt:    t.UpdatedAt,
 	}
@@ -163,6 +178,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	var req createRequest
 	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
+		return
+	}
+	if req.Type == honeytoken.TypeDNS && len(h.dnsZones) == 0 {
+		// A DNS honeytoken without a zone would have no name to place.
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, codeDNSNotConfigured,
+			"DNS honeytokens need the zones of the DNS role; set NYKTUS_DNS_ZONES for the console")
 		return
 	}
 	spec := honeytoken.Spec{
@@ -273,7 +294,7 @@ func (h *Handler) principal(w http.ResponseWriter, r *http.Request) (access.Prin
 
 // Rules of the fields, as the error responses state them.
 var (
-	typeRule        = "type must be web_url or web_image"
+	typeRule        = "type must be web_url, web_image or dns"
 	nameRule        = fmt.Sprintf("name must have 1 to %d printable characters without leading or trailing spaces", honeytoken.MaxNameLength)
 	notesRule       = fmt.Sprintf("notes must have at most %d characters; line breaks and tabs are the only control characters allowed", honeytoken.MaxNotesLength)
 	redirectURLRule = fmt.Sprintf("redirect_url must be an http or https URL of at most %d characters with a host name, not an IP address, and without user information", honeytoken.MaxRedirectURLLength)

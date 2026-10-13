@@ -58,6 +58,29 @@ linters:
               desc: the trigger never reads the inventory; it resolves single trigger values through a database function
             - pkg: nyktus.org/nyktus/internal/alerting
               desc: the trigger records events and their jobs; the worker processes them and sends alerts
+        # The internet-facing DNS role follows the rules of the trigger: it
+        # resolves one trigger value at a time through a database function,
+        # never imports the inventory, the alerting or the console, and holds
+        # no code of the HTTP trigger.
+        dns:
+          list-mode: lax
+          files:
+            - "**/internal/dns/**"
+          deny:
+            - pkg: nyktus.org/nyktus/internal/honeytoken
+              desc: the DNS role never reads the inventory; it resolves single trigger values through a database function
+            - pkg: nyktus.org/nyktus/internal/alerting
+              desc: the DNS role records events and their jobs; the worker processes them and sends alerts
+            - pkg: nyktus.org/nyktus/internal/console
+              desc: the DNS role is reached from the internet and holds no code of the console
+            - pkg: nyktus.org/nyktus/internal/auth
+              desc: the DNS role is reached from the internet and holds no code of the console
+            - pkg: nyktus.org/nyktus/internal/user
+              desc: the DNS role is reached from the internet and holds no code of the console
+            - pkg: nyktus.org/nyktus/internal/audit
+              desc: the DNS role is reached from the internet and holds no code of the console
+            - pkg: nyktus.org/nyktus/internal/trigger
+              desc: the DNS role and the trigger are separate roles that share nothing but the database
         # Test-only dependencies must never reach the binaries.
         test-only:
           list-mode: lax

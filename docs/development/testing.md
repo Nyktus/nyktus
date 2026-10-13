@@ -24,8 +24,9 @@ The test must fail without the fix. Verify this by reverting the fix locally bef
 
 Each of these properties needs its own test, named after the property:
 
-- Trigger responses are identical for valid, unknown, disabled and failing tokens, apart from an operator-configured redirect target.
-- The trigger database role cannot select from any table and resolves only single values through the lookup function.
+- Trigger responses are identical for valid, unknown, disabled and failing tokens, apart from an operator-configured redirect target. For the DNS role, this covers rcode, flags, every section and the TTLs, over a real UDP and TCP server, including a panic during recording.
+- The trigger and DNS database roles cannot select from any table and resolve only single values through their own function.
+- The DNS role refuses names outside its zones (no recursion) and answers no queries in the class `CHAOS`.
 - The server refuses database roles with privileges beyond their grants, with one case for every privilege the check covers.
 - The database role of every server role passes that check after all migrations and has no privileges beyond its grants.
 - Migrations leave PUBLIC without privileges on the schema, and fail when they cannot achieve that.

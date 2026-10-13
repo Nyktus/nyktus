@@ -428,18 +428,38 @@ func TestSecret_NeverFormatsItsValue(t *testing.T) {
 func TestParseRoles(t *testing.T) {
 	t.Parallel()
 
-	all, err := ParseRoles("")
-	if err != nil || !slices.Equal(all, Roles) {
-		t.Errorf("ParseRoles(\"\") = %v, %v; want all roles", all, err)
-	}
-
 	roles, err := ParseRoles(" console , console")
 	if err != nil || !slices.Equal(roles, []Role{RoleConsole}) {
 		t.Errorf("ParseRoles() = %v, %v; want deduplicated console role", roles, err)
 	}
 
+	roles, err = ParseRoles("dns,trigger")
+	if err != nil || !slices.Equal(roles, []Role{RoleDNS, RoleTrigger}) {
+		t.Errorf("ParseRoles() = %v, %v; want dns and trigger", roles, err)
+	}
+
 	if _, err := ParseRoles("console,unknown"); err == nil {
 		t.Error("ParseRoles() accepted an unknown role")
+	}
+}
+
+// A process never starts a role that nobody asked for, because some of them
+// listen on the internet.
+func TestParseRoles_RequiresAList(t *testing.T) {
+	t.Parallel()
+
+	for _, s := range []string{"", " ", ","} {
+		roles, err := ParseRoles(s)
+		if s == "," {
+			// An explicit list without names is no request for a role either.
+			if err == nil {
+				t.Errorf("ParseRoles(%q) = %v, want an error", s, roles)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), "console, trigger, dns") {
+			t.Errorf("ParseRoles(%q) = %v, %v; want an error that names the roles", s, roles, err)
+		}
 	}
 }
 

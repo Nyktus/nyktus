@@ -11,8 +11,10 @@ Nyktus stores all state in PostgreSQL 16 or later. Each server role connects wit
 | Console login (any name) | Login, member of `nyktus_console` | The console connects with it through `NYKTUS_CONSOLE_DATABASE_URL`. |
 | `nyktus_trigger` | Group, created by the setup script | Receives the privileges of the trigger role through migrations: it can call the one function that records a request, and read or write no table. |
 | Trigger login (any name) | Login, member of `nyktus_trigger` | The trigger connects with it through `NYKTUS_TRIGGER_DATABASE_URL`. |
+| `nyktus_dns` | Group, created by the setup script | Receives the privileges of the DNS role through migrations: it can call the one function that records a query, and read or write no table. |
+| DNS login (any name) | Login, member of `nyktus_dns` | The [DNS role](dns.md) connects with it through `NYKTUS_DNS_DATABASE_URL`. |
 
-The trigger is reached from the internet. Its role cannot read honeytokens: it hands one requested value at a time to a database function, which records the request and returns only the redirect target of the honeytoken. Whoever takes over the host of the trigger can test a URL they already know, but cannot list the decoys.
+The trigger and the DNS role are reached from the internet. Their roles cannot read honeytokens: each hands one requested value at a time to a database function of its own, which records the request or query and returns only what the answer and the log need. Whoever takes over the host of the trigger or of the DNS role can test a URL or name they already know, but cannot list the decoys. Each role can only call its own function, so a login of the trigger cannot record DNS queries, and the other way around.
 
 Migrations grant privileges to the group roles but never create roles, so the owner does not need `CREATEROLE`. A migration that needs a group role that does not exist stops with an error that names the role.
 
@@ -46,12 +48,15 @@ Creating a database owned by another role needs more than `CREATEROLE`: it requi
    ALTER SCHEMA public OWNER TO nyktus_owner;
    ```
 
-3. Create the login roles of the console and the trigger as members of their group roles:
+3. Create the login roles of the console, the trigger and the DNS role as members of their group roles:
 
    ```sql
    CREATE ROLE nyktus_console_login LOGIN PASSWORD '...' IN ROLE nyktus_console;
    CREATE ROLE nyktus_trigger_login LOGIN PASSWORD '...' IN ROLE nyktus_trigger;
+   CREATE ROLE nyktus_dns_login LOGIN PASSWORD '...' IN ROLE nyktus_dns;
    ```
+
+   Create only the logins of the roles you run.
 
    The login roles receive their privileges by inheriting them from the group roles. Do not create them with `NOINHERIT`.
 
@@ -85,8 +90,19 @@ Creating a database owned by another role needs more than `CREATEROLE`: it requi
 
    When the trigger runs on a host of its own, for example in a DMZ, allow the database connections from that host only for the trigger's login role, over TLS.
 
+7. Start the DNS role with its login role, if you use [DNS honeytokens](dns.md):
+
+   ```sh
+   NYKTUS_DNS_DATABASE_URL='postgres://nyktus_dns_login:...@db/nyktus' \
+   NYKTUS_DNS_ZONES='d.example.net' \
+   NYKTUS_DNS_NAMESERVERS='ns1.example.net' \
+     nyktus serve --roles=dns
+   ```
+
+   The same applies as for the trigger: from its host, allow database connections only for the DNS role's login, over TLS.
+
 ## Privilege check
 
 Outside development, the server refuses to start if a role's login can bypass the privilege separation: if it is a superuser, can bypass row-level security, can create roles or databases, can start replication, is a member of `pg_read_all_data`, `pg_write_all_data`, `pg_read_server_files`, `pg_write_server_files` or `pg_execute_server_program`, or owns the database or the schema. Use the login roles from the setup above, not the owner.
 
-The trigger additionally refuses to start unless its login can record requests and do nothing else: it must not access any table, execute another function, create objects in the schema, or be a member of a role other than `nyktus_trigger`, even without inheriting from it. This catches, for example, a `NYKTUS_TRIGGER_DATABASE_URL` that names the login of the console by mistake.
+The trigger and the DNS role additionally refuse to start unless their login can execute their recording function and do nothing else: it must not access any table, execute another function, create objects in the schema, or be a member of a role other than `nyktus_trigger` or `nyktus_dns`, even without inheriting from it. This catches, for example, a `NYKTUS_TRIGGER_DATABASE_URL` or `NYKTUS_DNS_DATABASE_URL` that names the login of the console by mistake.

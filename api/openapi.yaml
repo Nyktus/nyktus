@@ -1383,7 +1383,7 @@ paths:
           description: Lists only honeytokens of this type.
           schema:
             type: string
-            enum: [web_url, web_image]
+            enum: [web_url, web_image, dns]
         - name: enabled
           in: query
           description: Lists only enabled (`true`) or disabled (`false`) honeytokens.
@@ -1412,9 +1412,13 @@ paths:
       summary: Create a honeytoken
       description: |
         Creates a honeytoken with a new trigger value of 128 random bits. Place
-        its `trigger_url` where an attacker would find it. The trigger value
-        cannot be changed: to replace a URL that has been exposed, create a new
-        honeytoken and delete the old one.
+        its `trigger_url`, or for a `dns` one of its `trigger_names`, where an
+        attacker would find it. The trigger value cannot be changed: to replace
+        a URL or name that has been exposed, create a new honeytoken and delete
+        the old one.
+
+        A `dns` honeytoken needs the zones of the DNS role. Without them, the
+        request receives `422` with the code `dns_not_configured`.
 
         The audit log records the creation as `honeytoken.create`.
       tags: [honeytokens]
@@ -1445,6 +1449,12 @@ paths:
           $ref: "#/components/responses/BodyTooLarge"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: The request creates a `dns` honeytoken, but the console knows no zone of the DNS role (`dns_not_configured`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
@@ -2072,18 +2082,19 @@ components:
     Honeytoken:
       type: object
       additionalProperties: false
-      required: [id, type, name, notes, enabled, redirect_url, techniques, trigger_value, trigger_url, created_at, updated_at]
+      required: [id, type, name, notes, enabled, redirect_url, techniques, trigger_value, trigger_url, trigger_names, created_at, updated_at]
       properties:
         id:
           type: string
           format: uuid
         type:
           type: string
-          enum: [web_url, web_image]
+          enum: [web_url, web_image, dns]
           description: |
             `web_url` is triggered when the URL is opened, for example through a link or a QR code, and
             redirects the browser. `web_image` is triggered when the URL is loaded as an image, for example
-            when a document or mail that embeds it is opened.
+            when a document or mail that embeds it is opened. `dns` is triggered when one of its names is
+            resolved, for example by a tool that connects to a host named in a configuration file.
         name:
           type: string
         notes:
@@ -2091,7 +2102,7 @@ components:
           description: Where and why the honeytoken was placed. Empty if there are none.
         enabled:
           type: boolean
-          description: Whether a request of the URL raises an event.
+          description: Whether a request of the URL or a query of a name raises an event.
         redirect_url:
           description: Where the URL of a `web_url` redirects, or null for the default target of the trigger.
           type: [string, "null"]
@@ -2105,13 +2116,22 @@ components:
         trigger_value:
           type: string
           pattern: "^[a-z2-7]{26}$"
-          description: The value that triggers the honeytoken. It is part of `trigger_url` and cannot be changed.
+          description: The value that triggers the honeytoken. It is part of `trigger_url` or `trigger_names` and cannot be changed.
         trigger_url:
-          type: string
+          type: [string, "null"]
           format: uri
           description: |
             The URL to place: the public address of the trigger followed by
-            `/` and the trigger value, and for a `web_image` by `.gif`.
+            `/` and the trigger value, and for a `web_image` by `.gif`. Null
+            for a `dns` honeytoken, which has names instead.
+        trigger_names:
+          type: array
+          description: |
+            The host names of a `dns` honeytoken, one per zone of the DNS role:
+            the trigger value followed by `.` and the zone. Place any of them.
+            Empty for every other type.
+          items:
+            type: string
         created_at:
           type: string
           format: date-time
@@ -2139,7 +2159,7 @@ components:
       properties:
         type:
           type: string
-          enum: [web_url, web_image]
+          enum: [web_url, web_image, dns]
         name:
           type: string
           minLength: 1
