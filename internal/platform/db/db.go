@@ -143,3 +143,78 @@ WHERE r.rolname = current_user
 	}
 	return fmt.Errorf("%w: role %q %s", ErrExcessivePrivileges, name, reason)
 }
+
+// ErrRolePrivileges is returned when a role that may only execute one function
+// holds other privileges, or lacks that one.
+var ErrRolePrivileges = errors.New("database role holds other privileges than its group role")
+
+// CheckFunctionOnly returns ErrRolePrivileges unless the connected role can
+// execute function and do nothing else in schema public: it must not access any
+// table, create objects in the schema, execute another function of the schema,
+// or be a member of a role other than groupRole. function is a signature such as
+// "public.record(text, inet)".
+//
+// The roles that answer requests from the internet hold nothing but their
+// recording function. A login with the privileges of the console, set up by
+// mistake, would put the inventory within reach of whoever takes over their
+// host; a login without the function would answer every request and record
+// none.
+//
+// Membership counts even without inheritance, because a member can switch to
+// the role with SET ROLE.
+func CheckFunctionOnly(ctx context.Context, q Querier, groupRole, function string) error {
+	// Without USAGE on the schema, the signature cannot be resolved, so a role
+	// that is no member of groupRole would fail with a permission error instead.
+	var canUse bool
+	if err := q.QueryRow(ctx, `SELECT has_schema_privilege('public', 'USAGE')`).Scan(&canUse); err != nil {
+		return fmt.Errorf("check privileges of %s: %w", groupRole, err)
+	}
+	if !canUse {
+		return fmt.Errorf("%w: it cannot execute %s; connect as a member of %s", ErrRolePrivileges, function, groupRole)
+	}
+
+	var (
+		canExecute, canCreate bool
+		tables, functions     []string
+		roles                 []string
+	)
+	err := q.QueryRow(ctx, `
+SELECT has_function_privilege($1::regprocedure, 'EXECUTE'),
+	has_schema_privilege('public', 'CREATE'),
+	ARRAY(
+		SELECT c.relname::text FROM pg_catalog.pg_class AS c
+		WHERE c.relnamespace = 'public'::regnamespace
+			AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+			AND (has_table_privilege(c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+				OR has_any_column_privilege(c.oid, 'SELECT, INSERT, UPDATE, REFERENCES'))
+		ORDER BY 1
+	),
+	ARRAY(
+		SELECT p.oid::regprocedure::text FROM pg_catalog.pg_proc AS p
+		WHERE p.pronamespace = 'public'::regnamespace
+			AND p.oid <> $1::regprocedure
+			AND has_function_privilege(p.oid, 'EXECUTE')
+		ORDER BY 1
+	),
+	ARRAY(
+		SELECT r.rolname::text FROM pg_catalog.pg_roles AS r
+		WHERE pg_has_role(current_user, r.oid, 'MEMBER')
+			AND r.rolname NOT IN (current_user, $2)
+		ORDER BY 1
+	)`, function, groupRole).Scan(&canExecute, &canCreate, &tables, &functions, &roles)
+	switch {
+	case err != nil:
+		return fmt.Errorf("check privileges of %s: %w", groupRole, err)
+	case !canExecute:
+		return fmt.Errorf("%w: it cannot execute %s; connect as a member of %s", ErrRolePrivileges, function, groupRole)
+	case len(roles) > 0:
+		return fmt.Errorf("%w: it is a member of %v; connect with a login that is a member of %s only", ErrRolePrivileges, roles, groupRole)
+	case len(tables) > 0:
+		return fmt.Errorf("%w: it can access the tables %v", ErrRolePrivileges, tables)
+	case len(functions) > 0:
+		return fmt.Errorf("%w: it can execute %v", ErrRolePrivileges, functions)
+	case canCreate:
+		return fmt.Errorf("%w: it can create objects in schema public", ErrRolePrivileges)
+	}
+	return nil
+}

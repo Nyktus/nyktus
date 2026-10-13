@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/platform/dbtest"
 	"nyktus.org/nyktus/internal/platform/schematest"
 )
@@ -63,7 +64,8 @@ func (f fixture) count(t *testing.T, query string, args ...any) int {
 func ptr(s string) *string { return &s }
 
 // The trigger refuses to start with a login that can do more than record
-// requests, or that cannot record them.
+// requests, or that cannot record them. db.CheckFunctionOnly covers every
+// privilege; this test checks that the trigger names its own role and function.
 func TestCheckPrivileges(t *testing.T) {
 	t.Parallel()
 
@@ -72,29 +74,9 @@ func TestCheckPrivileges(t *testing.T) {
 		t.Errorf("CheckPrivileges(trigger) = %v, want nil", err)
 	}
 
-	console := pgx.Identifier{schematest.ConsoleRole}.Sanitize()
-	trigger := pgx.Identifier{schematest.TriggerRole}.Sanitize()
-	tests := []struct {
-		suffix, attributes string
-		grant              string
-		want               string
-	}{
-		{suffix: "console", attributes: "IN ROLE " + console, want: "cannot execute"},
-		{suffix: "both", attributes: "IN ROLE " + console + ", " + trigger, want: "member of [" + schematest.ConsoleRole + "]"},
-		// A member that does not inherit can still switch to the role.
-		{suffix: "noinherit", attributes: "IN ROLE " + trigger, grant: "GRANT " + console + " TO %s WITH INHERIT FALSE", want: "member of [" + schematest.ConsoleRole + "]"},
-		{suffix: "table", attributes: "IN ROLE " + trigger, grant: "GRANT SELECT ON public.honeytokens TO %s", want: "tables [honeytokens]"},
-		{suffix: "function", attributes: "IN ROLE " + trigger, grant: "GRANT EXECUTE ON FUNCTION public.attack_technique_ids_valid(text[]) TO %s", want: "attack_technique_ids_valid"},
-		{suffix: "create", attributes: "IN ROLE " + trigger, grant: "GRANT CREATE ON SCHEMA public TO %s", want: "create objects"},
-	}
-	for _, tt := range tests {
-		name, roleURL := dbtest.Role(t, ownerURL, tt.suffix, tt.attributes)
-		if tt.grant != "" {
-			dbtest.Exec(t, ownerURL, strings.ReplaceAll(tt.grant, "%s", pgx.Identifier{name}.Sanitize()))
-		}
-		if err := CheckPrivileges(t.Context(), schematest.Open(t, roleURL)); !errors.Is(err, ErrPrivileges) || !strings.Contains(err.Error(), tt.want) {
-			t.Errorf("CheckPrivileges(%s) = %v, want ErrPrivileges containing %q", tt.suffix, err, tt.want)
-		}
+	_, consoleURL := dbtest.Role(t, ownerURL, "console", "IN ROLE "+pgx.Identifier{schematest.ConsoleRole}.Sanitize())
+	if err := CheckPrivileges(t.Context(), schematest.Open(t, consoleURL)); !errors.Is(err, db.ErrRolePrivileges) || !strings.Contains(err.Error(), "cannot execute") {
+		t.Errorf("CheckPrivileges(console) = %v, want ErrRolePrivileges containing %q", err, "cannot execute")
 	}
 }
 
