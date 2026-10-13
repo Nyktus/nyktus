@@ -159,7 +159,12 @@ func (w *Worker) attempt(ctx context.Context, claimed chan<- struct{}) outcome {
 			close(claimed)
 		})
 	})
-	if o.err != nil {
+	switch {
+	case o.err == nil:
+	case ctx.Err() != nil && !o.claimed:
+		// The search ended with the worker, which is no failure.
+		o.err = nil
+	default:
 		w.logger.ErrorContext(ctx, "worker: job failed", slog.Bool("claimed", o.claimed), slog.Any("error", o.err))
 	}
 	return o

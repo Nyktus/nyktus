@@ -26,15 +26,18 @@ import (
 // fixture holds a migrated database, a pool of the owner to set up and inspect
 // rows, and a store that connects with the worker's database role.
 type fixture struct {
-	owner     *pgxpool.Pool
-	store     *Store
-	workerURL string
+	owner               *pgxpool.Pool
+	store               *Store
+	ownerURL, workerURL string
 }
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	ownerURL, workerURL := schematest.Worker(t)
-	return fixture{owner: schematest.Open(t, ownerURL), store: NewStore(schematest.Open(t, workerURL)), workerURL: workerURL}
+	return fixture{
+		owner: schematest.Open(t, ownerURL), store: NewStore(schematest.Open(t, workerURL)),
+		ownerURL: ownerURL, workerURL: workerURL,
+	}
 }
 
 // honeytoken creates a honeytoken and returns its identifier and trigger value.
@@ -154,6 +157,13 @@ func TestCheckPrivileges(t *testing.T) {
 	dbtest.Exec(t, ownerURL, "GRANT SELECT ON honeytokens TO "+pgx.Identifier{name}.Sanitize())
 	if err := CheckPrivileges(t.Context(), schematest.Open(t, widerURL)); !errors.Is(err, db.ErrRolePrivileges) || !strings.Contains(err.Error(), "tables [honeytokens]") {
 		t.Errorf("CheckPrivileges(wider) = %v, want ErrRolePrivileges naming the honeytokens", err)
+	}
+	// A login that may change what an event recorded, through a grant of its
+	// own on a table of the worker.
+	name, ownURL := dbtest.Role(t, ownerURL, "own", "IN ROLE "+pgx.Identifier{schematest.WorkerRole}.Sanitize())
+	dbtest.Exec(t, ownerURL, "GRANT UPDATE ON events TO "+pgx.Identifier{name}.Sanitize())
+	if err := CheckPrivileges(t.Context(), schematest.Open(t, ownURL)); !errors.Is(err, db.ErrRolePrivileges) || !strings.Contains(err.Error(), "lacks: [events: UPDATE]") {
+		t.Errorf("CheckPrivileges(own) = %v, want ErrRolePrivileges naming UPDATE on events", err)
 	}
 	_, triggerURL := dbtest.Role(t, ownerURL, "trigger", "IN ROLE "+pgx.Identifier{schematest.TriggerRole}.Sanitize())
 	if err := CheckPrivileges(t.Context(), schematest.Open(t, triggerURL)); !errors.Is(err, db.ErrRolePrivileges) || !strings.Contains(err.Error(), "cannot execute") {
@@ -358,6 +368,8 @@ func TestStore_EventIsAssignedOnlyOnce(t *testing.T) {
 func TestStore_JobThatRunsOutOfTimeIsPostponed(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
+	// Only the deadline ends the wait for the lock.
+	f.store.lockTimeout = time.Hour
 
 	id, _ := f.honeytoken(t, "web_url", nil)
 	f.event(t, id, "web_url", nil, time.Now())
@@ -407,6 +419,129 @@ func TestStore_TakenJobOutlivesTheStop(t *testing.T) {
 	}
 	if _, found, err := f.store.ProcessNext(ctx, func() {}); found || err == nil {
 		t.Errorf("ProcessNext() on a canceled context = found %v, %v; want a failed search", found, err)
+	}
+}
+
+// A job whose incident stays locked fails on the lock timeout and is postponed
+// in its own transaction, while it is still held, so that no other worker
+// takes it again before.
+func TestStore_JobWaitingForALockIsPostponed(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.store.lockTimeout = 100 * time.Millisecond
+
+	id, _ := f.honeytoken(t, "web_url", nil)
+	f.event(t, id, "web_url", nil, time.Now())
+	first := f.process(t)
+	eventID := f.event(t, id, "web_url", nil, time.Now())
+
+	tx, err := f.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(t.Context()) }()
+	if _, err := tx.Exec(t.Context(), "SELECT FROM incidents WHERE id = $1 FOR UPDATE", first.IncidentID); err != nil {
+		t.Fatal(err)
+	}
+
+	_, found, err := f.store.ProcessNext(t.Context(), func() {})
+	var jobErr *JobError
+	if !found || !errors.As(err, &jobErr) || jobErr.EventID != eventID || jobErr.Attempts != 1 || !strings.Contains(err.Error(), "lock timeout") {
+		t.Fatalf("ProcessNext() = found %v, %v; want a JobError of the event on the lock timeout", found, err)
+	}
+	if n := f.count(t, "SELECT count(*) FROM event_jobs WHERE event_id = $1 AND attempts = 1 AND not_before > clock_timestamp()", eventID); n != 1 {
+		t.Errorf("%d postponed jobs of the event, want 1", n)
+	}
+}
+
+// A failed job is postponed before it is released, so that no other worker
+// takes it again in between. The other transaction stands for such a worker:
+// it waits for the job and must find it postponed once it gets it.
+func TestStore_FailedJobIsPostponedBeforeItIsReleased(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	id, _ := f.honeytoken(t, "web_url", nil)
+	f.event(t, id, "web_url", nil, time.Now())
+	first := f.process(t)
+	eventID := f.event(t, id, "web_url", nil, time.Now())
+	// The second event fails once it has the lock of the incident.
+	f.exec(t, "ALTER TABLE incidents ADD CONSTRAINT incidents_reject CHECK (event_count < 2) NOT VALID")
+
+	// Holding the incident keeps the worker on the job until the other
+	// transaction waits for the job as well.
+	holder, err := f.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Rollback(t.Context()) }()
+	if _, err := holder.Exec(t.Context(), "SELECT FROM incidents WHERE id = $1 FOR UPDATE", first.IncidentID); err != nil {
+		t.Fatal(err)
+	}
+	processed := make(chan error, 1)
+	go func() {
+		_, _, err := f.store.ProcessNext(t.Context(), func() {})
+		processed <- err
+	}()
+	waitForLockWaiter(t, f.owner, processed)
+
+	other, err := pgx.Connect(t.Context(), f.ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = other.Close(context.WithoutCancel(t.Context())) }()
+	attempts := make(chan int, 1)
+	taken := make(chan error, 1)
+	go func() {
+		var n int
+		err := other.QueryRow(t.Context(), "SELECT attempts FROM event_jobs WHERE event_id = $1 FOR UPDATE", eventID).Scan(&n)
+		attempts <- n
+		taken <- err
+	}()
+	waitForLockWaiters(t, f.owner, 2, taken)
+	if err := holder.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	var jobErr *JobError
+	if err := <-processed; !errors.As(err, &jobErr) || jobErr.Attempts != 1 {
+		t.Errorf("ProcessNext() error = %v, want a JobError after one attempt", err)
+	}
+	if err := <-taken; err != nil {
+		t.Fatal(err)
+	}
+	if n := <-attempts; n != 1 {
+		t.Errorf("the other transaction got the job with %d attempts, want it postponed first", n)
+	}
+}
+
+// A failed attempt whose transaction broke off does not wait for a job that
+// another worker has taken meanwhile: that worker processes it.
+func TestStore_PostponeAfterBreakSkipsAJobThatAnotherWorkerHolds(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	id, _ := f.honeytoken(t, "web_url", nil)
+	eventID := f.event(t, id, "web_url", nil, time.Now())
+	tx, err := f.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(t.Context()) }()
+	if _, err := tx.Exec(t.Context(), "SELECT FROM event_jobs WHERE event_id = $1 FOR UPDATE", eventID); err != nil {
+		t.Fatal(err)
+	}
+
+	err = f.store.postponeAfterBreak(t.Context(), eventID, errors.New("deadline exceeded"))
+	var jobErr *JobError
+	if errors.As(err, &jobErr) || err == nil || !strings.Contains(err.Error(), "another worker took the job") {
+		t.Errorf("postponeAfterBreak() = %v, want an error that another worker took the job", err)
+	}
+	if err := tx.Rollback(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(t, "SELECT count(*) FROM event_jobs WHERE event_id = $1 AND attempts = 0", eventID); n != 1 {
+		t.Errorf("%d unchanged jobs, want 1", n)
 	}
 }
 
@@ -466,16 +601,23 @@ func TestStore_SkipsJobsThatAnotherWorkerHolds(t *testing.T) {
 // returns before the waiter has reached the lock.
 func waitForLockWaiter(t *testing.T, owner *pgxpool.Pool, done <-chan error) {
 	t.Helper()
+	waitForLockWaiters(t, owner, 1, done)
+}
+
+// waitForLockWaiters returns once n sessions of the test database wait for a
+// lock.
+func waitForLockWaiters(t *testing.T, owner *pgxpool.Pool, n int, done <-chan error) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	for {
-		var waiting bool
+		var waiting int
 		err := owner.QueryRow(ctx, `
-SELECT EXISTS (SELECT FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock')`).Scan(&waiting)
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&waiting)
 		if err != nil {
 			t.Fatalf("query waiting sessions: %v", err)
 		}
-		if waiting {
+		if waiting >= n {
 			return
 		}
 		select {
@@ -632,6 +774,32 @@ func TestStore_ConcurrentWorkersAssignEveryEventOnce(t *testing.T) {
 	}
 	if n := f.count(t, "SELECT count(*) FROM alerts"); n != len(resources) {
 		t.Errorf("%d alerts, want one per incident", n)
+	}
+}
+
+// The events of an incident are found through the index.
+func TestStore_EventsOfAnIncidentUseTheIndex(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	conn, err := f.owner.Acquire(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(t.Context(), "SET enable_seqscan = off"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := conn.Query(t.Context(), "EXPLAIN SELECT id FROM events WHERE incident_id = '00000000-0000-4000-8000-000000000000'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(plan, "\n"), "Index Cond: (incident_id = '00000000-0000-4000-8000-000000000000'::uuid)") {
+		t.Errorf("plan does not seek into the index by incident:\n%s", strings.Join(plan, "\n"))
 	}
 }
 

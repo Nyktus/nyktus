@@ -240,6 +240,10 @@ func TestCheckScope(t *testing.T) {
 		// execute them.
 		{suffix: "function", attributes: "IN ROLE " + groupIdent, scope: tablesOnly, want: "execute [valid(text)]"},
 		{suffix: "create", attributes: "IN ROLE " + groupIdent, scope: withFunction, grant: "GRANT CREATE ON SCHEMA public TO %s", want: "create objects"},
+		// The login may not hold more on the tables of the scope than its
+		// group role.
+		{suffix: "ownbeyond", attributes: "IN ROLE " + groupIdent, scope: withFunction, grant: "GRANT TRUNCATE ON public.jobs TO %s", want: "privileges that " + group + " lacks: [jobs: TRUNCATE]"},
+		{suffix: "owncolumn", attributes: "IN ROLE " + groupIdent, scope: withFunction, grant: "GRANT UPDATE (id) ON public.jobs TO %s", want: "lacks: [jobs.id: UPDATE]"},
 	}
 	for _, tt := range tests {
 		name, roleURL := dbtest.Role(t, dbURL, tt.suffix, tt.attributes)

@@ -196,7 +196,7 @@ func TestRun_NeverExceedsItsConcurrency(t *testing.T) {
 	t.Parallel()
 
 	synctest.Test(t, func(t *testing.T) {
-		q, cancel, done := runInBubble(t, 2)
+		q, cancel, done, _ := runInBubble(t, 2)
 
 		first := <-q.calls
 		first.claimed()
@@ -299,12 +299,17 @@ func TestRun_LogsAJobThatFailedAfterItsClaim(t *testing.T) {
 }
 
 // runInBubble runs a worker on a fake queue inside the current synctest
-// bubble. stop cancels it; done is closed when Run has returned.
-func runInBubble(t *testing.T, concurrency int) (q *fakeQueue, stop context.CancelFunc, done <-chan struct{}) {
+// bubble. stop cancels it; done is closed when Run has returned; logged
+// returns its log.
+func runInBubble(t *testing.T, concurrency int) (q *fakeQueue, stop context.CancelFunc, done <-chan struct{}, logged func() string) {
 	t.Helper()
 	q = newFakeQueue()
+	var (
+		mu  sync.Mutex
+		buf bytes.Buffer
+	)
 	w := New(Options{
-		Logger: slog.New(slog.DiscardHandler), Queue: q, Concurrency: concurrency,
+		Logger: slog.New(slog.NewJSONHandler(&lockedWriter{mu: &mu, w: &buf}, nil)), Queue: q, Concurrency: concurrency,
 		PollInterval: time.Second, MaxBackoff: time.Second, JobTimeout: 10 * time.Second,
 	})
 	ctx, cancel := context.WithCancel(t.Context())
@@ -313,7 +318,11 @@ func runInBubble(t *testing.T, concurrency int) (q *fakeQueue, stop context.Canc
 		defer close(ch)
 		w.Run(ctx)
 	}()
-	return q, cancel, ch
+	return q, cancel, ch, func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return buf.String()
+	}
 }
 
 // A stopped worker takes no new job and returns only after the job in
@@ -322,7 +331,7 @@ func TestRun_StopWaitsForTheJobInProgress(t *testing.T) {
 	t.Parallel()
 
 	synctest.Test(t, func(t *testing.T) {
-		q, stop, done := runInBubble(t, 2)
+		q, stop, done, _ := runInBubble(t, 2)
 		c := <-q.calls
 		c.claimed()
 		// The worker looks for the next job at once; that attempt finds none.
@@ -350,7 +359,7 @@ func TestRun_StopEndsTheSearchForAJob(t *testing.T) {
 	t.Parallel()
 
 	synctest.Test(t, func(t *testing.T) {
-		q, stop, done := runInBubble(t, 1)
+		q, stop, done, logged := runInBubble(t, 1)
 		c := <-q.calls
 		stop()
 		synctest.Wait()
@@ -360,6 +369,10 @@ func TestRun_StopEndsTheSearchForAJob(t *testing.T) {
 		}
 		c.reply <- result{err: c.ctx.Err()}
 		<-done
+		// A stop is no failure.
+		if strings.Contains(logged(), "worker: job failed") {
+			t.Errorf("log = %s, want no failure", logged())
+		}
 	})
 }
 

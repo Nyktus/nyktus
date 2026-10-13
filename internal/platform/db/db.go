@@ -166,7 +166,9 @@ type Scope struct {
 // CheckScope returns ErrRolePrivileges unless the connected role stays within
 // s: it must be able to execute the functions of s, must not access a table
 // other than those of s, execute another function of the schema, create
-// objects in it, or be a member of a role other than the group role.
+// objects in it, or be a member of a role other than the group role. Neither
+// may it hold a privilege that the group role lacks, such as one granted to
+// the login directly; the migrations verify the privileges of the group role.
 //
 // A login with the privileges of another server role, set up by mistake,
 // would put data within reach of whoever takes over the host of this role,
@@ -192,7 +194,7 @@ func CheckScope(ctx context.Context, q Querier, s Scope) error {
 	var (
 		canCreate                  bool
 		missing, tables, functions []string
-		roles                      []string
+		roles, beyond              []string
 	)
 	tableNames, signatures := s.Tables, s.Functions
 	if tableNames == nil {
@@ -229,7 +231,23 @@ SELECT has_schema_privilege('public', 'CREATE'),
 		WHERE pg_has_role(current_user, r.oid, 'MEMBER')
 			AND r.rolname NOT IN (current_user, $3)
 		ORDER BY 1
-	)`, tableNames, signatures, s.GroupRole).Scan(&canCreate, &missing, &tables, &functions, &roles)
+	),
+	ARRAY(
+		SELECT c.relname || ': ' || p.privilege
+		FROM pg_catalog.pg_class AS c
+		CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS p (privilege)
+		WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+			AND has_table_privilege(c.oid, p.privilege) AND NOT has_table_privilege($3, c.oid, p.privilege)
+		UNION ALL
+		SELECT c.relname || '.' || a.attname || ': ' || p.privilege
+		FROM pg_catalog.pg_class AS c
+		JOIN pg_catalog.pg_attribute AS a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+		CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) AS p (privilege)
+		WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+			AND has_column_privilege(c.oid, a.attnum, p.privilege) AND NOT has_column_privilege($3, c.oid, a.attnum, p.privilege)
+			AND NOT has_table_privilege(c.oid, p.privilege)
+		ORDER BY 1
+	)`, tableNames, signatures, s.GroupRole).Scan(&canCreate, &missing, &tables, &functions, &roles, &beyond)
 	switch {
 	case err != nil:
 		return fmt.Errorf("check privileges of %s: %w", s.GroupRole, err)
@@ -239,6 +257,8 @@ SELECT has_schema_privilege('public', 'CREATE'),
 		return fmt.Errorf("%w: it is a member of %v; connect with a login that is a member of %s only", ErrRolePrivileges, roles, s.GroupRole)
 	case len(tables) > 0:
 		return fmt.Errorf("%w: it can access the tables %v", ErrRolePrivileges, tables)
+	case len(beyond) > 0:
+		return fmt.Errorf("%w: it holds privileges that %s lacks: %v", ErrRolePrivileges, s.GroupRole, beyond)
 	case len(functions) > 0:
 		return fmt.Errorf("%w: it can execute %v", ErrRolePrivileges, functions)
 	case canCreate:

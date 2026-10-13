@@ -1361,6 +1361,9 @@ CREATE TRIGGER incidents_keep_status_forward
 -- other. The column is empty until the worker processed the event.
 ALTER TABLE public.events ADD COLUMN incident_id uuid CONSTRAINT events_incident_id_fkey REFERENCES public.incidents (id);
 
+-- The events of an incident are looked up by it.
+CREATE INDEX events_incident_id_idx ON public.events (incident_id);
+
 -- The single alert of an incident, written in the transaction that opens the
 -- incident. It keeps the severity and the techniques that the incident had
 -- when it opened, because those are what it reports.
