@@ -128,6 +128,7 @@ func TestApply(t *testing.T) {
 		{"same override", Change{SetSeverityOverride: true, SeverityOverride: severity(SeverityHigh)}, nil, nil},
 		{"removed override", Change{SetSeverityOverride: true}, []string{FieldSeverityOverride}, nil},
 		{"same techniques", Change{SetTechniquesOverride: true, TechniquesOverride: []string{"T1078"}}, nil, nil},
+		{"other techniques", Change{SetTechniquesOverride: true, TechniquesOverride: []string{"T1003"}}, []string{FieldTechniquesOverride}, nil},
 		{"no techniques", Change{SetTechniquesOverride: true, TechniquesOverride: []string{}}, []string{FieldTechniquesOverride}, nil},
 		{"removed techniques", Change{SetTechniquesOverride: true}, []string{FieldTechniquesOverride}, nil},
 	} {
@@ -138,8 +139,15 @@ func TestApply(t *testing.T) {
 		}
 	}
 
+	// The same techniques in another order change nothing.
+	i := Incident{TechniquesOverride: []string{"T1078", "T1003"}}
+	if changed, _ := apply(&i, Change{SetTechniquesOverride: true, TechniquesOverride: []string{"T1003", "T1078"}}); changed != nil ||
+		!slices.Equal(i.TechniquesOverride, []string{"T1078", "T1003"}) {
+		t.Errorf("reordered techniques = %v, %v; want no change", changed, i.TechniquesOverride)
+	}
+
 	// Removing the override of the techniques differs from setting none.
-	i := Incident{TechniquesOverride: []string{}}
+	i = Incident{TechniquesOverride: []string{}}
 	if changed, _ := apply(&i, Change{SetTechniquesOverride: true}); !slices.Equal(changed, []string{FieldTechniquesOverride}) || i.TechniquesOverride != nil {
 		t.Errorf("removing an empty override = %v, %v; want it removed", changed, i.TechniquesOverride)
 	}

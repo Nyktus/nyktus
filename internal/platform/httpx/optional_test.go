@@ -70,6 +70,11 @@ func TestNullable_DistinguishesAbsentNullAndValue(t *testing.T) {
 		req.Target.Value != "" || !req.Tags.Set || req.Tags.Null || req.Tags.Value == nil {
 		t.Errorf(`decode({target: "", tags: []}) = %+v, %d; want both set to empty values`, req, status)
 	}
+	// The last of repeated members counts.
+	if req, status := decode(`{"target": null, "target": "a", "tags": ["x"], "tags": null}`); status != http.StatusOK ||
+		req.Target.Null || req.Target.Value != "a" || !req.Tags.Null || req.Tags.Value != nil {
+		t.Errorf("decode(repeated members) = %+v, %d; want the last of each", req, status)
+	}
 	if _, status := decode(`{"tags": "a"}`); status != http.StatusBadRequest {
 		t.Errorf("decode({tags: a}) status = %d, want 400", status)
 	}

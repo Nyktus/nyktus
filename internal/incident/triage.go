@@ -288,7 +288,9 @@ func Triage(ctx context.Context, d DB, actor audit.Actor, id string, c Change) (
 	}
 	var updated Incident
 	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
-		current, err := scanIncident(tx.QueryRow(ctx, `SELECT `+incidentColumns+` FROM public.incidents WHERE id = $1 FOR UPDATE`, id))
+		// NO KEY: the triage never changes the identifier, so the checks of
+		// the foreign keys that refer to it need not wait for it.
+		current, err := scanIncident(tx.QueryRow(ctx, `SELECT `+incidentColumns+` FROM public.incidents WHERE id = $1 FOR NO KEY UPDATE`, id))
 		if notFound(err) {
 			return ErrNotFound
 		}
@@ -348,10 +350,11 @@ func apply(i *Incident, c Change) ([]string, error) {
 		}
 		i.SeverityOverride = c.SeverityOverride
 	}
-	if c.SetTechniquesOverride {
-		if (c.TechniquesOverride == nil) != (i.TechniquesOverride == nil) || !slices.Equal(c.TechniquesOverride, i.TechniquesOverride) {
-			changed = append(changed, FieldTechniquesOverride)
-		}
+	// Techniques are a set: the same techniques in another order change
+	// nothing and keep their order.
+	if c.SetTechniquesOverride && ((c.TechniquesOverride == nil) != (i.TechniquesOverride == nil) ||
+		!slices.Equal(slices.Sorted(slices.Values(c.TechniquesOverride)), slices.Sorted(slices.Values(i.TechniquesOverride)))) {
+		changed = append(changed, FieldTechniquesOverride)
 		i.TechniquesOverride = slices.Clone(c.TechniquesOverride)
 	}
 	return changed, nil

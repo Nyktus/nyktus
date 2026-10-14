@@ -47,8 +47,11 @@ type Nullable[T any] struct {
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
+//
+// A member that appears more than once counts with its last value, as for
+// every other member, so every call starts afresh.
 func (n *Nullable[T]) UnmarshalJSON(b []byte) error {
-	n.Set = true
+	*n = Nullable[T]{Set: true}
 	if string(b) == "null" {
 		n.Null = true
 		return nil
