@@ -93,6 +93,13 @@ const (
 	ActionHoneytokenUpdate Action = "honeytoken.update"
 	// ActionHoneytokenDelete records the deletion of a honeytoken.
 	ActionHoneytokenDelete Action = "honeytoken.delete"
+	// ActionIncidentUpdate records the triage of an incident, with the names of
+	// the changed fields.
+	ActionIncidentUpdate Action = "incident.update"
+	// ActionEventsRead records a read of events, which contain personal data
+	// such as the addresses of clients. A request denied for lacking the
+	// permission events:read has the same action.
+	ActionEventsRead Action = "events.read"
 )
 
 // Outcome is the result of an action.

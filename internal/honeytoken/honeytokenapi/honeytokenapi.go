@@ -6,7 +6,6 @@
 package honeytokenapi
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -203,28 +202,13 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, h.response(t))
 }
 
-// redirectURL is the member redirect_url of a change, which null removes.
-type redirectURL struct {
-	set, null bool
-	value     string
-}
-
-func (u *redirectURL) UnmarshalJSON(b []byte) error {
-	u.set = true
-	if string(b) == "null" {
-		u.null = true
-		return nil
-	}
-	return json.Unmarshal(b, &u.value)
-}
-
 // updateRequest lists every field that a change may contain. The type and the
 // trigger value are not among them: both are placed and cannot change.
 type updateRequest struct {
 	Name        httpx.Optional[string]   `json:"name"`
 	Notes       httpx.Optional[string]   `json:"notes"`
 	Enabled     httpx.Optional[bool]     `json:"enabled"`
-	RedirectURL redirectURL              `json:"redirect_url"`
+	RedirectURL httpx.Nullable[string]   `json:"redirect_url"`
 	Techniques  httpx.Optional[[]string] `json:"techniques"`
 }
 
@@ -246,14 +230,14 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		SetTechniques: req.Techniques.Set,
 	}
 	switch {
-	case req.RedirectURL.null:
+	case req.RedirectURL.Null:
 		// The change removes the redirect with an empty string.
 		c.RedirectURL = new(string)
-	case req.RedirectURL.set && req.RedirectURL.value == "":
+	case req.RedirectURL.Set && req.RedirectURL.Value == "":
 		invalid(w, r, redirectURLRule+"; null removes it")
 		return
-	case req.RedirectURL.set:
-		c.RedirectURL = &req.RedirectURL.value
+	case req.RedirectURL.Set:
+		c.RedirectURL = &req.RedirectURL.Value
 	}
 	if c.IsEmpty() {
 		invalid(w, r, "request must change name, notes, enabled, redirect_url or techniques")

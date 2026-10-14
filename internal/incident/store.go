@@ -301,7 +301,7 @@ func (s *Store) open(ctx context.Context, tx pgx.Tx, p *Processed, severity Seve
 		err := tx.QueryRow(ctx, `
 SELECT id, severity, techniques FROM public.incidents
 WHERE resource_type = $1 AND resource_id = $2 AND status <> 'closed'
-FOR UPDATE`, p.ResourceType, p.ResourceID).Scan(&p.IncidentID, &current, &currentTechniques)
+FOR NO KEY UPDATE`, p.ResourceType, p.ResourceID).Scan(&p.IncidentID, &current, &currentTechniques)
 		switch {
 		case err == nil:
 			p.Severity = higher(current, severity)

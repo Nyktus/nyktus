@@ -52,8 +52,10 @@ func deps(db Pinger) Deps {
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
 			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(),
 		},
-		OIDC:   OIDC{Authorize: http.NotFoundHandler(), Reauthenticate: http.NotFoundHandler(), Callback: http.NotFoundHandler()},
-		Origin: "https://nyktus.example.com",
+		Incidents: Incidents{List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Update: http.NotFoundHandler()},
+		Events:    Events{List: http.NotFoundHandler(), Get: http.NotFoundHandler()},
+		OIDC:      OIDC{Authorize: http.NotFoundHandler(), Reauthenticate: http.NotFoundHandler(), Callback: http.NotFoundHandler()},
+		Origin:    "https://nyktus.example.com",
 	}
 }
 

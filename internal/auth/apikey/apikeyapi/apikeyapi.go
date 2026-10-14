@@ -156,7 +156,7 @@ func writeInvalidName(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeInvalidScopes(w http.ResponseWriter, r *http.Request) {
-	httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "scopes: distinct permissions that API keys may carry; honeytokens:write requires honeytokens:read")
+	httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "scopes: distinct permissions that API keys may carry; a scope to write requires the scope to read the same resource")
 }
 
 func writeInvalidExpiry(w http.ResponseWriter, r *http.Request) {

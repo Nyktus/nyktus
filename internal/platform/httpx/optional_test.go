@@ -41,3 +41,41 @@ func TestOptional_DistinguishesAbsentFromPresentAndRejectsNull(t *testing.T) {
 		}
 	}
 }
+
+func TestNullable_DistinguishesAbsentNullAndValue(t *testing.T) {
+	t.Parallel()
+
+	type request struct {
+		Target Nullable[string]   `json:"target"`
+		Tags   Nullable[[]string] `json:"tags"`
+	}
+	decode := func(body string) (request, int) {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		var req request
+		if !DecodeJSON(w, r, &req, MaxBodyBytes) {
+			return req, w.Code
+		}
+		return req, http.StatusOK
+	}
+
+	if req, status := decode(`{}`); status != http.StatusOK || req.Target.Set || req.Tags.Set {
+		t.Errorf("decode({}) = %+v, %d; want nothing set", req, status)
+	}
+	if req, status := decode(`{"target": null}`); status != http.StatusOK || !req.Target.Set || !req.Target.Null {
+		t.Errorf("decode({target: null}) = %+v, %d; want set to null", req, status)
+	}
+	if req, status := decode(`{"target": "", "tags": []}`); status != http.StatusOK || !req.Target.Set || req.Target.Null ||
+		req.Target.Value != "" || !req.Tags.Set || req.Tags.Null || req.Tags.Value == nil {
+		t.Errorf(`decode({target: "", tags: []}) = %+v, %d; want both set to empty values`, req, status)
+	}
+	// The last of repeated members counts.
+	if req, status := decode(`{"target": null, "target": "a", "tags": ["x"], "tags": null}`); status != http.StatusOK ||
+		req.Target.Null || req.Target.Value != "a" || !req.Tags.Null || req.Tags.Value != nil {
+		t.Errorf("decode(repeated members) = %+v, %d; want the last of each", req, status)
+	}
+	if _, status := decode(`{"tags": "a"}`); status != http.StatusBadRequest {
+		t.Errorf("decode({tags: a}) status = %d, want 400", status)
+	}
+}

@@ -193,6 +193,41 @@ func TestHoneytokens_ReadByEveryRoleWrittenByAdminsAndUsers(t *testing.T) {
 	}
 }
 
+// Every role reads events and incidents; admins and users triage incidents,
+// viewers do not. A key with only the scope to read incidents cannot triage
+// them.
+func TestIncidents_ReadByEveryRoleTriagedByAdminsAndUsers(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		role               user.Role
+		read, write, event bool
+	}{
+		{user.RoleAdmin, true, true, true},
+		{user.RoleUser, true, true, true},
+		{user.RoleViewer, true, false, true},
+		{"", false, false, false},
+	} {
+		if got := Allowed(tt.role, "incidents:read"); got != tt.read {
+			t.Errorf("Allowed(%q, incidents:read) = %v, want %v", tt.role, got, tt.read)
+		}
+		if got := Allowed(tt.role, "incidents:write"); got != tt.write {
+			t.Errorf("Allowed(%q, incidents:write) = %v, want %v", tt.role, got, tt.write)
+		}
+		if got := Allowed(tt.role, "events:read"); got != tt.event {
+			t.Errorf("Allowed(%q, events:read) = %v, want %v", tt.role, got, tt.event)
+		}
+	}
+
+	key := Principal{Method: audit.AuthAPIKey, APIKeyID: "k1", Scopes: []httpx.Permission{"incidents:read"}}
+	if !key.Allowed("incidents:read") || key.Allowed("incidents:write") || key.Allowed("events:read") {
+		t.Error("a key with incidents:read must read incidents and nothing else")
+	}
+	if got, ok := KeyScopeRequires("incidents:write"); !ok || got != "incidents:read" {
+		t.Errorf("KeyScopeRequires(incidents:write) = %s, %v", got, ok)
+	}
+}
+
 // A scope can only require a scope that keys may carry, or no key could carry
 // the first one.
 func TestKeyScopeRequires_NamesScopesKeysMayCarry(t *testing.T) {

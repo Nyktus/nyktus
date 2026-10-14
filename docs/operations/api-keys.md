@@ -25,7 +25,16 @@ with `api-key.json`:
 ```
 
 - **The key is shown only in this response.** Nyktus keeps only a hash of its secret. A lost key cannot be recovered; revoke it and create a new one.
-- **Scopes.** Keys carry `audit:read`, for reading the [audit log](audit-log.md), and `honeytokens:read` and `honeytokens:write`, for reading and managing [honeytokens](honeytokens.md), for example to roll them out by script. `honeytokens:write` requires `honeytokens:read`, because a key that changes honeytokens receives them in the responses. Honeytokens are part of the inventory: give integrations that only read the audit log, such as a SIEM, keys without the honeytoken scopes. Keys never manage accounts or keys, not even by reading them.
+- **Scopes.** Keys carry these scopes:
+
+  | Scope | Allows |
+  |---|---|
+  | `audit:read` | reading the [audit log](audit-log.md) |
+  | `incidents:read`, `incidents:write` | reading and triaging [incidents](incidents.md), for example from a ticket system |
+  | `events:read` | reading [events](incidents.md#reading-incidents-and-events), which contain personal data such as client addresses |
+  | `honeytokens:read`, `honeytokens:write` | reading and managing [honeytokens](honeytokens.md), for example to roll them out by script |
+
+  A scope to write requires the scope to read the same resource, because a key that changes a resource receives it in the responses. Honeytokens are part of the inventory: give integrations that only follow incidents or read the audit log, such as a SIEM, keys without the honeytoken scopes, and integrations that do not need client addresses keys without `events:read`. Keys never manage accounts or keys, not even by reading them.
 - **Expiry.** Every key expires, at the latest three years after it is created. There is no default; choose a period that suits the integration and your rotation policy. Nyktus does not yet remind anyone before a key expires.
 - **Limit.** The team has at most 50 keys that have not expired. Creating a key deletes the expired keys.
 - **Password.** A wrong password counts as a failed sign-in, as with a change of password.

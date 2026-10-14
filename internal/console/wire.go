@@ -20,6 +20,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/honeytoken/honeytokenapi"
+	"nyktus.org/nyktus/internal/incident/incidentapi"
 	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/platform/secretbox"
 )
@@ -76,6 +77,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 	}
 	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
 	t := honeytokenapi.NewHandler(o.Logger, o.DB, o.TriggerURL, o.DNSZones)
+	i := incidentapi.NewHandler(o.Logger, o.DB)
 	return NewHandler(Deps{
 		Logger:         o.Logger,
 		DB:             o.DB,
@@ -116,6 +118,15 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Create: http.HandlerFunc(t.Create),
 			Update: http.HandlerFunc(t.Update),
 			Delete: http.HandlerFunc(t.Delete),
+		},
+		Incidents: Incidents{
+			List:   http.HandlerFunc(i.ListIncidents),
+			Get:    http.HandlerFunc(i.GetIncident),
+			Update: http.HandlerFunc(i.UpdateIncident),
+		},
+		Events: Events{
+			List: http.HandlerFunc(i.ListEvents),
+			Get:  http.HandlerFunc(i.GetEvent),
 		},
 		Origin:         o.ConsoleURL,
 		TrustedProxies: o.TrustedProxies,
