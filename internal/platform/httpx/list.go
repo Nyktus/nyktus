@@ -38,6 +38,12 @@ var (
 	uuidFormat  = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 )
 
+// ValidID reports whether s is an identifier in the form in which the API
+// returns them: a UUID in lower case with hyphens. Handlers check identifiers
+// in query parameters with it, so that a malformed one is rejected with 400
+// before it reaches a query.
+func ValidID(s string) bool { return uuidFormat.MatchString(s) }
+
 var errInvalidCursor = errors.New("cursor is invalid; use the next_cursor of a previous response")
 
 // DecodeListQuery reads the parameters limit and cursor of a list request, and
@@ -112,7 +118,7 @@ func decodeCursor(s string) (Cursor, error) {
 		return Cursor{}, errInvalidCursor
 	}
 	at, id, ok := strings.Cut(string(raw), "|")
-	if !ok || !uuidFormat.MatchString(id) {
+	if !ok || !ValidID(id) {
 		return Cursor{}, errInvalidCursor
 	}
 	t, err := time.Parse(time.RFC3339Nano, at)

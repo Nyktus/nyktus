@@ -1390,20 +1390,24 @@ BEGIN
 END
 $$;
 
+-- The trigger fires only for updates that name the status or its times, so
+-- that the updates of the worker, which name neither, do not run it.
 CREATE TRIGGER incidents_change_status
-	BEFORE UPDATE ON public.incidents
+	BEFORE UPDATE OF status, acknowledged_at, closed_at ON public.incidents
 	FOR EACH ROW EXECUTE FUNCTION public.incidents_change_status();
 
 -- Every event belongs to the incident that the worker assigned it to, and to no
 -- other. The column is empty until the worker processed the event.
 ALTER TABLE public.events ADD COLUMN incident_id uuid CONSTRAINT events_incident_id_fkey REFERENCES public.incidents (id);
 
--- The console lists events from the newest to the oldest, also those of one
--- incident, a page at a time. Events are written on the path of the trigger,
--- so they get no further index; the events of a honeytoken are those of its
--- incidents.
-CREATE INDEX events_occurred_at_id_idx ON public.events (occurred_at DESC, id DESC);
-CREATE INDEX events_incident_id_occurred_at_id_idx ON public.events (incident_id, occurred_at DESC, id DESC);
+-- The console lists events from the most recently recorded to the oldest, also
+-- those of one incident, a page at a time. The order follows the time of
+-- writing, not of arrival: a DNS query is recorded up to five minutes after it
+-- arrived, and ordered by arrival it could land behind pages that a client has
+-- already read. Events are written on the path of the trigger, so they get no
+-- further index; the events of a honeytoken are those of its incidents.
+CREATE INDEX events_recorded_at_id_idx ON public.events (recorded_at DESC, id DESC);
+CREATE INDEX events_incident_id_recorded_at_id_idx ON public.events (incident_id, recorded_at DESC, id DESC);
 
 -- The single alert of an incident, written in the transaction that opens the
 -- incident. It keeps the severity and the techniques that the incident had

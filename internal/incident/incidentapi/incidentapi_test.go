@@ -324,6 +324,11 @@ func TestListEvents_PagesFiltersAndRecordsTheRead(t *testing.T) {
 	first := f.event(t, resourceA, incidentA, "http", start)
 	second := f.event(t, resourceA, incidentA, "dns", start.Add(time.Minute))
 	unassigned := f.event(t, resourceB, "", "http", start.Add(2*time.Minute))
+	// The DNS query arrived before the first request, but was recorded after
+	// it: the list follows the time of recording.
+	if _, err := f.owner.Exec(t.Context(), "UPDATE events SET occurred_at = recorded_at - interval '3 minutes' WHERE id = $1", second); err != nil {
+		t.Fatal(err)
+	}
 
 	list := func(query string) (eventListResponse, int) {
 		rec := f.serve(t, f.h.ListEvents, http.MethodGet, "/api/v1/events?"+query, "", "")

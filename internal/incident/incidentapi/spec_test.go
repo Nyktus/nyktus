@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"nyktus.org/nyktus/api"
+	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/incident"
 )
 
@@ -126,8 +127,8 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		}
 	}
 	triage := schemas["TriageIncidentRequest"].Properties
-	if triage["notes"].MaxLength != incident.MaxNotesLength {
-		t.Errorf("TriageIncidentRequest.notes maxLength = %d, want %d", triage["notes"].MaxLength, incident.MaxNotesLength)
+	if triage["notes"].MaxLength != incident.MaxNotesLength || triage["techniques_override"].MaxItems != honeytoken.MaxTechniques {
+		t.Errorf("TriageIncidentRequest limits %+v differ from the code", triage)
 	}
 	fields := []string{incident.FieldStatus, incident.FieldNotes, incident.FieldSeverityOverride, incident.FieldTechniquesOverride}
 	if got := slices.Sorted(maps.Keys(triage)); !slices.Equal(got, slices.Sorted(slices.Values(fields))) {

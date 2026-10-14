@@ -82,23 +82,23 @@ type EventFilter struct {
 // that a generic plan can seek into the index that serves them.
 const (
 	eventsOrder = `
-ORDER BY occurred_at DESC, id DESC`
+ORDER BY recorded_at DESC, id DESC`
 	listEventsNewest = `SELECT ` + eventColumns + ` FROM public.events` + eventsOrder + `
 LIMIT $1`
 	listEventsAfter = `SELECT ` + eventColumns + ` FROM public.events
-WHERE (occurred_at, id) < ($1, $2::uuid)` + eventsOrder + `
+WHERE (recorded_at, id) < ($1, $2::uuid)` + eventsOrder + `
 LIMIT $3`
 	listIncidentEventsNewest = `SELECT ` + eventColumns + ` FROM public.events
 WHERE incident_id = $1` + eventsOrder + `
 LIMIT $2`
 	listIncidentEventsAfter = `SELECT ` + eventColumns + ` FROM public.events
-WHERE incident_id = $1 AND (occurred_at, id) < ($2, $3::uuid)` + eventsOrder + `
+WHERE incident_id = $1 AND (recorded_at, id) < ($2, $3::uuid)` + eventsOrder + `
 LIMIT $4`
 )
 
-// ListEvents returns up to size events that match f, from the most recent to
-// the oldest, that come after the cursor after, or from the most recent if
-// after is nil. next is the cursor of the following page, or nil if there are
+// ListEvents returns up to size events that match f, from the most recently
+// recorded to the oldest, that come after the cursor after, or from the most
+// recent if after is nil. next is the cursor of the following page, or nil if there are
 // no more events.
 func ListEvents(ctx context.Context, q db.Querier, f EventFilter, size int, after *Cursor) (list []Event, next *Cursor, err error) {
 	if size < 1 || size > MaxPageSize {
@@ -126,7 +126,7 @@ func ListEvents(ctx context.Context, q db.Querier, f EventFilter, size int, afte
 	if len(list) > size {
 		list = list[:size]
 		last := list[size-1]
-		next = &Cursor{Time: last.OccurredAt, ID: last.ID}
+		next = &Cursor{Time: last.RecordedAt, ID: last.ID}
 	}
 	return list, next, nil
 }

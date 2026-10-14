@@ -1725,10 +1725,12 @@ paths:
       operationId: listEvents
       summary: List events
       description: |
-        Returns events from the most recent to the oldest, a page at a time.
-        To read the next page, pass the `next_cursor` of a response as
-        `cursor`, with the same filter. The events of a honeytoken are those
-        of its incidents.
+        Returns events from the most recently recorded to the oldest, a page
+        at a time. To read the next page, pass the `next_cursor` of a response
+        as `cursor`, with the same filter. The order follows `recorded_at`, not
+        `occurred_at`: a DNS query can be recorded up to five minutes after it
+        arrived, and is listed when it was recorded. The events of a honeytoken
+        are those of its incidents.
 
         Events contain personal data, such as the addresses of clients. Every
         read is recorded in the audit log as `events.read`, at most once per

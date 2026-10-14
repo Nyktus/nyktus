@@ -7,11 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"slices"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -19,6 +16,7 @@ import (
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/db"
+	"nyktus.org/nyktus/internal/platform/text"
 )
 
 // Errors of the triage and of the lists.
@@ -132,28 +130,14 @@ func (c Change) validate() error {
 	return nil
 }
 
-// ValidateNotes accepts notes of up to MaxNotesLength characters. They may span
-// several lines and contain tabs and every kind of space; other control and
-// format characters are rejected, as in the notes of a honeytoken.
+// ValidateNotes accepts notes of up to MaxNotesLength characters, as
+// text.ValidNotes describes, like the notes of a honeytoken.
 func ValidateNotes(s string) error {
-	if utf8.RuneCountInString(s) > MaxNotesLength || !utf8.ValidString(s) {
+	if !text.ValidNotes(s, MaxNotesLength) {
 		return ErrInvalidNotes
-	}
-	for _, r := range s {
-		if !unicode.IsGraphic(r) && r != '\n' && r != '\r' && r != '\t' {
-			return ErrInvalidNotes
-		}
 	}
 	return nil
 }
-
-// uuidPattern matches the text form of a UUID, in which PostgreSQL returns
-// identifiers. Other forms that PostgreSQL accepts are rejected, so that an
-// identifier names an incident in one form only.
-var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
-// ValidID reports whether s is an identifier in the form that the API returns.
-func ValidID(s string) bool { return uuidPattern.MatchString(s) }
 
 // SQLSTATE codes mapped by the triage.
 const (

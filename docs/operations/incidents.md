@@ -45,7 +45,9 @@ Every role reads incidents and events, with a session or with an [API key](api-k
 
 - `GET /api/v1/incidents` lists incidents from the most recently opened to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `status` narrows the list to one or more statuses, separated by commas, such as `status=open,acknowledged` for every incident that is not closed; `resource_id` to the incidents of one honeytoken.
 - `GET /api/v1/incidents/<id>` returns one incident.
-- `GET /api/v1/events` lists events from the most recent to the oldest, paged in the same way. `incident_id` narrows the list to the events of an incident. To read the events of a honeytoken, list its incidents and then their events.
+- `GET /api/v1/events` lists events from the most recently recorded to the oldest, paged in the same way. `incident_id` narrows the list to the events of an incident. To read the events of a honeytoken, list its incidents and then their events.
+
+Events are listed by the time they were recorded (`recorded_at`), not the time the request or query arrived (`occurred_at`): the DNS role records a query up to five minutes after it arrived. Events recorded meanwhile do not shift the following pages. If you collect events regularly, for example into a SIEM, read again from a few seconds before the newest event you have and skip the identifiers you already know, because an event is listed by the time it was written, which can precede the commit of a slow transaction.
 - `GET /api/v1/events/<id>` returns one event, with the request (`http`) or the query (`dns`) that it recorded.
 
 An incident shows its effective `severity` and `techniques` next to what the events suggest (`event_severity`, `event_techniques`) and the overrides of an analyst (`severity_override`, `techniques_override`, null if there are none).
@@ -64,7 +66,7 @@ curl --fail-with-body --request PATCH https://nyktus.example.com/api/v1/incident
 | Field | Rules |
 |---|---|
 | `status` | `acknowledged` or `closed`. The status only moves forward and can skip `acknowledged`; a request to move it back, for example to open a closed incident again, receives `409` with the code `invalid_state`. Nyktus records when the status changed as `acknowledged_at` and `closed_at`. |
-| `notes` | Replaces the notes, up to 10000 characters; line breaks and tabs are allowed. |
+| `notes` | Replaces the notes, up to 10000 characters. Line breaks and tabs are allowed; other control characters and invisible format characters, such as those that change the direction of text, are not. |
 | `severity_override` | `info`, `low`, `medium`, `high` or `critical`; `null` removes the override. |
 | `techniques_override` | Up to 20 distinct identifiers of techniques, as for honeytokens. An empty list states that the incident suggests no technique; `null` removes the override. |
 
@@ -88,4 +90,4 @@ Nyktus records these data to detect and investigate intrusions into your network
 
 ## Audit
 
-The [audit log](audit-log.md) records every triage as `incident.update` with the names of the changed fields, never their values, and the reads of events as `events.read`. A triage that changes no value is not recorded. Reads of incidents are not recorded; incidents contain no personal data.
+The [audit log](audit-log.md) records every triage as `incident.update` with the names of the changed fields, never their values, and the reads of events as `events.read`. A triage that changes no value is not recorded. Reads of incidents are not recorded: Nyktus stores no personal data in them. Notes are free text; keep personal data, such as the names of employees, out of them, or restrict who reads incidents accordingly.

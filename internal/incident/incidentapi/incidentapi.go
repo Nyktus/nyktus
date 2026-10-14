@@ -22,6 +22,7 @@ import (
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/incident"
 	"nyktus.org/nyktus/internal/platform/httpx"
 )
@@ -139,7 +140,7 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s, ok := q.Filters[filterResourceID]; ok {
-		if !incident.ValidID(s) {
+		if !httpx.ValidID(s) {
 			invalid(w, r, "resource_id must be a UUID in lower case")
 			return
 		}
@@ -287,7 +288,7 @@ func (h *Handler) ListEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	var f incident.EventFilter
 	if s, ok := q.Filters[filterIncidentID]; ok {
-		if !incident.ValidID(s) {
+		if !httpx.ValidID(s) {
 			invalid(w, r, "incident_id must be a UUID in lower case")
 			return
 		}
@@ -356,8 +357,8 @@ func cursor(q httpx.ListQuery) *incident.Cursor {
 var (
 	statusRule     = "status must be open, acknowledged or closed"
 	severityRule   = "severity_override must be info, low, medium, high, critical or null"
-	notesRule      = fmt.Sprintf("notes must have at most %d characters; line breaks and tabs are the only control characters allowed", incident.MaxNotesLength)
-	techniquesRule = "techniques_override must list at most 20 distinct ATT&CK technique identifiers, such as T1078 or T1003.001, or be null"
+	notesRule      = fmt.Sprintf("notes must have at most %d characters; line breaks and tabs are the only control or format characters allowed", incident.MaxNotesLength)
+	techniquesRule = fmt.Sprintf("techniques_override must list at most %d distinct ATT&CK technique identifiers, such as T1078 or T1003.001, or be null", honeytoken.MaxTechniques)
 )
 
 func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, err error) {

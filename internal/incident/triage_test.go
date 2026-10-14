@@ -31,10 +31,10 @@ func TestLists_UseTheirIndex(t *testing.T) {
 		{"incidents after", "text[], timestamptz, uuid, int", listIncidentsAfter, "incidents_opened_at_id_idx", "Index Cond: (ROW(opened_at, id) < ROW($2, $3))"},
 		{"incidents of a resource", "text[], uuid, int", listResourceIncidentsNewest, "incidents_resource_id_opened_at_id_idx", "Index Cond: (resource_id = $2)"},
 		{"incidents of a resource after", "text[], uuid, timestamptz, uuid, int", listResourceIncidentsAfter, "incidents_resource_id_opened_at_id_idx", "Index Cond: ((resource_id = $2) AND (ROW(opened_at, id) < ROW($3, $4)))"},
-		{"events", "int", listEventsNewest, "events_occurred_at_id_idx", ""},
-		{"events after", "timestamptz, uuid, int", listEventsAfter, "events_occurred_at_id_idx", "Index Cond: (ROW(occurred_at, id) < ROW($1, $2))"},
-		{"events of an incident", "uuid, int", listIncidentEventsNewest, "events_incident_id_occurred_at_id_idx", "Index Cond: (incident_id = $1)"},
-		{"events of an incident after", "uuid, timestamptz, uuid, int", listIncidentEventsAfter, "events_incident_id_occurred_at_id_idx", "Index Cond: ((incident_id = $1) AND (ROW(occurred_at, id) < ROW($2, $3)))"},
+		{"events", "int", listEventsNewest, "events_recorded_at_id_idx", ""},
+		{"events after", "timestamptz, uuid, int", listEventsAfter, "events_recorded_at_id_idx", "Index Cond: (ROW(recorded_at, id) < ROW($1, $2))"},
+		{"events of an incident", "uuid, int", listIncidentEventsNewest, "events_incident_id_recorded_at_id_idx", "Index Cond: (incident_id = $1)"},
+		{"events of an incident after", "uuid, timestamptz, uuid, int", listIncidentEventsAfter, "events_incident_id_recorded_at_id_idx", "Index Cond: ((incident_id = $1) AND (ROW(recorded_at, id) < ROW($2, $3)))"},
 	}
 	conn, err := pool.Acquire(t.Context())
 	if err != nil {
