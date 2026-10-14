@@ -2,7 +2,7 @@
 
 An incident collects the events of one honeytoken: the first event opens it, and every further event joins it until it is closed. Triage happens on incidents, not on single events, so that an intruder who opens a URL ten times raises one incident instead of ten. When an incident opens, Nyktus raises its alert, the single notification about the incident.
 
-> This version opens incidents and records their alerts, but does not show them in the console or deliver alerts yet.
+> This version records alerts, but does not deliver them yet. The web console does not show incidents yet; read and triage them through the API.
 
 ## How events become incidents
 
@@ -29,13 +29,46 @@ The severity says how urgently someone should look at an incident: `low`, `mediu
 | `web_image` | `low` | Mail gateways, previews and scanners load images without anyone opening them. |
 | `dns` | `medium` | Resolving a name is deliberate, as for a URL. |
 
+An analyst can [override](#triage) the severity, including with `info` for an incident that turned out to be irrelevant. The incident then has the severity of the override; `event_severity` keeps what the events suggest.
+
 ## Techniques
 
-An incident holds every [technique](honeytokens.md#techniques) of its events. Each event keeps the techniques that its honeytoken had when it was requested, so a change of the honeytoken affects only later events.
+An incident holds every [technique](honeytokens.md#techniques) of its events. Each event keeps the techniques that its honeytoken had when it was requested, so a change of the honeytoken affects only later events. An analyst can [override](#triage) the techniques; `event_techniques` keeps those of the events.
 
 ## Alerts
 
 The alert of an incident reports the severity and the techniques that the incident had when it opened. Later events change the incident, but not its alert.
+
+## Reading incidents and events
+
+Every role reads incidents and events, with a session or with an [API key](api-keys.md) that carries the scope `incidents:read` or `events:read`:
+
+- `GET /api/v1/incidents` lists incidents from the most recently opened to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `status` narrows the list to one or more statuses, separated by commas, such as `status=open,acknowledged` for every incident that is not closed; `resource_id` to the incidents of one honeytoken.
+- `GET /api/v1/incidents/<id>` returns one incident.
+- `GET /api/v1/events` lists events from the most recent to the oldest, paged in the same way. `incident_id` narrows the list to the events of an incident. To read the events of a honeytoken, list its incidents and then their events.
+- `GET /api/v1/events/<id>` returns one event, with the request (`http`) or the query (`dns`) that it recorded.
+
+An incident shows its effective `severity` and `techniques` next to what the events suggest (`event_severity`, `event_techniques`) and the overrides of an analyst (`severity_override`, `techniques_override`, null if there are none).
+
+## Triage
+
+Administrators and users with the role `user` triage incidents, with a session or with an [API key](api-keys.md) that carries the scopes `incidents:write` and `incidents:read`:
+
+```sh
+curl --fail-with-body --request PATCH https://nyktus.example.com/api/v1/incidents/<id> \
+  --header 'Content-Type: application/json' \
+  --data '{"status": "acknowledged", "notes": "Checking the backup jobs of fs01."}' \
+  --cookie cookies.txt
+```
+
+| Field | Rules |
+|---|---|
+| `status` | `acknowledged` or `closed`. The status only moves forward and can skip `acknowledged`; a request to move it back, for example to open a closed incident again, receives `409` with the code `invalid_state`. Nyktus records when the status changed as `acknowledged_at` and `closed_at`. |
+| `notes` | Replaces the notes, up to 10000 characters; line breaks and tabs are allowed. |
+| `severity_override` | `info`, `low`, `medium`, `high` or `critical`; `null` removes the override. |
+| `techniques_override` | Up to 20 distinct identifiers of techniques, as for honeytokens. An empty list states that the incident suggests no technique; `null` removes the override. |
+
+Members that you leave out stay unchanged. Notes and overrides can still be changed after an incident is closed, for example to record the outcome of the triage.
 
 ## Processing
 
@@ -49,4 +82,10 @@ When the worker stops, it takes no further events and gives those in progress up
 
 Events contain personal data: the address of the client, or for DNS the address of the resolver, and the `User-Agent`, `Referer` and `Accept-Language` headers that the client sent. Incidents and alerts contain none of it; they name the honeytoken, the times, the severity and the techniques.
 
+Every read of events is recorded in the [audit log](audit-log.md) as `events.read`, at most once per user or API key and minute. A read that cannot be recorded returns no events. Integrations that only follow incidents, such as a ticket system, need keys without the scope `events:read`.
+
 Nyktus records these data to detect and investigate intrusions into your network. In the EU, this is usually covered by the legitimate interest in the security of networks and information (Art. 6(1)(f) and Recital 49 GDPR). Record it in your records of processing activities and restrict access to events like access to the [audit log](audit-log.md). This version keeps events until the database is deleted.
+
+## Audit
+
+The [audit log](audit-log.md) records every triage as `incident.update` with the names of the changed fields, never their values, and the reads of events as `events.read`. A triage that changes no value is not recorded. Reads of incidents are not recorded; incidents contain no personal data.

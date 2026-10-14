@@ -197,6 +197,9 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM honeytokens",
 		"SELECT public.attack_technique_ids_valid('{T1078}')",
 		"DELETE FROM honeytokens",
+		"SELECT count(*) FROM events",
+		"SELECT count(*) FROM incidents",
+		"UPDATE incidents SET status = status, notes = notes, severity_override = NULL, techniques_override = NULL",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -275,7 +278,6 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE honeytokens SET id = gen_random_uuid()",
 		"UPDATE honeytokens SET created_at = now()",
 		"TRUNCATE honeytokens",
-		"SELECT count(*) FROM events",
 		"INSERT INTO events (resource_type, resource_id, honeytoken_type, method) VALUES ('honeytoken', gen_random_uuid(), 'web_url', 'GET')",
 		"DELETE FROM events",
 		"SELECT count(*) FROM event_jobs",
@@ -283,13 +285,20 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT * FROM public.record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')",
 		"SELECT * FROM public.record_dns_query(repeat('a', 26), 'd.example.com', '', 'A', 'udp', NULL, interval '0')",
 		"SELECT public.honeytoken_event_limit_reached(gen_random_uuid())",
-		"SELECT count(*) FROM incidents",
+		"UPDATE events SET incident_id = NULL",
+		"UPDATE events SET client_ip = NULL",
 		"INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at) VALUES ('honeytoken', gen_random_uuid(), 'low', now(), now())",
-		"UPDATE incidents SET notes = 'n'",
+		"UPDATE incidents SET severity = 'low'",
+		"UPDATE incidents SET techniques = '{}'",
+		"UPDATE incidents SET event_count = 1",
+		"UPDATE incidents SET acknowledged_at = now()",
+		"UPDATE incidents SET closed_at = now()",
+		"UPDATE incidents SET resource_id = gen_random_uuid()",
 		"DELETE FROM incidents",
+		"TRUNCATE incidents",
 		"SELECT count(*) FROM alerts",
 		"INSERT INTO alerts (incident_id, severity) VALUES (gen_random_uuid(), 'low')",
-		"SELECT public.incidents_keep_status_forward()",
+		"SELECT public.incidents_change_status()",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -380,16 +389,20 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_column_privilege($1, 'public.honeytokens', 'type', 'UPDATE')",
 		"has_column_privilege($1, 'public.honeytokens', 'trigger_value', 'UPDATE')",
 		"has_column_privilege($1, 'public.honeytokens', 'created_at', 'UPDATE')",
-		"has_table_privilege($1, 'public.events', 'SELECT')",
 		"has_table_privilege($1, 'public.events', 'INSERT')",
 		"has_table_privilege($1, 'public.event_jobs', 'INSERT')",
 		"has_function_privilege($1, 'public.record_honeytoken_request(text, text, inet, text, text, text)', 'EXECUTE')",
 		"has_function_privilege($1, 'public.record_dns_query(text, text, text, text, text, inet, interval)', 'EXECUTE')",
 		"has_function_privilege($1, 'public.honeytoken_event_limit_reached(uuid)', 'EXECUTE')",
-		"has_table_privilege($1, 'public.incidents', 'SELECT')",
+		"has_table_privilege($1, 'public.events', 'UPDATE')",
+		"has_table_privilege($1, 'public.event_jobs', 'SELECT')",
 		"has_table_privilege($1, 'public.incidents', 'UPDATE')",
+		"has_table_privilege($1, 'public.incidents', 'INSERT')",
+		"has_column_privilege($1, 'public.incidents', 'closed_at', 'UPDATE')",
+		"has_column_privilege($1, 'public.incidents', 'severity', 'UPDATE')",
+		"has_table_privilege($1, 'public.alerts', 'SELECT')",
 		"has_table_privilege($1, 'public.alerts', 'INSERT')",
-		"has_function_privilege($1, 'public.incidents_keep_status_forward()', 'EXECUTE')",
+		"has_function_privilege($1, 'public.incidents_change_status()', 'EXECUTE')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

@@ -1354,11 +1354,20 @@ CREATE TABLE public.incidents (
 CREATE UNIQUE INDEX incidents_open_resource_key ON public.incidents (resource_type, resource_id)
 	WHERE status <> 'closed';
 
+-- The console lists incidents from the newest to the oldest, also those of
+-- one resource, a page at a time.
+CREATE INDEX incidents_opened_at_id_idx ON public.incidents (opened_at DESC, id DESC);
+CREATE INDEX incidents_resource_id_opened_at_id_idx ON public.incidents (resource_id, opened_at DESC, id DESC);
+
 -- The status of an incident only moves forward, from open over acknowledged to
 -- closed, so a closed incident is never opened again: new events of its
 -- resource open a new incident and raise a new alert. The worker and the
 -- console both check this; the trigger is the last line of defense.
-CREATE FUNCTION public.incidents_keep_status_forward() RETURNS trigger
+--
+-- The trigger also records when the status changed, so that no application
+-- role chooses these times: the database sets them when the status moves, and
+-- keeps them otherwise.
+CREATE FUNCTION public.incidents_change_status() RETURNS trigger
 	LANGUAGE plpgsql
 	SET search_path = ''
 AS $$
@@ -1366,22 +1375,35 @@ BEGIN
 	IF array_position(ARRAY['open', 'acknowledged', 'closed'], NEW.status)
 		< array_position(ARRAY['open', 'acknowledged', 'closed'], OLD.status) THEN
 		RAISE EXCEPTION 'the status of incident % cannot move from % back to %', OLD.id, OLD.status, NEW.status
-			USING ERRCODE = 'check_violation', CONSTRAINT = 'incidents_keep_status_forward';
+			USING ERRCODE = 'check_violation', CONSTRAINT = 'incidents_status_forward';
+	END IF;
+	NEW.acknowledged_at := OLD.acknowledged_at;
+	NEW.closed_at := OLD.closed_at;
+	IF NEW.status <> OLD.status THEN
+		IF NEW.status = 'acknowledged' THEN
+			NEW.acknowledged_at := clock_timestamp();
+		ELSIF NEW.status = 'closed' THEN
+			NEW.closed_at := clock_timestamp();
+		END IF;
 	END IF;
 	RETURN NEW;
 END
 $$;
 
-CREATE TRIGGER incidents_keep_status_forward
-	BEFORE UPDATE OF status ON public.incidents
-	FOR EACH ROW EXECUTE FUNCTION public.incidents_keep_status_forward();
+CREATE TRIGGER incidents_change_status
+	BEFORE UPDATE ON public.incidents
+	FOR EACH ROW EXECUTE FUNCTION public.incidents_change_status();
 
 -- Every event belongs to the incident that the worker assigned it to, and to no
 -- other. The column is empty until the worker processed the event.
 ALTER TABLE public.events ADD COLUMN incident_id uuid CONSTRAINT events_incident_id_fkey REFERENCES public.incidents (id);
 
--- The events of an incident are looked up by it.
-CREATE INDEX events_incident_id_idx ON public.events (incident_id);
+-- The console lists events from the newest to the oldest, also those of one
+-- incident, a page at a time. Events are written on the path of the trigger,
+-- so they get no further index; the events of a honeytoken are those of its
+-- incidents.
+CREATE INDEX events_occurred_at_id_idx ON public.events (occurred_at DESC, id DESC);
+CREATE INDEX events_incident_id_occurred_at_id_idx ON public.events (incident_id, occurred_at DESC, id DESC);
 
 -- The single alert of an incident, written in the transaction that opens the
 -- incident. It keeps the severity and the techniques that the incident had
@@ -1398,36 +1420,83 @@ CREATE TABLE public.alerts (
 	)
 );
 
--- The console reads no events or incidents yet. Nobody writes events except
--- through the functions above, and incidents and alerts only the worker.
+-- Nobody writes events except through the functions above, and incidents and
+-- alerts only the worker, apart from the triage of the console.
 REVOKE ALL ON public.events, public.event_jobs, public.incidents, public.alerts FROM PUBLIC, nyktus_console;
-REVOKE ALL ON FUNCTION public.incidents_keep_status_forward() FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.incidents_change_status() FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.honeytoken_event_limit_reached(uuid) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text)
 	FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_dns_query(text, text, text, text, text, inet, interval) FROM PUBLIC, nyktus_console;
 
--- REVOKE only warns when the executing role lacks the grant option, so the
--- result is verified instead of assumed. An event that the console could write
--- would have no job, or a job no event, and an incident it could write no
--- alert.
+-- The console reads events and incidents and triages incidents: it moves their
+-- status, writes notes and overrides the severity and the techniques. It cannot
+-- write or change an event, open an incident, change what the worker
+-- correlated, or choose when the status changed. It reads neither the jobs nor
+-- the alerts.
+GRANT SELECT ON public.events, public.incidents TO nyktus_console;
+GRANT UPDATE (status, notes, severity_override, techniques_override) ON public.incidents TO nyktus_console;
+
+-- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
+-- result is verified instead of assumed, in both directions: every privilege on
+-- these tables, their columns and the functions that write them is compared
+-- with the grants above. An event that the console could write would have no
+-- job, or a job no event, and an incident it could write no alert.
 DO $$
+DECLARE
+	missing text;
+	extra text;
 BEGIN
-	IF has_table_privilege('nyktus_console', 'public.events', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
-		OR has_any_column_privilege('nyktus_console', 'public.events', 'SELECT, INSERT, UPDATE, REFERENCES')
-		OR has_table_privilege('nyktus_console', 'public.event_jobs', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
-		OR has_any_column_privilege('nyktus_console', 'public.event_jobs', 'SELECT, INSERT, UPDATE, REFERENCES')
-		OR has_table_privilege('nyktus_console', 'public.incidents', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
-		OR has_any_column_privilege('nyktus_console', 'public.incidents', 'SELECT, INSERT, UPDATE, REFERENCES')
-		OR has_table_privilege('nyktus_console', 'public.alerts', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
-		OR has_any_column_privilege('nyktus_console', 'public.alerts', 'SELECT, INSERT, UPDATE, REFERENCES')
-		OR has_function_privilege('nyktus_console', 'public.incidents_keep_status_forward()', 'EXECUTE')
-		OR has_function_privilege('nyktus_console', 'public.honeytoken_event_limit_reached(uuid)', 'EXECUTE')
-		OR has_function_privilege('nyktus_console',
-			'public.record_honeytoken_request(text, text, inet, text, text, text)', 'EXECUTE')
-		OR has_function_privilege('nyktus_console',
-			'public.record_dns_query(text, text, text, text, text, inet, interval)', 'EXECUTE') THEN
-		RAISE EXCEPTION 'nyktus_console has privileges on events or incidents; check the default privileges of the owner';
+	WITH granted (relname, attname, privilege) AS (
+		-- A NULL column stands for the whole table.
+		VALUES
+			('events', NULL, 'SELECT'), ('incidents', NULL, 'SELECT'),
+			('incidents', 'status', 'UPDATE'), ('incidents', 'notes', 'UPDATE'),
+			('incidents', 'severity_override', 'UPDATE'), ('incidents', 'techniques_override', 'UPDATE')
+	),
+	tables AS (
+		SELECT c.oid, c.relname FROM pg_catalog.pg_class AS c
+		WHERE c.oid IN ('public.events'::regclass, 'public.event_jobs'::regclass, 'public.incidents'::regclass,
+			'public.alerts'::regclass)
+	),
+	privileges (object, privilege, held, wanted) AS (
+		SELECT t.relname::text, p.privilege,
+			has_table_privilege('nyktus_console', t.oid, p.privilege),
+			EXISTS (
+				SELECT FROM granted AS g
+				WHERE g.relname = t.relname AND g.attname IS NULL AND g.privilege = p.privilege
+			)
+		FROM tables AS t
+		CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS p (privilege)
+		UNION ALL
+		SELECT t.relname || '.' || a.attname, p.privilege,
+			has_column_privilege('nyktus_console', t.oid, a.attnum, p.privilege),
+			EXISTS (
+				SELECT FROM granted AS g
+				WHERE g.relname = t.relname AND coalesce(g.attname, a.attname) = a.attname AND g.privilege = p.privilege
+			)
+		FROM tables AS t
+		JOIN pg_catalog.pg_attribute AS a ON a.attrelid = t.oid AND a.attnum > 0 AND NOT a.attisdropped
+		CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) AS p (privilege)
+		UNION ALL
+		SELECT f.signature, 'EXECUTE', has_function_privilege('nyktus_console', f.signature, 'EXECUTE'), false
+		FROM unnest(ARRAY[
+			'public.incidents_change_status()',
+			'public.honeytoken_event_limit_reached(uuid)',
+			'public.record_honeytoken_request(text, text, inet, text, text, text)',
+			'public.record_dns_query(text, text, text, text, text, inet, interval)'
+		]) AS f (signature)
+	)
+	SELECT string_agg(object || ': ' || privilege, ', ' ORDER BY object, privilege) FILTER (WHERE wanted AND NOT held),
+		string_agg(object || ': ' || privilege, ', ' ORDER BY object, privilege) FILTER (WHERE held AND NOT wanted)
+	INTO missing, extra
+	FROM privileges;
+
+	IF missing IS NOT NULL THEN
+		RAISE EXCEPTION 'nyktus_console lacks privileges on events or incidents (%); run migrations as the owner of the schema', missing;
+	END IF;
+	IF extra IS NOT NULL THEN
+		RAISE EXCEPTION 'nyktus_console has more privileges on events or incidents than granted (%); check the default privileges of the owner', extra;
 	END IF;
 END
 $$;

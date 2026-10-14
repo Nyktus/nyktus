@@ -48,6 +48,10 @@ type Deps struct {
 	Accounts Accounts
 	// Honeytokens manages the honeytokens of the team.
 	Honeytokens Honeytokens
+	// Incidents lists and triages the incidents of the team.
+	Incidents Incidents
+	// Events lists the events of the honeytokens.
+	Events Events
 	// Origin is the origin under which users reach the console, such as
 	// "https://nyktus.example.com". Requests that change state must come from it.
 	Origin string
@@ -82,6 +86,24 @@ func (h Honeytokens) complete() bool {
 	return h.List != nil && h.Get != nil && h.Create != nil && h.Update != nil && h.Delete != nil
 }
 
+// Incidents are the handlers of the incidents and their triage.
+type Incidents struct {
+	List, Get, Update http.Handler
+}
+
+func (h Incidents) complete() bool {
+	return h.List != nil && h.Get != nil && h.Update != nil
+}
+
+// Events are the handlers of the events.
+type Events struct {
+	List, Get http.Handler
+}
+
+func (h Events) complete() bool {
+	return h.List != nil && h.Get != nil
+}
+
 // OIDC are the handlers of the sign-in through the identity provider: the
 // start, which sends the browser to the provider, the start of a
 // reauthentication, and the callback, to which the provider sends it back.
@@ -110,8 +132,8 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || !d.Accounts.complete() || !d.Honeytokens.complete() {
-		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, account and honeytoken handlers")
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || !d.Accounts.complete() || !d.Honeytokens.complete() || !d.Incidents.complete() || !d.Events.complete() {
+		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, account, honeytoken, incident and event handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	// The session itself and how the account signs in are managed only with a
@@ -154,6 +176,11 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/api/v1/honeytokens/{id}", httpx.Require("honeytokens:read"), d.Honeytokens.Get)
 	rt.Handle(http.MethodPatch, "/api/v1/honeytokens/{id}", httpx.Require("honeytokens:write"), d.Honeytokens.Update)
 	rt.Handle(http.MethodDelete, "/api/v1/honeytokens/{id}", httpx.Require("honeytokens:write"), d.Honeytokens.Delete)
+	rt.Handle(http.MethodGet, "/api/v1/incidents", httpx.Require("incidents:read"), d.Incidents.List)
+	rt.Handle(http.MethodGet, "/api/v1/incidents/{id}", httpx.Require("incidents:read"), d.Incidents.Get)
+	rt.Handle(http.MethodPatch, "/api/v1/incidents/{id}", httpx.Require("incidents:write"), d.Incidents.Update)
+	rt.Handle(http.MethodGet, "/api/v1/events", httpx.Require("events:read"), d.Events.List)
+	rt.Handle(http.MethodGet, "/api/v1/events/{id}", httpx.Require("events:read"), d.Events.Get)
 	return rt
 }
 

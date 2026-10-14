@@ -35,3 +35,23 @@ func (o Optional[T]) Ptr() *T {
 	}
 	return &o.Value
 }
+
+// Nullable is a member of a request body that may be left out, or be null to
+// remove a value, such as an optional field of a resource in a change.
+type Nullable[T any] struct {
+	// Set reports whether the member was present, also as null.
+	Set bool
+	// Null reports whether the member was null.
+	Null  bool
+	Value T
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (n *Nullable[T]) UnmarshalJSON(b []byte) error {
+	n.Set = true
+	if string(b) == "null" {
+		n.Null = true
+		return nil
+	}
+	return json.Unmarshal(b, &n.Value)
+}
