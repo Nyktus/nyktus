@@ -4,7 +4,7 @@ Nyktus reads its configuration from environment variables once at startup and re
 
 Every variable that holds a secret can instead be read from a file: set the same name with the suffix `_FILE` to the path of the file, for example `NYKTUS_CONSOLE_DATABASE_URL_FILE=/run/secrets/console-db`. A trailing line break in the file is ignored. Setting both forms is an error.
 
-Settings of a server role are only read when the role runs. A process started with `--roles=console` does not need the settings of other roles. `nyktus serve` requires `--roles`, a comma-separated list of `console`, `trigger` and `dns`: some roles listen on the internet, so a process never starts a role that nobody asked for. A process that runs several roles needs the settings of each.
+Settings of a server role are only read when the role runs. A process started with `--roles=console` does not need the settings of other roles. `nyktus serve` requires `--roles`, a comma-separated list of `console`, `trigger`, `dns` and `worker`: some roles listen on the internet, so a process never starts a role that nobody asked for. A process that runs several roles needs the settings of each.
 
 ## All commands
 
@@ -63,6 +63,15 @@ The DNS role answers the zones delegated to it as an authoritative name server a
 | `NYKTUS_DNS_ANSWER_IPV4` | none | The IPv4 address with which every name of the zones resolves. Without it, names have no IPv4 address. There is no default, because an address built into Nyktus would identify it. |
 | `NYKTUS_DNS_ANSWER_IPV6` | none | The IPv6 address with which every name of the zones resolves. |
 | `NYKTUS_DNS_TTL` | `1m` | How long resolvers may cache an answer, also a negative one, in whole seconds between `0s` and `1h`. See [Caching](dns.md#caching). |
+
+### Role `worker`
+
+The worker correlates the events of honeytokens into [incidents](incidents.md). It listens on no port and only connects to the database. Run at least one worker; several workers share the work without further setup.
+
+| Variable | Default | Description |
+|---|---|---|
+| `NYKTUS_WORKER_DATABASE_URL` | required, secret | Connection URL of the worker's login role. See [Database setup](database.md). |
+| `NYKTUS_WORKER_CONCURRENCY` | `4` | Events that the worker processes at a time, between 1 and 32. Each holds a connection to the database while it is processed. |
 
 ### Sign-in through an identity provider
 

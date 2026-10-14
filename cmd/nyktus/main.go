@@ -25,6 +25,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
 	nyktusdns "nyktus.org/nyktus/internal/dns"
+	"nyktus.org/nyktus/internal/incident"
 	"nyktus.org/nyktus/internal/platform/buildinfo"
 	"nyktus.org/nyktus/internal/platform/config"
 	"nyktus.org/nyktus/internal/platform/db"
@@ -32,6 +33,7 @@ import (
 	"nyktus.org/nyktus/internal/platform/logging"
 	"nyktus.org/nyktus/internal/platform/migrate"
 	"nyktus.org/nyktus/internal/trigger"
+	"nyktus.org/nyktus/internal/worker"
 	"nyktus.org/nyktus/migrations"
 )
 
@@ -134,7 +136,7 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 func serve(ctx context.Context, args []string, src config.Source, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	rolesFlag := fs.String("roles", "", "comma-separated roles to run: console, trigger, dns (required)")
+	rolesFlag := fs.String("roles", "", "comma-separated roles to run: console, trigger, dns, worker (required)")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -168,6 +170,11 @@ func serve(ctx context.Context, args []string, src config.Source, stdout, stderr
 	if cfg.Has(config.RoleDNS) {
 		runners = append(runners, func(ctx context.Context, started func(), _ <-chan struct{}) error {
 			return serveDNS(ctx, cfg, logger, started)
+		})
+	}
+	if cfg.Has(config.RoleWorker) {
+		runners = append(runners, func(ctx context.Context, started func(), _ <-chan struct{}) error {
+			return serveWorker(ctx, cfg, logger, started)
 		})
 	}
 	if err := runRoles(ctx, runners); err != nil {
@@ -408,6 +415,47 @@ func serveDNS(ctx context.Context, cfg config.Serve, logger *slog.Logger, starte
 		return fmt.Errorf("dns: %w", err)
 	}
 	logger.InfoContext(ctx, "dns: stopped")
+	return nil
+}
+
+// Timing of the worker. A job holds a transaction, so it is bounded; the
+// interval is short enough that an alert waits a second at most for an idle
+// worker, and the backoff keeps an unreachable database from filling the log.
+const (
+	workerPollInterval = time.Second
+	workerMaxBackoff   = 30 * time.Second
+	workerJobTimeout   = 10 * time.Second
+)
+
+func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, started func()) error {
+	// Every job in progress holds one connection.
+	pool, err := db.Open(ctx, cfg.Worker.DatabaseURL.Value(), db.Options{MaxConns: int32(cfg.Worker.Concurrency)}) //nolint:gosec // The configuration bounds it to 32.
+	if err != nil {
+		return fmt.Errorf("worker: %w", err)
+	}
+	defer pool.Close()
+
+	if cfg.Environment != config.Development {
+		if err := db.CheckLeastPrivilege(ctx, pool); err != nil {
+			return fmt.Errorf("worker: %w", err)
+		}
+		if err := incident.CheckPrivileges(ctx, pool); err != nil {
+			return fmt.Errorf("worker: %w", err)
+		}
+	}
+
+	w := worker.New(worker.Options{
+		Logger:       logger,
+		Queue:        incident.NewProcessor(incident.NewStore(pool), logger),
+		Concurrency:  cfg.Worker.Concurrency,
+		PollInterval: workerPollInterval,
+		MaxBackoff:   workerMaxBackoff,
+		JobTimeout:   workerJobTimeout,
+	})
+	logger.InfoContext(ctx, "worker: started", slog.Int("concurrency", cfg.Worker.Concurrency))
+	started()
+	w.Run(ctx)
+	logger.InfoContext(ctx, "worker: stopped")
 	return nil
 }
 

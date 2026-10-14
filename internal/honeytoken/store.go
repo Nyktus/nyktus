@@ -285,15 +285,12 @@ type DB interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
-// resourceType names honeytokens in the audit log.
-const resourceType = "honeytoken"
-
 func record(ctx context.Context, q db.Querier, actor audit.Actor, action audit.Action, id string, changed []string) error {
 	return audit.NewStore(q).Record(ctx, audit.Entry{
 		Action:        action,
 		Outcome:       audit.OutcomeSuccess,
 		Actor:         actor,
-		Resource:      audit.Resource{Type: resourceType, ID: id},
+		Resource:      audit.Resource{Type: ResourceType, ID: id},
 		ChangedFields: changed,
 	}.WithRequest(ctx))
 }

@@ -187,6 +187,7 @@ func TestLoadServe_AllRolesShareTheZones(t *testing.T) {
 		"NYKTUS_DNS_DATABASE_URL":         "postgres://dns@db/nyktus",
 		"NYKTUS_DNS_NAMESERVERS":          "ns1.example.net",
 		"NYKTUS_DNS_ZONES":                "d.example.org",
+		"NYKTUS_WORKER_DATABASE_URL":      "postgres://worker@db/nyktus",
 	})
 	cfg, err := LoadServe(fakeSource{env: env}.source(), Roles)
 	if err != nil {

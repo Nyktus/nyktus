@@ -58,6 +58,10 @@ linters:
               desc: the trigger never reads the inventory; it resolves single trigger values through a database function
             - pkg: nyktus.org/nyktus/internal/alerting
               desc: the trigger records events and their jobs; the worker processes them and sends alerts
+            - pkg: nyktus.org/nyktus/internal/incident
+              desc: the trigger records events and their jobs; the worker correlates them into incidents
+            - pkg: nyktus.org/nyktus/internal/worker
+              desc: the trigger records events and their jobs; the worker processes them
         # The internet-facing DNS role follows the rules of the trigger: it
         # resolves one trigger value at a time through a database function,
         # never imports the inventory, the alerting or the console, and holds
@@ -81,6 +85,34 @@ linters:
               desc: the DNS role is reached from the internet and holds no code of the console
             - pkg: nyktus.org/nyktus/internal/trigger
               desc: the DNS role and the trigger are separate roles that share nothing but the database
+            - pkg: nyktus.org/nyktus/internal/incident
+              desc: the DNS role records events and their jobs; the worker correlates them into incidents
+            - pkg: nyktus.org/nyktus/internal/worker
+              desc: the DNS role records events and their jobs; the worker processes them
+        # The worker connects only outwards and holds no code that answers
+        # requests: no handlers of the console, no sign-in, no trigger. Its
+        # domain packages stay free of HTTP, so that the worker can run on a
+        # host that the console does not share.
+        worker:
+          list-mode: lax
+          files:
+            - "**/internal/worker/**"
+            - "**/internal/incident/*.go"
+          deny:
+            - pkg: nyktus.org/nyktus/internal/console
+              desc: the worker answers no requests and holds no code of the console
+            - pkg: nyktus.org/nyktus/internal/auth
+              desc: the worker answers no requests and holds no code of the console
+            - pkg: nyktus.org/nyktus/internal/platform/httpx
+              desc: the worker answers no requests; handlers live in API packages of their own
+            - pkg: nyktus.org/nyktus/internal/honeytoken/honeytokenapi
+              desc: the worker answers no requests and holds no code of the console
+            - pkg: nyktus.org/nyktus/internal/audit/auditapi
+              desc: the worker answers no requests and holds no code of the console
+            - pkg: nyktus.org/nyktus/internal/trigger
+              desc: the worker and the trigger are separate roles that share nothing but the database
+            - pkg: nyktus.org/nyktus/internal/dns
+              desc: the worker and the DNS role are separate roles that share nothing but the database
         # Test-only dependencies must never reach the binaries.
         test-only:
           list-mode: lax

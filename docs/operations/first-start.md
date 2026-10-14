@@ -11,7 +11,7 @@ A new installation has no accounts. The first administrator is created through a
 5. For the trigger, which answers the URLs of honeytokens, set `NYKTUS_TRIGGER_DATABASE_URL` and `NYKTUS_TRIGGER_DEFAULT_REDIRECT`. See [Configuration](configuration.md#role-trigger).
 6. Optionally, for DNS honeytokens, delegate a zone to Nyktus and set `NYKTUS_DNS_ZONES` for the console and the DNS role. See [DNS honeytokens](dns.md).
 
-`nyktus serve` needs `--roles`, a comma-separated list of the roles to run: `console`, `trigger` and `dns`. The steps below start the console alone with `--roles=console`. `--roles=console,trigger` runs the console and the trigger in one process; start the trigger and the DNS role alone, with `--roles=trigger` and `--roles=dns`, where they run on a host of their own.
+`nyktus serve` needs `--roles`, a comma-separated list of the roles to run: `console`, `trigger`, `dns` and `worker`. The steps below start the console alone with `--roles=console`. `--roles=console,worker` runs the console and the [worker](incidents.md), which correlates events into incidents, in one process; start the trigger and the DNS role alone, with `--roles=trigger` and `--roles=dns`, where they run on a host of their own.
 
 ## Create the first administrator
 
