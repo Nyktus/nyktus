@@ -62,6 +62,19 @@ Other queries, such as those of names without a value or outside the zones, are 
 | `dns: handler panicked` | error | A programming error; `panic` and `stack` describe it. |
 | `dns: queries not recorded` | warn | Logged once a minute. With `reason` `limit`: queries of the honeytoken `honeytoken_id` beyond its [limit of events](honeytokens.md#events). With `reason` `queue_full`: queries that arrived while too many others were waiting to be recorded, for example during a flood. With `reason` `stale`: queries that waited more than five minutes to be recorded, for example while the database was unreachable. `queries` is their number. |
 
+## Worker
+
+The [worker](incidents.md) logs what became of the events it processed.
+
+| Message | Level | Content |
+|---|---|---|
+| `worker: started` | info | The worker looks for events to process; `concurrency` is the number it processes at a time. |
+| `worker: stopped` | info | The worker processed its last event and stopped. |
+| `incident: opened` | info | An event opened an incident and raised its alert. `incident` holds `incident_id`, `event_id`, `resource_type`, `resource_id` and `severity`. |
+| `incident: event assigned` | debug | An event was added to an open incident. Same fields as above. |
+| `incident: event not processed` | error | An event could not be assigned to an incident. It stays and is tried again at `retry_at`; `attempts` counts the failed attempts, `error` names the cause. The event is not lost, but it raises no alert until it is processed. |
+| `worker: job failed` | error | The worker could not reach the database or complete a transaction. `error` names the cause. Unless `claimed` is `true`, the worker waits before it tries again, longer after every failure in a row, up to 30 seconds. |
+
 ## Sign-in through an identity provider
 
 With an [identity provider](sign-in.md#identity-provider), the console writes these records:

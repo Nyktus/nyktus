@@ -47,3 +47,15 @@ EXCEPTION
 		NULL;
 END
 $$;
+
+-- Group role of the worker, which correlates events into incidents. It reads
+-- events and writes incidents and alerts, but never reads the inventory; its
+-- login role is a member of it.
+DO $$
+BEGIN
+	CREATE ROLE nyktus_worker NOLOGIN;
+EXCEPTION
+	WHEN duplicate_object OR unique_violation THEN
+		NULL;
+END
+$$;

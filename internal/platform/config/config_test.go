@@ -433,9 +433,9 @@ func TestParseRoles(t *testing.T) {
 		t.Errorf("ParseRoles() = %v, %v; want deduplicated console role", roles, err)
 	}
 
-	roles, err = ParseRoles("dns,trigger")
-	if err != nil || !slices.Equal(roles, []Role{RoleDNS, RoleTrigger}) {
-		t.Errorf("ParseRoles() = %v, %v; want dns and trigger", roles, err)
+	roles, err = ParseRoles("dns,trigger,worker")
+	if err != nil || !slices.Equal(roles, []Role{RoleDNS, RoleTrigger, RoleWorker}) {
+		t.Errorf("ParseRoles() = %v, %v; want dns, trigger and worker", roles, err)
 	}
 
 	if _, err := ParseRoles("console,unknown"); err == nil {
@@ -457,7 +457,7 @@ func TestParseRoles_RequiresAList(t *testing.T) {
 			}
 			continue
 		}
-		if err == nil || !strings.Contains(err.Error(), "console, trigger, dns") {
+		if err == nil || !strings.Contains(err.Error(), "console, trigger, dns, worker") {
 			t.Errorf("ParseRoles(%q) = %v, %v; want an error that names the roles", s, roles, err)
 		}
 	}

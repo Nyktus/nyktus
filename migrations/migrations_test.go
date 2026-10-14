@@ -55,7 +55,7 @@ func TestApply_FailsWithoutSchemaOwnership(t *testing.T) {
 func TestApply_FailsWithoutGroupRole(t *testing.T) {
 	t.Parallel()
 
-	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole, schematest.DNSRole} {
+	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole, schematest.DNSRole, schematest.WorkerRole} {
 		t.Run(role, func(t *testing.T) {
 			t.Parallel()
 
@@ -116,7 +116,7 @@ func TestRolesScript_CreatesGroupRolesIdempotently(t *testing.T) {
 	}
 	// Group roles are global and other tests create them, so their presence
 	// proves nothing about the script; the script must create each of them.
-	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole, schematest.DNSRole} {
+	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole, schematest.DNSRole, schematest.WorkerRole} {
 		if !strings.Contains(string(script), "CREATE ROLE "+role+" NOLOGIN;") {
 			t.Errorf("the roles script does not create %s", role)
 		}
@@ -124,7 +124,7 @@ func TestRolesScript_CreatesGroupRolesIdempotently(t *testing.T) {
 	dbURL := dbtest.New(t)
 	dbtest.Exec(t, dbURL, string(script), string(script))
 
-	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole, schematest.DNSRole} {
+	for _, role := range []string{schematest.ConsoleRole, schematest.TriggerRole, schematest.DNSRole, schematest.WorkerRole} {
 		var canLogin bool
 		err = schematest.Open(t, dbURL).QueryRow(t.Context(), "SELECT rolcanlogin FROM pg_roles WHERE rolname = $1", role).Scan(&canLogin)
 		if err != nil {
@@ -282,6 +282,13 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT * FROM public.record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')",
 		"SELECT * FROM public.record_dns_query(repeat('a', 26), 'd.example.com', '', 'A', 'udp', NULL, interval '0')",
 		"SELECT public.honeytoken_event_limit_reached(gen_random_uuid())",
+		"SELECT count(*) FROM incidents",
+		"INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at) VALUES ('honeytoken', gen_random_uuid(), 'low', now(), now())",
+		"UPDATE incidents SET notes = 'n'",
+		"DELETE FROM incidents",
+		"SELECT count(*) FROM alerts",
+		"INSERT INTO alerts (incident_id, severity) VALUES (gen_random_uuid(), 'low')",
+		"SELECT public.incidents_keep_status_forward()",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -377,6 +384,10 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_function_privilege($1, 'public.record_honeytoken_request(text, text, inet, text, text, text)', 'EXECUTE')",
 		"has_function_privilege($1, 'public.record_dns_query(text, text, text, text, text, inet, interval)', 'EXECUTE')",
 		"has_function_privilege($1, 'public.honeytoken_event_limit_reached(uuid)', 'EXECUTE')",
+		"has_table_privilege($1, 'public.incidents', 'SELECT')",
+		"has_table_privilege($1, 'public.incidents', 'UPDATE')",
+		"has_table_privilege($1, 'public.alerts', 'INSERT')",
+		"has_function_privilege($1, 'public.incidents_keep_status_forward()', 'EXECUTE')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

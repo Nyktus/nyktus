@@ -45,6 +45,10 @@ const (
 	TypeDNS Type = "dns"
 )
 
+// ResourceType names honeytokens where other records refer to them, such as
+// audit entries, events and incidents.
+const ResourceType = "honeytoken"
+
 // Types lists every type, in the order in which documentation names them.
 var Types = []Type{TypeWebURL, TypeWebImage, TypeDNS}
 
