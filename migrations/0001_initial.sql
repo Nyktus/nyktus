@@ -491,7 +491,10 @@ CREATE TABLE public.sessions (
 	-- Deleting a user ends all of their sessions.
 	user_id      uuid NOT NULL CONSTRAINT sessions_user_id_fkey REFERENCES public.users (id) ON DELETE CASCADE,
 	created_at   timestamptz NOT NULL DEFAULT clock_timestamp(),
-	last_seen_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+	-- Set by the trigger below on insert, so that a new session was last seen
+	-- when it was created. A second default would read the clock again, in an
+	-- order that nothing guarantees, and could fail the check below.
+	last_seen_at timestamptz NOT NULL,
 	-- When the user of an account of the identity provider last signed in there
 	-- again for this session. A sensitive action, which a local account
 	-- confirms with its password, requires that it was a few minutes ago.
@@ -507,9 +510,24 @@ CREATE TABLE public.sessions (
 -- removes all of them.
 CREATE INDEX sessions_user_id_idx ON public.sessions (user_id);
 
+CREATE FUNCTION public.sessions_set_last_seen_at() RETURNS trigger
+	LANGUAGE plpgsql
+	SET search_path = ''
+AS $$
+BEGIN
+	NEW.last_seen_at := NEW.created_at;
+	RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER sessions_set_last_seen_at
+	BEFORE INSERT ON public.sessions
+	FOR EACH ROW EXECUTE FUNCTION public.sessions_set_last_seen_at();
+
 -- Default privileges set by an operator could grant more than this migration
 -- intends, so everything is revoked before the grants.
 REVOKE ALL ON public.sessions FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.sessions_set_last_seen_at() FROM PUBLIC, nyktus_console;
 
 GRANT SELECT, DELETE ON public.sessions TO nyktus_console;
 -- Identifiers and times come from the database. The console only records when a
@@ -534,6 +552,7 @@ BEGIN
 	IF has_table_privilege('nyktus_console', 'public.sessions', 'INSERT')
 		OR has_table_privilege('nyktus_console', 'public.sessions', 'UPDATE, TRUNCATE, REFERENCES, TRIGGER')
 		OR has_any_column_privilege('nyktus_console', 'public.sessions', 'REFERENCES')
+		OR has_function_privilege('nyktus_console', 'public.sessions_set_last_seen_at()', 'EXECUTE')
 		OR EXISTS (
 			SELECT FROM unnest(ARRAY['id', 'created_at', 'last_seen_at', 'reauthenticated_at']) AS c (name)
 			WHERE has_column_privilege('nyktus_console', 'public.sessions', c.name, 'INSERT')

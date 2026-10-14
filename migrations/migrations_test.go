@@ -234,6 +234,7 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"TRUNCATE account_links",
 		"SELECT public.users_keep_active_admin()",
 		"SELECT public.set_updated_at()",
+		"SELECT public.sessions_set_last_seen_at()",
 		"INSERT INTO sign_in_challenges (token_hash, user_id, expires_at) SELECT sha256('d'), id, now() + interval '1 year' FROM users LIMIT 1",
 		"UPDATE sign_in_challenges SET expires_at = now() + interval '1 year'",
 		"UPDATE sign_in_challenges SET user_id = user_id",
@@ -335,6 +336,7 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_column_privilege($1, 'public.users', 'email', 'UPDATE')",
 		"has_function_privilege($1, 'public.users_keep_active_admin()', 'EXECUTE')",
 		"has_function_privilege($1, 'public.set_updated_at()', 'EXECUTE')",
+		"has_function_privilege($1, 'public.sessions_set_last_seen_at()', 'EXECUTE')",
 		"has_any_column_privilege($1, 'public.account_links', 'UPDATE')",
 		"has_table_privilege($1, 'public.account_links', 'TRUNCATE')",
 		"has_table_privilege($1, 'public.account_links', 'REFERENCES')",
@@ -401,4 +403,29 @@ func apply(t *testing.T, dbURL string, all []migrate.Migration) error {
 	t.Helper()
 	_, err := migrate.Apply(t.Context(), schematest.Open(t, dbURL), all, slog.New(slog.DiscardHandler))
 	return err
+}
+
+// A new session was last seen when it was created. Two defaults would read the
+// clock twice, in an order that nothing guarantees: the times would differ, and
+// a last_seen_at read before created_at would fail its check. Many sessions in
+// one statement make a tick of the clock between two reads all but certain.
+func TestSchema_NewSessionWasLastSeenWhenCreated(t *testing.T) {
+	t.Parallel()
+
+	_, consoleURL := schematest.Console(t)
+	pool := schematest.Open(t, consoleURL)
+	if _, err := pool.Exec(t.Context(), `
+WITH u AS (
+	INSERT INTO users (email, display_name, role, status) VALUES ('s@example.com', 'S', 'viewer', 'pending') RETURNING id
+)
+INSERT INTO sessions (token_hash, user_id) SELECT sha256(i::text::bytea), u.id FROM u, generate_series(1, 2000) AS i`); err != nil {
+		t.Fatalf("insert sessions: %v", err)
+	}
+	var differing int
+	if err := pool.QueryRow(t.Context(), "SELECT count(*) FROM sessions WHERE last_seen_at <> created_at").Scan(&differing); err != nil {
+		t.Fatal(err)
+	}
+	if differing != 0 {
+		t.Errorf("%d new sessions were last seen at another time than they were created", differing)
+	}
 }
