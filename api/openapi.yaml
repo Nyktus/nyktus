@@ -64,6 +64,10 @@ tags:
     description: Management of accounts by administrators, and their activation.
   - name: honeytokens
     description: Honeytokens of the team, which raise an event when their URL is requested.
+  - name: incidents
+    description: Incidents, which correlate the events of a honeytoken, and their triage.
+  - name: events
+    description: Recorded requests and queries of honeytokens.
 
 paths:
   /livez:
@@ -788,8 +792,9 @@ paths:
 
         A key acts with its scopes alone, regardless of the administrator who
         created it, and stays valid when that account is changed or deleted.
-        The scopes must be distinct permissions that API keys may carry;
-        currently only `audit:read`. `expires_at` is required and at most three
+        The scopes must be distinct permissions that API keys may carry, and a
+        scope to write requires the scope to read the same resource.
+        `expires_at` is required and at most three
         years away. The team has at most 50 keys that have not expired (`409`,
         code `too_many_api_keys`).
 
@@ -1566,6 +1571,250 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/incidents:
+    get:
+      operationId: listIncidents
+      summary: List incidents
+      description: |
+        Returns incidents from the most recently opened to the oldest, a page at
+        a time. To read the next page, pass the `next_cursor` of a response as
+        `cursor`, with the same filters.
+      tags: [incidents]
+      x-access: incidents:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      parameters:
+        - name: limit
+          in: query
+          description: Number of incidents per page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: |
+            Lists only incidents with one of these statuses, separated by
+            commas, such as `open,acknowledged` for every incident that is not
+            closed.
+          schema:
+            type: string
+            pattern: "^(open|acknowledged|closed)(,(open|acknowledged|closed))*$"
+        - name: resource_id
+          in: query
+          description: Lists only the incidents of this honeytoken.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: A page of incidents.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentPage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/incidents/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getIncident
+      summary: Get an incident
+      tags: [incidents]
+      x-access: incidents:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The incident.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: triageIncident
+      summary: Triage an incident
+      description: |
+        Changes the status, the notes, or the overrides of the severity and the
+        techniques of an incident. Members that are left out stay unchanged;
+        `null` removes an override. The status only moves forward, from `open`
+        over `acknowledged` to `closed`, and may skip `acknowledged`. A request
+        that would move it back, such as opening a closed incident again,
+        receives `409` with the code `invalid_state`. Notes and overrides can
+        still be changed after an incident is closed.
+
+        The audit log records the names of the changed fields as
+        `incident.update`, not their values. A request that changes no value
+        is not recorded.
+      tags: [incidents]
+      x-access: incidents:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriageIncidentRequest"
+      responses:
+        "200":
+          description: The incident after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The change would move the status of the incident back (`invalid_state`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/events:
+    get:
+      operationId: listEvents
+      summary: List events
+      description: |
+        Returns events from the most recently recorded to the oldest, a page
+        at a time. To read the next page, pass the `next_cursor` of a response
+        as `cursor`, with the same filter. The order follows `recorded_at`, not
+        `occurred_at`: a DNS query can be recorded up to five minutes after it
+        arrived, and is listed when it was recorded. The events of a honeytoken
+        are those of its incidents.
+
+        Events contain personal data, such as the addresses of clients. Every
+        read is recorded in the audit log as `events.read`, at most once per
+        user or API key and minute.
+      tags: [events]
+      x-access: events:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      parameters:
+        - name: limit
+          in: query
+          description: Number of events per page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+        - name: incident_id
+          in: query
+          description: Lists only the events of this incident.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: A page of events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventPage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/events/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getEvent
+      summary: Get an event
+      description: |
+        Events contain personal data. Every read is recorded in the audit log
+        as `events.read`, at most once per user or API key and minute.
+      tags: [events]
+      x-access: events:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1990,11 +2239,12 @@ components:
           maxItems: 16
           uniqueItems: true
           description: |
-            The permissions of the key. `honeytokens:write` requires `honeytokens:read`, because a key that
-            changes honeytokens receives them in the responses.
+            The permissions of the key. `honeytokens:write` requires `honeytokens:read`, and
+            `incidents:write` requires `incidents:read`, because a key that changes a resource receives it
+            in the responses.
           items:
             type: string
-            enum: [audit:read, honeytokens:read, honeytokens:write]
+            enum: [audit:read, events:read, honeytokens:read, honeytokens:write, incidents:read, incidents:write]
         expires_at:
           type: string
           format: date-time
@@ -2217,6 +2467,227 @@ components:
           items:
             type: string
             pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+
+    Incident:
+      type: object
+      additionalProperties: false
+      required: [id, resource_type, resource_id, status, severity, event_severity, severity_override, techniques,
+        event_techniques, techniques_override, notes, event_count, first_event_at, last_event_at, opened_at,
+        acknowledged_at, closed_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        resource_type:
+          type: string
+          enum: [honeytoken]
+        resource_id:
+          type: string
+          format: uuid
+          description: The honeytoken of the incident. It may have been deleted since.
+        status:
+          type: string
+          enum: [open, acknowledged, closed]
+          description: |
+            `acknowledged` incidents are still open: like `open` ones, they collect the events of their
+            honeytoken. A `closed` incident collects no more events and is never opened again.
+        severity:
+          type: string
+          enum: [info, low, medium, high, critical]
+          description: The severity of the incident, `severity_override` if it is set, `event_severity` otherwise.
+        event_severity:
+          type: string
+          enum: [low, medium, high, critical]
+          description: The highest severity that the events suggest.
+        severity_override:
+          type: [string, "null"]
+          enum: [info, low, medium, high, critical, null]
+          description: The severity that an analyst set, or null.
+        techniques:
+          type: array
+          description: The techniques of the incident, `techniques_override` if it is set, `event_techniques` otherwise.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        event_techniques:
+          type: array
+          description: Every technique of the events.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        techniques_override:
+          type: [array, "null"]
+          description: The techniques that an analyst set, or null.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        notes:
+          type: string
+        event_count:
+          type: integer
+          minimum: 1
+        first_event_at:
+          type: string
+          format: date-time
+        last_event_at:
+          type: string
+          format: date-time
+        opened_at:
+          type: string
+          format: date-time
+        acknowledged_at:
+          type: [string, "null"]
+          format: date-time
+        closed_at:
+          type: [string, "null"]
+          format: date-time
+
+    IncidentPage:
+      type: object
+      additionalProperties: false
+      required: [incidents]
+      properties:
+        incidents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Incident"
+        next_cursor:
+          type: string
+          description: Cursor of the next page. Absent on the last page.
+
+    TriageIncidentRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        status:
+          type: string
+          enum: [open, acknowledged, closed]
+          description: Only moves forward.
+        notes:
+          type: string
+          maxLength: 10000
+          description: Replaces the notes. Line breaks and tabs are allowed.
+        severity_override:
+          type: [string, "null"]
+          enum: [info, low, medium, high, critical, null]
+          description: null removes the override.
+        techniques_override:
+          type: [array, "null"]
+          maxItems: 20
+          uniqueItems: true
+          description: |
+            Identifiers of techniques of the ATT&CK version that the server bundles. An empty list states
+            that the incident suggests no technique; null removes the override.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+
+    Event:
+      type: object
+      additionalProperties: false
+      required: [id, resource_type, resource_id, honeytoken_type, techniques, incident_id, occurred_at, recorded_at,
+        channel, client_ip, http, dns]
+      properties:
+        id:
+          type: string
+          format: uuid
+        resource_type:
+          type: string
+          enum: [honeytoken]
+        resource_id:
+          type: string
+          format: uuid
+          description: The honeytoken that was requested. It may have been deleted since.
+        honeytoken_type:
+          type: [string, "null"]
+          enum: [web_url, web_image, dns, null]
+          description: The type of the honeytoken.
+        techniques:
+          type: array
+          description: The techniques that the honeytoken had when it was requested.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        incident_id:
+          type: [string, "null"]
+          format: uuid
+          description: The incident of the event, or null until the worker has processed it.
+        occurred_at:
+          type: string
+          format: date-time
+          description: When the request or query arrived.
+        recorded_at:
+          type: string
+          format: date-time
+          description: When the event was written.
+        channel:
+          type: string
+          enum: [http, dns]
+        client_ip:
+          type: [string, "null"]
+          description: |
+            The address of the client, or for `dns` of the resolver that sent the query, or null if it is
+            unknown. Personal data.
+        http:
+          description: The request, for the channel `http`; null otherwise.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EventRequest"
+        dns:
+          description: The query, for the channel `dns`; null otherwise.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EventQuery"
+
+    EventRequest:
+      type: object
+      additionalProperties: false
+      required: [method, user_agent, referer, accept_language]
+      description: |
+        The headers were chosen by the client. They are shortened, and control and invalid characters are
+        replaced; treat them as claims, not facts.
+      properties:
+        method:
+          type: string
+          enum: [GET, HEAD]
+        user_agent:
+          type: string
+        referer:
+          type: string
+        accept_language:
+          type: string
+
+    EventQuery:
+      type: object
+      additionalProperties: false
+      required: [zone, prefix, qtype, transport]
+      properties:
+        zone:
+          type: string
+          description: The zone under which the name was queried.
+        prefix:
+          type: string
+          description: The labels in front of the trigger value, chosen by whoever sent the query.
+        qtype:
+          type: string
+          description: The type of the query, such as `A` or `TYPE65280`.
+        transport:
+          type: string
+          enum: [udp, tcp]
+
+    EventPage:
+      type: object
+      additionalProperties: false
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/Event"
+        next_cursor:
+          type: string
+          description: Cursor of the next page. Absent on the last page.
 
     Error:
       type: object

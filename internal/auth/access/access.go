@@ -22,10 +22,11 @@ import (
 // first route that requires it is added.
 var grants = map[user.Role][]httpx.Permission{
 	user.RoleAdmin: {
-		"api_keys:read", "api_keys:write", "audit:read", "honeytokens:read", "honeytokens:write", "users:read", "users:write",
+		"api_keys:read", "api_keys:write", "audit:read", "events:read", "honeytokens:read", "honeytokens:write",
+		"incidents:read", "incidents:write", "users:read", "users:write",
 	},
-	user.RoleUser:   {"honeytokens:read", "honeytokens:write"},
-	user.RoleViewer: {"honeytokens:read"},
+	user.RoleUser:   {"events:read", "honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write"},
+	user.RoleViewer: {"events:read", "honeytokens:read", "incidents:read"},
 }
 
 // keyScopes lists the permissions that an API key may carry as scopes. Keys do
@@ -34,15 +35,21 @@ var grants = map[user.Role][]httpx.Permission{
 // one with api_keys:write could issue itself a successor. Keys may manage
 // honeytokens, so that they can be rolled out by script; reading them is
 // reading the inventory, so integrations that only need other data get keys
-// without these scopes.
-var keyScopes = []httpx.Permission{"audit:read", "honeytokens:read", "honeytokens:write"}
+// without these scopes. Keys may read events and incidents and triage
+// incidents, so that a SIEM or a ticket system can follow them up.
+var keyScopes = []httpx.Permission{
+	"audit:read", "events:read", "honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write",
+}
 
 // keyScopeRequires names the scopes that a key may carry only together with
-// another one. A key that changes honeytokens receives the honeytoken in every
-// response, also to a change that changes nothing, so it reads them anyway;
-// requiring the scope to read them keeps the scopes of a key honest about what
-// it can see.
-var keyScopeRequires = map[httpx.Permission]httpx.Permission{"honeytokens:write": "honeytokens:read"}
+// another one. A key that changes honeytokens or incidents receives them in
+// every response, also to a change that changes nothing, so it reads them
+// anyway; requiring the scope to read them keeps the scopes of a key honest
+// about what it can see.
+var keyScopeRequires = map[httpx.Permission]httpx.Permission{
+	"honeytokens:write": "honeytokens:read",
+	"incidents:write":   "incidents:read",
+}
 
 // KeyScopeRequires returns the scope that a key must carry as well to carry
 // perm, if there is one.

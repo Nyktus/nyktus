@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -172,7 +173,7 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT public.honeytoken_event_limit_reached(gen_random_uuid())",
 		"SELECT public.audit_field_names_valid('{name}')",
 		"SELECT public.set_updated_at()",
-		"SELECT public.incidents_keep_status_forward()",
+		"SELECT public.incidents_change_status()",
 	}
 	for _, statement := range denied {
 		expectDenied(t, pool, statement)
@@ -318,8 +319,8 @@ WHERE id = $1`, id, tt.to)
 		switch {
 		case tt.allowed && err != nil:
 			t.Errorf("%s -> %s: error = %v, want nil", tt.from, tt.to, err)
-		case !tt.allowed && constraintOf(err) != "incidents_keep_status_forward":
-			t.Errorf("%s -> %s: error = %v, want incidents_keep_status_forward", tt.from, tt.to, err)
+		case !tt.allowed && constraintOf(err) != "incidents_status_forward":
+			t.Errorf("%s -> %s: error = %v, want incidents_status_forward", tt.from, tt.to, err)
 		}
 		// Every incident is closed at the end, so that the next one can open.
 		if _, err := pool.Exec(t.Context(), "UPDATE incidents SET status = 'closed', closed_at = coalesce(closed_at, clock_timestamp()) WHERE id = $1", id); err != nil {
@@ -337,10 +338,12 @@ func TestSchema_ChecksIncidents(t *testing.T) {
 		name, statement, constraint string
 	}{
 		{"unknown status", "UPDATE incidents SET status = 'resolved'", "incidents_status_check"},
-		{"closed without time", "UPDATE incidents SET status = 'closed'", "incidents_status_times_check"},
-		{"acknowledged without time", "UPDATE incidents SET status = 'acknowledged'", "incidents_status_times_check"},
-		{"open with closing time", "UPDATE incidents SET closed_at = now()", "incidents_status_times_check"},
-		{"closed before opened", "UPDATE incidents SET status = 'closed', closed_at = opened_at - interval '1 second'", "incidents_status_times_check"},
+		// The trigger sets the times of an update, so only an insert can
+		// violate their check.
+		{"closed without time", "INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at) VALUES ('honeytoken', gen_random_uuid(), 'closed', 'low', now(), now())", "incidents_status_times_check"},
+		{"acknowledged without time", "INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at) VALUES ('honeytoken', gen_random_uuid(), 'acknowledged', 'low', now(), now())", "incidents_status_times_check"},
+		{"open with closing time", "INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, closed_at) VALUES ('honeytoken', gen_random_uuid(), 'low', now(), now(), now())", "incidents_status_times_check"},
+		{"closed before opened", "INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at, closed_at) VALUES ('honeytoken', gen_random_uuid(), 'closed', 'low', now(), now(), now() - interval '1 second')", "incidents_status_times_check"},
 		{"info as severity", "UPDATE incidents SET severity = 'info'", "incidents_severity_check"},
 		{"unknown override", "UPDATE incidents SET severity_override = 'urgent'", "incidents_severity_override_check"},
 		{"invalid technique", "UPDATE incidents SET techniques = '{T1}'", "incidents_techniques_check"},
@@ -372,6 +375,45 @@ func TestSchema_ChecksIncidents(t *testing.T) {
 	}
 }
 
+// The database records when the status of an incident changed, and keeps the
+// times otherwise, whatever an update sets.
+func TestSchema_RecordsWhenTheStatusOfAnIncidentChanged(t *testing.T) {
+	t.Parallel()
+	pool := incidentSchema(t)
+
+	id, err := insertIncident(t, pool, "00000000-0000-4000-8000-000000000001", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func() (acknowledged, closed *time.Time) {
+		t.Helper()
+		if err := pool.QueryRow(t.Context(), "SELECT acknowledged_at, closed_at FROM incidents WHERE id = $1", id).Scan(&acknowledged, &closed); err != nil {
+			t.Fatal(err)
+		}
+		return acknowledged, closed
+	}
+	exec := func(statement string) {
+		t.Helper()
+		if _, err := pool.Exec(t.Context(), statement, id); err != nil {
+			t.Fatalf("%s: %v", statement, err)
+		}
+	}
+
+	exec("UPDATE incidents SET status = 'acknowledged', acknowledged_at = now() - interval '1 day' WHERE id = $1")
+	acknowledged, closed := read()
+	if acknowledged == nil || time.Since(*acknowledged) > time.Hour || closed != nil {
+		t.Fatalf("after acknowledging: %v, %v; want the time of the change and no closing time", acknowledged, closed)
+	}
+	exec("UPDATE incidents SET notes = 'n', acknowledged_at = NULL, closed_at = now() WHERE id = $1")
+	if a, c := read(); a == nil || !a.Equal(*acknowledged) || c != nil {
+		t.Errorf("after changing the notes: %v, %v; want the times kept", a, c)
+	}
+	exec("UPDATE incidents SET status = 'closed' WHERE id = $1")
+	if a, c := read(); a == nil || !a.Equal(*acknowledged) || c == nil || c.Before(*acknowledged) {
+		t.Errorf("after closing: %v, %v; want the time of acknowledging kept and a closing time after it", a, c)
+	}
+}
+
 // An incident has exactly one alert, and an event belongs to an incident that
 // exists.
 func TestSchema_OneAlertPerIncident(t *testing.T) {
@@ -394,5 +436,42 @@ func TestSchema_OneAlertPerIncident(t *testing.T) {
 	}
 	if _, err := pool.Exec(t.Context(), "UPDATE events SET incident_id = gen_random_uuid()"); constraintOf(err) != "events_incident_id_fkey" {
 		t.Errorf("event of a missing incident: error = %v, want events_incident_id_fkey", err)
+	}
+}
+
+// The migration verifies the privileges of the console on events and incidents
+// in both directions, so a grant that is missing or wider than intended stops
+// it.
+func TestApply_VerifiesThePrivilegesOfTheConsoleOnIncidents(t *testing.T) {
+	t.Parallel()
+
+	const grant = "GRANT UPDATE (status, notes, severity_override, techniques_override) ON public.incidents TO nyktus_console;"
+	tests := []struct {
+		name, replacement, want string
+	}{
+		{name: "missing", replacement: "", want: "nyktus_console lacks privileges on events or incidents (incidents.notes: UPDATE"},
+		{name: "wider", replacement: "GRANT UPDATE ON public.incidents TO nyktus_console;", want: "nyktus_console has more privileges on events or incidents than granted (incidents: UPDATE"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			all := load(t)
+			found := false
+			for i := range all {
+				if strings.Contains(all[i].SQL, grant) {
+					all[i].SQL = strings.Replace(all[i].SQL, grant, tt.replacement, 1)
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("the migrations do not contain %q", grant)
+			}
+			dbURL := dbtest.New(t)
+			schematest.GroupRoles(t)
+			if err := apply(t, dbURL, all); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("Apply() error = %v, want it to contain %q", err, tt.want)
+			}
+		})
 	}
 }

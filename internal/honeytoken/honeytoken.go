@@ -24,6 +24,7 @@ import (
 	"unicode/utf8"
 
 	"nyktus.org/nyktus/internal/attack"
+	"nyktus.org/nyktus/internal/platform/text"
 )
 
 // Type is the kind of a honeytoken, which decides how it is triggered and what
@@ -232,18 +233,11 @@ func ValidateName(s string) error {
 	return nil
 }
 
-// ValidateNotes accepts notes of up to MaxNotesLength characters. They may span
-// several lines and contain tabs and every kind of space, such as the
-// non-breaking spaces of text copied from a document; other control and format
-// characters are rejected, as in names.
+// ValidateNotes accepts notes of up to MaxNotesLength characters, as
+// text.ValidNotes describes.
 func ValidateNotes(s string) error {
-	if utf8.RuneCountInString(s) > MaxNotesLength || !utf8.ValidString(s) {
+	if !text.ValidNotes(s, MaxNotesLength) {
 		return ErrInvalidNotes
-	}
-	for _, r := range s {
-		if !unicode.IsGraphic(r) && r != '\n' && r != '\r' && r != '\t' {
-			return ErrInvalidNotes
-		}
 	}
 	return nil
 }

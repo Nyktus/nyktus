@@ -4,7 +4,7 @@ A honeytoken is a URL or host name that nobody has a reason to open or resolve. 
 
 Events become [incidents](incidents.md): the worker assigns every event to the open incident of its honeytoken, or opens one with its alert.
 
-> This version records events and incidents, but does not show them in the console or deliver alerts yet.
+> This version records events and incidents and serves them through the API, but does not deliver alerts yet.
 
 ## Types
 
@@ -122,7 +122,7 @@ An event of the DNS role holds the honeytoken, the time at which the query arriv
 
 The DNS role answers first and records afterwards. A query that cannot be recorded within five minutes, for example while the database is unreachable, is dropped and counted in the [log](logs.md#dns). A lookup usually reaches Nyktus as several queries, for example `A` and `AAAA`, and resolvers repeat queries. Each one is an event.
 
-Events contain personal data, such as the address of the client; see [Personal data](incidents.md#personal-data).
+Read events through `GET /api/v1/events`; see [Reading incidents and events](incidents.md#reading-incidents-and-events). Events contain personal data, such as the address of the client; see [Personal data](incidents.md#personal-data).
 
 At most 10 events per honeytoken and minute are recorded, over HTTP and DNS together, so that a flood of requests for one known URL or name cannot fill the database. The trigger and the DNS role count the requests beyond the limit and log their number once a minute as `trigger: requests not recorded` or `dns: queries not recorded` with the identifier of the honeytoken.
 
