@@ -134,7 +134,7 @@ func ListEvents(ctx context.Context, q db.Querier, f EventFilter, size int, afte
 // GetEvent returns the event id. It returns ErrEventNotFound if there is none.
 func GetEvent(ctx context.Context, q db.Querier, id string) (Event, error) {
 	e, err := scanEvent(q.QueryRow(ctx, `SELECT `+eventColumns+` FROM public.events WHERE id = $1`, id))
-	if notFound(err) {
+	if db.NotFound(err) {
 		return Event{}, ErrEventNotFound
 	}
 	if err != nil {

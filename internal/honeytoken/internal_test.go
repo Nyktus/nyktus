@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/platform/schematest"
 )
 
@@ -23,12 +24,12 @@ func TestMapWriteError_MapsTheChecksOfTheSchema(t *testing.T) {
 	t.Parallel()
 
 	for constraint, want := range constraintErrors {
-		err := fmt.Errorf("insert: %w", &pgconn.PgError{Code: checkViolation, ConstraintName: constraint})
+		err := fmt.Errorf("insert: %w", &pgconn.PgError{Code: db.CheckViolation, ConstraintName: constraint})
 		if got := mapWriteError(err); !errors.Is(got, want) {
 			t.Errorf("mapWriteError(%s) = %v, want %v", constraint, got, want)
 		}
 	}
-	other := &pgconn.PgError{Code: checkViolation, ConstraintName: "honeytokens_updated_at_check"}
+	other := &pgconn.PgError{Code: db.CheckViolation, ConstraintName: "honeytokens_updated_at_check"}
 	if got := mapWriteError(other); !errors.Is(got, other) {
 		t.Errorf("mapWriteError(other check) = %v, want it unchanged", got)
 	}
