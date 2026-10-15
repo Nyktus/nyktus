@@ -2067,6 +2067,193 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/alert-channels/{id}/test:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: testAlertChannel
+      summary: Send a test to an alert channel
+      description: |
+        Asks the worker to send a test message to the channel, also to a
+        disabled one, so that it can be tried before it receives alerts. The
+        response names the new delivery; read its outcome with
+        `GET /api/v1/alert-deliveries/{id}` once the worker has sent it. A test
+        is attempted once. A channel has at most one test waiting (`409`, code
+        `test_pending`). The request is recorded in the audit log as
+        `alert_channel.test`.
+      tags: [alerting]
+      x-access: alert_channels:write
+      security:
+        - sessionCookie: []
+      responses:
+        "202":
+          description: The test waits for the worker.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertDelivery"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            The caller lacks the permission, which is recorded in the audit log at most once per user,
+            permission and minute, the request is not made with a session, which is not recorded, or
+            the request comes from another origin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: A test of the channel waits for the worker (`test_pending`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/alert-deliveries/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getAlertDelivery
+      summary: Get a delivery of an alert or test
+      description: |
+        Returns the state of a delivery, such as the outcome of a test. The
+        last attempt is described by its status code and the class of its
+        failure; responses and network errors are never stored.
+      tags: [alerting]
+      x-access: alert_channels:read
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The delivery.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertDelivery"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            The caller lacks the permission, which is recorded in the audit log at most once per user,
+            permission and minute, or the request is not made with a session, which is not recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/alert-deliveries/{id}/retry:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: retryAlertDelivery
+      summary: Retry a dead delivery
+      description: |
+        Makes a dead delivery of an alert pending again, with a new count of
+        attempts, for example after the receiver was fixed. Only dead
+        deliveries of alerts can be retried (`409`, code `delivery_not_dead`);
+        a test is requested anew instead. The retry is recorded in the audit
+        log as `alert_delivery.retry`.
+      tags: [alerting]
+      x-access: alert_channels:write
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The delivery, pending again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertDelivery"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            The caller lacks the permission, which is recorded in the audit log at most once per user,
+            permission and minute, the request is not made with a session, which is not recorded, or
+            the request comes from another origin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The delivery is not a dead delivery of an alert (`delivery_not_dead`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/incidents/{id}/deliveries:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listIncidentDeliveries
+      summary: List the deliveries of the alert of an incident
+      description: |
+        Returns the deliveries of the alert of the incident, one for every
+        channel that was enabled when the incident opened, ordered by the name
+        of the channel. The list is empty if no channel was enabled then.
+      tags: [incidents]
+      x-access: incidents:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The deliveries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertDeliveryList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -2707,6 +2894,81 @@ components:
           description: |
             The password of the administrator, required for every change other than a new `name`.
             Omitted by an administrator of the identity provider.
+
+    AlertDelivery:
+      type: object
+      additionalProperties: false
+      required: [id, incident_id, channel_id, channel_type, channel_name, status, attempts, next_attempt_at,
+        last_attempt_at, last_status_code, last_error, last_duration_ms, delivered_at, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Also the `delivery_id` of the message that the channel receives.
+        incident_id:
+          type: [string, "null"]
+          format: uuid
+          description: The incident of the alert, or null for a test.
+        channel_id:
+          type: string
+          format: uuid
+          description: The channel. It may have been deleted since.
+        channel_type:
+          type: string
+          enum: [webhook, slack, teams]
+        channel_name:
+          type: string
+          description: The name of the channel when the delivery was created.
+        status:
+          type: string
+          enum: [pending, delivered, dead, canceled]
+          description: |
+            `pending` waits for its next attempt, `delivered` was accepted by the receiver, `dead` failed
+            for the last time or in a way no retry can mend, `canceled` was not sent because its channel
+            was disabled or deleted first.
+        attempts:
+          type: integer
+          minimum: 0
+          maximum: 10
+        next_attempt_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the next attempt is due, while the delivery is pending.
+        last_attempt_at:
+          type: [string, "null"]
+          format: date-time
+        last_status_code:
+          type: [integer, "null"]
+          description: The HTTP status of the response to the last attempt, if there was one.
+        last_error:
+          type: [string, "null"]
+          enum: [http_status, redirect, timeout, network, tls, blocked, invalid_channel, null]
+          description: |
+            The class of the failure of the last attempt: the receiver answered with another status than
+            2xx (`http_status`) or a redirect, which is never followed (`redirect`), the request timed
+            out, the connection failed (`network`) or its TLS handshake (`tls`), the target resolved to
+            an address that is not allowed (`blocked`), or the channel cannot be sent to, for example
+            because its secrets cannot be decrypted (`invalid_channel`).
+        last_duration_ms:
+          type: [integer, "null"]
+          minimum: 0
+        delivered_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    AlertDeliveryList:
+      type: object
+      additionalProperties: false
+      required: [deliveries]
+      properties:
+        deliveries:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/AlertDelivery"
 
     Honeytoken:
       type: object

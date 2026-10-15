@@ -1640,6 +1640,139 @@ BEGIN
 END
 $$;
 
+-- A delivery is the job, the state of retries and the receipt of one alert to
+-- one channel, or of a test of a channel without an alert. The worker creates
+-- the deliveries of an alert in the transaction that opens its incident, one
+-- for every enabled channel, so that a channel added later does not receive
+-- old alerts. A delivery names its channel without a foreign key and keeps a
+-- copy of its type and name, so that the receipt outlives the channel, as the
+-- audit log names resources.
+CREATE TABLE public.alert_deliveries (
+	id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	-- Empty for a test of a channel.
+	alert_id         uuid CONSTRAINT alert_deliveries_alert_id_fkey REFERENCES public.alerts (incident_id),
+	channel_id       uuid NOT NULL,
+	channel_type     text NOT NULL,
+	channel_name     text NOT NULL,
+	-- pending until it is delivered, dead after the last failed attempt or a
+	-- failure that no retry can mend, canceled if its channel was disabled or
+	-- deleted first.
+	status           text NOT NULL DEFAULT 'pending',
+	attempts         integer NOT NULL DEFAULT 0,
+	-- When the next attempt is due.
+	not_before       timestamptz NOT NULL DEFAULT clock_timestamp(),
+	-- The last attempt: its time, the status code of the response, if there
+	-- was one, the class of its failure and how long it took. The response
+	-- itself is never stored.
+	last_attempt_at  timestamptz,
+	last_status_code integer,
+	last_error       text,
+	last_duration_ms integer,
+	delivered_at     timestamptz,
+	created_at       timestamptz NOT NULL DEFAULT clock_timestamp(),
+
+	CONSTRAINT alert_deliveries_channel_type_check CHECK (channel_type IN ('webhook', 'slack', 'teams')),
+	CONSTRAINT alert_deliveries_channel_name_check CHECK (char_length(channel_name) BETWEEN 1 AND 64),
+	CONSTRAINT alert_deliveries_status_check CHECK (status IN ('pending', 'delivered', 'dead', 'canceled')),
+	CONSTRAINT alert_deliveries_attempts_check CHECK (attempts BETWEEN 0 AND 100),
+	CONSTRAINT alert_deliveries_delivered_check CHECK ((status = 'delivered') = (delivered_at IS NOT NULL)),
+	CONSTRAINT alert_deliveries_last_attempt_check CHECK (
+		(attempts = 0) = (last_attempt_at IS NULL)
+		AND (last_attempt_at IS NOT NULL OR (last_status_code IS NULL AND last_error IS NULL AND last_duration_ms IS NULL))
+	),
+	CONSTRAINT alert_deliveries_last_status_code_check CHECK (last_status_code BETWEEN 100 AND 599),
+	CONSTRAINT alert_deliveries_last_error_check CHECK (
+		last_error IN ('http_status', 'redirect', 'timeout', 'network', 'tls', 'blocked', 'invalid_channel')
+	),
+	CONSTRAINT alert_deliveries_last_duration_check CHECK (last_duration_ms >= 0)
+);
+
+-- An alert reaches each channel once, also when two workers raise it.
+CREATE UNIQUE INDEX alert_deliveries_alert_channel_key ON public.alert_deliveries (alert_id, channel_id)
+	WHERE alert_id IS NOT NULL;
+-- A channel has at most one test waiting, which bounds what a session can make
+-- the worker send.
+CREATE UNIQUE INDEX alert_deliveries_pending_test_key ON public.alert_deliveries (channel_id)
+	WHERE alert_id IS NULL AND status = 'pending';
+-- The worker takes the deliveries that are due, in order.
+CREATE INDEX alert_deliveries_pending_not_before_idx ON public.alert_deliveries (not_before)
+	WHERE status = 'pending';
+
+-- An administrator delivers a dead delivery again, with a new count of
+-- attempts. The console changes deliveries only through this function, so
+-- that it can neither forge a receipt nor change where a delivery goes. It
+-- returns whether the delivery was dead.
+CREATE FUNCTION public.retry_alert_delivery(delivery uuid) RETURNS boolean
+	LANGUAGE sql
+	SECURITY DEFINER
+	SET search_path = ''
+AS $$
+	WITH retried AS (
+		UPDATE public.alert_deliveries
+		SET status = 'pending', attempts = 0, not_before = clock_timestamp(), last_attempt_at = NULL,
+			last_status_code = NULL, last_error = NULL, last_duration_ms = NULL
+		WHERE id = delivery AND status = 'dead' AND alert_id IS NOT NULL
+		RETURNING id
+	)
+	SELECT EXISTS (SELECT FROM retried)
+$$;
+
+REVOKE ALL ON public.alert_deliveries FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.retry_alert_delivery(uuid) FROM PUBLIC, nyktus_console;
+
+-- The console reads deliveries, requests tests of channels, which have no
+-- alert, and retries dead deliveries through the function above. It cannot
+-- create the delivery of an alert or change one otherwise.
+GRANT SELECT ON public.alert_deliveries TO nyktus_console;
+GRANT INSERT (channel_id, channel_type, channel_name) ON public.alert_deliveries TO nyktus_console;
+GRANT EXECUTE ON FUNCTION public.retry_alert_delivery(uuid) TO nyktus_console;
+
+-- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
+-- result is verified instead of assumed, in both directions.
+DO $$
+DECLARE
+	missing text;
+	extra text;
+BEGIN
+	WITH granted (attname, privilege) AS (
+		-- A NULL column stands for the whole table.
+		VALUES
+			(NULL, 'SELECT'),
+			('channel_id', 'INSERT'), ('channel_type', 'INSERT'), ('channel_name', 'INSERT')
+	),
+	privileges (object, privilege, held, wanted) AS (
+		SELECT 'alert_deliveries', p.privilege,
+			has_table_privilege('nyktus_console', 'public.alert_deliveries', p.privilege),
+			EXISTS (SELECT FROM granted AS g WHERE g.attname IS NULL AND g.privilege = p.privilege)
+		FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS p (privilege)
+		UNION ALL
+		SELECT 'alert_deliveries.' || a.attname, p.privilege,
+			has_column_privilege('nyktus_console', a.attrelid, a.attnum, p.privilege),
+			EXISTS (
+				SELECT FROM granted AS g
+				WHERE coalesce(g.attname, a.attname) = a.attname AND g.privilege = p.privilege
+			)
+		FROM pg_catalog.pg_attribute AS a
+		CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) AS p (privilege)
+		WHERE a.attrelid = 'public.alert_deliveries'::regclass AND a.attnum > 0 AND NOT a.attisdropped
+		UNION ALL
+		SELECT 'retry_alert_delivery(uuid)', 'EXECUTE',
+			has_function_privilege('nyktus_console', 'public.retry_alert_delivery(uuid)', 'EXECUTE'), true
+	)
+	SELECT string_agg(object || ': ' || privilege, ', ' ORDER BY object, privilege) FILTER (WHERE wanted AND NOT held),
+		string_agg(object || ': ' || privilege, ', ' ORDER BY object, privilege) FILTER (WHERE held AND NOT wanted)
+	INTO missing, extra
+	FROM privileges;
+
+	IF missing IS NOT NULL THEN
+		RAISE EXCEPTION 'nyktus_console lacks privileges on the alert deliveries (%); run migrations as the owner of the schema', missing;
+	END IF;
+	IF extra IS NOT NULL THEN
+		RAISE EXCEPTION 'nyktus_console has more privileges on the alert deliveries than granted (%); check the default privileges of the owner', extra;
+	END IF;
+END
+$$;
+
 -- The trigger and the DNS role reach nothing but their function, and the
 -- worker nothing but its tables. Everything in the schema is revoked here, at
 -- its end, including the table of the migration runner, so that default
@@ -1707,6 +1840,18 @@ GRANT INSERT (resource_type, resource_id, severity, techniques, first_event_at, 
 GRANT UPDATE (severity, techniques, event_count, first_event_at, last_event_at) ON public.incidents TO nyktus_worker;
 GRANT INSERT (incident_id, severity, techniques) ON public.alerts TO nyktus_worker;
 
+-- The worker delivers the alerts. It creates the deliveries of a new alert for
+-- the enabled channels, reads the alert and its incident for the message, and
+-- the channels with their secrets to send it. It records every attempt on its
+-- delivery and encrypts a secret again with the current key. It cannot create
+-- or change a channel, change where a delivery goes or delete one.
+GRANT SELECT ON public.alerts, public.alert_channels, public.alert_channel_secrets TO nyktus_worker;
+GRANT UPDATE (url, header_value) ON public.alert_channel_secrets TO nyktus_worker;
+GRANT SELECT ON public.alert_deliveries TO nyktus_worker;
+GRANT INSERT (alert_id, channel_id, channel_type, channel_name) ON public.alert_deliveries TO nyktus_worker;
+GRANT UPDATE (status, attempts, not_before, last_attempt_at, last_status_code, last_error, last_duration_ms, delivered_at)
+	ON public.alert_deliveries TO nyktus_worker;
+
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
 -- result is verified instead of assumed, in both directions: every privilege on
 -- every table, column, sequence and function of the schema is compared with
@@ -1729,7 +1874,16 @@ BEGIN
 			('incidents', 'severity', 'UPDATE'), ('incidents', 'techniques', 'UPDATE'),
 			('incidents', 'event_count', 'UPDATE'), ('incidents', 'first_event_at', 'UPDATE'),
 			('incidents', 'last_event_at', 'UPDATE'),
-			('alerts', 'incident_id', 'INSERT'), ('alerts', 'severity', 'INSERT'), ('alerts', 'techniques', 'INSERT')
+			('alerts', 'incident_id', 'INSERT'), ('alerts', 'severity', 'INSERT'), ('alerts', 'techniques', 'INSERT'),
+			('alerts', NULL, 'SELECT'), ('alert_channels', NULL, 'SELECT'), ('alert_channel_secrets', NULL, 'SELECT'),
+			('alert_channel_secrets', 'url', 'UPDATE'), ('alert_channel_secrets', 'header_value', 'UPDATE'),
+			('alert_deliveries', NULL, 'SELECT'),
+			('alert_deliveries', 'alert_id', 'INSERT'), ('alert_deliveries', 'channel_id', 'INSERT'),
+			('alert_deliveries', 'channel_type', 'INSERT'), ('alert_deliveries', 'channel_name', 'INSERT'),
+			('alert_deliveries', 'status', 'UPDATE'), ('alert_deliveries', 'attempts', 'UPDATE'),
+			('alert_deliveries', 'not_before', 'UPDATE'), ('alert_deliveries', 'last_attempt_at', 'UPDATE'),
+			('alert_deliveries', 'last_status_code', 'UPDATE'), ('alert_deliveries', 'last_error', 'UPDATE'),
+			('alert_deliveries', 'last_duration_ms', 'UPDATE'), ('alert_deliveries', 'delivered_at', 'UPDATE')
 	),
 	privileges (object, privilege, held, wanted) AS (
 		SELECT c.relname::text, p.privilege,

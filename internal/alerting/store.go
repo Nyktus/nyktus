@@ -331,3 +331,26 @@ func Delete(ctx context.Context, d DB, actor audit.Actor, id string) error {
 	}
 	return nil
 }
+
+// CheckKeys returns an error if a secret of a channel is encrypted with a key
+// that keys lack, naming the ID of the key. The worker refuses to start then,
+// because it could deliver to none of these channels.
+func CheckKeys(ctx context.Context, q db.Querier, keys *secretbox.Keyring) error {
+	rows, err := q.Query(ctx, `
+SELECT DISTINCT get_byte(url, 0) FROM public.alert_channel_secrets
+UNION
+SELECT DISTINCT get_byte(header_value, 0) FROM public.alert_channel_secrets WHERE header_value IS NOT NULL`)
+	if err != nil {
+		return fmt.Errorf("list encryption keys in use: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int32])
+	if err != nil {
+		return fmt.Errorf("list encryption keys in use: %w", err)
+	}
+	for _, id := range ids {
+		if id < 1 || id > 255 || !keys.Has(byte(id)) {
+			return fmt.Errorf("stored secrets of alert channels are encrypted with the key ID %d, which is not configured; add the key back to NYKTUS_ENCRYPTION_KEYS", id)
+		}
+	}
+	return nil
+}

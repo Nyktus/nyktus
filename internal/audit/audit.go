@@ -102,6 +102,12 @@ const (
 	ActionAlertChannelUpdate Action = "alert_channel.update"
 	// ActionAlertChannelDelete records the deletion of an alert channel.
 	ActionAlertChannelDelete Action = "alert_channel.delete"
+	// ActionAlertChannelTest records a request to send a test to an alert
+	// channel.
+	ActionAlertChannelTest Action = "alert_channel.test"
+	// ActionAlertDeliveryRetry records that a dead delivery of an alert was
+	// made pending again.
+	ActionAlertDeliveryRetry Action = "alert_delivery.retry"
 	// ActionIncidentUpdate records the triage of an incident, with the names of
 	// the changed fields.
 	ActionIncidentUpdate Action = "incident.update"

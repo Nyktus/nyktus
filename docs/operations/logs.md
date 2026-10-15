@@ -64,16 +64,22 @@ Other queries, such as those of names without a value or outside the zones, are 
 
 ## Worker
 
-The [worker](incidents.md) logs what became of the events it processed.
+The [worker](incidents.md) logs what became of the events it processed and of the [alerts](alerting.md) it delivered. Records of deliveries name the delivery, its channel and the incident by their identifiers, never the URL of the channel or the response of the receiver.
 
 | Message | Level | Content |
 |---|---|---|
-| `worker: started` | info | The worker looks for events to process; `concurrency` is the number it processes at a time. |
+| `worker: started` | info | The worker looks for events to process and alerts to deliver; `concurrency` and `delivery_concurrency` are the numbers it handles at a time. |
 | `worker: stopped` | info | The worker processed its last event and stopped. |
-| `incident: opened` | info | An event opened an incident and raised its alert. `incident` holds `incident_id`, `event_id`, `resource_type`, `resource_id` and `severity`. |
+| `incident: opened` | info | An event opened an incident and raised its alert. `incident` holds `incident_id`, `event_id`, `resource_type`, `resource_id` and `severity`; `deliveries` counts the channels the alert goes to. |
+| `alerting: no enabled channel` | warn | An incident opened while no alert channel was enabled, so its alert reaches nobody. `incident_id` names it. |
+| `alerting: alert delivered` | info | The receiver accepted an alert or test. `delivery` holds `id`, `channel_id`, `channel_type` and, for an alert, `incident_id`; `attempt`, `status_code` and `duration` describe the attempt. |
+| `alerting: delivery failed` | warn | An attempt failed and is tried again after `retry_in`. `failure` is its class, such as `http_status`, `timeout` or `network`, `status_code` the answer of the receiver, if there was one. See [Retries](alerting.md#retries). |
+| `alerting: delivery dead` | error | A delivery failed for the last time, or in a way no retry can mend, such as `blocked` or `invalid_channel`. If the secrets of the channel could not be decrypted, for example after their key was removed, `error` names the cause, never the secret. An administrator can [retry it](alerting.md#dead-deliveries). |
+| `alerting: delivery canceled` | info | The channel of a delivery was disabled or deleted before it was sent. |
+| `alerting: attempt not recorded` | warn | The outcome of an attempt was not recorded, because the delivery was claimed again or settled meanwhile; the later state stands. |
 | `incident: event assigned` | debug | An event was added to an open incident. Same fields as above. |
 | `incident: event not processed` | error | An event could not be assigned to an incident. It stays and is tried again at `retry_at`; `attempts` counts the failed attempts, `error` names the cause. The event is not lost, but it raises no alert until it is processed. |
-| `worker: job failed` | error | The worker could not reach the database or complete a transaction. `error` names the cause. Unless `claimed` is `true`, the worker waits before it tries again, longer after every failure in a row, up to 30 seconds. |
+| `worker: job failed` | error | The worker could not reach the database or complete a transaction. `error` names the cause. Unless `claimed` is `true`, the worker waits before it tries again, longer after every failure in a row, up to 30 seconds. A delivery that could not be claimed is postponed by its backoff, without counting an attempt, so that the deliveries behind it go out. |
 
 ## Sign-in through an identity provider
 

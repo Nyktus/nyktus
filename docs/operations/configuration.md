@@ -24,8 +24,8 @@ Settings of a server role are only read when the role runs. A process started wi
 | Variable | Default | Description |
 |---|---|---|
 | `NYKTUS_TRUSTED_PROXIES` | empty | Comma-separated address ranges of your reverse proxies in CIDR notation, such as `10.0.0.0/8,2001:db8::/48`. A single address stands for itself. See [Client addresses](#client-addresses). |
-| `NYKTUS_ENCRYPTION_KEYS` | required with the role `console`, secret, also in development | Keys that encrypt secrets stored in the database. See [Encryption keys](#encryption-keys). |
-| `NYKTUS_ALERTING_ALLOWED_NETWORKS` | empty | Comma-separated internal networks in CIDR notation, such as `10.20.0.0/16`, that [alert channels](alerting.md#allowed-targets) may reach in addition to public addresses. Loopback, link-local and cloud metadata addresses stay blocked. Read by the console. |
+| `NYKTUS_ENCRYPTION_KEYS` | required with the roles `console` and `worker`, secret, also in development | Keys that encrypt secrets stored in the database. Set the same keys for both roles. See [Encryption keys](#encryption-keys). |
+| `NYKTUS_ALERTING_ALLOWED_NETWORKS` | empty | Comma-separated internal networks in CIDR notation, such as `10.20.0.0/16`, that [alert channels](alerting.md#allowed-targets) may reach in addition to public addresses. Loopback, link-local and cloud metadata addresses stay blocked. Read by the console, which checks the targets of channels, and the worker, which connects to them; set the same list for both. |
 
 ### Role `console`
 
@@ -67,12 +67,14 @@ The DNS role answers the zones delegated to it as an authoritative name server a
 
 ### Role `worker`
 
-The worker correlates the events of honeytokens into [incidents](incidents.md). It listens on no port and only connects to the database. Run at least one worker; several workers share the work without further setup.
+The worker correlates the events of honeytokens into [incidents](incidents.md) and delivers their [alerts](alerting.md). It listens on no port; it connects to the database and to the receivers of the alert channels. Run at least one worker; several workers share the work without further setup.
 
 | Variable | Default | Description |
 |---|---|---|
 | `NYKTUS_WORKER_DATABASE_URL` | required, secret | Connection URL of the worker's login role. See [Database setup](database.md). |
 | `NYKTUS_WORKER_CONCURRENCY` | `4` | Events that the worker processes at a time, between 1 and 32. Each holds a connection to the database while it is processed. |
+| `NYKTUS_WORKER_DELIVERY_CONCURRENCY` | `4` | Alerts that the worker delivers at a time, between 1 and 32. A delivery holds a connection to the database only while it records an attempt, not while it waits for the receiver. The worker opens up to both values together of connections. |
+| `NYKTUS_CONSOLE_URL` | required; in development `http://127.0.0.1:8080` | The address of the console, as for the role `console`. Alerts link their incident under it. |
 
 ### Sign-in through an identity provider
 
@@ -107,7 +109,7 @@ echo "1:$(openssl rand -base64 32)"
 
 The keys are required in development as well. Nyktus neither derives a key from another secret nor generates one at startup, because either would make the stored secrets unreadable once that secret or the process changes.
 
-To replace a key, put a new key with an unused ID first and keep the old one behind it, such as `2:<new key>,1:<old key>`. The first key encrypts new values; every listed key decrypts. The secret of a second factor is encrypted again with the first key the next time its user enters a code. Keep the old key listed: a value encrypted with a key that is no longer listed cannot be decrypted, so the console refuses to start while the database holds such a value, and names the ID of the missing key. To retire an old key that some accounts still use, remove their second factor, and let them set it up again.
+To replace a key, put a new key with an unused ID first and keep the old one behind it, such as `2:<new key>,1:<old key>`. The first key encrypts new values; every listed key decrypts. The secret of a second factor is encrypted again with the first key the next time its user enters a code, and the secrets of an [alert channel](alerting.md#encryption-keys) the next time the worker delivers to it. Keep the old key listed: a value encrypted with a key that is no longer listed cannot be decrypted, so the console and the worker refuse to start while the database holds such a value, and name the ID of the missing key. To retire an old key that some accounts still use, remove their second factor, and let them set it up again.
 
 ## Client addresses
 

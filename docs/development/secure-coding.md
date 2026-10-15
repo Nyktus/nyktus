@@ -233,13 +233,15 @@ The alert path must survive a compromise of the monitored environment, including
 - The console writes the secrets but its database role cannot read them back. A change replaces a secret without comparing it, so the audit log counts it as changed.
 - Every change other than a new name decides where alerts go, what authenticates them or whether they go at all, and is confirmed with the password through `session.Service.Confirm`, like the creation of an API key. This includes enabling a channel again, whose target may have changed hands meanwhile. A channel is deleted only once it is disabled, so that `DELETE` needs no body.
 - API keys never manage channels, not even by reading them.
+- Only the worker connects to receivers, also for tests, so that one host needs outbound access and no answer of the console reveals the network. A delivery records the status code and the class of a failure, never the response or the error, which names the URL.
+- A message carries no inventory and no personal data, because it often leaves for a service of a third party.
 
 ## Secrets and cryptography
 
 - Use `crypto/rand` for every value with security relevance. `math/rand` is not used for identifiers, tokens or secrets.
 - Compare secrets with `crypto/subtle.ConstantTimeCompare` or `hmac.Equal`.
 - Encrypt secrets at rest with AES-256-GCM through `internal/platform/secretbox`. Stored values carry the ID of their key to allow key rotation. The keys come from configuration, in development as well, and are never derived from another secret. Pass associated data that names the purpose and the owner of a value, so that a value copied into another record fails to decrypt.
-- Sign outbound webhook payloads with HMAC-SHA256 over the exact bytes sent.
+- Outbound webhooks are not signed. A receiver authenticates them by a secret in the URL or a header of the channel, which HTTPS protects on the way. A signature would protect only the receiver against forged alerts, which the secret prevents as well, and most receivers check a token, not a signature; a signature scheme such as Standard Webhooks can be added if receivers ask for it.
 - The server validates its configuration at startup and refuses to run with missing or weak secrets outside development.
 - Secrets never appear in logs, error messages, URLs (except trigger and health secrets, which are designed for it) or client-side state.
 
