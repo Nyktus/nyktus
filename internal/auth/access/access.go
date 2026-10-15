@@ -22,8 +22,8 @@ import (
 // first route that requires it is added.
 var grants = map[user.Role][]httpx.Permission{
 	user.RoleAdmin: {
-		"api_keys:read", "api_keys:write", "audit:read", "events:read", "honeytokens:read", "honeytokens:write",
-		"incidents:read", "incidents:write", "users:read", "users:write",
+		"alert_channels:read", "alert_channels:write", "api_keys:read", "api_keys:write", "audit:read", "events:read",
+		"honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write", "users:read", "users:write",
 	},
 	user.RoleUser:   {"events:read", "honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write"},
 	user.RoleViewer: {"events:read", "honeytokens:read", "incidents:read"},
@@ -36,7 +36,9 @@ var grants = map[user.Role][]httpx.Permission{
 // honeytokens, so that they can be rolled out by script; reading them is
 // reading the inventory, so integrations that only need other data get keys
 // without these scopes. Keys may read events and incidents and triage
-// incidents, so that a SIEM or a ticket system can follow them up.
+// incidents, so that a SIEM or a ticket system can follow them up. Keys never
+// manage alert channels: a leaked key could redirect the alerts to its holder or
+// stop them.
 var keyScopes = []httpx.Permission{
 	"audit:read", "events:read", "honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write",
 }

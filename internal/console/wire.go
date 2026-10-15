@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"nyktus.org/nyktus/internal/alerting/alertingapi"
 	"nyktus.org/nyktus/internal/audit/auditapi"
 	"nyktus.org/nyktus/internal/auth/account"
 	"nyktus.org/nyktus/internal/auth/apikey/apikeyapi"
@@ -23,6 +24,7 @@ import (
 	"nyktus.org/nyktus/internal/incident/incidentapi"
 	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/platform/secretbox"
+	"nyktus.org/nyktus/internal/platform/ssrf"
 )
 
 // Options configure the console.
@@ -52,6 +54,8 @@ type Options struct {
 	// DNSZones are the zones of the DNS role, under which DNS honeytokens have
 	// their names. Empty if DNS honeytokens are not set up.
 	DNSZones []string
+	// Outbound checks the targets of alert channels.
+	Outbound *ssrf.Guard
 }
 
 // New wires the console and returns its HTTP handler. It computes the dummy
@@ -78,6 +82,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
 	t := honeytokenapi.NewHandler(o.Logger, o.DB, o.TriggerURL, o.DNSZones)
 	i := incidentapi.NewHandler(o.Logger, o.DB)
+	c := alertingapi.NewHandler(o.Logger, o.DB, o.Keys, sessions, o.Outbound)
 	return NewHandler(Deps{
 		Logger:         o.Logger,
 		DB:             o.DB,
@@ -127,6 +132,13 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		Events: Events{
 			List: http.HandlerFunc(i.ListEvents),
 			Get:  http.HandlerFunc(i.GetEvent),
+		},
+		AlertChannels: AlertChannels{
+			List:   http.HandlerFunc(c.List),
+			Get:    http.HandlerFunc(c.Get),
+			Create: http.HandlerFunc(c.Create),
+			Update: http.HandlerFunc(c.Update),
+			Delete: http.HandlerFunc(c.Delete),
 		},
 		Origin:         o.ConsoleURL,
 		TrustedProxies: o.TrustedProxies,

@@ -93,6 +93,15 @@ const (
 	ActionHoneytokenUpdate Action = "honeytoken.update"
 	// ActionHoneytokenDelete records the deletion of a honeytoken.
 	ActionHoneytokenDelete Action = "honeytoken.delete"
+	// ActionAlertChannelCreate records the creation of an alert channel, and an
+	// attempt whose confirmation with a password failed.
+	ActionAlertChannelCreate Action = "alert_channel.create"
+	// ActionAlertChannelUpdate records a change of an alert channel, with the
+	// names of the changed fields, and an attempt whose confirmation with a
+	// password failed.
+	ActionAlertChannelUpdate Action = "alert_channel.update"
+	// ActionAlertChannelDelete records the deletion of an alert channel.
+	ActionAlertChannelDelete Action = "alert_channel.delete"
 	// ActionIncidentUpdate records the triage of an incident, with the names of
 	// the changed fields.
 	ActionIncidentUpdate Action = "incident.update"

@@ -29,6 +29,9 @@ var Actions = []Action{
 	ActionHoneytokenCreate,
 	ActionHoneytokenUpdate,
 	ActionHoneytokenDelete,
+	ActionAlertChannelCreate,
+	ActionAlertChannelUpdate,
+	ActionAlertChannelDelete,
 	ActionIncidentUpdate,
 	ActionEventsRead,
 }

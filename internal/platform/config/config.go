@@ -260,10 +260,14 @@ type Serve struct {
 	// not to a role, because every role that reads such a secret needs the same
 	// keys. They are read only if an enabled role uses them.
 	EncryptionKeys *secretbox.Keyring
-	Console        Console
-	Trigger        Trigger
-	DNS            DNS
-	Worker         Worker
+	// AlertingAllowedNetworks are internal networks that alert channels may
+	// reach, chosen by the operator. The console checks the targets of
+	// channels against them.
+	AlertingAllowedNetworks []netip.Prefix
+	Console                 Console
+	Trigger                 Trigger
+	DNS                     DNS
+	Worker                  Worker
 }
 
 // Has reports whether role is enabled.
@@ -305,6 +309,7 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 		cfg.Console.TriggerURL = r.triggerURL("TRIGGER_URL", cfg.Environment, cfg.Console.URL)
 		cfg.Console.DNSZones = r.zones("DNS_ZONES", false, cfg.Console.URL, cfg.Console.TriggerURL)
 		cfg.EncryptionKeys = r.keyring("ENCRYPTION_KEYS")
+		cfg.AlertingAllowedNetworks = r.prefixes("ALERTING_ALLOWED_NETWORKS")
 	}
 	if cfg.Has(RoleTrigger) {
 		cfg.Trigger = Trigger{

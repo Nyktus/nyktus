@@ -42,6 +42,7 @@ Each of these properties needs its own test, named after the property:
 - Read-only roles and API keys without a write scope cannot write. A demoted user's keys lose the corresponding permissions.
 - Unsigned or tampered catalog packages are rejected without explicit confirmation. Archives with traversal paths or oversized entries are rejected.
 - The SSRF guard blocks every reserved address range.
+- The console can write the secrets of alert channels but never read them, and the secrets are stored encrypted and bound to their channel.
 
 ### Checks are tested against violations
 

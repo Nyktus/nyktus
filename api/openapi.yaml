@@ -68,6 +68,8 @@ tags:
     description: Incidents, which correlate the events of a honeytoken, and their triage.
   - name: events
     description: Recorded requests and queries of honeytokens.
+  - name: alerting
+    description: Channels that alerts are delivered to, managed by administrators.
 
 paths:
   /livez:
@@ -1815,6 +1817,256 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/alert-channels:
+    get:
+      operationId: listAlertChannels
+      summary: List the alert channels
+      description: |
+        Returns the channels that alerts are delivered to, ordered by name,
+        without their URLs and header values. `target` shows the scheme, host
+        and port of the URL instead. Only a session can manage alert channels.
+      tags: [alerting]
+      x-access: alert_channels:read
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The alert channels.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertChannelList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            The caller lacks the permission, which is recorded in the audit log at most once per user,
+            permission and minute, or the request is not made with a session, which is not recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createAlertChannel
+      summary: Create an alert channel
+      description: |
+        Creates a channel that every alert is delivered to, which the
+        administrator confirms with their password, because a channel decides
+        where alerts go. The URL, and for a webhook the value of an optional
+        header, are secrets: they are stored encrypted and never returned,
+        also not in this response.
+
+        The URL must be an `https` URL whose host resolves to public addresses
+        only, or to addresses within `NYKTUS_ALERTING_ALLOWED_NETWORKS`;
+        otherwise the response is `422` with the code `target_not_allowed`,
+        which does not tell an internal target from one that does not resolve.
+        A header is only allowed for a `webhook` (`422`, code
+        `header_not_allowed`). Names are unique (`409`, code `name_taken`), and
+        an installation has at most 20 channels (`409`, code
+        `too_many_alert_channels`).
+
+        A wrong password receives `403` with the code `wrong_password` and
+        counts as a failed sign-in. New channels, wrong passwords and requests
+        of a locked account are recorded in the audit log as
+        `alert_channel.create`. An administrator of the identity provider has
+        no password and omits it: they confirm by signing in at the provider
+        again through `GET /api/v1/oidc/reauthenticate` within the five minutes
+        before, otherwise the response is `403` with the code
+        `reauthentication_required`.
+      tags: [alerting]
+      x-access: alert_channels:write
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAlertChannelRequest"
+      responses:
+        "201":
+          description: The new channel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertChannel"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            The caller lacks the permission, the password is wrong (`wrong_password`), the password
+            is correct but the account is locked (`account_locked`), an administrator of the identity
+            provider has not signed in there again recently (`reauthentication_required`), the request
+            is not made with a session, or the request comes from another origin.
+          headers:
+            Retry-After:
+              description: Seconds until the lock ends. Only sent for a locked account.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          $ref: "#/components/responses/AlertChannelConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/AlertChannelUnprocessable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/alert-channels/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getAlertChannel
+      summary: Get an alert channel
+      description: Returns a channel without its URL and header value.
+      tags: [alerting]
+      x-access: alert_channels:read
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The channel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertChannel"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            The caller lacks the permission, which is recorded in the audit log at most once per user,
+            permission and minute, or the request is not made with a session, which is not recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateAlertChannel
+      summary: Change an alert channel
+      description: |
+        Changes the name of a channel, enables or disables it, or replaces its
+        URL or header. The type never changes. A new URL is checked as on
+        creation. `header` replaces the header of a webhook; null removes it.
+
+        Every change other than a new `name` decides where alerts go, what
+        authenticates them, or whether they go at all, and is confirmed with
+        the `password` of the administrator, as on creation. A missing password
+        counts as a wrong one (`403`, code `wrong_password`). Changes are
+        recorded in the audit log as
+        `alert_channel.update` with the names of the changed fields; a new URL
+        or header always counts as changed, because the stored one cannot be
+        read to compare.
+      tags: [alerting]
+      x-access: alert_channels:write
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAlertChannelRequest"
+      responses:
+        "200":
+          description: The changed channel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertChannel"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            The caller lacks the permission, the password is wrong or missing (`wrong_password`), the
+            password is correct but the account is locked (`account_locked`), an administrator of the identity
+            provider has not signed in there again recently (`reauthentication_required`), the request
+            is not made with a session, or the request comes from another origin.
+          headers:
+            Retry-After:
+              description: Seconds until the lock ends. Only sent for a locked account.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/AlertChannelConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/AlertChannelUnprocessable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteAlertChannel
+      summary: Delete an alert channel
+      description: |
+        Deletes a disabled channel with its secrets. An enabled channel
+        receives `409` with the code `alert_channel_enabled`: disabling it is
+        the change that stops its alerts, and that change is confirmed with a
+        password. The deletion is recorded in the audit log as
+        `alert_channel.delete`.
+      tags: [alerting]
+      x-access: alert_channels:write
+      security:
+        - sessionCookie: []
+      responses:
+        "204":
+          description: The channel has been deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: |
+            The caller lacks the permission, which is recorded in the audit log at most once per user,
+            permission and minute, the request is not made with a session, which is not recorded, or
+            the request comes from another origin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/AlertChannelConflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -2329,6 +2581,133 @@ components:
             type: string
             pattern: "^[a-z2-7]{4}-[a-z2-7]{4}-[a-z2-7]{4}-[a-z2-7]{4}$"
 
+    AlertChannel:
+      type: object
+      additionalProperties: false
+      required: [id, name, type, enabled, target, header_name, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        type:
+          type: string
+          enum: [webhook, slack, teams]
+          description: |
+            The format of the request body: `webhook` sends the alert as JSON, `slack` to an incoming
+            webhook of Slack, `teams` to a workflow of Microsoft Teams.
+        enabled:
+          type: boolean
+        target:
+          type: string
+          description: The scheme, host and port of the URL, shown instead of it.
+          examples: ["https://hooks.slack.com"]
+        header_name:
+          type: [string, "null"]
+          description: The name of the header that a webhook sends; its value is never returned.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AlertChannelList:
+      type: object
+      additionalProperties: false
+      required: [alert_channels]
+      properties:
+        alert_channels:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/AlertChannel"
+
+    AlertChannelHeader:
+      type: object
+      additionalProperties: false
+      required: [name, value]
+      description: A header that a webhook sends with every request, such as the token of the receiver.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"
+          description: |
+            A header name other than `Host`, `Content-Length`, `Content-Type`, `Content-Encoding`,
+            `Transfer-Encoding`, `Connection`, `Keep-Alive`, `TE`, `Trailer`, `Upgrade`, `Expect` and
+            `Proxy-*`.
+          examples: ["Authorization"]
+        value:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          pattern: "^[\\x20-\\x7e]+$"
+          writeOnly: true
+          description: A secret, stored encrypted and never returned.
+
+    CreateAlertChannelRequest:
+      type: object
+      additionalProperties: false
+      required: [name, type, url]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        type:
+          type: string
+          enum: [webhook, slack, teams]
+        enabled:
+          type: boolean
+          default: true
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+          writeOnly: true
+          description: |
+            The URL that receives the alerts, including any token in its path or query. A secret,
+            stored encrypted and never returned.
+        header:
+          $ref: "#/components/schemas/AlertChannelHeader"
+        password:
+          type: string
+          writeOnly: true
+          description: The password of the administrator. Omitted by an administrator of the identity provider.
+
+    UpdateAlertChannelRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        enabled:
+          type: boolean
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+          writeOnly: true
+        header:
+          oneOf:
+            - $ref: "#/components/schemas/AlertChannelHeader"
+            - type: "null"
+          description: Replaces the header of a webhook; null removes it.
+        password:
+          type: string
+          writeOnly: true
+          description: |
+            The password of the administrator, required for every change other than a new `name`.
+            Omitted by an administrator of the identity provider.
+
     Honeytoken:
       type: object
       additionalProperties: false
@@ -2785,6 +3164,24 @@ components:
         `oidc_account` (the account signs in through the identity provider, which manages its
         password, second factor and role) or `not_oidc_account` (the account signs in with a
         password and confirms with it, not through the identity provider).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    AlertChannelConflict:
+      description: |
+        The request conflicts with the alert channels. The error code names the conflict:
+        `name_taken` (another channel has the name), `too_many_alert_channels` (the installation has
+        the maximum number of channels) or `alert_channel_enabled` (only a disabled channel can be
+        deleted).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    AlertChannelUnprocessable:
+      description: |
+        The target of the URL is internal or does not resolve (`target_not_allowed`), or a header was
+        given for a channel that is not a webhook (`header_not_allowed`).
       content:
         application/json:
           schema:

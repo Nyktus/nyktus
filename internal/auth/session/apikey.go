@@ -20,35 +20,61 @@ import (
 // CreateAPIKey issues an API key that the signed-in administrator p creates for
 // the team, confirmed with their password, and returns it with the key itself.
 // A key outlives the session, so a taken-over session must not be able to issue
-// one without the password. An administrator of the identity provider, who has
-// no password, confirms by signing in there again within
-// ReauthenticationWindow, and receives ErrReauthenticationRequired otherwise.
-// The caller validates the name and the scopes of spec; the router has checked
-// the permission.
+// one without the password. The confirmation works as Confirm describes. The
+// caller validates the name and the scopes of spec; the router has checked the
+// permission. A request rejected for its fields or the limit of keys is not
+// recorded in the audit log, because it proves nothing about the credentials.
+func (s *Service) CreateAPIKey(ctx context.Context, p access.Principal, password string, spec apikey.Spec) (apikey.Key, string, error) {
+	var (
+		k   apikey.Key
+		key string
+	)
+	err := s.Confirm(ctx, p, password, audit.ActionAPIKeyCreate, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		if k, key, err = apikey.NewStore(tx).Create(ctx, p.UserID, spec); err != nil {
+			return err
+		}
+		return audit.NewStore(tx).Record(ctx, audit.Entry{
+			Action:   audit.ActionAPIKeyCreate,
+			Outcome:  audit.OutcomeSuccess,
+			Actor:    p.Actor(),
+			Resource: audit.Resource{Type: "api_key", ID: k.ID},
+		}.WithRequest(ctx))
+	})
+	if err != nil {
+		return apikey.Key{}, "", err
+	}
+	return k, key, nil
+}
+
+// Confirm runs change in a transaction once the signed-in administrator p has
+// confirmed it with their password, for a change that a taken-over session must
+// not be able to make alone, such as issuing a key or redirecting alerts. An
+// administrator of the identity provider, who has no password, confirms by
+// signing in there again within ReauthenticationWindow, and receives
+// ErrReauthenticationRequired otherwise.
 //
 // As with a change of password, a wrong password counts as a failed sign-in and
 // returns ErrWrongPassword, and a lock is revealed only with the correct
-// password as a *LockedError. Both are recorded in the audit log, as is every
-// new key; a request rejected for its fields or the limit of keys is not,
-// because it proves nothing about the credentials. It returns
-// ErrNoSession if the session of p ended since the request was authenticated.
-func (s *Service) CreateAPIKey(ctx context.Context, p access.Principal, password string, spec apikey.Spec) (apikey.Key, string, error) {
-	u, err := s.verifyCurrentPassword(ctx, p, password, audit.ActionAPIKeyCreate)
+// password as a *LockedError; both are recorded in the audit log as failures of
+// action. Change records its own success. Confirm returns ErrNoSession if the
+// session of p ended or its account is no longer an active administrator. It
+// holds the lock of the active administrators while change runs, so that
+// changes that count against a limit are serialized.
+func (s *Service) Confirm(ctx context.Context, p access.Principal, password string, action audit.Action,
+	change func(ctx context.Context, tx pgx.Tx) error,
+) error {
+	u, err := s.verifyCurrentPassword(ctx, p, password, action)
 	if errors.Is(err, user.ErrOIDCAccount) {
 		u, err = s.account(ctx, p)
 	}
 	if err != nil {
-		return apikey.Key{}, "", err
+		return err
 	}
-	var (
-		k       apikey.Key
-		key     string
-		outcome error
-	)
+	var outcome error
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
-		// Only administrators create keys. Their lock serializes the creations,
-		// so that the count of keys holds against the limit, and it is taken
-		// before the account, as every transaction takes them.
+		// The lock of the active administrators is taken before the account,
+		// as every transaction takes them.
 		admins, err := user.NewStore(tx).LockActiveAdmins(ctx)
 		if err != nil {
 			return err
@@ -62,13 +88,13 @@ func (s *Service) CreateAPIKey(ctx context.Context, p access.Principal, password
 		if u.Identity != nil {
 			outcome, err = lockReauthenticated(ctx, tx, u, p)
 		} else {
-			outcome, err = lockVerified(ctx, tx, u, p, audit.ActionAPIKeyCreate)
+			outcome, err = lockVerified(ctx, tx, u, p, action)
 		}
 		if err != nil || outcome != nil {
 			return err
 		}
 		// A session that ended, for example by a change of password elsewhere,
-		// must not leave a key behind.
+		// must not leave a change behind.
 		var exists bool
 		err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT FROM sessions WHERE id = $1 AND user_id = $2)`, p.SessionID, u.ID).Scan(&exists)
 		if err != nil {
@@ -78,24 +104,12 @@ func (s *Service) CreateAPIKey(ctx context.Context, p access.Principal, password
 			outcome = ErrNoSession
 			return nil
 		}
-		k, key, err = apikey.NewStore(tx).Create(ctx, u.ID, spec)
-		if err != nil {
-			return err
-		}
-		return audit.NewStore(tx).Record(ctx, audit.Entry{
-			Action:   audit.ActionAPIKeyCreate,
-			Outcome:  audit.OutcomeSuccess,
-			Actor:    p.Actor(),
-			Resource: audit.Resource{Type: "api_key", ID: k.ID},
-		}.WithRequest(ctx))
+		return change(ctx, tx)
 	})
 	if err != nil {
-		return apikey.Key{}, "", fmt.Errorf("create API key: %w", err)
+		return fmt.Errorf("confirm %s: %w", action, err)
 	}
-	if outcome != nil {
-		return apikey.Key{}, "", outcome
-	}
-	return k, key, nil
+	return outcome
 }
 
 // lockReauthenticated locks the account u of the identity provider and checks
