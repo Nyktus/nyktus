@@ -27,3 +27,11 @@ Entries are ordered by the time they were written, not by the time their action 
 ## Personal data
 
 Entries contain addresses, display names and client addresses of users. Restrict access to the audit log, and to backups of the database, accordingly.
+
+Nyktus records them to prove who did what and to investigate misuse of accounts. In the EU, this is usually covered by the legitimate interest in the security of networks and information (Art. 6(1)(f) and Recital 49 GDPR), limited by the retention below. Record it in your records of processing activities.
+
+## Retention
+
+The [worker](database.md#periodic-tasks) deletes entries that are older than `NYKTUS_AUDIT_RETENTION_DAYS`, 365 days by default, every hour. The retention is at least 90 days, so that the traces of an intrusion remain long after it was found, and at most 3650 days. The database enforces the lower limit itself: the worker deletes entries only through a function that refuses a shorter retention, and no role of Nyktus can delete entries otherwise. The deletion is not recorded in the audit log; the log of the worker records how many entries each run deleted.
+
+Backups of the database hold entries beyond the retention. Give them a retention of their own that fits the one above.

@@ -127,15 +127,17 @@ The worker refuses to start unless its login stays within its tables (`events`, 
 
 ## Periodic tasks
 
-The worker keeps the database from growing without bounds. It removes rows that have expired, at fixed intervals:
+The worker keeps the database from growing without bounds. It removes rows that have expired or passed their retention, at fixed intervals:
 
 | Task | Interval | What it removes |
 |---|---|---|
 | `delete_expired_sign_in_data` | 5 minutes | Expired [sessions](sign-in.md#sessions), sign-ins through the identity provider, challenges and unconfirmed setups of a second factor, activation and password reset links, [API keys](api-keys.md) and setup tokens. |
+| `delete_expired_audit_entries` | 1 hour | [Audit entries](audit-log.md#retention) older than `NYKTUS_AUDIT_RETENTION_DAYS`. |
+| `delete_expired_incident_data` | 1 hour | [Events, closed incidents](incidents.md#retention) with their alerts and deliveries, and tests of channels beyond `NYKTUS_EVENT_RETENTION_DAYS`. |
 
 Sessions are removed after the longest idle timeout and lifetime that the console accepts, 24 hours without a request or 30 days after the sign-in. A shorter `NYKTUS_SESSION_IDLE_TIMEOUT` or `NYKTUS_SESSION_MAX_AGE` ends sessions earlier; the expired rows stay until then, and nobody can use them.
 
-The table `periodic_tasks` records for every task when it is due next and when it last started, succeeded or failed, and how many rows the last successful run removed. Several workers share the tasks: the first worker that finds a task due moves it to its next run and runs it, so each task runs once per interval. A run removes up to 1000 rows of each table at a time, in a transaction of its own, until none remain. A run that fails, or that is cut short because the worker stops or the run took longer than ten minutes, starts again within a minute; it continues where the last one stopped. The worker removes nothing itself: it calls a function of the database for each task, which decides what has expired, so its login needs no access to the accounts.
+The table `periodic_tasks` records for every task when it is due next and when it last started, succeeded or failed, and how many rows the last successful run removed. Several workers share the tasks: the first worker that finds a task due moves it to its next run and runs it, so each task runs once per interval. A run removes up to 1000 rows of each table at a time, in a transaction of its own, until none remain. A run that fails, or that is cut short because the worker stops or the run took longer than ten minutes, starts again within a minute; it continues where the last one stopped. The worker removes nothing itself: it calls a function of the database for each task, which decides what has expired and refuses a retention below its lower limit, so its login needs no access to the accounts and cannot delete recent audit entries or events.
 
 Without a worker, expired rows stay, and so does every sign-in through the identity provider that someone started, which anyone can do without an account.
 

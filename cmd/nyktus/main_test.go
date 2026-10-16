@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/miekg/dns"
 
 	"nyktus.org/nyktus/internal/alerting"
@@ -366,7 +367,7 @@ func TestPeriodicTasks_MatchTheSchema(t *testing.T) {
 	t.Parallel()
 
 	var names []string
-	for _, task := range periodicTasks(nil) {
+	for _, task := range periodicTasks(nil, config.Worker{}) {
 		names = append(names, task.Name)
 	}
 	slices.Sort(names)
@@ -380,6 +381,47 @@ func TestPeriodicTasks_MatchTheSchema(t *testing.T) {
 	}
 	if !slices.Equal(names, stored) {
 		t.Errorf("periodic tasks = %v, rows of periodic_tasks = %v", names, stored)
+	}
+}
+
+// recordingQuerier records the arguments of every query and answers each with
+// zero rows removed.
+type recordingQuerier struct{ args [][]any }
+
+func (q *recordingQuerier) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+
+func (q *recordingQuerier) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return nil, errors.New("unexpected query")
+}
+
+func (q *recordingQuerier) QueryRow(_ context.Context, _ string, args ...any) pgx.Row {
+	q.args = append(q.args, args)
+	return zeroRow{}
+}
+
+type zeroRow struct{}
+
+func (zeroRow) Scan(dest ...any) error {
+	*dest[0].(*int64) = 0
+	return nil
+}
+
+// Each task of the retention passes its own retention to the database.
+func TestPeriodicTasks_PassTheirRetention(t *testing.T) {
+	t.Parallel()
+
+	q := &recordingQuerier{}
+	for _, task := range periodicTasks(q, config.Worker{AuditRetentionDays: 111, EventRetentionDays: 222}) {
+		q.args = nil
+		if _, _, err := task.Step(t.Context()); err != nil {
+			t.Fatalf("%s: Step() error = %v", task.Name, err)
+		}
+		want := map[string]any{"delete_expired_audit_entries": 111, "delete_expired_incident_data": 222}[task.Name]
+		if want != nil && (len(q.args) != 1 || !slices.Contains(q.args[0], want)) {
+			t.Errorf("%s: arguments = %v, want them to contain %v", task.Name, q.args, want)
+		}
 	}
 }
 
