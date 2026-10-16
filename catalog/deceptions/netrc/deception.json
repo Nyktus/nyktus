@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "id": "netrc",
+  "category": "identity",
+  "title": {
+    "en": "Credentials in a .netrc file",
+    "de": "Zugangsdaten in einer .netrc-Datei"
+  },
+  "summary": {
+    "en": "A .netrc file with an account and password for a host, as curl, Git and FTP clients read it. Using the credentials resolves the name of a DNS honeytoken.",
+    "de": "Eine .netrc-Datei mit Konto und Passwort für einen Host, wie curl, Git und FTP-Clients sie lesen. Wer die Zugangsdaten nutzt, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1552.001"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Host",
+      "type": "dns",
+      "label": {"en": "Host", "de": "Host"},
+      "techniques": ["T1552.001", "T1078"]
+    }
+  ],
+  "persona": [
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "deploy"
+    }
+  ],
+  "secrets": [{"key": "Password", "length": 20}],
+  "artifacts": [
+    {"key": "netrc", "file_name": "netrc", "format": "config", "line_endings": "lf", "template": "netrc.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

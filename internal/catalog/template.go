@@ -292,9 +292,10 @@ func nodeError(tree *parse.Tree, n parse.Node, reason string) error {
 }
 
 // checkSource accepts UTF-8 of at most MaxTemplateBytes with no control
-// characters other than tabs and line breaks, and no format characters, such
+// characters other than tabs and line feeds, and no format characters, such
 // as bidirectional overrides, which make text read differently from what it
-// holds.
+// holds. Carriage returns are rejected as well: an artifact declares its line
+// endings, and editors and Git change those of a file without notice.
 func checkSource(src string) error {
 	if len(src) > MaxTemplateBytes {
 		return fmt.Errorf("larger than %d bytes", MaxTemplateBytes)
@@ -303,7 +304,7 @@ func checkSource(src string) error {
 		return errors.New("not valid UTF-8")
 	}
 	for _, r := range src {
-		if !unicode.IsGraphic(r) && r != '\n' && r != '\r' && r != '\t' {
+		if !unicode.IsGraphic(r) && r != '\n' && r != '\t' {
 			return fmt.Errorf("contains the character %U", r)
 		}
 	}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "id": "browser-bookmarks",
+  "category": "data",
+  "title": {
+    "en": "Browser bookmarks",
+    "de": "Browser-Lesezeichen"
+  },
+  "summary": {
+    "en": "An export of browser bookmarks with a link to an internal portal. Following the link requests the URL of a honeytoken.",
+    "de": "Ein Export von Browser-Lesezeichen mit einem Link auf ein internes Portal. Wer dem Link folgt, ruft die URL eines Honeytokens auf."
+  },
+  "techniques": ["T1217"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Portal",
+      "type": "web_url",
+      "label": {"en": "Portal", "de": "Portal"},
+      "techniques": ["T1217"]
+    }
+  ],
+  "persona": [
+    {
+      "key": "Company",
+      "kind": "text",
+      "label": {"en": "Name of the organization", "de": "Name der Organisation"},
+      "example": "Example Ltd"
+    },
+    {
+      "key": "PortalName",
+      "kind": "text",
+      "label": {"en": "Name of the portal", "de": "Name des Portals"},
+      "example": "VPN self-service"
+    }
+  ],
+  "artifacts": [
+    {"key": "bookmarks", "file_name": "bookmarks.html", "format": "html", "line_endings": "lf", "template": "bookmarks.html.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

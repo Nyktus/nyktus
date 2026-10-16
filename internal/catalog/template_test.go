@@ -96,6 +96,7 @@ func TestCompile_RejectsConstructsOutsideTheAllowedSet(t *testing.T) {
 		"unknown value in if":    "{{if .Other}}x{{end}}",
 		"unknown value in else":  "{{if .Account}}x{{else}}{{.Other}}{{end}}",
 		"control character":      "a\x00b",
+		"carriage return":        "a\r\nb",
 		"bidirectional override": "a\u202eb",
 		"invalid UTF-8":          "a\xffb",
 		"parse error":            "{{.Account",

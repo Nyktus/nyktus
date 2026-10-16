@@ -1,6 +1,6 @@
 # Deception catalog
 
-This directory holds the deceptions of Nyktus: blueprints of scenarios, each with the honeytokens it creates, the artifacts it renders and a guide that tells the administrator how to place them. Nyktus embeds the directory when it is built and validates every deception when the server starts; a deception that does not validate keeps the server from starting. `go test ./internal/catalog` runs the same validation.
+This directory holds the deceptions of Nyktus: blueprints of scenarios, each with the honeytokens it creates, the artifacts it renders and a guide that tells the administrator how to place them. Nyktus embeds the directory when it is built and validates every deception when the server starts; a deception that does not validate keeps the server from starting. `go test ./internal/catalog` runs the same validation and compares every rendered artifact and guide with its golden file under `internal/catalog/testdata/golden/`; after a change, regenerate them with `go test ./internal/catalog -update` and review the diff.
 
 The deceptions are licensed under CC BY-SA 4.0, with an additional permission for the files generated from them; see [LICENSE](LICENSE).
 
@@ -36,7 +36,7 @@ deceptions/
   ],
   "secrets": [{"key": "Password", "length": 16}],
   "artifacts": [
-    {"key": "config", "file_name": "config", "format": "config", "template": "config.tmpl"}
+    {"key": "config", "file_name": "config", "format": "config", "line_endings": "lf", "template": "config.tmpl"}
   ],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }
@@ -55,14 +55,14 @@ Unknown members are an error. `persona`, `secrets`, `artifacts` and the `techniq
 | `honeytokens` | 1 to 10 honeytokens that applying the deception creates, each with a `key`, a honeytoken `type` (`web_url`, `web_image` or `dns`), a `label` in both languages and up to 20 `techniques`, which the honeytoken receives. |
 | `persona` | Up to 10 values that the administrator enters when applying the deception, each with a `key`, a `kind` (`host`, `name` or `text`), a `label` and an `example` of that kind, which the console shows. |
 | `secrets` | Up to 10 random values of letters and digits that Nyktus generates, each with a `key` and a `length` of 8 to 64. |
-| `artifacts` | Up to 20 files that Nyktus renders, each with a `key`, the `file_name` of the download, a `format` and the `template` that renders it. |
+| `artifacts` | Up to 20 files that Nyktus renders, each with a `key`, the `file_name` of the download, a `format`, the `line_endings` of the file (`lf`, or `crlf` for files that Windows tools expect with carriage returns, such as `.url` and `.rdp`) and the `template` that renders it. |
 | `guide` | The templates of the guide in Markdown, one per language. |
 
 Keys of honeytokens, the persona and secrets start with an uppercase letter and contain letters and digits; keys of artifacts are written like identifiers of deceptions.
 
 ## Templates
 
-Templates use the syntax of Go's `text/template`, but only a small part of it: text, references to values, and `{{if}}`/`{{else}}` on a value, which is true when the value is not empty. Everything else, such as `{{range}}`, `{{with}}`, `{{template}}`, variables, pipelines and functions, is rejected. Templates are data, not code.
+Templates are UTF-8 with line feeds; carriage returns are rejected, because editors and Git change line endings without notice, and an artifact declares its own. Templates use the syntax of Go's `text/template`, but only a small part of it: text, references to values, and `{{if}}`/`{{else}}` on a value, which is true when the value is not empty. Everything else, such as `{{range}}`, `{{with}}`, `{{template}}`, variables, pipelines and functions, is rejected. Templates are data, not code.
 
 A template references these values:
 

@@ -1,0 +1,40 @@
+# Verknüpftes Bild in einem Word-Dokument
+
+Diese Deception hat keine Datei zum Herunterladen: Sie schreiben das Dokument selbst, damit es zu dem Ort passt, an dem Sie es ablegen, und verknüpfen darin dieses Bild:
+
+```
+https://t.example.net/imageq3xwz7a2kfm4ub6tyc5nre
+```
+
+Die URL gehört zu einem Bild-Honeytoken. Sie antwortet immer mit einem unsichtbaren Bild aus einem Pixel. Word lädt ein verknüpftes Bild bei jedem Öffnen des Dokuments von seiner URL, und die Anfrage löst ein Event aus.
+
+## Dokument schreiben
+
+Geben Sie dem Dokument einen Inhalt, den ein Eindringling an diesem Ort lesen will, etwa Gehaltszahlen, eine Liste von Notfallkontakten oder den Plan eines Projekts. Ein Dokument, das nur ein Bild enthält, fällt auf.
+
+## Bild verknüpfen
+
+1. Setzen Sie den Cursor an eine unauffällige Stelle, zum Beispiel ans Ende des Dokuments.
+2. Drücken Sie `Strg+F9`. Word fügt ein leeres Feld `{ }` ein.
+3. Schreiben Sie zwischen die Klammern:
+
+   ```
+   INCLUDEPICTURE "https://t.example.net/imageq3xwz7a2kfm4ub6tyc5nre" \d
+   ```
+
+   `\d` verhindert, dass Word das Bild im Dokument speichert, sodass es das Bild bei jedem Öffnen neu lädt.
+4. Drücken Sie `F9`, um das Feld zu aktualisieren, und speichern Sie das Dokument als `.docx`.
+
+## Dokument ablegen
+
+Legen Sie es dort ab, wo ein Eindringling nach wertvollen Daten sucht, etwa auf einer Dateifreigabe der Finanz- oder Personalabteilung, in einem Dokumentenmanagementsystem oder in einer Sicherung. Halten Sie in den Notizen des Scenarios fest, wo Sie es abgelegt haben.
+
+## Testen
+
+Öffnen Sie das Dokument in Word auf einem Rechner mit Zugang zum Internet und aktivieren Sie die Bearbeitung. Innerhalb einer Minute zeigt das Scenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Grenzen
+
+- Word öffnet Dokumente aus dem Internet und von manchen Netzwerkfreigaben in der geschützten Ansicht, die keine Bilder lädt. Erst „Bearbeitung aktivieren“ sendet die Anfrage.
+- Mail-Gateways und Vorschauen können das Bild laden, ohne dass jemand das Dokument öffnet. Versenden Sie das Dokument nicht per Mail.
+- Andere Programme, etwa LibreOffice oder ein Betrachter im Browser, laden verknüpfte Bilder womöglich nicht.

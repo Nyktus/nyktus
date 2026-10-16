@@ -1,0 +1,18 @@
+# Credentials in a .netrc file
+
+The file `netrc` holds the account `deploy` and a random password for the host `hostq3xwz7a2kfm4ub6tyc5nre.d.example.net`. Tools such as curl, Git, ftp and many scripts read such credentials from `~/.netrc`. The host name belongs to a DNS honeytoken: whoever uses the credentials with any tool resolves the name, which raises an event. There is no server behind it, and the account and password exist nowhere.
+
+## Placing the file
+
+1. Save the file as `~/.netrc` in the home directory of an account on a server or workstation, ideally an account that exists only for this purpose, and restrict it to its owner: `chmod 600 ~/.netrc`. Some tools ignore a `.netrc` that others can read.
+2. If the account already has a `~/.netrc`, add the three lines to it instead of replacing it, so that its other credentials keep working.
+3. Record where you placed it in the placement notes of the artifact.
+
+## Testing
+
+Run `curl --netrc https://hostq3xwz7a2kfm4ub6tyc5nre.d.example.net/` on a computer with access to the internet. Within a minute, the scenario shows an incident. Close the incident after the test.
+
+## Limits
+
+- Only a lookup that reaches the DNS role of Nyktus raises an event. A network without name resolution to the internet, or a resolver that answers from its cache, prevents it.
+- The host name is a random label under the zone of your DNS role. An intruder who reads the file carefully can find it unusual.
