@@ -7,7 +7,7 @@ Nyktus stores all state in PostgreSQL 16 or later. Each server role connects wit
 | Role | Kind | Purpose |
 |---|---|---|
 | `nyktus_owner` (any name) | Login | Owns the database and the `public` schema. Runs `nyktus migrate`. Never used by a running server. |
-| `nyktus_console` | Group, created by the setup script | Receives the privileges of the console role through migrations. |
+| `nyktus_console` | Group, created by the setup script | Receives the privileges of the console role through migrations. It reads the state of the queues and periodic tasks for the [metrics](metrics.md) only as numbers, through a function. |
 | Console login (any name) | Login, member of `nyktus_console` | The console connects with it through `NYKTUS_CONSOLE_DATABASE_URL`. |
 | `nyktus_trigger` | Group, created by the setup script | Receives the privileges of the trigger role through migrations: it can call the one function that records a request, and read or write no table. |
 | Trigger login (any name) | Login, member of `nyktus_trigger` | The trigger connects with it through `NYKTUS_TRIGGER_DATABASE_URL`. |
@@ -140,7 +140,7 @@ Sessions are removed after the longest idle timeout and lifetime that the consol
 
 The table `periodic_tasks` records for every task when it is due next and when it last started, succeeded or failed, and how many rows the last successful run removed. Several workers share the tasks: the first worker that finds a task due moves it to its next run and runs it, so each task runs once per interval. A run removes up to 1000 rows of each table at a time, in a transaction of its own, until none remain. A run that fails, or that is cut short because the worker stops or the run took longer than ten minutes, starts again within a minute; it continues where the last one stopped. The worker removes nothing itself: it calls a function of the database for each task, which decides what has expired and refuses a retention below its lower limit, so its login needs no access to the accounts and cannot delete recent audit entries or events.
 
-Without a worker, expired rows stay, and so does every sign-in through the identity provider that someone started, which anyone can do without an account.
+The [metrics](metrics.md) report when each task last succeeded or failed. Without a worker, expired rows stay, and so does every sign-in through the identity provider that someone started, which anyone can do without an account.
 
 ### Autovacuum
 

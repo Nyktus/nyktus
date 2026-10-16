@@ -70,6 +70,8 @@ tags:
     description: Recorded requests and queries of honeytokens.
   - name: alerting
     description: Channels that alerts are delivered to, managed by administrators.
+  - name: metrics
+    description: The state of the queues, incidents and periodic tasks, for a monitoring system.
 
 paths:
   /livez:
@@ -942,6 +944,45 @@ paths:
                 $ref: "#/components/schemas/AuditEntryPage"
         "400":
           $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/metrics:
+    get:
+      operationId: getMetrics
+      summary: Read the metrics
+      description: |
+        Returns the state of the queues of events and alerts, the incidents that
+        are not closed and the periodic tasks of the worker, in the text format
+        of Prometheus, version 0.0.4. Every metric is a gauge with the prefix
+        `nyktus_`. Values are aggregates, and labels name only fixed states and
+        tasks, never a resource, an address or a name.
+
+        Whether incidents are open tells an intruder whether they were noticed,
+        so only administrators and API keys with the scope `metrics:read` read
+        the metrics. Reads are not recorded in the audit log.
+      tags: [metrics]
+      x-access: metrics:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The metrics.
+          content:
+            text/plain; version=0.0.4:
+              schema:
+                type: string
+              example: |
+                # HELP nyktus_event_jobs Jobs of events that wait to be processed.
+                # TYPE nyktus_event_jobs gauge
+                nyktus_event_jobs 0
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -2683,7 +2724,7 @@ components:
             in the responses.
           items:
             type: string
-            enum: [audit:read, events:read, honeytokens:read, honeytokens:write, incidents:read, incidents:write]
+            enum: [audit:read, events:read, honeytokens:read, honeytokens:write, incidents:read, incidents:write, metrics:read]
         expires_at:
           type: string
           format: date-time

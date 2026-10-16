@@ -44,6 +44,8 @@ type Deps struct {
 	OIDC OIDC
 	// AuditEntries lists the audit log.
 	AuditEntries http.Handler
+	// Metrics reports the state of the queues, incidents and periodic tasks.
+	Metrics http.Handler
 	// Accounts manages accounts and activates them.
 	Accounts Accounts
 	// Honeytokens manages the honeytokens of the team.
@@ -147,8 +149,8 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || !d.Accounts.complete() || !d.Honeytokens.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
-		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, account, honeytoken, incident, event and alert channel handlers")
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Honeytokens.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
+		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, honeytoken, incident, event and alert channel handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	// The session itself and how the account signs in are managed only with a
@@ -177,6 +179,9 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPost, "/api/v1/api-keys", httpx.Require("api_keys:write").SessionOnly(), httpx.Deadline(hashDeadline)(d.APIKeys.Create))
 	rt.Handle(http.MethodDelete, "/api/v1/api-keys/{id}", httpx.Require("api_keys:write").SessionOnly(), d.APIKeys.Revoke)
 	rt.Handle(http.MethodGet, "/api/v1/audit-entries", httpx.Require("audit:read"), d.AuditEntries)
+	// Only administrators read the metrics: whether incidents are open tells an
+	// intruder whether they were noticed.
+	rt.Handle(http.MethodGet, "/api/v1/metrics", httpx.Require("metrics:read"), d.Metrics)
 	rt.Handle(http.MethodGet, "/api/v1/users", httpx.Require("users:read"), d.Accounts.List)
 	rt.Handle(http.MethodPost, "/api/v1/users", httpx.Require("users:write"), d.Accounts.Create)
 	rt.Handle(http.MethodGet, "/api/v1/users/{id}", httpx.Require("users:read"), d.Accounts.Get)
