@@ -27,6 +27,7 @@ var scope = db.Scope{
 		"public.delete_expired_sign_in_data(integer)",
 		"public.delete_expired_audit_entries(integer, integer)",
 		"public.delete_expired_incident_data(integer, integer)",
+		"public.close_inactive_incidents(integer, integer)",
 	},
 }
 

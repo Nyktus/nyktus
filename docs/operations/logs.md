@@ -68,7 +68,7 @@ The [worker](incidents.md) logs what became of the events it processed, of the [
 
 | Message | Level | Content |
 |---|---|---|
-| `worker: started` | info | The worker looks for events to process, alerts to deliver and periodic tasks that are due; `concurrency` and `delivery_concurrency` are the numbers of events and alerts it handles at a time, `audit_retention_days` and `event_retention_days` the [retention](database.md#periodic-tasks). |
+| `worker: started` | info | The worker looks for events to process, alerts to deliver and periodic tasks that are due; `concurrency` and `delivery_concurrency` are the numbers of events and alerts it handles at a time, `audit_retention_days` and `event_retention_days` the [retention](database.md#periodic-tasks), `incident_auto_close_days` the [inactivity](incidents.md#closing-inactive-incidents) after which it closes incidents. |
 | `worker: stopped` | info | The worker processed its last event and stopped. |
 | `incident: opened` | info | An event opened an incident and raised its alert. `incident` holds `incident_id`, `event_id`, `resource_type`, `resource_id` and `severity`; `deliveries` counts the channels the alert goes to. |
 | `alerting: no enabled channel` | warn | An incident opened while no alert channel was enabled, so its alert reaches nobody. `incident_id` names it. |
@@ -77,6 +77,7 @@ The [worker](incidents.md) logs what became of the events it processed, of the [
 | `alerting: delivery dead` | error | A delivery failed for the last time, or in a way no retry can mend, such as `blocked` or `invalid_channel`. If the secrets of the channel could not be decrypted, for example after their key was removed, `error` names the cause, never the secret. An administrator can [retry it](alerting.md#dead-deliveries). |
 | `alerting: delivery canceled` | info | The channel of a delivery was disabled or deleted before it was sent. |
 | `alerting: attempt not recorded` | warn | The outcome of an attempt was not recorded, because the delivery was claimed again or settled meanwhile; the later state stands. |
+| `incident: closed` | info | The worker [closed an incident](incidents.md#closing-inactive-incidents) `incident_id` whose last event lies beyond `NYKTUS_INCIDENT_AUTO_CLOSE_DAYS`; `reason` is `inactive`. |
 | `incident: event assigned` | debug | An event was added to an open incident. Same fields as above. |
 | `incident: event not processed` | error | An event could not be assigned to an incident. It stays and is tried again at `retry_at`; `attempts` counts the failed attempts, `error` names the cause. The event is not lost, but it raises no alert until it is processed. |
 | `worker: periodic task completed` | info | A [periodic task](database.md#periodic-tasks) `task` ran to its end and removed `rows` rows. A run that removed nothing is logged at debug. |

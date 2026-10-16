@@ -367,7 +367,7 @@ func TestPeriodicTasks_MatchTheSchema(t *testing.T) {
 	t.Parallel()
 
 	var names []string
-	for _, task := range periodicTasks(nil, config.Worker{}) {
+	for _, task := range periodicTasks(slog.New(slog.DiscardHandler), nil, config.Worker{}) {
 		names = append(names, task.Name)
 	}
 	slices.Sort(names)
@@ -392,8 +392,12 @@ func (q *recordingQuerier) Exec(context.Context, string, ...any) (pgconn.Command
 	return pgconn.CommandTag{}, nil
 }
 
-func (q *recordingQuerier) Query(context.Context, string, ...any) (pgx.Rows, error) {
-	return nil, errors.New("unexpected query")
+// errRecorded ends a query whose rows the test does not need.
+var errRecorded = errors.New("recorded")
+
+func (q *recordingQuerier) Query(_ context.Context, _ string, args ...any) (pgx.Rows, error) {
+	q.args = append(q.args, args)
+	return nil, errRecorded
 }
 
 func (q *recordingQuerier) QueryRow(_ context.Context, _ string, args ...any) pgx.Row {
@@ -408,17 +412,20 @@ func (zeroRow) Scan(dest ...any) error {
 	return nil
 }
 
-// Each task of the retention passes its own retention to the database.
-func TestPeriodicTasks_PassTheirRetention(t *testing.T) {
+// Each task passes its own setting to the database.
+func TestPeriodicTasks_PassTheirSettings(t *testing.T) {
 	t.Parallel()
 
 	q := &recordingQuerier{}
-	for _, task := range periodicTasks(q, config.Worker{AuditRetentionDays: 111, EventRetentionDays: 222}) {
+	cfg := config.Worker{AuditRetentionDays: 111, EventRetentionDays: 222, AutoCloseDays: 33}
+	for _, task := range periodicTasks(slog.New(slog.DiscardHandler), q, cfg) {
 		q.args = nil
-		if _, _, err := task.Step(t.Context()); err != nil {
+		if _, _, err := task.Step(t.Context()); err != nil && !errors.Is(err, errRecorded) {
 			t.Fatalf("%s: Step() error = %v", task.Name, err)
 		}
-		want := map[string]any{"delete_expired_audit_entries": 111, "delete_expired_incident_data": 222}[task.Name]
+		want := map[string]any{
+			"delete_expired_audit_entries": 111, "delete_expired_incident_data": 222, "close_inactive_incidents": 33,
+		}[task.Name]
 		if want != nil && (len(q.args) != 1 || !slices.Contains(q.args[0], want)) {
 			t.Errorf("%s: arguments = %v, want them to contain %v", task.Name, q.args, want)
 		}

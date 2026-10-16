@@ -444,11 +444,12 @@ const (
 
 // periodicTasks returns the periodic tasks of the worker, one for every row of
 // periodic_tasks.
-func periodicTasks(q db.Querier, cfg config.Worker) []worker.Task {
+func periodicTasks(logger *slog.Logger, q db.Querier, cfg config.Worker) []worker.Task {
 	return []worker.Task{
 		worker.DeleteExpiredSignInData(q),
 		worker.DeleteExpiredAuditEntries(q, cfg.AuditRetentionDays),
 		worker.DeleteExpiredIncidentData(q, cfg.EventRetentionDays),
+		incident.CloseInactive(logger, q, cfg.AutoCloseDays),
 	}
 }
 
@@ -502,7 +503,7 @@ func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, sta
 	})
 	periodic := worker.New(worker.Options{
 		Logger:       logger,
-		Queue:        worker.NewPeriodic(logger, pool, periodicTasks(pool, cfg.Worker)),
+		Queue:        worker.NewPeriodic(logger, pool, periodicTasks(logger, pool, cfg.Worker)),
 		Concurrency:  1,
 		PollInterval: periodicPollInterval,
 		MaxBackoff:   periodicMaxBackoff,
@@ -511,7 +512,8 @@ func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, sta
 	logger.InfoContext(ctx, "worker: started", slog.Int("concurrency", cfg.Worker.Concurrency),
 		slog.Int("delivery_concurrency", cfg.Worker.DeliveryConcurrency),
 		slog.Int("audit_retention_days", cfg.Worker.AuditRetentionDays),
-		slog.Int("event_retention_days", cfg.Worker.EventRetentionDays))
+		slog.Int("event_retention_days", cfg.Worker.EventRetentionDays),
+		slog.Int("incident_auto_close_days", cfg.Worker.AutoCloseDays))
 	started()
 	var wg sync.WaitGroup
 	wg.Go(func() { events.Run(ctx) })

@@ -194,6 +194,9 @@ type Worker struct {
 	// EventRetentionDays is how long an event is kept, and a closed incident
 	// with its alert and deliveries after it closed.
 	EventRetentionDays int
+	// AutoCloseDays is how long an incident stays open without a new event
+	// before the worker closes it, or 0 to never close incidents on their own.
+	AutoCloseDays int
 }
 
 // Limits of the retention, in days. Audit entries prove what happened long
@@ -205,6 +208,10 @@ const (
 	MinAuditRetentionDays = 90
 	MinEventRetentionDays = 30
 	MaxRetentionDays      = 3650
+	// MaxAutoCloseDays bounds the time without an event after which an
+	// incident closes, which the database repeats. An incident that stays
+	// open longer than a year hides new intrusions behind it.
+	MaxAutoCloseDays = 365
 )
 
 // defaultConsoleAddr is the address that the console listens on by default.
@@ -381,6 +388,7 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 			ConsoleURL:          consoleURL,
 			AuditRetentionDays:  r.integer("AUDIT_RETENTION_DAYS", 365, MinAuditRetentionDays, MaxRetentionDays),
 			EventRetentionDays:  r.integer("EVENT_RETENTION_DAYS", 180, MinEventRetentionDays, MaxRetentionDays),
+			AutoCloseDays:       r.integer("INCIDENT_AUTO_CLOSE_DAYS", 14, 0, MaxAutoCloseDays),
 		}
 	}
 	// The console encrypts the secrets of second factors and alert channels,

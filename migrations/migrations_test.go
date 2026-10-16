@@ -332,6 +332,7 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT public.delete_expired_sign_in_data(1)",
 		"SELECT public.delete_expired_audit_entries(365, 1)",
 		"SELECT public.delete_expired_incident_data(180, 1)",
+		"SELECT public.close_inactive_incidents(14, 1)",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)
@@ -440,6 +441,7 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_function_privilege($1, 'public.delete_expired_sign_in_data(integer)', 'EXECUTE')",
 		"has_function_privilege($1, 'public.delete_expired_audit_entries(integer, integer)', 'EXECUTE')",
 		"has_function_privilege($1, 'public.delete_expired_incident_data(integer, integer)', 'EXECUTE')",
+		"has_function_privilege($1, 'public.close_inactive_incidents(integer, integer)', 'EXECUTE')",
 	} {
 		var held bool
 		if err := pool.QueryRow(t.Context(), "SELECT "+privilege, schematest.ConsoleRole).Scan(&held); err != nil {

@@ -1370,8 +1370,10 @@ CREATE UNIQUE INDEX incidents_open_resource_key ON public.incidents (resource_ty
 CREATE INDEX incidents_opened_at_id_idx ON public.incidents (opened_at DESC, id DESC);
 CREATE INDEX incidents_resource_id_opened_at_id_idx ON public.incidents (resource_id, opened_at DESC, id DESC);
 
--- The worker deletes incidents some time after they closed.
+-- The worker deletes incidents some time after they closed, and closes open
+-- incidents some time after their last event.
 CREATE INDEX incidents_closed_at_idx ON public.incidents (closed_at) WHERE status = 'closed';
+CREATE INDEX incidents_open_last_event_at_idx ON public.incidents (last_event_at) WHERE status <> 'closed';
 
 -- The status of an incident only moves forward, from open over acknowledged to
 -- closed, so a closed incident is never opened again: new events of its
@@ -1808,13 +1810,15 @@ CREATE TABLE public.periodic_tasks (
 	last_rows         bigint,
 
 	CONSTRAINT periodic_tasks_name_check CHECK (
-		name IN ('delete_expired_sign_in_data', 'delete_expired_audit_entries', 'delete_expired_incident_data')
+		name IN ('delete_expired_sign_in_data', 'delete_expired_audit_entries', 'delete_expired_incident_data',
+			'close_inactive_incidents')
 	),
 	CONSTRAINT periodic_tasks_last_rows_check CHECK (last_rows >= 0)
 );
 
 INSERT INTO public.periodic_tasks (name)
-VALUES ('delete_expired_sign_in_data'), ('delete_expired_audit_entries'), ('delete_expired_incident_data');
+VALUES ('delete_expired_sign_in_data'), ('delete_expired_audit_entries'), ('delete_expired_incident_data'),
+	('close_inactive_incidents');
 
 -- Removes expired sign-in data: sessions, challenges of the second factor,
 -- unconfirmed TOTP factors, activation and reset links, API keys, sign-ins
@@ -2013,7 +2017,56 @@ BEGIN
 END
 $$;
 
+-- Closes up to batch incidents whose last event was more than inactive_days
+-- ago, open or acknowledged, and returns their identifiers. An incident that
+-- never closes collects every later event of its resource and raises no alert
+-- for them, so a new intrusion would go unnoticed behind it.
+--
+-- The worker cannot change the status of an incident otherwise, which is the
+-- triage of the console. This function closes only incidents that have been
+-- quiet for at least a day, so that a compromised worker cannot close the
+-- incidents that analysts are working on. The trigger on incidents records
+-- when they closed, and the audit log records the system as the actor, with
+-- the status as the changed field, as for a triage.
+--
+-- An incident that another transaction holds, such as the worker adding an
+-- event or the console triaging it, is skipped and closed by a later call if
+-- it is still quiet. Only the incident is locked, so that the lock order of
+-- the worker, job before incident, holds: an event that waits for an incident
+-- closed here finds no open incident afterwards and opens a new one with its
+-- alert.
+CREATE FUNCTION public.close_inactive_incidents(inactive_days integer, batch integer) RETURNS SETOF uuid
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = ''
+	SET lock_timeout = '5s'
+AS $$
+DECLARE
+	inactive uuid[];
+BEGIN
+	IF inactive_days IS NULL OR inactive_days NOT BETWEEN 1 AND 365 THEN
+		RAISE EXCEPTION 'inactivity must be between 1 and 365 days, not %', inactive_days
+			USING ERRCODE = 'invalid_parameter_value';
+	END IF;
+	IF batch IS NULL OR batch NOT BETWEEN 1 AND 10000 THEN
+		RAISE EXCEPTION 'batch must be between 1 and 10000, not %', batch USING ERRCODE = 'invalid_parameter_value';
+	END IF;
+
+	inactive := ARRAY(
+		SELECT i.id FROM public.incidents AS i
+		WHERE i.status <> 'closed' AND i.last_event_at < statement_timestamp() - make_interval(days => inactive_days)
+		LIMIT batch FOR NO KEY UPDATE SKIP LOCKED
+	);
+	UPDATE public.incidents SET status = 'closed' WHERE id = ANY (inactive);
+	INSERT INTO public.audit_entries (action, outcome, actor_kind, auth_method, resource_type, resource_id, changed_fields)
+	SELECT 'incident.update', 'success', 'system', 'none', 'incident', i.id, '{status}'
+	FROM unnest(inactive) AS i (id);
+	RETURN QUERY SELECT unnest(inactive);
+END
+$$;
+
 REVOKE ALL ON public.periodic_tasks FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.close_inactive_incidents(integer, integer) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.delete_expired_sign_in_data(integer) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.delete_expired_audit_entries(integer, integer) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.delete_expired_incident_data(integer, integer) FROM PUBLIC, nyktus_console;
@@ -2106,6 +2159,7 @@ GRANT UPDATE (next_run_at, last_started_at, last_succeeded_at, last_failed_at, l
 GRANT EXECUTE ON FUNCTION public.delete_expired_sign_in_data(integer) TO nyktus_worker;
 GRANT EXECUTE ON FUNCTION public.delete_expired_audit_entries(integer, integer) TO nyktus_worker;
 GRANT EXECUTE ON FUNCTION public.delete_expired_incident_data(integer, integer) TO nyktus_worker;
+GRANT EXECUTE ON FUNCTION public.close_inactive_incidents(integer, integer) TO nyktus_worker;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
 -- result is verified instead of assumed, in both directions: every privilege on
@@ -2146,7 +2200,8 @@ BEGIN
 	),
 	functions (signature) AS (
 		VALUES ('public.attack_technique_ids_valid(text[])'), ('public.delete_expired_sign_in_data(integer)'),
-			('public.delete_expired_audit_entries(integer, integer)'), ('public.delete_expired_incident_data(integer, integer)')
+			('public.delete_expired_audit_entries(integer, integer)'), ('public.delete_expired_incident_data(integer, integer)'),
+			('public.close_inactive_incidents(integer, integer)')
 	),
 	privileges (object, privilege, held, wanted) AS (
 		SELECT c.relname::text, p.privilege,
