@@ -137,6 +137,7 @@ linters:
             - "!**/internal/platform/apispec/*.go"
             - "!**/internal/platform/schematest/*.go"
             - "!**/internal/platform/secretbox/secretboxtest/*.go"
+            - "!**/internal/platform/smtp/smtptest/*.go"
           deny:
             - pkg: go.yaml.in/yaml
               desc: the YAML parser is a test dependency
@@ -148,6 +149,17 @@ linters:
               desc: test databases are for tests only
             - pkg: nyktus.org/nyktus/internal/platform/secretbox/secretboxtest
               desc: test keys are for tests only
+            - pkg: nyktus.org/nyktus/internal/platform/smtp/smtptest
+              desc: the SMTP server is for tests only
+        # Mail goes through one client, which verifies the server, bounds the
+        # conversation and checks every header.
+        smtp:
+          list-mode: lax
+          files:
+            - "!**/internal/platform/smtp/*.go"
+          deny:
+            - pkg: net/smtp
+              desc: send mail through internal/platform/smtp
 
     exhaustive:
       default-signifies-exhaustive: true

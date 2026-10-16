@@ -209,7 +209,7 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 
 ## Outbound requests
 
-Several features send requests to user-supplied URLs: webhooks, chat integrations and catalog imports. Every such request goes through the SSRF-guarded client. The identity provider is configured by the operator and is the exception, see [Local login and OpenID Connect](#local-login-and-openid-connect).
+Several features send requests to user-supplied URLs: webhooks, chat integrations and catalog imports. Every such request goes through the SSRF-guarded client. The identity provider and the SMTP server are configured by the operator and are the exceptions, see [Local login and OpenID Connect](#local-login-and-openid-connect) and [Mail](#mail).
 
 The guard lives in `internal/platform/ssrf`.
 
@@ -235,6 +235,16 @@ The alert path must survive a compromise of the monitored environment, including
 - API keys never manage channels, not even by reading them.
 - Only the worker connects to receivers, also for tests, so that one host needs outbound access and no answer of the console reveals the network. A delivery records the status code and the class of a failure, never the response or the error, which names the URL.
 - A message carries no inventory and no personal data, because it often leaves for a service of a third party.
+
+### Mail
+
+Mail goes through one client, `internal/platform/smtp`; the linter rejects `net/smtp` elsewhere.
+
+- The SMTP server is configured by the operator, not by a user of the console, and is often reachable only internally. Like the identity provider, it is not reached through the SSRF guard. The client reads no proxy from the environment.
+- The certificate of the server is always verified, with TLS 1.2 or later. With STARTTLS, a server that does not offer it is refused before anything but the greeting is sent, so that nobody on the way can strip TLS and read the password. The password, with `AUTH PLAIN` or, where a server offers only that, `AUTH LOGIN`, goes only over TLS or to the loopback interface; `net/smtp` recognizes TLS only on a `*tls.Conn`, so nothing may wrap it. Plain SMTP exists for development only.
+- A conversation is bounded in time, and the replies of the server in size, because `net/textproto` reads a reply without a limit.
+- Every header and the body consist of printable ASCII, and every address is a bare `local@domain` without display name, comment or quoting, checked before the client connects. No value can end a header and start another one.
+- A message is sent only once the server has accepted every recipient. Errors keep the code of a refusal, never its text or the password.
 
 ## Secrets and cryptography
 
