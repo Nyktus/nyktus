@@ -56,7 +56,9 @@ func deps(db Pinger) Deps {
 		Events:    Events{List: http.NotFoundHandler(), Get: http.NotFoundHandler()},
 		AlertChannels: AlertChannels{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
-			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(),
+			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(), Test: http.NotFoundHandler(),
+			GetDelivery: http.NotFoundHandler(), RetryDelivery: http.NotFoundHandler(),
+			IncidentDeliveries: http.NotFoundHandler(),
 		},
 		OIDC:   OIDC{Authorize: http.NotFoundHandler(), Reauthenticate: http.NotFoundHandler(), Callback: http.NotFoundHandler()},
 		Origin: "https://nyktus.example.com",
@@ -155,7 +157,8 @@ func TestSessionRoutes_AdmitOnlySessions(t *testing.T) {
 	under := func(path, prefix string) bool { return path == prefix || strings.HasPrefix(path, prefix+"/") }
 	for _, route := range NewRouter(deps(fakePinger{})).Routes() {
 		managed := under(route.Path, "/api/v1/session") || under(route.Path, "/api/v1/api-keys") ||
-			under(route.Path, "/api/v1/alert-channels") || route.Path == "/api/v1/oidc/reauthenticate"
+			under(route.Path, "/api/v1/alert-channels") || under(route.Path, "/api/v1/alert-deliveries") ||
+			route.Path == "/api/v1/oidc/reauthenticate"
 		protected := route.Access != httpx.Public
 		if want := managed && protected; route.Access.RequiresSession() != want {
 			t.Errorf("route %s %s: RequiresSession() = %v, want %v", route.Method, route.Path, route.Access.RequiresSession(), want)

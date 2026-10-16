@@ -32,6 +32,8 @@ var Actions = []Action{
 	ActionAlertChannelCreate,
 	ActionAlertChannelUpdate,
 	ActionAlertChannelDelete,
+	ActionAlertChannelTest,
+	ActionAlertDeliveryRetry,
 	ActionIncidentUpdate,
 	ActionEventsRead,
 }

@@ -340,3 +340,98 @@ func TestResponse_HasTheDocumentedMembers(t *testing.T) {
 		t.Errorf("members = %v, want %v", got, want)
 	}
 }
+
+func TestTest_RequestsATestOnceAtATime(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	c := f.create(t, webhookBody("SOAR"))
+
+	rec := f.serve(t, f.h.Test, http.MethodPost, c.ID, "")
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+	}
+	d := decode[deliveryResponse](t, rec)
+	if d.IncidentID != nil || d.ChannelID != c.ID || d.Status != alerting.StatusPending || d.NextAttemptAt == nil {
+		t.Errorf("delivery = %+v", d)
+	}
+	if rec := f.serve(t, f.h.Test, http.MethodPost, c.ID, ""); rec.Code != http.StatusConflict || errorCode(t, rec) != "test_pending" {
+		t.Errorf("second test: status %d, body %s", rec.Code, rec.Body)
+	}
+	if rec := f.serve(t, f.h.Test, http.MethodPost, "00000000-0000-4000-8000-000000000000", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown channel: status %d", rec.Code)
+	}
+	got := decode[deliveryResponse](t, f.serve(t, f.h.GetDelivery, http.MethodGet, d.ID, ""))
+	if got.ID != d.ID {
+		t.Errorf("GetDelivery = %+v", got)
+	}
+	if rec := f.serve(t, f.h.GetDelivery, http.MethodGet, "not-a-uuid", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown delivery: status %d", rec.Code)
+	}
+	var n int
+	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM audit_entries WHERE action = 'alert_channel.test' AND resource_id = $1`, c.ID).Scan(&n); err != nil || n != 1 {
+		t.Errorf("audit entries of the test = %d, %v; want 1", n, err)
+	}
+}
+
+func TestDeliveries_ListAndRetry(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	c := f.create(t, webhookBody("SOAR"))
+	var incidentID, deliveryID string
+	err := f.owner.QueryRow(t.Context(), `
+WITH i AS (
+	INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
+	VALUES ('honeytoken', gen_random_uuid(), 'low', clock_timestamp(), clock_timestamp()) RETURNING id
+), a AS (
+	INSERT INTO alerts (incident_id, severity) SELECT id, 'low' FROM i RETURNING incident_id
+)
+INSERT INTO alert_deliveries (alert_id, channel_id, channel_type, channel_name, status, attempts, last_attempt_at, last_error)
+SELECT incident_id, $1, 'webhook', 'SOAR', 'dead', 10, clock_timestamp(), 'http_status' FROM a
+RETURNING alert_id, id`, c.ID).Scan(&incidentID, &deliveryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list := decode[deliveryListResponse](t, f.serve(t, f.h.IncidentDeliveries, http.MethodGet, incidentID, ""))
+	if len(list.Deliveries) != 1 || list.Deliveries[0].Status != alerting.StatusDead || list.Deliveries[0].NextAttemptAt != nil ||
+		*list.Deliveries[0].LastError != alerting.FailureHTTPStatus || *list.Deliveries[0].IncidentID != incidentID {
+		t.Errorf("deliveries = %+v", list)
+	}
+	if rec := f.serve(t, f.h.IncidentDeliveries, http.MethodGet, "00000000-0000-4000-8000-000000000000", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown incident: status %d", rec.Code)
+	}
+
+	rec := f.serve(t, f.h.RetryDelivery, http.MethodPost, deliveryID, "")
+	if got := decode[deliveryResponse](t, rec); rec.Code != http.StatusOK || got.Status != alerting.StatusPending || got.Attempts != 0 {
+		t.Errorf("retry: status %d, %+v", rec.Code, got)
+	}
+	if rec := f.serve(t, f.h.RetryDelivery, http.MethodPost, deliveryID, ""); rec.Code != http.StatusConflict || errorCode(t, rec) != "delivery_not_dead" {
+		t.Errorf("retry a pending delivery: status %d, body %s", rec.Code, rec.Body)
+	}
+	if rec := f.serve(t, f.h.RetryDelivery, http.MethodPost, "00000000-0000-4000-8000-000000000000", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("retry an unknown delivery: status %d", rec.Code)
+	}
+	var n int
+	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM audit_entries WHERE action = 'alert_delivery.retry' AND resource_type = 'alert_delivery' AND resource_id = $1`, deliveryID).Scan(&n); err != nil || n != 1 {
+		t.Errorf("audit entries of the retry = %d, %v; want 1", n, err)
+	}
+
+	var members map[string]any
+	if err := json.Unmarshal(f.serve(t, f.h.GetDelivery, http.MethodGet, deliveryID, "").Body.Bytes(), &members); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := slices.Collect(maps.Keys(members)), specSchemas(t)["AlertDelivery"].Required; !sameSet(got, want) {
+		t.Errorf("members = %v, want %v", got, want)
+	}
+}
+
+func TestTestAndRetry_WithoutSession_Fail(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.principal = access.Principal{APIKeyID: "k1", Method: audit.AuthAPIKey}
+	for _, h := range []http.HandlerFunc{f.h.Test, f.h.RetryDelivery} {
+		if rec := f.serve(t, h, http.MethodPost, "00000000-0000-4000-8000-000000000000", ""); rec.Code != http.StatusInternalServerError {
+			t.Errorf("status %d, want 500", rec.Code)
+		}
+	}
+}

@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"nyktus.org/nyktus/internal/alerting"
 	"nyktus.org/nyktus/internal/auth/oidc"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/secondfactor"
@@ -430,11 +431,16 @@ const (
 	workerPollInterval = time.Second
 	workerMaxBackoff   = 30 * time.Second
 	workerJobTimeout   = 10 * time.Second
+	// deliveryJobTimeout bounds a delivery: claiming it, a request of at most
+	// ssrf.RequestTimeout, and recording its outcome.
+	deliveryJobTimeout = 20 * time.Second
 )
 
 func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, started func()) error {
-	// Every job in progress holds one connection.
-	pool, err := db.Open(ctx, cfg.Worker.DatabaseURL.Value(), db.Options{MaxConns: int32(cfg.Worker.Concurrency)}) //nolint:gosec // The configuration bounds it to 32.
+	// Every job in progress holds one connection; a delivery holds it only
+	// while it claims and records an attempt.
+	conns := int32(cfg.Worker.Concurrency + cfg.Worker.DeliveryConcurrency) //nolint:gosec // The configuration bounds both to 32.
+	pool, err := db.Open(ctx, cfg.Worker.DatabaseURL.Value(), db.Options{MaxConns: conns})
 	if err != nil {
 		return fmt.Errorf("worker: %w", err)
 	}
@@ -444,12 +450,16 @@ func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, sta
 		if err := db.CheckLeastPrivilege(ctx, pool); err != nil {
 			return fmt.Errorf("worker: %w", err)
 		}
-		if err := incident.CheckPrivileges(ctx, pool); err != nil {
+		if err := worker.CheckPrivileges(ctx, pool); err != nil {
 			return fmt.Errorf("worker: %w", err)
 		}
 	}
 
-	w := worker.New(worker.Options{
+	if err := alerting.CheckKeys(ctx, pool, cfg.EncryptionKeys); err != nil {
+		return fmt.Errorf("worker: %w", err)
+	}
+
+	events := worker.New(worker.Options{
 		Logger:       logger,
 		Queue:        incident.NewProcessor(incident.NewStore(pool), logger),
 		Concurrency:  cfg.Worker.Concurrency,
@@ -457,9 +467,29 @@ func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, sta
 		MaxBackoff:   workerMaxBackoff,
 		JobTimeout:   workerJobTimeout,
 	})
-	logger.InfoContext(ctx, "worker: started", slog.Int("concurrency", cfg.Worker.Concurrency))
+	// Alerts are delivered by a queue of their own, so that a slow receiver
+	// never holds up the correlation of events.
+	guard := ssrf.New(ssrf.Options{
+		AllowedNetworks: cfg.AlertingAllowedNetworks,
+		AllowHTTP:       cfg.Environment == config.Development,
+	})
+	deliveries := worker.New(worker.Options{
+		Logger: logger,
+		Queue: alerting.NewDeliverer(alerting.DelivererOptions{
+			Logger: logger, DB: pool, Keys: cfg.EncryptionKeys, Client: guard.Client(), ConsoleURL: cfg.Worker.ConsoleURL,
+		}),
+		Concurrency:  cfg.Worker.DeliveryConcurrency,
+		PollInterval: workerPollInterval,
+		MaxBackoff:   workerMaxBackoff,
+		JobTimeout:   deliveryJobTimeout,
+	})
+	logger.InfoContext(ctx, "worker: started", slog.Int("concurrency", cfg.Worker.Concurrency),
+		slog.Int("delivery_concurrency", cfg.Worker.DeliveryConcurrency))
 	started()
-	w.Run(ctx)
+	var wg sync.WaitGroup
+	wg.Go(func() { events.Run(ctx) })
+	wg.Go(func() { deliveries.Run(ctx) })
+	wg.Wait()
 	logger.InfoContext(ctx, "worker: stopped")
 	return nil
 }
