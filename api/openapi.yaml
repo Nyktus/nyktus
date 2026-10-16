@@ -1865,7 +1865,8 @@ paths:
       description: |
         Returns the channels that alerts are delivered to, ordered by name,
         without their URLs and header values. `target` shows the scheme, host
-        and port of the URL instead. Only a session can manage alert channels.
+        and port of the URL instead; a channel of the type `email` shows its
+        `recipients`. Only a session can manage alert channels.
       tags: [alerting]
       x-access: alert_channels:read
       security:
@@ -1906,7 +1907,9 @@ paths:
         otherwise the response is `422` with the code `target_not_allowed`,
         which does not tell an internal target from one that does not resolve.
         A header is only allowed for a `webhook` (`422`, code
-        `header_not_allowed`). Names are unique (`409`, code `name_taken`), and
+        `header_not_allowed`). A channel of the type `email` has `recipients`
+        instead of a URL (`422`, codes `url_not_allowed` and
+        `recipients_not_allowed`); they are no secret and are returned. Names are unique (`409`, code `name_taken`), and
         an installation has at most 20 channels (`409`, code
         `too_many_alert_channels`).
 
@@ -2011,8 +2014,10 @@ paths:
       summary: Change an alert channel
       description: |
         Changes the name of a channel, enables or disables it, or replaces its
-        URL or header. The type never changes. A new URL is checked as on
-        creation. `header` replaces the header of a webhook; null removes it.
+        URL, header or recipients. The type never changes. A new URL is checked
+        as on creation. `header` replaces the header of a webhook; null removes
+        it. `recipients` replaces the recipients of a channel of the type
+        `email`.
 
         Every change other than a new `name` decides where alerts go, what
         authenticates them, or whether they go at all, and is confirmed with
@@ -2812,7 +2817,7 @@ components:
     AlertChannel:
       type: object
       additionalProperties: false
-      required: [id, name, type, enabled, target, header_name, created_at, updated_at]
+      required: [id, name, type, enabled, target, header_name, recipients, created_at, updated_at]
       properties:
         id:
           type: string
@@ -2823,19 +2828,27 @@ components:
           maxLength: 64
         type:
           type: string
-          enum: [webhook, slack, teams]
+          enum: [webhook, slack, teams, email]
           description: |
-            The format of the request body: `webhook` sends the alert as JSON, `slack` to an incoming
-            webhook of Slack, `teams` to a workflow of Microsoft Teams.
+            How the alert is sent: `webhook` posts it as JSON, `slack` to an incoming webhook of Slack,
+            `teams` to a workflow of Microsoft Teams, `email` as mail through the SMTP server of the
+            operator.
         enabled:
           type: boolean
         target:
-          type: string
-          description: The scheme, host and port of the URL, shown instead of it.
+          type: [string, "null"]
+          description: The scheme, host and port of the URL, shown instead of it; null for `email`.
           examples: ["https://hooks.slack.com"]
         header_name:
           type: [string, "null"]
           description: The name of the header that a webhook sends; its value is never returned.
+        recipients:
+          type: [array, "null"]
+          description: The addresses that a channel of the type `email` sends to; null for every other type.
+          minItems: 1
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/EmailAddress"
         created_at:
           type: string
           format: date-time
@@ -2878,10 +2891,20 @@ components:
           writeOnly: true
           description: A secret, stored encrypted and never returned.
 
+    EmailAddress:
+      type: string
+      minLength: 3
+      maxLength: 254
+      pattern: "^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@[A-Za-z0-9.-]+$"
+      description: |
+        An address of the form `local@domain` in ASCII, without display name, comment or quoting; an
+        internationalized domain in its ASCII form.
+      examples: ["soc@example.com"]
+
     CreateAlertChannelRequest:
       type: object
       additionalProperties: false
-      required: [name, type, url]
+      required: [name, type]
       properties:
         name:
           type: string
@@ -2889,7 +2912,7 @@ components:
           maxLength: 64
         type:
           type: string
-          enum: [webhook, slack, teams]
+          enum: [webhook, slack, teams, email]
         enabled:
           type: boolean
           default: true
@@ -2900,9 +2923,17 @@ components:
           writeOnly: true
           description: |
             The URL that receives the alerts, including any token in its path or query. A secret,
-            stored encrypted and never returned.
+            stored encrypted and never returned. Required for every type other than `email`.
         header:
           $ref: "#/components/schemas/AlertChannelHeader"
+        recipients:
+          type: array
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          description: The addresses of a channel of the type `email`, which has no URL. No address repeats, ignoring case.
+          items:
+            $ref: "#/components/schemas/EmailAddress"
         password:
           type: string
           writeOnly: true
@@ -2929,6 +2960,14 @@ components:
             - $ref: "#/components/schemas/AlertChannelHeader"
             - type: "null"
           description: Replaces the header of a webhook; null removes it.
+        recipients:
+          type: array
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          description: Replaces the recipients of a channel of the type `email`.
+          items:
+            $ref: "#/components/schemas/EmailAddress"
         password:
           type: string
           writeOnly: true
@@ -2956,7 +2995,7 @@ components:
           description: The channel. It may have been deleted since.
         channel_type:
           type: string
-          enum: [webhook, slack, teams]
+          enum: [webhook, slack, teams, email]
         channel_name:
           type: string
           description: The name of the channel when the delivery was created.
@@ -2980,16 +3019,20 @@ components:
           format: date-time
         last_status_code:
           type: [integer, "null"]
-          description: The HTTP status of the response to the last attempt, if there was one.
+          description: |
+            The HTTP status of the response to the last attempt, or for `email` the reply code with
+            which the SMTP server refused it, if there was one.
         last_error:
           type: [string, "null"]
-          enum: [http_status, redirect, timeout, network, tls, blocked, invalid_channel, null]
+          enum: [http_status, smtp_status, redirect, timeout, network, tls, blocked, invalid_channel, not_configured, null]
           description: |
             The class of the failure of the last attempt: the receiver answered with another status than
-            2xx (`http_status`) or a redirect, which is never followed (`redirect`), the request timed
-            out, the connection failed (`network`) or its TLS handshake (`tls`), the target resolved to
-            an address that is not allowed (`blocked`), or the channel cannot be sent to, for example
-            because its secrets cannot be decrypted (`invalid_channel`).
+            2xx (`http_status`) or a redirect, which is never followed (`redirect`), the SMTP server
+            refused the mail (`smtp_status`), the request timed out, the connection failed (`network`)
+            or its TLS handshake, also when an SMTP server does not offer STARTTLS (`tls`), the target
+            resolved to an address that is not allowed (`blocked`), the channel cannot be sent to, for
+            example because its secrets cannot be decrypted (`invalid_channel`), or mail cannot be sent,
+            because no SMTP server is configured or it offers no authentication (`not_configured`).
         last_duration_ms:
           type: [integer, "null"]
           minimum: 0
@@ -3483,8 +3526,10 @@ components:
             $ref: "#/components/schemas/Error"
     AlertChannelUnprocessable:
       description: |
-        The target of the URL is internal or does not resolve (`target_not_allowed`), or a header was
-        given for a channel that is not a webhook (`header_not_allowed`).
+        The target of the URL is internal or does not resolve (`target_not_allowed`), a header was given
+        for a channel that is not a webhook (`header_not_allowed`), a URL for a channel of the type
+        `email` (`url_not_allowed`), or recipients for a channel of another type
+        (`recipients_not_allowed`).
       content:
         application/json:
           schema:

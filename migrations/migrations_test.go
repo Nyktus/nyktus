@@ -205,6 +205,8 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"INSERT INTO alert_channel_secrets (channel_id, url, header_value) SELECT id, decode(repeat('01', 40), 'hex'), decode(repeat('01', 40), 'hex') FROM alert_channels",
 		"UPDATE alert_channel_secrets SET url = decode(repeat('02', 40), 'hex'), header_value = NULL WHERE channel_id = channel_id",
 		"UPDATE alert_channels SET name = 'd', enabled = false, target = 'https://i.example.com', header_name = NULL, updated_at = clock_timestamp()",
+		"INSERT INTO alert_channels (name, type, enabled, recipients) VALUES ('m', 'email', true, '{soc@example.com}')",
+		"UPDATE alert_channels SET recipients = '{oncall@example.com}' WHERE type = 'email'",
 		"SELECT count(*) FROM alert_channels",
 		"SELECT channel_id FROM alert_channel_secrets",
 		"INSERT INTO alert_deliveries (channel_id, channel_type, channel_name) SELECT id, type, name FROM alert_channels",

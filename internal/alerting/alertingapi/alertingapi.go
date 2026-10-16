@@ -29,19 +29,24 @@ import (
 )
 
 // maxBodyBytes bounds the requests: a URL of 2048 characters and a header of
-// 1024, even with every character escaped in JSON, fit with room to spare.
+// 1024, or ten addresses of 254, even with every character escaped in JSON,
+// fit with room to spare.
 const maxBodyBytes = 32 << 10
 
 // Error codes of the channels.
 const (
-	codeTargetNotAllowed  = "target_not_allowed"
-	codeNameTaken         = "name_taken"
-	codeTooManyChannels   = "too_many_alert_channels"
-	codeChannelEnabled    = "alert_channel_enabled"
-	codeHeaderNotAllowed  = "header_not_allowed"
-	headerNotAllowedRule  = "header is only allowed for a channel of the type webhook"
-	targetNotAllowedRule  = "the target of url is not allowed: it is internal or does not resolve"
-	channelEnabledMessage = "disable the alert channel before you delete it"
+	codeTargetNotAllowed     = "target_not_allowed"
+	codeNameTaken            = "name_taken"
+	codeTooManyChannels      = "too_many_alert_channels"
+	codeChannelEnabled       = "alert_channel_enabled"
+	codeHeaderNotAllowed     = "header_not_allowed"
+	codeURLNotAllowed        = "url_not_allowed"
+	codeRecipientsNotAllowed = "recipients_not_allowed"
+	headerNotAllowedRule     = "header is only allowed for a channel of the type webhook"
+	urlNotAllowedRule        = "a channel of the type email has recipients instead of url"
+	recipientsNotAllowedRule = "recipients are only allowed for a channel of the type email"
+	targetNotAllowedRule     = "the target of url is not allowed: it is internal or does not resolve"
+	channelEnabledMessage    = "disable the alert channel before you delete it"
 )
 
 // Confirmer runs a change once the administrator of the session has confirmed
@@ -75,14 +80,16 @@ func NewHandler(logger *slog.Logger, d alerting.DB, keys *secretbox.Keyring, con
 
 // response is the representation of a channel. Its URL and the value of its
 // header are never part of it, also not in the response that creates it: the
-// administrator entered them.
+// administrator entered them. The recipients of a channel of the type email
+// are no secret and are part of it.
 type response struct {
 	ID         string        `json:"id"`
 	Name       string        `json:"name"`
 	Type       alerting.Type `json:"type"`
 	Enabled    bool          `json:"enabled"`
-	Target     string        `json:"target"`
+	Target     *string       `json:"target"`
 	HeaderName *string       `json:"header_name"`
+	Recipients []string      `json:"recipients"`
 	CreatedAt  time.Time     `json:"created_at"`
 	UpdatedAt  time.Time     `json:"updated_at"`
 }
@@ -90,7 +97,7 @@ type response struct {
 func newResponse(c alerting.Channel) response {
 	return response{
 		ID: c.ID, Name: c.Name, Type: c.Type, Enabled: c.Enabled, Target: c.Target, HeaderName: c.HeaderName,
-		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		Recipients: c.Recipients, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }
 
@@ -129,12 +136,13 @@ type headerRequest struct {
 }
 
 type createRequest struct {
-	Name     string                        `json:"name"`
-	Type     alerting.Type                 `json:"type"`
-	Enabled  httpx.Optional[bool]          `json:"enabled"`
-	URL      alerting.Secret               `json:"url"`
-	Header   httpx.Optional[headerRequest] `json:"header"`
-	Password string                        `json:"password"`
+	Name       string                        `json:"name"`
+	Type       alerting.Type                 `json:"type"`
+	Enabled    httpx.Optional[bool]          `json:"enabled"`
+	URL        alerting.Secret               `json:"url"`
+	Header     httpx.Optional[headerRequest] `json:"header"`
+	Recipients []string                      `json:"recipients"`
+	Password   string                        `json:"password"`
 }
 
 // LogValue keeps the URL, the header and the password out of logs.
@@ -152,10 +160,11 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	spec := alerting.Spec{
-		Name:    req.Name,
-		Type:    req.Type,
-		Enabled: !req.Enabled.Set || req.Enabled.Value,
-		URL:     req.URL,
+		Name:       req.Name,
+		Type:       req.Type,
+		Enabled:    !req.Enabled.Set || req.Enabled.Value,
+		URL:        req.URL,
+		Recipients: req.Recipients,
 	}
 	if req.Header.Set {
 		spec.Header = &alerting.Header{Name: req.Header.Value.Name, Value: req.Header.Value.Value}
@@ -164,7 +173,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, r, "alerting: create channel", err)
 		return
 	}
-	if !h.checkURL(w, r, req.URL) {
+	if spec.Type != alerting.TypeEmail && !h.checkURL(w, r, req.URL) {
 		return
 	}
 
@@ -188,11 +197,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 // updateRequest lists every field that a change may contain. The type is not
 // among them: the URL of one type is no URL of another.
 type updateRequest struct {
-	Name     httpx.Optional[string]          `json:"name"`
-	Enabled  httpx.Optional[bool]            `json:"enabled"`
-	URL      httpx.Optional[alerting.Secret] `json:"url"`
-	Header   httpx.Nullable[headerRequest]   `json:"header"`
-	Password httpx.Optional[string]          `json:"password"`
+	Name       httpx.Optional[string]          `json:"name"`
+	Enabled    httpx.Optional[bool]            `json:"enabled"`
+	URL        httpx.Optional[alerting.Secret] `json:"url"`
+	Header     httpx.Nullable[headerRequest]   `json:"header"`
+	Recipients httpx.Optional[[]string]        `json:"recipients"`
+	Password   httpx.Optional[string]          `json:"password"`
 }
 
 // LogValue keeps the URL, the header and the password out of logs.
@@ -209,7 +219,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
-	c := alerting.Change{Name: req.Name.Ptr(), Enabled: req.Enabled.Ptr(), URL: req.URL.Ptr()}
+	c := alerting.Change{Name: req.Name.Ptr(), Enabled: req.Enabled.Ptr(), URL: req.URL.Ptr(), Recipients: req.Recipients.Ptr()}
 	switch {
 	case req.Header.Null:
 		c.RemoveHeader = true
@@ -217,7 +227,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		c.Header = &alerting.Header{Name: req.Header.Value.Name, Value: req.Header.Value.Value}
 	}
 	if c.IsEmpty() {
-		invalid(w, r, "request must change name, enabled, url or header")
+		invalid(w, r, "request must change name, enabled, url, header or recipients")
 		return
 	}
 	if err := c.Validate(); err != nil {
@@ -314,6 +324,7 @@ var (
 	urlRule         = fmt.Sprintf("url must be an https URL of at most %d printable ASCII characters with a host and without user information or fragment", alerting.MaxURLLength)
 	headerNameRule  = fmt.Sprintf("header.name must be a header name of 1 to %d characters, other than Host, Content-*, Transfer-Encoding, Connection, Keep-Alive, TE, Trailer, Upgrade, Expect or Proxy-*", alerting.MaxHeaderNameLength)
 	headerValueRule = fmt.Sprintf("header.value must have 1 to %d printable ASCII characters without leading or trailing spaces", alerting.MaxHeaderValueLength)
+	recipientsRule  = fmt.Sprintf("recipients must be 1 to %d different addresses of the form local@domain in ASCII, without display name", alerting.MaxRecipients)
 )
 
 func typeNames() []string {
@@ -338,8 +349,14 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, 
 		invalid(w, r, headerNameRule)
 	case errors.Is(err, alerting.ErrInvalidHeaderValue):
 		invalid(w, r, headerValueRule)
+	case errors.Is(err, alerting.ErrInvalidRecipients):
+		invalid(w, r, recipientsRule)
 	case errors.Is(err, alerting.ErrHeaderNotAllowed):
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, codeHeaderNotAllowed, headerNotAllowedRule)
+	case errors.Is(err, alerting.ErrURLNotAllowed):
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, codeURLNotAllowed, urlNotAllowedRule)
+	case errors.Is(err, alerting.ErrRecipientsNotAllowed):
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, codeRecipientsNotAllowed, recipientsNotAllowedRule)
 	case errors.Is(err, alerting.ErrNameTaken):
 		httpx.WriteError(w, r, http.StatusConflict, codeNameTaken, "another alert channel has this name")
 	case errors.Is(err, alerting.ErrTooManyChannels):

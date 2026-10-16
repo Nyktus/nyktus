@@ -198,6 +198,10 @@ func TestFormat_CoversEveryType(t *testing.T) {
 
 	m, d := chatFixture()
 	for _, typ := range Types {
+		if typ == TypeEmail {
+			// Mail is formatted by emailMessage, which its golden files cover.
+			continue
+		}
 		if _, _, err := format(typ, m, d, "https://nyktus.example.com"); err != nil {
 			t.Errorf("format(%s) = %v", typ, err)
 		}

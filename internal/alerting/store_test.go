@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -95,7 +96,7 @@ func TestCreate_StoresTheSecretsEncryptedAndBoundToTheChannel(t *testing.T) {
 	f := newStoreFixture(t)
 
 	c := f.mustCreate(t, webhookSpec("SOAR"))
-	if c.Target != "https://hooks.example.com" || c.HeaderName == nil || *c.HeaderName != "Authorization" ||
+	if c.Target == nil || *c.Target != "https://hooks.example.com" || c.HeaderName == nil || *c.HeaderName != "Authorization" ||
 		!c.Enabled || c.Type != TypeWebhook || !c.CreatedAt.Equal(c.UpdatedAt) {
 		t.Errorf("channel = %+v", c)
 	}
@@ -216,7 +217,7 @@ func TestUpdate(t *testing.T) {
 
 	newURL := Secret("https://other.example.org:8443/hook?token=abc")
 	got, changed, err = f.update(t, c.ID, Change{URL: &newURL})
-	if err != nil || got.Target != "https://other.example.org:8443" || !slices.Equal(changed, []string{FieldURL}) {
+	if err != nil || got.Target == nil || *got.Target != "https://other.example.org:8443" || !slices.Equal(changed, []string{FieldURL}) {
 		t.Fatalf("new URL: %+v, %v, %v", got, changed, err)
 	}
 	u, h := f.secrets(t, c.ID)
@@ -350,6 +351,51 @@ SELECT action, resource_type, resource_id, changed_fields FROM audit_entries ORD
 	}
 }
 
+func TestEmailChannel_HasRecipientsAndNoSecrets(t *testing.T) {
+	t.Parallel()
+	f := newStoreFixture(t)
+	c := f.mustCreate(t, Spec{Name: "SOC", Type: TypeEmail, Enabled: true, Recipients: []string{"soc@example.com"}})
+	if c.Target != nil || !slices.Equal(c.Recipients, []string{"soc@example.com"}) || c.HeaderName != nil {
+		t.Errorf("channel = %+v", c)
+	}
+	var secrets int
+	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM alert_channel_secrets WHERE channel_id = $1`, c.ID).
+		Scan(&secrets); err != nil || secrets != 0 {
+		t.Errorf("secrets of an email channel = %d, %v; want none", secrets, err)
+	}
+
+	recipients := []string{"soc@example.com", "oncall@example.org"}
+	got, changed, err := f.update(t, c.ID, Change{Recipients: &recipients})
+	if err != nil || !slices.Equal(got.Recipients, recipients) || !slices.Equal(changed, []string{FieldRecipients}) {
+		t.Fatalf("new recipients: %+v, %v, %v", got, changed, err)
+	}
+	if _, changed, err := f.update(t, c.ID, Change{Recipients: &recipients}); err != nil || len(changed) != 0 {
+		t.Errorf("same recipients: %v, %v; want no change", changed, err)
+	}
+	u := Secret(hookURL)
+	if _, _, err := f.update(t, c.ID, Change{URL: &u}); !errors.Is(err, ErrURLNotAllowed) {
+		t.Errorf("URL for email: error = %v, want ErrURLNotAllowed", err)
+	}
+	if _, _, err := f.update(t, c.ID, Change{Header: &Header{Name: "X", Value: "y"}}); !errors.Is(err, ErrHeaderNotAllowed) {
+		t.Errorf("header for email: error = %v, want ErrHeaderNotAllowed", err)
+	}
+	hook := f.mustCreate(t, webhookSpec("SOAR"))
+	if _, _, err := f.update(t, hook.ID, Change{Recipients: &recipients}); !errors.Is(err, ErrRecipientsNotAllowed) {
+		t.Errorf("recipients for a webhook: error = %v, want ErrRecipientsNotAllowed", err)
+	}
+
+	off := false
+	f.mustCreate(t, Spec{Name: "disabled", Type: TypeEmail, Recipients: []string{"x@example.com"}})
+	if _, _, err := f.update(t, hook.ID, Change{Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	for typ, want := range map[Type]int{TypeEmail: 1, TypeWebhook: 0, TypeSlack: 0} {
+		if n, err := CountEnabled(t.Context(), f.console, typ); err != nil || n != want {
+			t.Errorf("CountEnabled(%s) = %d, %v; want %d", typ, n, err, want)
+		}
+	}
+}
+
 // Every type that the code knows is accepted by the schema, and every header
 // that the code rejects is rejected by the schema as well.
 func TestSchema_AgreesWithTheCode(t *testing.T) {
@@ -357,8 +403,50 @@ func TestSchema_AgreesWithTheCode(t *testing.T) {
 	f := newStoreFixture(t)
 
 	for _, typ := range Types {
-		if _, err := f.create(t, Spec{Name: string(typ), Type: typ, URL: hookURL}); err != nil {
+		spec := Spec{Name: string(typ), Type: typ, URL: hookURL}
+		if typ == TypeEmail {
+			spec.URL, spec.Recipients = "", []string{"soc@example.com"}
+		}
+		if _, err := f.create(t, spec); err != nil {
 			t.Errorf("type %s: %v", typ, err)
+		}
+	}
+	// The longest recipients that the code accepts fit the schema.
+	longest := make([]string, MaxRecipients)
+	for i := range longest {
+		longest[i] = strings.Repeat("a", 64) + "@" + strings.Repeat(string(rune('b'+i)), 63) + "." + strings.Repeat("c", 63) +
+			"." + strings.Repeat("d", 53) + ".example"
+	}
+	if err := ValidateRecipients(longest); err != nil {
+		t.Fatalf("longest recipients: %v", err)
+	}
+	if _, err := f.create(t, Spec{Name: "longest", Type: TypeEmail, Recipients: longest}); err != nil {
+		t.Errorf("longest recipients: %v", err)
+	}
+	for name, row := range map[string]struct {
+		typ, target string
+		recipients  any
+		constraint  string
+	}{
+		"email with a target":        {"email", "https://h.example.com", []string{"soc@example.com"}, "alert_channels_destination_check"},
+		"email without recipients":   {"email", "", nil, "alert_channels_destination_check"},
+		"recipient that is NULL":     {"email", "", []*string{new("soc@example.com"), nil}, "alert_channels_recipients_check"},
+		"webhook with recipients":    {"webhook", "https://h.example.com", []string{"soc@example.com"}, "alert_channels_destination_check"},
+		"webhook without a target":   {"webhook", "", nil, "alert_channels_destination_check"},
+		"no recipient":               {"email", "", []string{}, "alert_channels_recipients_check"},
+		"too many recipients":        {"email", "", slices.Repeat([]string{"soc@example.com"}, MaxRecipients+1), "alert_channels_recipients_check"},
+		"recipient with line break":  {"email", "", []string{"soc@example.com\r\nBcc: x@example.net"}, "alert_channels_recipients_check"},
+		"recipient with name":        {"email", "", []string{"SOC <soc@example.com>"}, "alert_channels_recipients_check"},
+		"recipients joined by comma": {"email", "", []string{"soc@example.com,x@example.net"}, "alert_channels_recipients_check"},
+	} {
+		var target any
+		if row.target != "" {
+			target = row.target
+		}
+		_, err := f.console.Exec(t.Context(), `INSERT INTO alert_channels (name, type, target, recipients) VALUES ($1, $2, $3, $4)`,
+			name, row.typ, target, row.recipients)
+		if got := db.Violation(err, db.CheckViolation); got != row.constraint {
+			t.Errorf("%s: error = %v, want %s", name, err, row.constraint)
 		}
 	}
 	insert := func(name, header string) error {
