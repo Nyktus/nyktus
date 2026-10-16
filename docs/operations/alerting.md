@@ -146,7 +146,7 @@ It starts again with a new count of attempts. The retry is recorded in the audit
 
 ### Reading deliveries
 
-`GET /api/v1/incidents/{id}/deliveries` lists the deliveries of the alert of an incident, for every user who reads incidents and for API keys with `incidents:read`. Each names its channel, its `status` (`pending`, `delivered`, `dead` or `canceled`), the number of `attempts`, `next_attempt_at` while it is pending, and the last attempt: when it was, the `last_status_code` of the response, if there was one, the class of its failure in `last_error` and how long it took. Administrators read a single delivery with `GET /api/v1/alert-deliveries/{id}`.
+`GET /api/v1/incidents/{id}/deliveries` lists the deliveries of the alert of an incident, for every user who reads incidents and for API keys with `incidents:read`. Each names its channel, its `status` (`pending`, `delivered`, `dead` or `canceled`), the number of `attempts`, `next_attempt_at` while it is pending, and the last attempt: when it was, the `last_status_code` of the response, if there was one, the class of its failure in `last_error` and how long it took. Administrators read a single delivery with `GET /api/v1/alert-deliveries/{id}`. Deliveries are kept as receipts: the deliveries of an alert as long as its incident, which the worker deletes after the [retention](incidents.md#retention) of closed incidents, and tests of channels for the same number of days after they were requested, once they are no longer waiting.
 
 ### Testing a channel
 

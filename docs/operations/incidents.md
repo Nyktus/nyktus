@@ -86,7 +86,16 @@ Events contain personal data: the address of the client, or for DNS the address 
 
 Every read of events is recorded in the [audit log](audit-log.md) as `events.read`, at most once per user or API key and minute. A read that cannot be recorded returns no events. Integrations that only follow incidents, such as a ticket system, need keys without the scope `events:read`.
 
-Nyktus records these data to detect and investigate intrusions into your network. In the EU, this is usually covered by the legitimate interest in the security of networks and information (Art. 6(1)(f) and Recital 49 GDPR). Record it in your records of processing activities. Every role reads events, because triage needs them: grant accounts, including the role `viewer`, only to people who triage incidents, and give integrations that do not need client addresses keys without `events:read`. This version keeps events until the database is deleted.
+Nyktus records these data to detect and investigate intrusions into your network. In the EU, this is usually covered by the legitimate interest in the security of networks and information (Art. 6(1)(f) and Recital 49 GDPR). Record it in your records of processing activities. Every role reads events, because triage needs them: grant accounts, including the role `viewer`, only to people who triage incidents, and give integrations that do not need client addresses keys without `events:read`. Events are deleted after the [retention](#retention).
+
+## Retention
+
+The [worker](database.md#periodic-tasks) deletes, every hour, what is older than `NYKTUS_EVENT_RETENTION_DAYS`, 180 days by default, between 30 and 3650:
+
+- **Events**, counted from when they were recorded, whether their incident is open or closed. An event that has not been assigned to an incident yet stays until it is.
+- **Closed incidents**, counted from when they closed, with their alert and its [deliveries](alerting.md#reading-deliveries). Open incidents stay; their `event_count` keeps counting the deleted events, so an incident can list fewer events than it counts.
+
+The deletion is not recorded in the audit log; the log of the worker records how many rows each run deleted. Backups of the database hold events beyond the retention. Give them a retention of their own that fits the one above.
 
 ## Audit
 

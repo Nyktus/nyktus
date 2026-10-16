@@ -68,7 +68,7 @@ The [worker](incidents.md) logs what became of the events it processed, of the [
 
 | Message | Level | Content |
 |---|---|---|
-| `worker: started` | info | The worker looks for events to process, alerts to deliver and periodic tasks that are due; `concurrency` and `delivery_concurrency` are the numbers of events and alerts it handles at a time. |
+| `worker: started` | info | The worker looks for events to process, alerts to deliver and periodic tasks that are due; `concurrency` and `delivery_concurrency` are the numbers of events and alerts it handles at a time, `audit_retention_days` and `event_retention_days` the [retention](database.md#periodic-tasks). |
 | `worker: stopped` | info | The worker processed its last event and stopped. |
 | `incident: opened` | info | An event opened an incident and raised its alert. `incident` holds `incident_id`, `event_id`, `resource_type`, `resource_id` and `severity`; `deliveries` counts the channels the alert goes to. |
 | `alerting: no enabled channel` | warn | An incident opened while no alert channel was enabled, so its alert reaches nobody. `incident_id` names it. |

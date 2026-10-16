@@ -278,3 +278,35 @@ func TestNewPeriodic_RejectsInvalidTasks(t *testing.T) {
 		})
 	}
 }
+
+// The tasks of the retention run with the privileges of the worker and pass
+// the configured retention to the database.
+func TestRetentionTasks_DeleteWhatIsBeyondTheirRetention(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, workerURL := schematest.Worker(t)
+	owner := schematest.Open(t, ownerURL)
+	if _, err := owner.Exec(t.Context(), `
+INSERT INTO audit_entries (occurred_at, action, outcome, actor_kind, auth_method, changed_fields)
+VALUES (clock_timestamp() - interval '101 days', 'user.create', 'success', 'system', 'cli', '{}'),
+	(clock_timestamp() - interval '99 days', 'user.create', 'success', 'system', 'cli', '{}')`); err != nil {
+		t.Fatalf("insert audit entries: %v", err)
+	}
+	if _, err := owner.Exec(t.Context(), `
+INSERT INTO events (resource_type, resource_id, honeytoken_type, occurred_at, recorded_at, channel, method)
+SELECT 'honeytoken', gen_random_uuid(), 'web_url', t, t, 'http', 'GET'
+FROM unnest(ARRAY[clock_timestamp() - interval '41 days', clock_timestamp() - interval '39 days']) AS t`); err != nil {
+		t.Fatalf("insert events: %v", err)
+	}
+	worker := schematest.Open(t, workerURL)
+	for _, task := range []Task{DeleteExpiredAuditEntries(worker, 100), DeleteExpiredIncidentData(worker, 40)} {
+		rows, more, err := task.Step(t.Context())
+		if rows != 1 || more || err != nil {
+			t.Errorf("%s: Step() = %d, %t, %v; want 1, false, nil", task.Name, rows, more, err)
+		}
+	}
+	// A retention below the limit of the database fails the task.
+	if _, _, err := DeleteExpiredAuditEntries(worker, 1).Step(t.Context()); err == nil {
+		t.Error("Step() with a retention of one day succeeded")
+	}
+}

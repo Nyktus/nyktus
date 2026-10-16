@@ -1370,6 +1370,9 @@ CREATE UNIQUE INDEX incidents_open_resource_key ON public.incidents (resource_ty
 CREATE INDEX incidents_opened_at_id_idx ON public.incidents (opened_at DESC, id DESC);
 CREATE INDEX incidents_resource_id_opened_at_id_idx ON public.incidents (resource_id, opened_at DESC, id DESC);
 
+-- The worker deletes incidents some time after they closed.
+CREATE INDEX incidents_closed_at_idx ON public.incidents (closed_at) WHERE status = 'closed';
+
 -- The status of an incident only moves forward, from open over acknowledged to
 -- closed, so a closed incident is never opened again: new events of its
 -- resource open a new incident and raise a new alert. The worker and the
@@ -1707,6 +1710,9 @@ CREATE UNIQUE INDEX alert_deliveries_alert_channel_key ON public.alert_deliverie
 -- the worker send.
 CREATE UNIQUE INDEX alert_deliveries_pending_test_key ON public.alert_deliveries (channel_id)
 	WHERE alert_id IS NULL AND status = 'pending';
+-- The worker deletes tests of channels some time after they were requested.
+-- The deliveries of alerts go with their incident.
+CREATE INDEX alert_deliveries_test_created_at_idx ON public.alert_deliveries (created_at) WHERE alert_id IS NULL;
 -- The worker takes the deliveries that are due, in order.
 CREATE INDEX alert_deliveries_pending_not_before_idx ON public.alert_deliveries (not_before)
 	WHERE status = 'pending';
@@ -1801,11 +1807,14 @@ CREATE TABLE public.periodic_tasks (
 	-- The rows that the last successful run removed or changed.
 	last_rows         bigint,
 
-	CONSTRAINT periodic_tasks_name_check CHECK (name IN ('delete_expired_sign_in_data')),
+	CONSTRAINT periodic_tasks_name_check CHECK (
+		name IN ('delete_expired_sign_in_data', 'delete_expired_audit_entries', 'delete_expired_incident_data')
+	),
 	CONSTRAINT periodic_tasks_last_rows_check CHECK (last_rows >= 0)
 );
 
-INSERT INTO public.periodic_tasks (name) VALUES ('delete_expired_sign_in_data');
+INSERT INTO public.periodic_tasks (name)
+VALUES ('delete_expired_sign_in_data'), ('delete_expired_audit_entries'), ('delete_expired_incident_data');
 
 -- Removes expired sign-in data: sessions, challenges of the second factor,
 -- unconfirmed TOTP factors, activation and reset links, API keys, sign-ins
@@ -1900,8 +1909,114 @@ BEGIN
 END
 $$;
 
+-- Removes up to batch entries of the audit log that are older than
+-- retention_days and returns how many it removed. The audit log is append-only
+-- for every role: no role may delete from it, and this function deletes only
+-- entries beyond the retention, never fewer than 90 days old, so that a
+-- compromised worker cannot remove the traces of a recent intrusion. The
+-- configuration repeats the limits. The cutoff starts at
+-- statement_timestamp(), so that the index can be used.
+CREATE FUNCTION public.delete_expired_audit_entries(retention_days integer, batch integer) RETURNS integer
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = ''
+	SET lock_timeout = '5s'
+AS $$
+DECLARE
+	n integer;
+	cutoff timestamptz;
+BEGIN
+	IF retention_days IS NULL OR retention_days NOT BETWEEN 90 AND 3650 THEN
+		RAISE EXCEPTION 'retention must be between 90 and 3650 days, not %', retention_days
+			USING ERRCODE = 'invalid_parameter_value';
+	END IF;
+	IF batch IS NULL OR batch NOT BETWEEN 1 AND 10000 THEN
+		RAISE EXCEPTION 'batch must be between 1 and 10000, not %', batch USING ERRCODE = 'invalid_parameter_value';
+	END IF;
+	cutoff := statement_timestamp() - make_interval(days => retention_days);
+
+	DELETE FROM public.audit_entries WHERE id IN (
+		SELECT a.id FROM public.audit_entries AS a
+		WHERE a.occurred_at < cutoff
+		LIMIT batch FOR UPDATE SKIP LOCKED
+	);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	RETURN n;
+END
+$$;
+
+-- Removes up to batch rows of each kind of incident data beyond the retention
+-- and returns how many it removed: events recorded more than retention_days
+-- ago, which hold personal data, then incidents closed more than
+-- retention_days ago with their alert and its deliveries, and tests of
+-- channels created that long ago. Events still waiting for their job stay, so
+-- that no event is lost unprocessed, and so do open incidents, which keep
+-- their count of events. An incident closes after its last event was assigned
+-- to it, so a closed incident beyond the retention has no events left; one
+-- that still has some, because they were locked, stays until the next call.
+-- The retention is at least 30 days, which the configuration repeats.
+CREATE FUNCTION public.delete_expired_incident_data(retention_days integer, batch integer) RETURNS integer
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = ''
+	SET lock_timeout = '5s'
+AS $$
+DECLARE
+	removed integer := 0;
+	n integer;
+	cutoff timestamptz;
+	expired uuid[];
+BEGIN
+	IF retention_days IS NULL OR retention_days NOT BETWEEN 30 AND 3650 THEN
+		RAISE EXCEPTION 'retention must be between 30 and 3650 days, not %', retention_days
+			USING ERRCODE = 'invalid_parameter_value';
+	END IF;
+	IF batch IS NULL OR batch NOT BETWEEN 1 AND 10000 THEN
+		RAISE EXCEPTION 'batch must be between 1 and 10000, not %', batch USING ERRCODE = 'invalid_parameter_value';
+	END IF;
+	cutoff := statement_timestamp() - make_interval(days => retention_days);
+
+	DELETE FROM public.events WHERE id IN (
+		SELECT e.id FROM public.events AS e
+		WHERE e.recorded_at < cutoff
+			AND NOT EXISTS (SELECT FROM public.event_jobs AS j WHERE j.event_id = e.id)
+		LIMIT batch FOR UPDATE SKIP LOCKED
+	);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	removed := removed + n;
+
+	-- The incidents are locked first, so that a triage that holds one is
+	-- skipped instead of waited for; the deliverer locks only deliveries.
+	expired := ARRAY(
+		SELECT i.id FROM public.incidents AS i
+		WHERE i.status = 'closed' AND i.closed_at < cutoff
+			AND NOT EXISTS (SELECT FROM public.events AS e WHERE e.incident_id = i.id)
+		LIMIT batch FOR UPDATE SKIP LOCKED
+	);
+	DELETE FROM public.alert_deliveries WHERE alert_id = ANY (expired);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	removed := removed + n;
+	DELETE FROM public.alerts WHERE incident_id = ANY (expired);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	removed := removed + n;
+	DELETE FROM public.incidents WHERE id = ANY (expired);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	removed := removed + n;
+
+	DELETE FROM public.alert_deliveries WHERE id IN (
+		SELECT d.id FROM public.alert_deliveries AS d
+		WHERE d.alert_id IS NULL AND d.status <> 'pending' AND d.created_at < cutoff
+		LIMIT batch FOR UPDATE SKIP LOCKED
+	);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	RETURN removed + n;
+END
+$$;
+
 REVOKE ALL ON public.periodic_tasks FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.delete_expired_sign_in_data(integer) FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.delete_expired_audit_entries(integer, integer) FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.delete_expired_incident_data(integer, integer) FROM PUBLIC, nyktus_console;
 
 -- The trigger and the DNS role reach nothing but their function, and the
 -- worker nothing but its tables. Everything in the schema is revoked here, at
@@ -1989,6 +2104,8 @@ GRANT SELECT ON public.periodic_tasks TO nyktus_worker;
 GRANT UPDATE (next_run_at, last_started_at, last_succeeded_at, last_failed_at, last_rows)
 	ON public.periodic_tasks TO nyktus_worker;
 GRANT EXECUTE ON FUNCTION public.delete_expired_sign_in_data(integer) TO nyktus_worker;
+GRANT EXECUTE ON FUNCTION public.delete_expired_audit_entries(integer, integer) TO nyktus_worker;
+GRANT EXECUTE ON FUNCTION public.delete_expired_incident_data(integer, integer) TO nyktus_worker;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
 -- result is verified instead of assumed, in both directions: every privilege on
@@ -2028,7 +2145,8 @@ BEGIN
 			('periodic_tasks', 'last_rows', 'UPDATE')
 	),
 	functions (signature) AS (
-		VALUES ('public.attack_technique_ids_valid(text[])'), ('public.delete_expired_sign_in_data(integer)')
+		VALUES ('public.attack_technique_ids_valid(text[])'), ('public.delete_expired_sign_in_data(integer)'),
+			('public.delete_expired_audit_entries(integer, integer)'), ('public.delete_expired_incident_data(integer, integer)')
 	),
 	privileges (object, privilege, held, wanted) AS (
 		SELECT c.relname::text, p.privilege,
