@@ -118,7 +118,31 @@ type Artifact struct {
 	// FileName is the name under which the artifact is downloaded.
 	FileName string
 	Format   Format
-	Template *Template
+	// LineEndings are the line endings of the file.
+	LineEndings LineEndings
+	Template    *Template
+}
+
+// LineEndings are the line endings of an artifact. Templates are written with
+// line feeds; files that their tools expect with carriage returns, such as
+// Windows shortcuts, declare CRLF.
+type LineEndings string
+
+// Line endings of artifacts.
+const (
+	LF   LineEndings = "lf"
+	CRLF LineEndings = "crlf"
+)
+
+// Render renders the artifact with values, as Template.Render describes, with
+// its line endings. No value contains a line break, so every line feed of the
+// output comes from the template.
+func (a Artifact) Render(values map[string]string) ([]byte, error) {
+	out, err := a.Template.Render(values)
+	if err != nil || a.LineEndings != CRLF {
+		return out, err
+	}
+	return bytes.ReplaceAll(out, []byte("\n"), []byte("\r\n")), nil
 }
 
 // Limits of a deception.
@@ -189,10 +213,11 @@ type (
 		Length int    `json:"length"`
 	}
 	artifactDef struct {
-		Key      string `json:"key"`
-		FileName string `json:"file_name"`
-		Format   Format `json:"format"`
-		Template string `json:"template"`
+		Key         string      `json:"key"`
+		FileName    string      `json:"file_name"`
+		Format      Format      `json:"format"`
+		LineEndings LineEndings `json:"line_endings"`
+		Template    string      `json:"template"`
 	}
 )
 
@@ -260,7 +285,9 @@ func loadDeception(fsys fs.FS, dir string) (Deception, error) {
 		if marker := findMarker(t.static, d.ID); marker != "" {
 			return fail("artifact %s: the template contains %q, which reveals the artifact", a.Key, marker)
 		}
-		d.Artifacts = append(d.Artifacts, Artifact{Key: a.Key, FileName: a.FileName, Format: a.Format, Template: t})
+		d.Artifacts = append(d.Artifacts, Artifact{
+			Key: a.Key, FileName: a.FileName, Format: a.Format, LineEndings: a.LineEndings, Template: t,
+		})
 	}
 	for _, lang := range Languages {
 		name := def.Guide[lang]
@@ -455,6 +482,9 @@ func (def definition) validate() error {
 		names[strings.ToLower(a.FileName)] = true
 		if !a.Format.Valid() {
 			return fmt.Errorf("artifact %s: unknown format %q", a.Key, a.Format)
+		}
+		if a.LineEndings != LF && a.LineEndings != CRLF {
+			return fmt.Errorf("artifact %s: the line endings %q are not lf or crlf", a.Key, a.LineEndings)
 		}
 		if !templateFile.MatchString(a.Template) {
 			return fmt.Errorf("artifact %s: the template %q is not the name of a template", a.Key, a.Template)

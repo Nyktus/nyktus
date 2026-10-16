@@ -32,7 +32,7 @@ const definition = `{
   ],
   "secrets": [{"key": "Password", "length": 16}],
   "artifacts": [
-    {"key": "config", "file_name": "config", "format": "config", "template": "config.tmpl"}
+    {"key": "config", "file_name": "config", "format": "config", "line_endings": "lf", "template": "config.tmpl"}
   ],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }`
