@@ -211,9 +211,15 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 
 Several features send requests to user-supplied URLs: webhooks, chat integrations and catalog imports. Every such request goes through the SSRF-guarded client. The identity provider is configured by the operator and is the exception, see [Local login and OpenID Connect](#local-login-and-openid-connect).
 
-- **Validation on save.** The scheme must be `https` (plain `http` only in development, and only where explicitly allowed). Host names such as `localhost`, `*.local` and `*.internal` are rejected. All resolved addresses are checked against blocked ranges: loopback, private (RFC 1918, RFC 4193), link-local including cloud metadata addresses, carrier-grade NAT, multicast and unspecified addresses.
-- **Enforcement on connect.** A `net.Dialer.Control` function checks the address actually dialed on every connection. This defeats DNS rebinding between validation and use.
-- **No redirects** on delivery requests. Discovery requests may follow redirects because the dial check applies to every hop.
+The guard lives in `internal/platform/ssrf`.
+
+- **Validation on save.** The scheme must be `https` (plain `http` only in development, and only where explicitly allowed). The URL carries no user information or fragment and only printable ASCII. Host names such as `localhost`, `*.local` and `*.internal`, names of a single label, which the search domains of the host complete, and names whose last label is a number, which a resolver may read as an IPv4 address, are rejected. All resolved addresses are checked; a name with one blocked address among public ones is rejected as a whole. A blocked target and a name that does not resolve produce the same error, so that the check does not reveal which internal names exist.
+- **Blocked ranges.** Every address that is not globally reachable: loopback, private (RFC 1918, RFC 4193), link-local including cloud metadata addresses, carrier-grade NAT, documentation and benchmarking ranges, multicast, broadcast, reserved and unspecified addresses, and IPv6 forms that embed or tunnel to IPv4 addresses (mapped, compatible, translated, 6to4, Teredo). The well-known NAT64 prefix is unwrapped and its embedded IPv4 address checked, because on networks that reach IPv4 only through NAT64 every target resolves to it. `netip` alone is not enough: it counts most of these ranges as global unicast.
+- **Internal targets.** An operator, never a user of the console, can allow internal networks, such as the network of a SOAR platform. This never opens loopback, link-local or metadata addresses, and lifts the rules for internal names, which such targets carry.
+- **Enforcement on connect.** The client resolves the name itself when it connects, checks every address and dials exactly an address it checked, so that nothing learned between validation and use, such as a rebound DNS answer, changes the target. A `net.Dialer.Control` function checks the dialed address once more. Every request is checked like a saved URL before it is sent.
+- **No redirects.** The client returns a redirect instead of following it. A feature that needs to follow one sends each hop through the guard on its own.
+- **No proxy from the environment.** `HTTP_PROXY` and `HTTPS_PROXY` are ignored, because the guard would check the address of the proxy, not the target.
+- **Bounded responses.** A request ends after ten seconds, response headers are limited to 16 KiB and bodies to 64 KiB.
 - **No oracle.** Test endpoints return a generic error and never the underlying network error, so they cannot be used to scan ports.
 - **Error classes.** A blocked target is a configuration error and is not retried.
 
