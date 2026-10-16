@@ -1,0 +1,12 @@
+From: nyktus@example.com
+To: soc@example.com,
+ oncall@example.org
+Subject: Nyktus: test message
+Date: Fri, 16 Oct 2026 12:00:00 +0000
+Message-ID: <8f1c6a3e-3b0e-4d4b-9a51-0d7e2f0c9b11@example.com>
+Auto-Submitted: auto-generated
+MIME-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+This channel receives the alerts of Nyktus.

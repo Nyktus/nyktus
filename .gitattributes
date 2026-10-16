@@ -5,6 +5,9 @@
 *.ico   binary
 *.woff2 binary
 
+# Mail ends lines in CRLF; the golden files of messages keep them.
+internal/platform/smtp/testdata/*.golden -text
+
 go.sum            linguist-generated
 package-lock.json linguist-generated
 internal/attack/techniques.json linguist-generated
