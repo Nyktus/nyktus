@@ -139,6 +139,11 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Create: http.HandlerFunc(c.Create),
 			Update: http.HandlerFunc(c.Update),
 			Delete: http.HandlerFunc(c.Delete),
+			Test:   http.HandlerFunc(c.Test),
+
+			GetDelivery:        http.HandlerFunc(c.GetDelivery),
+			RetryDelivery:      http.HandlerFunc(c.RetryDelivery),
+			IncidentDeliveries: http.HandlerFunc(c.IncidentDeliveries),
 		},
 		Origin:         o.ConsoleURL,
 		TrustedProxies: o.TrustedProxies,

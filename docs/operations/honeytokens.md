@@ -2,9 +2,7 @@
 
 A honeytoken is a URL or host name that nobody has a reason to open or resolve. You place it where only an intruder would find it, for example as a link in a document on a file share, as an image in a mail template or as a host in a configuration file, and Nyktus records an event when it is requested or resolved.
 
-Events become [incidents](incidents.md): the worker assigns every event to the open incident of its honeytoken, or opens one with its alert.
-
-> This version records events and incidents and serves them through the API, but does not deliver alerts yet.
+Events become [incidents](incidents.md): the worker assigns every event to the open incident of its honeytoken, or opens one and delivers its alert to the [alert channels](alerting.md).
 
 ## Types
 

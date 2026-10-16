@@ -206,6 +206,9 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE alert_channels SET name = 'd', enabled = false, target = 'https://i.example.com', header_name = NULL, updated_at = clock_timestamp()",
 		"SELECT count(*) FROM alert_channels",
 		"SELECT channel_id FROM alert_channel_secrets",
+		"INSERT INTO alert_deliveries (channel_id, channel_type, channel_name) SELECT id, type, name FROM alert_channels",
+		"SELECT count(*) FROM alert_deliveries",
+		"SELECT public.retry_alert_delivery(gen_random_uuid())",
 		"DELETE FROM alert_channels",
 	}
 	for _, statement := range allowed {
@@ -318,6 +321,12 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE alert_channels SET id = gen_random_uuid()",
 		"UPDATE alert_channels SET created_at = now()",
 		"TRUNCATE alert_channels",
+		"INSERT INTO alert_deliveries (alert_id, channel_id, channel_type, channel_name) VALUES (gen_random_uuid(), gen_random_uuid(), 'webhook', 'c')",
+		"INSERT INTO alert_deliveries (channel_id, channel_type, channel_name, status) VALUES (gen_random_uuid(), 'webhook', 'c', 'delivered')",
+		"UPDATE alert_deliveries SET status = 'delivered'",
+		"UPDATE alert_deliveries SET attempts = 0",
+		"DELETE FROM alert_deliveries",
+		"TRUNCATE alert_deliveries",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)

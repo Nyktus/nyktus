@@ -75,6 +75,58 @@ func TestSpecification_MatchesCode(t *testing.T) {
 	}
 }
 
+// The states and classes of failure of a delivery live in code, in the schema
+// and in the specification.
+func TestSpecification_MatchesTheDeliveries(t *testing.T) {
+	t.Parallel()
+
+	var spec struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Enum    []any `yaml:"enum"`
+					Maximum int   `yaml:"maximum"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(api.OpenAPI(), &spec); err != nil {
+		t.Fatal(err)
+	}
+	p := spec.Components.Schemas["AlertDelivery"].Properties
+	strs := func(values []any) []string {
+		var out []string
+		for _, v := range values {
+			if s, ok := v.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	var statuses, failures, types []string
+	for _, s := range alerting.Statuses {
+		statuses = append(statuses, string(s))
+	}
+	for _, f := range alerting.Failures {
+		failures = append(failures, string(f))
+	}
+	for _, typ := range alerting.Types {
+		types = append(types, string(typ))
+	}
+	if got := strs(p["status"].Enum); !sameSet(got, statuses) {
+		t.Errorf("status = %v, want %v", got, statuses)
+	}
+	if got := strs(p["last_error"].Enum); !sameSet(got, failures) {
+		t.Errorf("last_error = %v, want %v", got, failures)
+	}
+	if got := strs(p["channel_type"].Enum); !sameSet(got, types) {
+		t.Errorf("channel_type = %v, want %v", got, types)
+	}
+	if p["attempts"].Maximum != alerting.MaxAttempts {
+		t.Errorf("attempts.maximum = %d, want %d", p["attempts"].Maximum, alerting.MaxAttempts)
+	}
+}
+
 func sameSet(a, b []string) bool {
 	return slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b)))
 }

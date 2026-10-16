@@ -2,7 +2,7 @@
 
 An incident collects the events of one honeytoken: the first event opens it, and every further event joins it until it is closed. Triage happens on incidents, not on single events, so that an intruder who opens a URL ten times raises one incident instead of ten. When an incident opens, Nyktus raises its alert, the single notification about the incident.
 
-> This version records alerts, but does not deliver them yet. The web console does not show incidents yet; read and triage them through the API.
+> The web console does not show incidents yet; read and triage them through the API.
 
 ## How events become incidents
 
@@ -37,7 +37,7 @@ An incident holds every [technique](honeytokens.md#techniques) of its events. Ea
 
 ## Alerts
 
-The alert of an incident reports the severity and the techniques that the incident had when it opened. Later events change the incident, but not its alert.
+The alert of an incident reports the severity and the techniques that the incident had when it opened. Later events change the incident, but not its alert. The worker delivers the alert to every enabled [alert channel](alerting.md); `GET /api/v1/incidents/{id}/deliveries` shows whether it reached them.
 
 ## Reading incidents and events
 

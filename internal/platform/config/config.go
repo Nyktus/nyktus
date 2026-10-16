@@ -176,13 +176,23 @@ type DNS struct {
 }
 
 // Worker holds the settings of the worker role, which correlates events into
-// incidents. It listens on no port.
+// incidents and delivers their alerts. It listens on no port.
 type Worker struct {
 	DatabaseURL Secret
-	// Concurrency bounds the jobs that the worker processes at a time, and
+	// Concurrency bounds the events that the worker processes at a time, and
 	// with them its connections to the database.
 	Concurrency int
+	// DeliveryConcurrency bounds the alerts that the worker delivers at a
+	// time. A delivery holds a connection to the database only while it
+	// claims and records an attempt, not while it waits for the receiver.
+	DeliveryConcurrency int
+	// ConsoleURL is the address of the console, to which an alert links its
+	// incident.
+	ConsoleURL string
 }
+
+// defaultConsoleAddr is the address that the console listens on by default.
+const defaultConsoleAddr = "127.0.0.1:8080"
 
 // maxWorkerConcurrency bounds the connections of the worker.
 const maxWorkerConcurrency = 32
@@ -262,7 +272,7 @@ type Serve struct {
 	EncryptionKeys *secretbox.Keyring
 	// AlertingAllowedNetworks are internal networks that alert channels may
 	// reach, chosen by the operator. The console checks the targets of
-	// channels against them.
+	// channels against them, and the worker connects only within them.
 	AlertingAllowedNetworks []netip.Prefix
 	Console                 Console
 	Trigger                 Trigger
@@ -294,7 +304,7 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 	r := reader{src: src}
 	cfg := Serve{Common: r.common(), Roles: roles, TrustedProxies: r.prefixes("TRUSTED_PROXIES")}
 	if cfg.Has(RoleConsole) {
-		addr := r.addr("CONSOLE_ADDR", "127.0.0.1:8080")
+		addr := r.addr("CONSOLE_ADDR", defaultConsoleAddr)
 		cfg.Console = Console{
 			Addr:        addr,
 			URL:         r.consoleURL("CONSOLE_URL", cfg.Environment, addr),
@@ -308,8 +318,6 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 		cfg.Console.LocalLogin = r.localLogin(cfg.Console.OIDC != nil)
 		cfg.Console.TriggerURL = r.triggerURL("TRIGGER_URL", cfg.Environment, cfg.Console.URL)
 		cfg.Console.DNSZones = r.zones("DNS_ZONES", false, cfg.Console.URL, cfg.Console.TriggerURL)
-		cfg.EncryptionKeys = r.keyring("ENCRYPTION_KEYS")
-		cfg.AlertingAllowedNetworks = r.prefixes("ALERTING_ALLOWED_NETWORKS")
 	}
 	if cfg.Has(RoleTrigger) {
 		cfg.Trigger = Trigger{
@@ -343,10 +351,22 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 		}
 	}
 	if cfg.Has(RoleWorker) {
-		cfg.Worker = Worker{
-			DatabaseURL: r.requiredSecret("WORKER_DATABASE_URL"),
-			Concurrency: r.integer("WORKER_CONCURRENCY", 4, 1, maxWorkerConcurrency),
+		consoleURL := cfg.Console.URL
+		if !cfg.Has(RoleConsole) {
+			consoleURL = r.consoleURL("CONSOLE_URL", cfg.Environment, defaultConsoleAddr)
 		}
+		cfg.Worker = Worker{
+			DatabaseURL:         r.requiredSecret("WORKER_DATABASE_URL"),
+			Concurrency:         r.integer("WORKER_CONCURRENCY", 4, 1, maxWorkerConcurrency),
+			DeliveryConcurrency: r.integer("WORKER_DELIVERY_CONCURRENCY", 4, 1, maxWorkerConcurrency),
+			ConsoleURL:          consoleURL,
+		}
+	}
+	// The console encrypts the secrets of second factors and alert channels,
+	// and the worker decrypts the latter; both check the targets of channels.
+	if cfg.Has(RoleConsole) || cfg.Has(RoleWorker) {
+		cfg.EncryptionKeys = r.keyring("ENCRYPTION_KEYS")
+		cfg.AlertingAllowedNetworks = r.prefixes("ALERTING_ALLOWED_NETWORKS")
 	}
 	return cfg, r.err()
 }

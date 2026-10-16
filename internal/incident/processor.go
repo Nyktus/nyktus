@@ -44,7 +44,11 @@ func (p *Processor) Process(ctx context.Context, claimed func()) (bool, error) {
 	case err != nil:
 		return found, err
 	case found && res.Opened:
-		p.logger.InfoContext(ctx, "incident: opened", slog.Any("incident", res))
+		p.logger.InfoContext(ctx, "incident: opened", slog.Any("incident", res), slog.Int("deliveries", res.Deliveries))
+		if res.Deliveries == 0 {
+			// The alert reaches nobody; the incident is still in the API.
+			p.logger.WarnContext(ctx, "alerting: no enabled channel", slog.String("incident_id", res.IncidentID))
+		}
 	case found:
 		p.logger.DebugContext(ctx, "incident: event assigned", slog.Any("incident", res))
 	}

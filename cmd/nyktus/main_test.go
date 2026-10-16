@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/miekg/dns"
 
+	"nyktus.org/nyktus/internal/alerting"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/platform/config"
 	"nyktus.org/nyktus/internal/platform/dbtest"
@@ -280,12 +281,25 @@ INSERT INTO users (email, display_name, role, status) VALUES ('ada@example.com',
 }
 
 // A worker started with its own login processes the events that the trigger
-// recorded, and stops when its context ends.
+// recorded, delivers their alerts through the SSRF guard, and stops when its
+// context ends.
 func TestRun_WorkerProcessesRecordedEvents(t *testing.T) {
 	t.Parallel()
 
 	ownerURL, workerURL := schematest.Worker(t)
 	owner := schematest.Open(t, ownerURL)
+	keys := testKeys(t)
+	keyring, err := secretbox.ParseKeyring(keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The guard refuses the loopback address, so the delivery dies as
+	// blocked instead of reaching anything.
+	if _, err := alerting.NewStore(owner, keyring).Create(t.Context(), alerting.Spec{
+		Name: "loopback", Type: alerting.TypeWebhook, Enabled: true, URL: "https://127.0.0.1:1/hook",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := owner.Exec(t.Context(), `
 INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repeat('a', 26))`); err != nil {
 		t.Fatal(err)
@@ -296,18 +310,22 @@ INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repe
 
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	env := map[string]string{"NYKTUS_WORKER_DATABASE_URL": workerURL}
+	env := map[string]string{
+		"NYKTUS_WORKER_DATABASE_URL": workerURL,
+		"NYKTUS_CONSOLE_URL":         "https://nyktus.example.com",
+		"NYKTUS_ENCRYPTION_KEYS":     keys,
+	}
 	var stderr bytes.Buffer
 	exited := make(chan int, 1)
 	go func() { exited <- run(ctx, []string{"serve", "--roles=worker"}, source(env), &bytes.Buffer{}, &stderr) }()
 
 	// The worker looks for jobs right after it started.
 	for {
-		var incidents int
-		if err := owner.QueryRow(ctx, "SELECT count(*) FROM incidents").Scan(&incidents); err != nil {
-			t.Fatalf("count incidents: %v", err)
+		var blocked int
+		if err := owner.QueryRow(ctx, "SELECT count(*) FROM alert_deliveries WHERE status = 'dead' AND last_error = 'blocked'").Scan(&blocked); err != nil {
+			t.Fatalf("count deliveries: %v", err)
 		}
-		if incidents == 1 {
+		if blocked == 1 {
 			break
 		}
 		select {
@@ -322,7 +340,9 @@ INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repe
 	if code := <-exited; code != exitOK {
 		t.Errorf("exit code = %d, want %d; stderr: %s", code, exitOK, stderr.String())
 	}
-	for _, want := range []string{`"msg":"worker: started"`, `"msg":"incident: opened"`, `"msg":"worker: stopped"`} {
+	for _, want := range []string{
+		`"msg":"worker: started"`, `"msg":"incident: opened"`, `"msg":"alerting: delivery dead"`, `"msg":"worker: stopped"`,
+	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("log does not contain %s: %s", want, stderr.String())
 		}
@@ -337,7 +357,11 @@ func TestRun_WorkerRefusesTheLoginOfTheConsole(t *testing.T) {
 	_, consoleURL := schematest.Console(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	env := map[string]string{"NYKTUS_WORKER_DATABASE_URL": consoleURL}
+	env := map[string]string{
+		"NYKTUS_WORKER_DATABASE_URL": consoleURL,
+		"NYKTUS_CONSOLE_URL":         "https://nyktus.example.com",
+		"NYKTUS_ENCRYPTION_KEYS":     testKeys(t),
+	}
 	var stderr bytes.Buffer
 	if code := run(ctx, []string{"serve", "--roles=worker"}, source(env), &bytes.Buffer{}, &stderr); code != exitFailure {
 		t.Fatalf("exit code = %d, want %d; stderr: %s", code, exitFailure, stderr.String())

@@ -108,11 +108,15 @@ func (h Events) complete() bool {
 
 // AlertChannels are the handlers of the management of the alert channels.
 type AlertChannels struct {
-	List, Get, Create, Update, Delete http.Handler
+	List, Get, Create, Update, Delete, Test http.Handler
+	// GetDelivery, RetryDelivery and IncidentDeliveries serve the deliveries
+	// of alerts and tests.
+	GetDelivery, RetryDelivery, IncidentDeliveries http.Handler
 }
 
 func (c AlertChannels) complete() bool {
-	return c.List != nil && c.Get != nil && c.Create != nil && c.Update != nil && c.Delete != nil
+	return c.List != nil && c.Get != nil && c.Create != nil && c.Update != nil && c.Delete != nil && c.Test != nil &&
+		c.GetDelivery != nil && c.RetryDelivery != nil && c.IncidentDeliveries != nil
 }
 
 // OIDC are the handlers of the sign-in through the identity provider: the
@@ -203,6 +207,15 @@ func NewRouter(d Deps) *httpx.Router {
 		httpx.Deadline(hashDeadline)(d.AlertChannels.Update))
 	rt.Handle(http.MethodDelete, "/api/v1/alert-channels/{id}", httpx.Require("alert_channels:write").SessionOnly(),
 		d.AlertChannels.Delete)
+	rt.Handle(http.MethodPost, "/api/v1/alert-channels/{id}/test", httpx.Require("alert_channels:write").SessionOnly(),
+		d.AlertChannels.Test)
+	rt.Handle(http.MethodGet, "/api/v1/alert-deliveries/{id}", httpx.Require("alert_channels:read").SessionOnly(),
+		d.AlertChannels.GetDelivery)
+	rt.Handle(http.MethodPost, "/api/v1/alert-deliveries/{id}/retry", httpx.Require("alert_channels:write").SessionOnly(),
+		d.AlertChannels.RetryDelivery)
+	// Whoever reads incidents may see whether their alerts went out.
+	rt.Handle(http.MethodGet, "/api/v1/incidents/{id}/deliveries", httpx.Require("incidents:read"),
+		d.AlertChannels.IncidentDeliveries)
 	return rt
 }
 

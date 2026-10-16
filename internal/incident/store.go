@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"nyktus.org/nyktus/internal/alerting"
 	"nyktus.org/nyktus/internal/platform/db"
 )
 
@@ -36,22 +37,6 @@ func NewStore(d DB) *Store {
 	return &Store{db: d, lockTimeout: defaultLockTimeout}
 }
 
-// workerScope is everything that the worker's database role reaches. It reads
-// no inventory: an event holds what its incident needs.
-var workerScope = db.Scope{
-	GroupRole: "nyktus_worker",
-	Tables:    []string{"event_jobs", "events", "incidents", "alerts"},
-	// The checks of the techniques run with the privileges of the role that
-	// writes.
-	Functions: []string{"public.attack_technique_ids_valid(text[])"},
-}
-
-// CheckPrivileges returns db.ErrRolePrivileges unless the connected role stays
-// within the scope of the worker, as a member of nyktus_worker.
-func CheckPrivileges(ctx context.Context, q db.Querier) error {
-	return db.CheckScope(ctx, q, workerScope)
-}
-
 // Processed describes the job of an event that was processed.
 type Processed struct {
 	EventID      string
@@ -61,6 +46,9 @@ type Processed struct {
 	// Opened reports whether the event opened the incident, together with its
 	// alert.
 	Opened bool
+	// Deliveries counts the deliveries of the alert, one for every enabled
+	// alert channel, if the event opened the incident.
+	Deliveries int
 	// Severity is the severity of the incident after the event.
 	Severity Severity
 }
@@ -332,6 +320,11 @@ RETURNING id`, p.ResourceType, p.ResourceID, severity, techniques, occurredAt).S
 		if _, err := tx.Exec(ctx, `INSERT INTO public.alerts (incident_id, severity, techniques) VALUES ($1, $2, $3)`,
 			p.IncidentID, severity, techniques); err != nil {
 			return fmt.Errorf("raise alert: %w", err)
+		}
+		// The alert and its deliveries are written together, so that an
+		// alert is never left without them.
+		if p.Deliveries, err = alerting.Enqueue(ctx, tx, p.IncidentID); err != nil {
+			return err
 		}
 		p.Opened, p.Severity = true, severity
 		return nil

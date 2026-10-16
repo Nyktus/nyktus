@@ -18,8 +18,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"nyktus.org/nyktus/internal/honeytoken"
-	"nyktus.org/nyktus/internal/platform/db"
-	"nyktus.org/nyktus/internal/platform/dbtest"
 	"nyktus.org/nyktus/internal/platform/schematest"
 )
 
@@ -136,39 +134,6 @@ func (f fixture) eventIncident(t *testing.T, eventID string) string {
 		return ""
 	}
 	return *id
-}
-
-// The worker refuses to start with a login that reaches more than its tables,
-// such as the login of the console, or that is no member of its group role.
-func TestCheckPrivileges(t *testing.T) {
-	t.Parallel()
-
-	ownerURL, workerURL := schematest.Worker(t)
-	if err := CheckPrivileges(t.Context(), schematest.Open(t, workerURL)); err != nil {
-		t.Errorf("CheckPrivileges(worker) = %v, want nil", err)
-	}
-
-	_, consoleURL := dbtest.Role(t, ownerURL, "console", "IN ROLE "+pgx.Identifier{schematest.ConsoleRole}.Sanitize())
-	if err := CheckPrivileges(t.Context(), schematest.Open(t, consoleURL)); !errors.Is(err, db.ErrRolePrivileges) || !strings.Contains(err.Error(), "member of [nyktus_console]") {
-		t.Errorf("CheckPrivileges(console) = %v, want ErrRolePrivileges naming the console role", err)
-	}
-	// A member of the worker's group role with a privilege of its own.
-	name, widerURL := dbtest.Role(t, ownerURL, "wider", "IN ROLE "+pgx.Identifier{schematest.WorkerRole}.Sanitize())
-	dbtest.Exec(t, ownerURL, "GRANT SELECT ON honeytokens TO "+pgx.Identifier{name}.Sanitize())
-	if err := CheckPrivileges(t.Context(), schematest.Open(t, widerURL)); !errors.Is(err, db.ErrRolePrivileges) || !strings.Contains(err.Error(), "tables [honeytokens]") {
-		t.Errorf("CheckPrivileges(wider) = %v, want ErrRolePrivileges naming the honeytokens", err)
-	}
-	// A login that may change what an event recorded, through a grant of its
-	// own on a table of the worker.
-	name, ownURL := dbtest.Role(t, ownerURL, "own", "IN ROLE "+pgx.Identifier{schematest.WorkerRole}.Sanitize())
-	dbtest.Exec(t, ownerURL, "GRANT UPDATE ON events TO "+pgx.Identifier{name}.Sanitize())
-	if err := CheckPrivileges(t.Context(), schematest.Open(t, ownURL)); !errors.Is(err, db.ErrRolePrivileges) || !strings.Contains(err.Error(), "lacks: [events: UPDATE]") {
-		t.Errorf("CheckPrivileges(own) = %v, want ErrRolePrivileges naming UPDATE on events", err)
-	}
-	_, triggerURL := dbtest.Role(t, ownerURL, "trigger", "IN ROLE "+pgx.Identifier{schematest.TriggerRole}.Sanitize())
-	if err := CheckPrivileges(t.Context(), schematest.Open(t, triggerURL)); !errors.Is(err, db.ErrRolePrivileges) || !strings.Contains(err.Error(), "cannot execute") {
-		t.Errorf("CheckPrivileges(trigger) = %v, want ErrRolePrivileges containing %q", err, "cannot execute")
-	}
 }
 
 // An event recorded by the trigger opens an incident of its honeytoken, with
@@ -889,6 +854,10 @@ func TestProcessor_LogsWhatBecameOfTheJob(t *testing.T) {
 	if !strings.Contains(buf.String(), `"msg":"incident: opened"`) || !strings.Contains(buf.String(), `"resource_id":"`+id+`"`) {
 		t.Errorf("log = %s, want the opened incident", buf.String())
 	}
+	// No channel is enabled, so the alert reaches nobody.
+	if !strings.Contains(buf.String(), `"msg":"alerting: no enabled channel"`) || !strings.Contains(buf.String(), `"level":"WARN"`) {
+		t.Errorf("log = %s, want a warning that the alert reaches nobody", buf.String())
+	}
 
 	buf.Reset()
 	f.exec(t, "UPDATE incidents SET status = 'closed', closed_at = clock_timestamp()")
@@ -900,5 +869,35 @@ func TestProcessor_LogsWhatBecameOfTheJob(t *testing.T) {
 	if !strings.Contains(buf.String(), `"msg":"incident: event not processed"`) || !strings.Contains(buf.String(), `"event_id":"`+eventID+`"`) ||
 		!strings.Contains(buf.String(), `"attempts":1`) || !strings.Contains(buf.String(), `"level":"ERROR"`) {
 		t.Errorf("log = %s, want the failed job", buf.String())
+	}
+}
+
+// An alert gets its deliveries, one for every enabled channel, in the
+// transaction that opens its incident; events added to the incident later
+// raise no further deliveries.
+func TestStore_OpenedIncidentEnqueuesDeliveriesOfItsAlert(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	for _, c := range []struct {
+		name    string
+		enabled bool
+	}{{"a", true}, {"b", true}, {"off", false}} {
+		f.exec(t, `INSERT INTO alert_channels (name, type, enabled, target) VALUES ($1, 'webhook', $2, 'https://h.example.com')`, c.name, c.enabled)
+	}
+	id, _ := f.honeytoken(t, "web_url", nil)
+	f.event(t, id, "web_url", nil, time.Now())
+	p := f.process(t)
+	if !p.Opened || p.Deliveries != 2 {
+		t.Fatalf("ProcessNext() = %+v, want an opened incident with 2 deliveries", p)
+	}
+	if n := f.count(t, "SELECT count(*) FROM alert_deliveries WHERE alert_id = $1 AND status = 'pending' AND channel_name IN ('a', 'b')", p.IncidentID); n != 2 {
+		t.Errorf("%d deliveries, want one to each enabled channel", n)
+	}
+	f.event(t, id, "web_url", nil, time.Now())
+	if p := f.process(t); p.Opened || p.Deliveries != 0 {
+		t.Errorf("second event: %+v", p)
+	}
+	if n := f.count(t, "SELECT count(*) FROM alert_deliveries"); n != 2 {
+		t.Errorf("%d deliveries after a second event, want 2", n)
 	}
 }

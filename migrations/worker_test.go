@@ -22,9 +22,27 @@ import (
 // workerGrants lists every privilege of the worker's group role, as
 // heldPrivileges reports them, in byte order.
 var workerGrants = []string{
+	"alert_channel_secrets.header_value: UPDATE",
+	"alert_channel_secrets.url: UPDATE",
+	"alert_channel_secrets: SELECT",
+	"alert_channels: SELECT",
+	"alert_deliveries.alert_id: INSERT",
+	"alert_deliveries.attempts: UPDATE",
+	"alert_deliveries.channel_id: INSERT",
+	"alert_deliveries.channel_name: INSERT",
+	"alert_deliveries.channel_type: INSERT",
+	"alert_deliveries.delivered_at: UPDATE",
+	"alert_deliveries.last_attempt_at: UPDATE",
+	"alert_deliveries.last_duration_ms: UPDATE",
+	"alert_deliveries.last_error: UPDATE",
+	"alert_deliveries.last_status_code: UPDATE",
+	"alert_deliveries.not_before: UPDATE",
+	"alert_deliveries.status: UPDATE",
+	"alert_deliveries: SELECT",
 	"alerts.incident_id: INSERT",
 	"alerts.severity: INSERT",
 	"alerts.techniques: INSERT",
+	"alerts: SELECT",
 	"attack_technique_ids_valid(text[]): EXECUTE",
 	"event_jobs.attempts: UPDATE",
 	"event_jobs.not_before: UPDATE",
@@ -108,9 +126,11 @@ func TestWorkerRole_HoldsExactlyItsGrants(t *testing.T) {
 	}
 }
 
-// The worker reads events and writes incidents, but whoever takes over its host
-// must not reach the inventory, the accounts or the audit log, nor rewrite
-// evidence: events, closed incidents and alerts.
+// The worker reads events, writes incidents and delivers their alerts, but
+// whoever takes over its host must not reach the inventory, the accounts or the
+// audit log, nor rewrite evidence: events, closed incidents, alerts and where a
+// delivery went. It reads the channels with their secrets to send to them, but
+// cannot create or redirect a channel.
 func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 	t.Parallel()
 
@@ -130,7 +150,14 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM incidents",
 		"UPDATE events SET incident_id = (SELECT id FROM incidents)",
 		"INSERT INTO alerts (incident_id, severity, techniques) SELECT id, severity, techniques FROM incidents",
+		"SELECT count(*) FROM alerts",
 		"SELECT public.attack_technique_ids_valid('{T1078}')",
+		"SELECT count(*) FROM alert_channels",
+		"SELECT url, header_value FROM alert_channel_secrets",
+		"UPDATE alert_channel_secrets SET url = url, header_value = header_value",
+		"INSERT INTO alert_deliveries (alert_id, channel_id, channel_type, channel_name) SELECT incident_id, gen_random_uuid(), 'webhook', 'c' FROM alerts",
+		"UPDATE alert_deliveries SET status = 'dead', attempts = 1, not_before = clock_timestamp(), last_attempt_at = clock_timestamp(), last_status_code = 500, last_error = 'http_status', last_duration_ms = 1, delivered_at = NULL",
+		"SELECT count(*) FROM alert_deliveries",
 		"DELETE FROM event_jobs",
 	}
 	for _, statement := range allowed {
@@ -166,8 +193,20 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"TRUNCATE incidents",
 		"INSERT INTO alerts (incident_id, severity, created_at) SELECT id, severity, now() FROM incidents",
 		"UPDATE alerts SET severity = 'low'",
-		"SELECT count(*) FROM alerts",
 		"DELETE FROM alerts",
+		"INSERT INTO alert_channels (name, type, target) VALUES ('c', 'webhook', 'https://h.example.com')",
+		"UPDATE alert_channels SET enabled = true",
+		"DELETE FROM alert_channels",
+		"INSERT INTO alert_channel_secrets (channel_id, url) VALUES (gen_random_uuid(), decode(repeat('01', 40), 'hex'))",
+		"UPDATE alert_channel_secrets SET channel_id = channel_id",
+		"DELETE FROM alert_channel_secrets",
+		"INSERT INTO alert_deliveries (alert_id, channel_id, channel_type, channel_name, status) SELECT incident_id, gen_random_uuid(), 'webhook', 'c', 'delivered' FROM alerts",
+		"UPDATE alert_deliveries SET channel_id = gen_random_uuid()",
+		"UPDATE alert_deliveries SET alert_id = NULL",
+		"UPDATE alert_deliveries SET channel_name = 'x'",
+		"DELETE FROM alert_deliveries",
+		"TRUNCATE alert_deliveries",
+		"SELECT public.retry_alert_delivery(gen_random_uuid())",
 		"SELECT * FROM public.record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')",
 		"SELECT * FROM public.record_dns_query(repeat('a', 26), 'd.example.com', '', 'A', 'udp', NULL, interval '0')",
 		"SELECT public.honeytoken_event_limit_reached(gen_random_uuid())",
