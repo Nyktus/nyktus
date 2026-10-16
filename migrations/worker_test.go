@@ -44,6 +44,8 @@ var workerGrants = []string{
 	"alerts.techniques: INSERT",
 	"alerts: SELECT",
 	"attack_technique_ids_valid(text[]): EXECUTE",
+	"delete_expired_audit_entries(integer,integer): EXECUTE",
+	"delete_expired_incident_data(integer,integer): EXECUTE",
 	"delete_expired_sign_in_data(integer): EXECUTE",
 	"event_jobs.attempts: UPDATE",
 	"event_jobs.not_before: UPDATE",
@@ -169,6 +171,8 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM periodic_tasks",
 		"UPDATE periodic_tasks SET next_run_at = clock_timestamp(), last_started_at = clock_timestamp(), last_succeeded_at = clock_timestamp(), last_failed_at = clock_timestamp(), last_rows = 0",
 		"SELECT public.delete_expired_sign_in_data(1)",
+		"SELECT public.delete_expired_audit_entries(365, 1)",
+		"SELECT public.delete_expired_incident_data(180, 1)",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -231,6 +235,7 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM oidc_logins",
 		"DELETE FROM sessions",
 		"DELETE FROM oidc_logins",
+		"DELETE FROM audit_entries",
 	}
 	for _, statement := range denied {
 		expectDenied(t, pool, statement)

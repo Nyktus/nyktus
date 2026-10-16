@@ -5,6 +5,7 @@ package config
 
 import (
 	"maps"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -31,7 +32,7 @@ func TestLoadServe_WorkerDefaults(t *testing.T) {
 	}
 	want := Worker{
 		DatabaseURL: "postgres://worker@db/nyktus", Concurrency: 4, DeliveryConcurrency: 4,
-		ConsoleURL: "https://nyktus.example.com",
+		ConsoleURL: "https://nyktus.example.com", AuditRetentionDays: 365, EventRetentionDays: 180,
 	}
 	if cfg.Worker != want {
 		t.Errorf("Worker = %+v, want %+v", cfg.Worker, want)
@@ -81,6 +82,39 @@ func TestLoadServe_WorkerConcurrency(t *testing.T) {
 				t.Errorf("%s=%s: error = %v, want nil", name, value, err)
 			case want != "" && (err == nil || !strings.Contains(err.Error(), want)):
 				t.Errorf("%s=%s: error = %v, want it to name %s", name, value, err, want)
+			}
+		}
+	}
+}
+
+// The retention has lower limits, so that a typo cannot delete the evidence of
+// a recent intrusion, and an upper one, because personal data needs a period.
+func TestLoadServe_WorkerRetention(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		ok   []string
+		bad  []string
+		read func(Worker) int
+	}{
+		{"NYKTUS_AUDIT_RETENTION_DAYS", []string{"90", "3650"}, []string{"89", "3651", "0", "-1", "x"}, func(w Worker) int { return w.AuditRetentionDays }},
+		{"NYKTUS_EVENT_RETENTION_DAYS", []string{"30", "3650"}, []string{"29", "3651", "0", "x"}, func(w Worker) int { return w.EventRetentionDays }},
+	}
+	for _, tt := range tests {
+		for _, value := range tt.ok {
+			env := workerEnv()
+			env[tt.name] = value
+			cfg, err := LoadServe(fakeSource{env: env}.source(), []Role{RoleWorker})
+			if err != nil || strconv.Itoa(tt.read(cfg.Worker)) != value {
+				t.Errorf("%s=%s: %d, %v; want %s, nil", tt.name, value, tt.read(cfg.Worker), err, value)
+			}
+		}
+		for _, value := range tt.bad {
+			env := workerEnv()
+			env[tt.name] = value
+			if _, err := LoadServe(fakeSource{env: env}.source(), []Role{RoleWorker}); err == nil || !strings.Contains(err.Error(), tt.name) {
+				t.Errorf("%s=%s: error = %v, want it to name the variable", tt.name, value, err)
 			}
 		}
 	}

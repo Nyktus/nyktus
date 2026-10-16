@@ -25,6 +25,8 @@ var scope = db.Scope{
 		// that writes.
 		"public.attack_technique_ids_valid(text[])",
 		"public.delete_expired_sign_in_data(integer)",
+		"public.delete_expired_audit_entries(integer, integer)",
+		"public.delete_expired_incident_data(integer, integer)",
 	},
 }
 

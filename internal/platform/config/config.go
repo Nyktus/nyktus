@@ -189,7 +189,23 @@ type Worker struct {
 	// ConsoleURL is the address of the console, to which an alert links its
 	// incident.
 	ConsoleURL string
+	// AuditRetentionDays is how long the audit log keeps an entry.
+	AuditRetentionDays int
+	// EventRetentionDays is how long an event is kept, and a closed incident
+	// with its alert and deliveries after it closed.
+	EventRetentionDays int
 }
+
+// Limits of the retention, in days. Audit entries prove what happened long
+// after an intrusion was found, so they stay at least three months; events
+// stay at least a month, long enough to investigate an incident. Nothing stays
+// longer than ten years: personal data needs a period. The functions of the
+// database that delete expired data repeat the lower limits.
+const (
+	MinAuditRetentionDays = 90
+	MinEventRetentionDays = 30
+	MaxRetentionDays      = 3650
+)
 
 // defaultConsoleAddr is the address that the console listens on by default.
 const defaultConsoleAddr = "127.0.0.1:8080"
@@ -363,6 +379,8 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 			Concurrency:         r.integer("WORKER_CONCURRENCY", 4, 1, maxWorkerConcurrency),
 			DeliveryConcurrency: r.integer("WORKER_DELIVERY_CONCURRENCY", 4, 1, maxWorkerConcurrency),
 			ConsoleURL:          consoleURL,
+			AuditRetentionDays:  r.integer("AUDIT_RETENTION_DAYS", 365, MinAuditRetentionDays, MaxRetentionDays),
+			EventRetentionDays:  r.integer("EVENT_RETENTION_DAYS", 180, MinEventRetentionDays, MaxRetentionDays),
 		}
 	}
 	// The console encrypts the secrets of second factors and alert channels,
