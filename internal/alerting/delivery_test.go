@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,4 +207,84 @@ func must(b []byte, _ string, err error) []byte {
 		panic(err)
 	}
 	return b
+}
+
+func chatFixture() (message, Delivery) {
+	alertID := "11111111-1111-4111-8111-111111111111"
+	m := message{
+		incidentID: alertID, severity: "high", techniques: []string{"T1078", "T1213"}, resourceType: "honeytoken",
+		resourceID: "22222222-2222-4222-8222-222222222222",
+		openedAt:   time.Date(2026, 10, 15, 10, 0, 1, 0, time.UTC), firstEventAt: time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC),
+	}
+	return m, Delivery{ID: "33333333-3333-4333-8333-333333333333", AlertID: &alertID}
+}
+
+func TestFormat_Slack(t *testing.T) {
+	t.Parallel()
+
+	m, d := chatFixture()
+	body, contentType, err := format(TypeSlack, m, d, "https://nyktus.example.com")
+	if err != nil || contentType != "application/json" {
+		t.Fatalf("format = %v, %q", err, contentType)
+	}
+	want := `{"blocks":[{"text":{"text":"Nyktus: incident opened","type":"plain_text"},"type":"header"},` +
+		`{"fields":[{"text":"*Severity*\nhigh","type":"mrkdwn"},{"text":"*Techniques*\nT1078, T1213","type":"mrkdwn"},` +
+		`{"text":"*Resource*\nhoneytoken 22222222-2222-4222-8222-222222222222","type":"mrkdwn"},` +
+		`{"text":"*First event*\n2026-10-15T10:00:00Z","type":"mrkdwn"}],"type":"section"},` +
+		`{"text":{"text":"\u003chttps://nyktus.example.com/incidents/11111111-1111-4111-8111-111111111111|Open the incident\u003e","type":"mrkdwn"},"type":"section"},` +
+		`{"elements":[{"text":"Delivery 33333333-3333-4333-8333-333333333333","type":"mrkdwn"}],"type":"context"}],` +
+		`"text":"Nyktus: incident opened: high"}`
+	if string(body) != want {
+		t.Errorf("body =\n%s\nwant\n%s", body, want)
+	}
+
+	body, _, err = format(TypeSlack, message{}, Delivery{ID: d.ID}, "https://nyktus.example.com")
+	if err != nil || !strings.Contains(string(body), `"text":"Nyktus: test message"`) || strings.Contains(string(body), "incident") {
+		t.Errorf("test body = %s, %v", body, err)
+	}
+}
+
+func TestFormat_Teams(t *testing.T) {
+	t.Parallel()
+
+	m, d := chatFixture()
+	body, contentType, err := format(TypeTeams, m, d, "https://nyktus.example.com")
+	if err != nil || contentType != "application/json" {
+		t.Fatalf("format = %v, %q", err, contentType)
+	}
+	want := `{"attachments":[{"content":{"actions":[{"title":"Open the incident","type":"Action.OpenUrl",` +
+		`"url":"https://nyktus.example.com/incidents/11111111-1111-4111-8111-111111111111"}],` +
+		`"body":[{"size":"Medium","text":"Nyktus: incident opened","type":"TextBlock","weight":"Bolder","wrap":true},` +
+		`{"facts":[{"title":"Severity","value":"high"},{"title":"Techniques","value":"T1078, T1213"},` +
+		`{"title":"Resource","value":"honeytoken 22222222-2222-4222-8222-222222222222"},` +
+		`{"title":"First event","value":"2026-10-15T10:00:00Z"},{"title":"Delivery","value":"33333333-3333-4333-8333-333333333333"}],"type":"FactSet"}],` +
+		`"type":"AdaptiveCard","version":"1.4"},"contentType":"application/vnd.microsoft.card.adaptive"}],"type":"message"}`
+	if string(body) != want {
+		t.Errorf("body =\n%s\nwant\n%s", body, want)
+	}
+
+	body, _, err = format(TypeTeams, message{}, Delivery{ID: d.ID}, "https://nyktus.example.com")
+	if err != nil || !strings.Contains(string(body), `"text":"Nyktus: test message"`) || strings.Contains(string(body), "actions") {
+		t.Errorf("test body = %s, %v", body, err)
+	}
+}
+
+func TestSlackEscape(t *testing.T) {
+	t.Parallel()
+
+	if got := slackEscape("<!channel> & <https://x|y>"); got != "&lt;!channel&gt; &amp; &lt;https://x|y&gt;" {
+		t.Errorf("slackEscape = %q", got)
+	}
+}
+
+// Every type of channel has a format.
+func TestFormat_CoversEveryType(t *testing.T) {
+	t.Parallel()
+
+	m, d := chatFixture()
+	for _, typ := range Types {
+		if _, _, err := format(typ, m, d, "https://nyktus.example.com"); err != nil {
+			t.Errorf("format(%s) = %v", typ, err)
+		}
+	}
 }
