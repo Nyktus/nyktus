@@ -2071,6 +2071,60 @@ REVOKE ALL ON FUNCTION public.delete_expired_sign_in_data(integer) FROM PUBLIC, 
 REVOKE ALL ON FUNCTION public.delete_expired_audit_entries(integer, integer) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.delete_expired_incident_data(integer, integer) FROM PUBLIC, nyktus_console;
 
+-- The state of the queues, the incidents and the periodic tasks, for the
+-- metrics of the console. The console reads neither the jobs nor the alerts
+-- nor the periodic tasks; through this function it learns their numbers and
+-- ages, never a row. Every value is an aggregate, and the only labels are
+-- fixed names, such as a status or a task, so that nothing of the inventory
+-- or of personal data leaves through it. Ages are in seconds, times in seconds
+-- since the epoch, and 0 where there is nothing to measure.
+CREATE FUNCTION public.read_metrics() RETURNS TABLE (metric text, label text, value double precision)
+	LANGUAGE sql
+	STABLE
+	SECURITY DEFINER
+	SET search_path = ''
+AS $$
+	SELECT 'event_jobs', NULL, count(*)::double precision FROM public.event_jobs
+	UNION ALL
+	SELECT 'event_jobs_due', NULL, count(*) FROM public.event_jobs WHERE not_before <= statement_timestamp()
+	UNION ALL
+	SELECT 'event_jobs_retrying', NULL, count(*) FROM public.event_jobs WHERE attempts > 0
+	UNION ALL
+	SELECT 'event_jobs_oldest_age_seconds', NULL,
+		coalesce(extract(epoch FROM statement_timestamp() - min(created_at)), 0) FROM public.event_jobs
+	UNION ALL
+	SELECT 'alert_deliveries', s.status, (SELECT count(*) FROM public.alert_deliveries AS d WHERE d.status = s.status)
+	FROM unnest(ARRAY['pending', 'dead']) AS s (status)
+	UNION ALL
+	SELECT 'alert_deliveries_oldest_due_age_seconds', NULL,
+		coalesce(extract(epoch FROM statement_timestamp() - min(not_before)), 0)
+	FROM public.alert_deliveries WHERE status = 'pending' AND not_before <= statement_timestamp()
+	UNION ALL
+	SELECT 'incidents', s.status, (SELECT count(*) FROM public.incidents AS i WHERE i.status = s.status)
+	FROM unnest(ARRAY['open', 'acknowledged']) AS s (status)
+	UNION ALL
+	SELECT 'periodic_task_last_success_timestamp_seconds', name, coalesce(extract(epoch FROM last_succeeded_at), 0)
+	FROM public.periodic_tasks
+	UNION ALL
+	SELECT 'periodic_task_last_failure_timestamp_seconds', name, coalesce(extract(epoch FROM last_failed_at), 0)
+	FROM public.periodic_tasks
+	UNION ALL
+	SELECT 'periodic_task_last_rows', name, coalesce(last_rows, 0) FROM public.periodic_tasks
+$$;
+
+REVOKE ALL ON FUNCTION public.read_metrics() FROM PUBLIC, nyktus_console;
+GRANT EXECUTE ON FUNCTION public.read_metrics() TO nyktus_console;
+
+-- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
+-- result is verified instead of assumed. The other roles lose it below.
+DO $$
+BEGIN
+	IF NOT has_function_privilege('nyktus_console', 'public.read_metrics()', 'EXECUTE') THEN
+		RAISE EXCEPTION 'nyktus_console lacks privileges on public.read_metrics(); run migrations as the owner of the schema';
+	END IF;
+END
+$$;
+
 -- The trigger and the DNS role reach nothing but their function, and the
 -- worker nothing but its tables. Everything in the schema is revoked here, at
 -- its end, including the table of the migration runner, so that default

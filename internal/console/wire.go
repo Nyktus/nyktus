@@ -22,6 +22,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/honeytoken/honeytokenapi"
 	"nyktus.org/nyktus/internal/incident/incidentapi"
+	"nyktus.org/nyktus/internal/metrics"
 	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/platform/secretbox"
 	"nyktus.org/nyktus/internal/platform/ssrf"
@@ -106,6 +107,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Revoke: http.HandlerFunc(k.Revoke),
 		},
 		AuditEntries: auditapi.NewHandler(o.Logger, o.DB),
+		Metrics:      metrics.Handler(o.Logger, o.DB),
 		Accounts: Accounts{
 			List:           http.HandlerFunc(a.List),
 			Get:            http.HandlerFunc(a.Get),

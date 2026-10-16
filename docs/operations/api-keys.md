@@ -33,6 +33,7 @@ with `api-key.json`:
   | `incidents:read`, `incidents:write` | reading and triaging [incidents](incidents.md), for example from a ticket system |
   | `events:read` | reading [events](incidents.md#reading-incidents-and-events), which contain personal data such as client addresses |
   | `honeytokens:read`, `honeytokens:write` | reading and managing [honeytokens](honeytokens.md), for example to roll them out by script |
+  | `metrics:read` | reading the [metrics](metrics.md), for a monitoring system |
 
   A scope to write requires the scope to read the same resource, because a key that changes a resource receives it in the responses. Honeytokens are part of the inventory: give integrations that only follow incidents or read the audit log, such as a SIEM, keys without the honeytoken scopes, and integrations that do not need client addresses keys without `events:read`. Keys never manage accounts, keys or [alert channels](alerting.md), not even by reading them: a key with access to the channels could redirect or stop the alerts.
 - **Expiry.** Every key expires, at the latest three years after it is created. There is no default; choose a period that suits the integration and your rotation policy. Nyktus does not yet remind anyone before a key expires.

@@ -1,0 +1,50 @@
+# Metrics
+
+The console reports the state of Nyktus to a monitoring system such as Prometheus: the queues of events and alerts, the incidents that are not closed, and the [periodic tasks](database.md#periodic-tasks) of the worker. The worker listens on no port, so the console answers for it; the values come from the database, which all roles share.
+
+## Reading the metrics
+
+`GET /api/v1/metrics` returns the metrics in the text format of Prometheus, version 0.0.4. Administrators read it with a session, a monitoring system with an [API key](api-keys.md) that carries the scope `metrics:read`. Other roles and keys receive `403`. Whether incidents are open tells an intruder whether they were noticed, so give the scope only to the monitoring system and keep its key in its secret store.
+
+A scrape configuration for Prometheus, with the key in a file:
+
+```yaml
+scrape_configs:
+  - job_name: nyktus
+    scheme: https
+    metrics_path: /api/v1/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/nyktus-key
+    static_configs:
+      - targets: ["nyktus.example.com"]
+```
+
+Every request reads the database, so scrape at most every 15 seconds; once a minute is enough. Reads are not recorded in the [audit log](audit-log.md); a request denied for a missing permission is, as for every route.
+
+## What the metrics report
+
+Every metric is a gauge. Values are aggregates; labels name only a fixed status or the name of a periodic task, never a honeytoken, an incident, a channel, an address or a name. Ages are in seconds, times in seconds since the epoch, and `0` where there is nothing to measure.
+
+| Metric | Labels | Value |
+|---|---|---|
+| `nyktus_event_jobs` | | Events waiting to be [processed](incidents.md). |
+| `nyktus_event_jobs_due` | | Of these, the events that are due now. |
+| `nyktus_event_jobs_retrying` | | Of these, the events that failed at least once. They are tried again, at the latest every hour, and raise no alert until they are processed; the log names the cause as `incident: event not processed`. |
+| `nyktus_event_jobs_oldest_age_seconds` | | Age of the oldest event that waits. |
+| `nyktus_alert_deliveries` | `status`: `pending`, `dead` | [Deliveries](alerting.md#delivery) of alerts and tests that wait to be sent, and those that [failed for good](alerting.md#dead-deliveries), within the retention. |
+| `nyktus_alert_deliveries_oldest_due_age_seconds` | | How long the delivery that has been due longest has waited. |
+| `nyktus_incidents` | `status`: `open`, `acknowledged` | Incidents that are not closed. |
+| `nyktus_periodic_task_last_success_timestamp_seconds` | `task` | When a periodic task last ran to its end. |
+| `nyktus_periodic_task_last_failure_timestamp_seconds` | `task` | When a periodic task last failed. |
+| `nyktus_periodic_task_last_rows` | `task` | Rows that the last successful run removed or changed. |
+| `nyktus_build_info` | `version`, `go_version` | Always `1`; the labels name the version of Nyktus and of Go. |
+
+## Suggested alerts
+
+- **No worker.** `time() - nyktus_periodic_task_last_success_timestamp_seconds{task="delete_expired_sign_in_data"} > 900`: the task runs every five minutes, so no worker has run it for three intervals. Without a worker, events raise no alerts.
+- **Events not processed.** `nyktus_event_jobs_oldest_age_seconds > 300` or `nyktus_event_jobs_retrying > 0`: events wait, and their alerts with them.
+- **Alerts not delivered.** `nyktus_alert_deliveries{status="dead"} > 0` after a change, or `nyktus_alert_deliveries_oldest_due_age_seconds > 300`: a channel does not accept alerts. [Retry](alerting.md#dead-deliveries) dead deliveries once the channel works.
+- **A periodic task fails.** `nyktus_periodic_task_last_failure_timestamp_seconds > nyktus_periodic_task_last_success_timestamp_seconds`: the log of the worker names the cause as `worker: job failed`.
+
+Monitor the processes themselves, their memory and their connections, with the tools of your platform; Nyktus reports no metrics of the Go runtime.

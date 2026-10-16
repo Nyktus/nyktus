@@ -257,3 +257,15 @@ func TestAlertChannels_ManagedByAdminsOnly(t *testing.T) {
 		}
 	}
 }
+
+// Whether incidents are open tells an intruder whether they were noticed, so
+// only administrators read the metrics.
+func TestAllowed_MetricsOnlyForAdministrators(t *testing.T) {
+	t.Parallel()
+
+	for role, want := range map[user.Role]bool{user.RoleAdmin: true, user.RoleUser: false, user.RoleViewer: false} {
+		if got := Allowed(role, "metrics:read"); got != want {
+			t.Errorf("Allowed(%s, metrics:read) = %t, want %t", role, got, want)
+		}
+	}
+}

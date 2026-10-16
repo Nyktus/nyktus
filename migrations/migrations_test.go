@@ -158,6 +158,7 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"DELETE FROM users",
 		"SELECT count(*) FROM audit_entries",
 		"INSERT INTO audit_entries (action, outcome, actor_kind, auth_method, changed_fields) VALUES ('user.create', 'success', 'system', 'cli', '{}')",
+		"SELECT * FROM public.read_metrics()",
 		"INSERT INTO setup_tokens (token_hash) VALUES (sha256('a'))",
 		"SELECT count(*) FROM setup_tokens WHERE expires_at > clock_timestamp()",
 		"BEGIN; LOCK TABLE setup_tokens IN EXCLUSIVE MODE; COMMIT",
