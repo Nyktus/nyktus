@@ -907,3 +907,27 @@ SELECT EXISTS (SELECT FROM pg_stat_activity WHERE datname = current_database() A
 		t.Errorf("delivery = %+v, want it due as before", got)
 	}
 }
+
+func TestProcess_DeliversToSlackAndTeams(t *testing.T) {
+	t.Parallel()
+	f := newDeliveryFixture(t)
+	slack := newReceiver(t, http.StatusOK)
+	teams := newReceiver(t, http.StatusAccepted)
+	s := f.channel(t, Spec{Name: "Slack", Type: TypeSlack, Enabled: true, URL: Secret(slack.URL + "/services/T0/B0/x")})
+	tm := f.channel(t, Spec{Name: "Teams", Type: TypeTeams, Enabled: true, URL: Secret(teams.URL + "/workflows/x")})
+	alertID := f.alert(t)
+	d := f.deliverer(http.DefaultClient)
+	for process(t, d) {
+	}
+	for _, c := range []Channel{s, tm} {
+		if got := f.delivery(t, alertID, c.ID); got.Status != StatusDelivered {
+			t.Errorf("delivery to %s = %+v", c.Name, got)
+		}
+	}
+	if slack.count() != 1 || !strings.Contains(string(slack.bodies[0]), `"blocks"`) {
+		t.Errorf("Slack received %d requests: %s", slack.count(), slack.bodies)
+	}
+	if teams.count() != 1 || !strings.Contains(string(teams.bodies[0]), `"AdaptiveCard"`) {
+		t.Errorf("Teams received %d requests: %s", teams.count(), teams.bodies)
+	}
+}

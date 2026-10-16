@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -101,7 +102,99 @@ func format(t Type, m message, d Delivery, consoleURL string) ([]byte, string, e
 		}
 		b, err := json.Marshal(p)
 		return b, "application/json", err
+	case TypeSlack:
+		b, err := json.Marshal(slackMessage(m, d, consoleURL))
+		return b, "application/json", err
+	case TypeTeams:
+		b, err := json.Marshal(teamsMessage(m, d, consoleURL))
+		return b, "application/json", err
 	default:
 		return nil, "", errUnsupportedType
+	}
+}
+
+// summary is what a chat message says, as label and value. A test has none.
+func summary(m message) [][2]string {
+	techniques := "none"
+	if len(m.techniques) > 0 {
+		techniques = strings.Join(m.techniques, ", ")
+	}
+	return [][2]string{
+		{"Severity", m.severity},
+		{"Techniques", techniques},
+		{"Resource", m.resourceType + " " + m.resourceID},
+		{"First event", m.firstEventAt.UTC().Format(time.RFC3339)},
+	}
+}
+
+const (
+	alertTitle   = "Nyktus: incident opened"
+	testTitle    = "Nyktus: test message"
+	testText     = "This channel receives the alerts of Nyktus."
+	openIncident = "Open the incident"
+)
+
+// slackEscape escapes the characters that Slack reads as markup in text.
+func slackEscape(s string) string {
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
+}
+
+// slackMessage is the message of an incoming webhook of Slack: a text that
+// notifications show, and blocks that the channel shows. The link to the
+// incident is part of the text, because a button would need an app that
+// handles interactions.
+func slackMessage(m message, d Delivery, consoleURL string) map[string]any {
+	if d.AlertID == nil {
+		return map[string]any{
+			"text": testTitle,
+			"blocks": []any{
+				map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": "*" + testTitle + "*\n" + testText}},
+			},
+		}
+	}
+	var fields []any
+	for _, f := range summary(m) {
+		fields = append(fields, map[string]any{"type": "mrkdwn", "text": "*" + f[0] + "*\n" + slackEscape(f[1])})
+	}
+	link := "<" + slackEscape(incidentURL(consoleURL, m.incidentID)) + "|" + openIncident + ">"
+	return map[string]any{
+		"text": alertTitle + ": " + slackEscape(m.severity),
+		"blocks": []any{
+			map[string]any{"type": "header", "text": map[string]any{"type": "plain_text", "text": alertTitle}},
+			map[string]any{"type": "section", "fields": fields},
+			map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": link}},
+			map[string]any{"type": "context", "elements": []any{
+				map[string]any{"type": "mrkdwn", "text": "Delivery " + slackEscape(d.ID)},
+			}},
+		},
+	}
+}
+
+// teamsMessage is the message of a workflow of Microsoft Teams that posts to
+// a channel: an adaptive card in the envelope that the workflow expects.
+func teamsMessage(m message, d Delivery, consoleURL string) map[string]any {
+	body := []any{map[string]any{"type": "TextBlock", "text": alertTitle, "weight": "Bolder", "size": "Medium", "wrap": true}}
+	var actions []any
+	if d.AlertID == nil {
+		body[0] = map[string]any{"type": "TextBlock", "text": testTitle, "weight": "Bolder", "size": "Medium", "wrap": true}
+		body = append(body, map[string]any{"type": "TextBlock", "text": testText, "wrap": true})
+	} else {
+		var facts []any
+		for _, f := range summary(m) {
+			facts = append(facts, map[string]any{"title": f[0], "value": f[1]})
+		}
+		facts = append(facts, map[string]any{"title": "Delivery", "value": d.ID})
+		body = append(body, map[string]any{"type": "FactSet", "facts": facts})
+		actions = []any{map[string]any{"type": "Action.OpenUrl", "title": openIncident, "url": incidentURL(consoleURL, m.incidentID)}}
+	}
+	card := map[string]any{"type": "AdaptiveCard", "version": "1.4", "body": body}
+	if actions != nil {
+		card["actions"] = actions
+	}
+	return map[string]any{
+		"type": "message",
+		"attachments": []any{
+			map[string]any{"contentType": "application/vnd.microsoft.card.adaptive", "content": card},
+		},
 	}
 }

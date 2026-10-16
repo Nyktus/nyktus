@@ -2,8 +2,6 @@
 
 An [incident](incidents.md) raises a single alert when it opens. Nyktus delivers each alert to every enabled alert channel.
 
-> This version delivers to webhooks. Deliveries to Slack and Teams fail as `invalid_channel` until their formats follow.
-
 ## Alert channels
 
 A channel is a URL that receives an HTTP `POST` for every alert. Its type chooses the format of the request body:
@@ -107,6 +105,13 @@ A webhook receives JSON:
 - `severity` and `techniques` are those of the incident when it opened, as the alert keeps them.
 - The message names the honeytoken by its identifier only. It holds neither its name nor its notes, which belong to the inventory, nor anything of the events, such as client addresses, because messages often go to services of third parties. Fetch the details through the API, for example with an [API key](api-keys.md) with `incidents:read` and `events:read`: `GET /api/v1/incidents/{id}` and `GET /api/v1/events?incident_id={id}`.
 - A test sends `{"version": 1, "type": "test", "delivery_id": "…"}`.
+
+### Messages to Slack and Teams
+
+Slack and Teams receive a message for people: the title "Nyktus: incident opened", the severity, the techniques, the honeytoken by its identifier, the time of the first event, the identifier of the delivery and a link to the incident in the console. As for webhooks, the message holds no inventory and no personal data. A test posts "Nyktus: test message".
+
+- **Slack:** create an [incoming webhook](https://api.slack.com/messaging/webhooks) for the channel and use its URL, `https://hooks.slack.com/services/…`. The message uses blocks, with a text that notifications show.
+- **Teams:** in the channel, create a workflow from the template "Post to a channel when a webhook request is received" and use the URL that it shows. The message is an adaptive card (version 1.4) with a button that opens the incident.
 
 ### Authenticating the messages
 
