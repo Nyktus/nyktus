@@ -30,8 +30,8 @@ const validDefinition = `{
   ],
   "secrets": [{"key": "Password", "length": 16}],
   "artifacts": [
-    {"key": "config", "file_name": "config", "format": "config", "template": "config.tmpl"},
-    {"key": "note", "file_name": "Read me.txt", "format": "text", "template": "note.txt.tmpl"}
+    {"key": "config", "file_name": "config", "format": "config", "line_endings": "lf", "template": "config.tmpl"},
+    {"key": "note", "file_name": "Read me.txt", "format": "text", "line_endings": "crlf", "template": "note.txt.tmpl"}
   ],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }`
@@ -71,11 +71,18 @@ func TestLoad_ReadsAValidCatalog(t *testing.T) {
 		t.Error("Lookup(third) found a deception")
 	}
 
-	out, err := d.Artifacts[0].Template.Render(map[string]string{
+	out, err := d.Artifacts[0].Render(map[string]string{
 		"Honeytokens.Gateway.Host": "abc.d.example.net", "Secrets.Password": "aaaabbbbccccdddd",
 	})
 	if err != nil || string(out) != "Host abc.d.example.net\nPassword aaaabbbbccccdddd\n" {
 		t.Errorf("Render(config) = %q, %v", out, err)
+	}
+	// The note declares CRLF.
+	out, err = d.Artifacts[1].Render(map[string]string{
+		"Persona.Company": "A", "Honeytokens.Link.URL": "https://t.example.net/x", "Persona.Domain": "corp.example.com",
+	})
+	if err != nil || string(out) != "A: https://t.example.net/x on corp.example.com\r\n" {
+		t.Errorf("Render(note) = %q, %v", out, err)
 	}
 	// Guides are Markdown.
 	out, err = d.Guide["en"].Render(map[string]string{"Honeytokens.Gateway.Host": "abc.d.example.net", "Persona.Company": "A<b>"})
@@ -203,6 +210,8 @@ func TestLoad_RejectsInvalidDeceptions(t *testing.T) {
 		"file name trailing dot":   {def(`"file_name": "Read me.txt"`, `"file_name": "Read me."`), "the file name"},
 		"file name in other case":  {def(`"file_name": "Read me.txt"`, `"file_name": "CONFIG"`), "the file name"},
 		"artifact format":          {def(`"format": "text"`, `"format": "yaml"`), "artifact note: unknown format"},
+		"line endings":             {def(`"line_endings": "crlf"`, `"line_endings": "cr"`), "the line endings \"cr\" are not lf or crlf"},
+		"line endings missing":     {def(`, "line_endings": "crlf"`, ``), "the line endings \"\" are not lf or crlf"},
 		"artifact template name":   {def(`"template": "note.txt.tmpl"`, `"template": "../note.txt.tmpl"`), "is not the name of a template"},
 		"artifact template":        {file("sample/note.txt.tmpl", "{{range .Persona.Company}}x{{end}}"), "only text, values"},
 		"free text in config":      {file("sample/config.tmpl", "Host {{.Persona.Company}}\n"), "free text"},
@@ -306,7 +315,7 @@ func manyArtifacts(fsys fstest.MapFS) {
 	var extra strings.Builder
 	for i := range maxArtifacts - 1 {
 		c := string(rune('a' + i))
-		extra.WriteString(`{"key": "extra-` + c + `", "file_name": "extra-` + c + `", "format": "text", "template": "extra-` + c + `.tmpl"},`)
+		extra.WriteString(`{"key": "extra-` + c + `", "file_name": "extra-` + c + `", "format": "text", "line_endings": "lf", "template": "extra-` + c + `.tmpl"},`)
 		fsys["sample/extra-"+c+".tmpl"] = &fstest.MapFile{Data: []byte("x")}
 	}
 	s := strings.Replace(string(fsys["sample/deception.json"].Data), `"artifacts": [`, `"artifacts": [`+extra.String(), 1)
