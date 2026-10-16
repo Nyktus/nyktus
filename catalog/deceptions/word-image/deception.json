@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "word-image",
+  "category": "data",
+  "title": {
+    "en": "Linked image in a Word document",
+    "de": "Verknüpftes Bild in einem Word-Dokument"
+  },
+  "summary": {
+    "en": "A document of your own that links an invisible image. Word loads the image when someone opens the document and enables editing, also on the computer of an intruder who copied it.",
+    "de": "Ein eigenes Dokument, das ein unsichtbares Bild verknüpft. Word lädt das Bild, wenn jemand das Dokument öffnet und die Bearbeitung aktiviert, auch auf dem Rechner eines Eindringlings, der es kopiert hat."
+  },
+  "techniques": ["T1005", "T1039"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Image",
+      "type": "web_image",
+      "label": {"en": "Image", "de": "Bild"},
+      "techniques": ["T1005", "T1039"]
+    }
+  ],
+  "persona": [],
+  "secrets": [],
+  "artifacts": [],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}
