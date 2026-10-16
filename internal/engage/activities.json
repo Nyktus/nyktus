@@ -1,0 +1,28 @@
+{
+"version": "1.0",
+"activities": [
+{"id":"EAC0001","name":"API Monitoring","approaches":["Collect"]},
+{"id":"EAC0002","name":"Network Monitoring","approaches":["Collect"]},
+{"id":"EAC0003","name":"System Activity Monitoring","approaches":["Collect"]},
+{"id":"EAC0004","name":"Network Analysis","approaches":["Detect"]},
+{"id":"EAC0005","name":"Lures","approaches":["Detect","Direct","Disrupt"]},
+{"id":"EAC0006","name":"Application Diversity","approaches":["Reassure","Motivate"]},
+{"id":"EAC0007","name":"Network Diversity","approaches":["Reassure","Motivate"]},
+{"id":"EAC0008","name":"Burn-In","approaches":["Reassure"]},
+{"id":"EAC0009","name":"Email Manipulation","approaches":["Direct","Reassure"]},
+{"id":"EAC0010","name":"Peripheral Management","approaches":["Direct","Reassure"]},
+{"id":"EAC0011","name":"Pocket Litter","approaches":["Reassure"]},
+{"id":"EAC0012","name":"Personas","approaches":["Motivate"]},
+{"id":"EAC0013","name":"Malware Detonation","approaches":["Detect","Direct","Motivate"]},
+{"id":"EAC0014","name":"Software Manipulation","approaches":["Collect","Direct","Disrupt"]},
+{"id":"EAC0015","name":"Information Manipulation","approaches":["Reassure","Motivate"]},
+{"id":"EAC0016","name":"Network Manipulation","approaches":["Prevent","Direct","Disrupt"]},
+{"id":"EAC0017","name":"Hardware Manipulation","approaches":["Prevent"]},
+{"id":"EAC0018","name":"Security Controls","approaches":["Prevent","Direct"]},
+{"id":"EAC0019","name":"Baseline","approaches":["Prevent"]},
+{"id":"EAC0020","name":"Isolation","approaches":["Prevent","Disrupt"]},
+{"id":"EAC0021","name":"Attack Vector Migration","approaches":["Direct"]},
+{"id":"EAC0022","name":"Artifact Diversity","approaches":["Reassure","Motivate"]},
+{"id":"EAC0023","name":"Introduced Vulnerabilities","approaches":["Detect","Direct","Motivate"]}
+]
+}

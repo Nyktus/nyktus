@@ -1,0 +1,7 @@
+{
+"version": "0.9",
+"activities": [
+{"id":"EAC0001","name":"First Activity","approaches":["Collect","Detect"]},
+{"id":"EAC0002","name":"Second Activity","approaches":["Detect"]}
+]
+}
