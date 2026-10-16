@@ -32,6 +32,7 @@ import (
 	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/platform/logging"
 	"nyktus.org/nyktus/internal/platform/migrate"
+	"nyktus.org/nyktus/internal/platform/ssrf"
 	"nyktus.org/nyktus/internal/trigger"
 	"nyktus.org/nyktus/internal/worker"
 	"nyktus.org/nyktus/migrations"
@@ -280,10 +281,14 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 			MaxAge:      cfg.Console.SessionMaxAge,
 			LocalLogin:  localLogin(cfg.Console.LocalLogin),
 		},
-		Keys:           cfg.EncryptionKeys,
-		ConsoleURL:     cfg.Console.URL,
-		TriggerURL:     cfg.Console.TriggerURL,
-		DNSZones:       cfg.Console.DNSZones,
+		Keys:       cfg.EncryptionKeys,
+		ConsoleURL: cfg.Console.URL,
+		TriggerURL: cfg.Console.TriggerURL,
+		DNSZones:   cfg.Console.DNSZones,
+		Outbound: ssrf.New(ssrf.Options{
+			AllowedNetworks: cfg.AlertingAllowedNetworks,
+			AllowHTTP:       cfg.Environment == config.Development,
+		}),
 		TrustedProxies: cfg.TrustedProxies,
 		OIDC:           provider,
 		OIDCGroups:     groups,

@@ -14,6 +14,8 @@ Requests without valid credentials are not recorded, so that anonymous clients c
 
 A sign-in through the identity provider is recorded once the provider has confirmed the user. The first one creates the account, recorded as `user.create` with the new account as the actor; a change of role or name that the provider reports is recorded as `user.update`, with the account as the actor, and so is the deactivation of a user who is in none of the configured groups. A rejected sign-in of an account is recorded as a failure of `session.create` with the account; one of a user without an account, for example without a matching group, as a failure without naming the user. The [log](logs.md) names the reason, the issuer and the subject. A sign-in that does not prove an identity, such as an expired or reused one, is only logged. A user of the provider who signs in there again to [confirm sensitive actions](sign-in.md#confirming-sensitive-actions) is recorded as `session.reauthenticate`, successful or not, with the account and the session.
 
+Creating and changing an [alert channel](alerting.md#audit) is confirmed with the password, like creating an API key; a failed confirmation is recorded as a failure of `alert_channel.create` or `alert_channel.update`.
+
 Reads of the audit log and of [events](incidents.md#personal-data), which contain personal data, and requests denied for a missing permission are recorded at most once per user or [API key](api-keys.md), action and minute, so that a signed-in user or a key cannot fill the audit log by repeating them. The access log records every one of them.
 
 ## Reading the audit log

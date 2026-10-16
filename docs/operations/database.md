@@ -20,6 +20,8 @@ The trigger and the DNS role are reached from the internet. Their roles cannot r
 
 The worker correlates events into [incidents](incidents.md). It needs no honeytoken to do so: every event holds the type and the techniques of its honeytoken. Its role can read events and assign them to incidents, open and update incidents and write their alerts, but cannot change what an event recorded, change the triage of an incident, change an alert once written, or delete anything other than the processing jobs of events.
 
+The console manages [alert channels](alerting.md) and writes their secrets, the URL and the value of a header, but its role cannot read them back: whoever takes over the console's login does not obtain the channels. The secrets are stored encrypted in a table of their own, `alert_channel_secrets`.
+
 Migrations grant privileges to the group roles but never create roles, so the owner does not need `CREATEROLE`. A migration that needs a group role that does not exist stops with an error that names the role.
 
 Role names are global to a PostgreSQL cluster. Run one Nyktus instance per cluster.

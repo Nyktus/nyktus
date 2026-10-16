@@ -521,3 +521,33 @@ func TestLoadServe_TriggerURL(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadServe_AlertingAllowedNetworks(t *testing.T) {
+	t.Parallel()
+
+	env := func(networks string) map[string]string {
+		return map[string]string{
+			"NYKTUS_ENV":                       "development",
+			"NYKTUS_CONSOLE_DATABASE_URL":      "postgres://console@db/nyktus",
+			"NYKTUS_TRIGGER_URL":               "https://t.example.com",
+			"NYKTUS_ENCRYPTION_KEYS":           testKeys,
+			"NYKTUS_ALERTING_ALLOWED_NETWORKS": networks,
+		}
+	}
+	cfg, err := LoadServe(fakeSource{env: env("10.20.0.0/16, fd00:1::/64")}.source(), []Role{RoleConsole})
+	if err != nil {
+		t.Fatalf("LoadServe() error = %v", err)
+	}
+	want := []netip.Prefix{netip.MustParsePrefix("10.20.0.0/16"), netip.MustParsePrefix("fd00:1::/64")}
+	if !slices.Equal(cfg.AlertingAllowedNetworks, want) {
+		t.Errorf("AlertingAllowedNetworks = %v, want %v", cfg.AlertingAllowedNetworks, want)
+	}
+	cfg, err = LoadServe(fakeSource{env: env("")}.source(), []Role{RoleConsole})
+	if err != nil || cfg.AlertingAllowedNetworks != nil {
+		t.Errorf("without the setting: %v, %v; want no networks", cfg.AlertingAllowedNetworks, err)
+	}
+	_, err = LoadServe(fakeSource{env: env("10.20.0.1/16")}.source(), []Role{RoleConsole})
+	if err == nil || !strings.Contains(err.Error(), "NYKTUS_ALERTING_ALLOWED_NETWORKS") {
+		t.Errorf("LoadServe() with host bits set error = %v", err)
+	}
+}

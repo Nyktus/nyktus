@@ -52,6 +52,8 @@ type Deps struct {
 	Incidents Incidents
 	// Events lists the events of the honeytokens.
 	Events Events
+	// AlertChannels manages the channels that alerts are delivered to.
+	AlertChannels AlertChannels
 	// Origin is the origin under which users reach the console, such as
 	// "https://nyktus.example.com". Requests that change state must come from it.
 	Origin string
@@ -104,6 +106,15 @@ func (h Events) complete() bool {
 	return h.List != nil && h.Get != nil
 }
 
+// AlertChannels are the handlers of the management of the alert channels.
+type AlertChannels struct {
+	List, Get, Create, Update, Delete http.Handler
+}
+
+func (c AlertChannels) complete() bool {
+	return c.List != nil && c.Get != nil && c.Create != nil && c.Update != nil && c.Delete != nil
+}
+
 // OIDC are the handlers of the sign-in through the identity provider: the
 // start, which sends the browser to the provider, the start of a
 // reauthentication, and the callback, to which the provider sends it back.
@@ -132,8 +143,8 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || !d.Accounts.complete() || !d.Honeytokens.complete() || !d.Incidents.complete() || !d.Events.complete() {
-		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, account, honeytoken, incident and event handlers")
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || !d.Accounts.complete() || !d.Honeytokens.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
+		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, account, honeytoken, incident, event and alert channel handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	// The session itself and how the account signs in are managed only with a
@@ -181,6 +192,17 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPatch, "/api/v1/incidents/{id}", httpx.Require("incidents:write"), d.Incidents.Update)
 	rt.Handle(http.MethodGet, "/api/v1/events", httpx.Require("events:read"), d.Events.List)
 	rt.Handle(http.MethodGet, "/api/v1/events/{id}", httpx.Require("events:read"), d.Events.Get)
+	// Keys never manage alert channels, so that a leaked key can neither
+	// redirect nor stop the alerts; changes that do are confirmed with the
+	// password of the administrator, which needs a session.
+	rt.Handle(http.MethodGet, "/api/v1/alert-channels", httpx.Require("alert_channels:read").SessionOnly(), d.AlertChannels.List)
+	rt.Handle(http.MethodPost, "/api/v1/alert-channels", httpx.Require("alert_channels:write").SessionOnly(),
+		httpx.Deadline(hashDeadline)(d.AlertChannels.Create))
+	rt.Handle(http.MethodGet, "/api/v1/alert-channels/{id}", httpx.Require("alert_channels:read").SessionOnly(), d.AlertChannels.Get)
+	rt.Handle(http.MethodPatch, "/api/v1/alert-channels/{id}", httpx.Require("alert_channels:write").SessionOnly(),
+		httpx.Deadline(hashDeadline)(d.AlertChannels.Update))
+	rt.Handle(http.MethodDelete, "/api/v1/alert-channels/{id}", httpx.Require("alert_channels:write").SessionOnly(),
+		d.AlertChannels.Delete)
 	return rt
 }
 

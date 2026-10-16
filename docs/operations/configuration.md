@@ -25,6 +25,7 @@ Settings of a server role are only read when the role runs. A process started wi
 |---|---|---|
 | `NYKTUS_TRUSTED_PROXIES` | empty | Comma-separated address ranges of your reverse proxies in CIDR notation, such as `10.0.0.0/8,2001:db8::/48`. A single address stands for itself. See [Client addresses](#client-addresses). |
 | `NYKTUS_ENCRYPTION_KEYS` | required with the role `console`, secret, also in development | Keys that encrypt secrets stored in the database. See [Encryption keys](#encryption-keys). |
+| `NYKTUS_ALERTING_ALLOWED_NETWORKS` | empty | Comma-separated internal networks in CIDR notation, such as `10.20.0.0/16`, that [alert channels](alerting.md#allowed-targets) may reach in addition to public addresses. Loopback, link-local and cloud metadata addresses stay blocked. Read by the console. |
 
 ### Role `console`
 
@@ -96,7 +97,7 @@ The admin commands, such as [`nyktus admin reset-password`](users.md#when-no-adm
 
 ## Encryption keys
 
-Secrets that Nyktus must read back, such as the secrets of second factors, are stored encrypted with AES-256-GCM. The keys never reach the database, so a copy of the database alone does not reveal the secrets. Keep a copy of the keys in your secret store: without them, the encrypted secrets are lost.
+Secrets that Nyktus must read back, such as the secrets of second factors and the URLs of [alert channels](alerting.md), are stored encrypted with AES-256-GCM. The keys never reach the database, so a copy of the database alone does not reveal the secrets. Keep a copy of the keys in your secret store: without them, the encrypted secrets are lost.
 
 `NYKTUS_ENCRYPTION_KEYS` holds a comma-separated list of keys, each written as `<id>:<key>`. The ID is a number from 1 to 255 that is stored with every encrypted value. The key is 32 random bytes in standard base64. Generate one with:
 

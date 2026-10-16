@@ -113,6 +113,22 @@ linters:
               desc: the worker and the trigger are separate roles that share nothing but the database
             - pkg: nyktus.org/nyktus/internal/dns
               desc: the worker and the DNS role are separate roles that share nothing but the database
+        # The domain of the alerting runs in the worker as well, which delivers
+        # the alerts: it holds no code of the console, reads no inventory and
+        # stays free of HTTP handlers. Its handlers live in alertingapi.
+        alerting:
+          list-mode: lax
+          files:
+            - "**/internal/alerting/*.go"
+          deny:
+            - pkg: nyktus.org/nyktus/internal/console
+              desc: the alerting runs in the worker, which holds no code of the console
+            - pkg: nyktus.org/nyktus/internal/auth
+              desc: the alerting runs in the worker, which holds no code of the console
+            - pkg: nyktus.org/nyktus/internal/platform/httpx
+              desc: the alerting runs in the worker, which answers no requests; handlers live in alertingapi
+            - pkg: nyktus.org/nyktus/internal/honeytoken
+              desc: alerts carry no inventory; the incident holds what an alert reports
         # Test-only dependencies must never reach the binaries.
         test-only:
           list-mode: lax

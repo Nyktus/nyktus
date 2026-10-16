@@ -8,9 +8,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"math"
 	"net/http"
-	"strconv"
 	"time"
 
 	"nyktus.org/nyktus/internal/auth/access"
@@ -22,15 +20,8 @@ import (
 // maxBodyBytes bounds a request to create a key.
 const maxBodyBytes = 8 << 10
 
-// Error codes of the creation of a key.
-const (
-	codeWrongPassword = "wrong_password"
-	// codeReauthenticationRequired asks an administrator of the identity
-	// provider, who has no password, to sign in there again.
-	codeReauthenticationRequired = "reauthentication_required"
-	codeAccountLocked            = "account_locked"
-	codeTooManyAPIKeys           = "too_many_api_keys" //nolint:gosec // An error code, not a credential.
-)
+// codeTooManyAPIKeys rejects a key beyond the limit.
+const codeTooManyAPIKeys = "too_many_api_keys" //nolint:gosec // An error code, not a credential.
 
 // Creator issues a key that an administrator confirms with their password.
 // *session.Service implements it.
@@ -113,22 +104,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	spec := apikey.Spec{Name: req.Name, Scopes: req.Scopes, ExpiresAt: req.ExpiresAt}
 	k, key, err := h.creator.CreateAPIKey(r.Context(), p, req.Password, spec)
-	var locked *session.LockedError
+	if session.WriteConfirmationError(w, r, err) {
+		return
+	}
 	switch {
-	case errors.Is(err, session.ErrWrongPassword):
-		httpx.WriteError(w, r, http.StatusForbidden, codeWrongPassword, "the password is wrong")
-		return
-	case errors.As(err, &locked):
-		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(locked.RetryAfter.Seconds()))))
-		httpx.WriteError(w, r, http.StatusForbidden, codeAccountLocked, "the account is locked after too many failed sign-ins; try again later")
-		return
-	case errors.Is(err, session.ErrNoSession):
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		httpx.WriteError(w, r, http.StatusUnauthorized, httpx.CodeUnauthenticated, "authentication required")
-		return
-	case errors.Is(err, session.ErrReauthenticationRequired):
-		writeReauthenticationRequired(w, r)
-		return
 	// The database checks the fields as well, in case its rules and those above
 	// ever differ.
 	case errors.Is(err, apikey.ErrInvalidExpiry):
@@ -181,9 +160,4 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func writeReauthenticationRequired(w http.ResponseWriter, r *http.Request) {
-	httpx.WriteError(w, r, http.StatusForbidden, codeReauthenticationRequired,
-		"sign in at the identity provider again through GET /api/v1/oidc/reauthenticate, then repeat the request within 5 minutes")
 }
