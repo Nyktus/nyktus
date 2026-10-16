@@ -17,7 +17,7 @@ This makes Nyktus a good fit for teams without a security operations center, and
 - **Honeypots**: a lightweight sensor that emulates network services inside your environment and reports every attacker session.
 - **Artifacts**: supporting content that makes a decoy environment believable without firing itself.
 - **Scenarios**: honeytokens, honeypots and artifacts grouped into one coherent story, such as a stolen finance backup.
-- **Deception catalog**: signed, versioned packages of ready-made blueprints for believable scenarios, from credential files and configuration snippets to documents and cloud credentials. The official catalog ships with Nyktus, and further packages can be imported in full or in part. Every blueprint is mapped to MITRE ATT&CK techniques, and the accompanying guides follow the MITRE Engage approach to planning deception.
+- **Deception catalog**: ready-made blueprints for believable scenarios, from credential files and configuration snippets to documents and cloud credentials. The catalog ships with Nyktus. Every blueprint is mapped to MITRE ATT&CK techniques, and the accompanying guides follow the MITRE Engage approach to planning deception.
 - **Incidents**: every interaction is recorded as an event. Events are grouped into one incident per scenario, or per honeytoken or honeypot that stands alone. You get one alert per incident, not one per request.
 - **Alerting**: delivery by email and webhook, plus integrations for common chat tools.
 
@@ -46,6 +46,6 @@ Please do not report vulnerabilities through public issues. See [SECURITY.md](SE
 
 ## License
 
-Nyktus is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). The deception catalog is published separately under CC BY-SA 4.0, with an additional permission that lets you use generated decoys without attribution. Third-party data that Nyktus ships, such as MITRE ATT&CK, is listed with its notices in [NOTICE](NOTICE).
+Nyktus is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). The deception catalog in `catalog/` is licensed under CC BY-SA 4.0, with an additional permission that lets you use generated decoys without attribution. Third-party data that Nyktus ships, such as MITRE ATT&CK, is listed with its notices in [NOTICE](NOTICE).
 
 MITRE, ATT&CK and MITRE Engage are trademarks of The MITRE Corporation. Nyktus is not affiliated with or endorsed by MITRE.

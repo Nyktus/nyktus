@@ -12,7 +12,7 @@ These rules apply to every change. The key words "must", "must not" and "should"
 | Console and API | Authenticated users, API keys | Strict authentication, least privilege, no information leaks across permission boundaries. |
 | Sensor | Attackers inside the monitored network | Emulate, never execute. Bounded resources. No real functionality. |
 | Inventory | Readers of the console, API and database | Treated as the most sensitive data in the system. Whoever reads it can avoid every decoy. |
-| Catalog packages | Maintainers, importing administrators | Only verified data is activated. A package can never execute code. |
+| Catalog | Contributors, maintainers | Only valid data is loaded. The catalog can never execute code. |
 | Alert path | Worker and outbound integrations | Survives a compromise of the monitored environment. Cannot be turned against internal systems. |
 
 The inventory comprises honeytokens, honeypots, artifacts, scenarios and their placement notes.
@@ -209,7 +209,7 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 
 ## Outbound requests
 
-Several features send requests to user-supplied URLs: webhooks, chat integrations and catalog imports. Every such request goes through the SSRF-guarded client. The identity provider and the SMTP server are configured by the operator and are the exceptions, see [Local login and OpenID Connect](#local-login-and-openid-connect) and [Mail](#mail).
+Several features send requests to user-supplied URLs: webhooks and chat integrations. Every such request goes through the SSRF-guarded client. The identity provider and the SMTP server are configured by the operator and are the exceptions, see [Local login and OpenID Connect](#local-login-and-openid-connect) and [Mail](#mail).
 
 The guard lives in `internal/platform/ssrf`.
 
@@ -256,16 +256,13 @@ Mail goes through one client, `internal/platform/smtp`; the linter rejects `net/
 - The server validates its configuration at startup and refuses to run with missing or weak secrets outside development.
 - Secrets never appear in logs, error messages, URLs (except trigger and health secrets, which are designed for it) or client-side state.
 
-## Catalog packages
+## Catalog
 
-The deception catalog is distributed as signed data packages. The official package is embedded at build time; administrators can import further packages.
+The deception catalog lives in `catalog/` and is embedded at build time. It is reviewed like code; there are no signatures and no import at runtime, because a signature over embedded data proves nothing that the review and the signature of the release binary do not.
 
-- A package is activated only after its Ed25519 signature has been verified against a trusted key. The official key ships with the binary.
-- Importing an unsigned package or one signed by an unknown key requires explicit administrator confirmation and is recorded in the audit log.
-- A package declares its schema version. Packages with an unsupported schema version are rejected as a whole.
-- Archives are extracted defensively: entry paths are validated against traversal, and total size, entry size and entry count are limited.
-- Every entry is validated before activation: schema, technique identifiers and a test render of every template. Activation is atomic; a package is either fully active or not at all.
-- Packages contain data and templates only. They never contain or load executable code, and the template engine exposes no functions that perform I/O.
+- Entries are JSON, decoded strictly, and declare their schema version. An unknown field or an unsupported schema version is an error.
+- Every entry is validated when the server starts and in tests: schema, technique and Engage identifiers against the bundled reference lists, and a test render of every template in every language. An invalid entry keeps the server from starting.
+- The catalog contains data and templates only. It never contains or loads executable code. The template engine allows only text, field references, conditions on fields and one escaping function per format, and exposes no function that performs I/O, so that rendering is bounded by the size of the template.
 
 ## Generated artifacts
 
@@ -346,6 +343,6 @@ Before requesting review, check every item that applies to your change:
 - [ ] SQL is parameterized. Constraint errors are mapped by SQLSTATE.
 - [ ] Security-relevant writes are audited without copying sensitive values.
 - [ ] Free text reaches generated artifacts only in inert formats. Artifacts carry no marker that identifies Nyktus.
-- [ ] Catalog data is verified and validated before it is activated.
+- [ ] Catalog entries are validated at startup and in tests, and templates use only the allowed constructs.
 - [ ] New dependencies are justified.
 - [ ] Tests cover the security property, not only the happy path.

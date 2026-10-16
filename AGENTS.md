@@ -23,7 +23,7 @@ Read these before changing code. They are binding:
 | Server | Go, PostgreSQL (no other infrastructure services) |
 | Sensor | Go, separate binary with a minimal dependency set |
 | Web console | Vue 3, TypeScript, Vite, embedded into the server binary |
-| Deception catalog | Signed data packages from a separate repository; the official package is embedded at build time |
+| Deception catalog | Data and templates in `catalog/`, embedded at build time |
 | Documentation | VitePress |
 
 One instance serves one organization. There is no multi-tenancy.
@@ -48,7 +48,7 @@ api/                OpenAPI specification of the console API
 cmd/nyktus/         server binary
 cmd/nyktus-sensor/  honeypot sensor for monitored networks
 internal/           application packages, organized by domain
-catalog/            pinned, signed release of the official catalog, embedded at build time
+catalog/            the deception catalog, embedded at build time
 migrations/         PostgreSQL migrations
 web/                web console
 deploy/             reference deployment configuration
@@ -70,7 +70,7 @@ Use these terms consistently in code, API and documentation:
 | Artifact | Content placed to make a scenario believable ("pocket litter"). An artifact never raises an event. |
 | Scenario | A group of honeytokens, honeypots and artifacts that together tell one believable story. A resource belongs to at most one scenario or stands alone. |
 | Deception | A blueprint in the catalog. Applying it creates a scenario with its resources. Deceptions are not runtime objects. |
-| Catalog | A versioned, signed package of deceptions, including technique mappings and guides. |
+| Catalog | The versioned collection of deceptions, including technique mappings and guides. |
 | Event | A single recorded interaction with a honeytoken or honeypot. |
 | Incident | Correlated events: one open incident per scenario, or per resource that has no scenario. Triage happens on incidents. |
 | Alert | The single notification sent when an incident opens. |
@@ -88,7 +88,7 @@ Never weaken these without an explicit decision by a maintainer:
 5. Secrets are shown once, masked afterwards, and never logged.
 6. Every request to a user-supplied URL goes through the SSRF-guarded client.
 7. SQL is parameterized.
-8. Catalog packages are verified before activation and never contain executable code.
+8. The catalog is validated before the server starts and never contains executable code.
 9. Executable artifact formats receive only server-generated or allowlisted values. Artifacts carry no marker that identifies Nyktus. Decoys only ever cause a passive callback.
 10. Nothing is loaded from external sources at runtime, and nothing phones home.
 
