@@ -40,7 +40,7 @@ Each of these properties needs its own test, named after the property:
 - Denied requests are rejected before the resource is loaded.
 - The console can add and read audit entries but never change or delete them.
 - Read-only roles and API keys without a write scope cannot write. A demoted user's keys lose the corresponding permissions.
-- Unsigned or tampered catalog packages are rejected without explicit confirmation. Archives with traversal paths or oversized entries are rejected.
+- An invalid catalog entry, such as an unknown technique, an unknown field or a template that does not render, keeps the server from starting. Templates cannot use constructs outside the allowed set.
 - The SSRF guard blocks every reserved address range.
 - The console can write the secrets of alert channels but never read them, and the secrets are stored encrypted and bound to their channel.
 - Every periodic task removes exactly what has expired, also at the boundary, and nothing that is still valid; its lower bounds hold in the database; two workers run it without errors and without running it twice; and no role other than the worker can execute its functions.
