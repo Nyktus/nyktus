@@ -9,7 +9,7 @@ Nyktus is a security product. We value correctness, clarity and security over fe
 - **Vulnerabilities** go through [SECURITY.md](SECURITY.md), never through public issues.
 - **Bugs and small fixes**: open an issue or a pull request directly.
 - **Features, new dependencies and architectural changes**: open an issue first and wait for a maintainer to agree on the approach. This saves you from work that cannot be merged.
-- **New or improved deceptions** belong in the catalog repository, not in this one.
+- **New or improved deceptions** go into `catalog/`. Its content is licensed under CC BY-SA 4.0, not under the license of the code.
 
 ## Guidelines
 
