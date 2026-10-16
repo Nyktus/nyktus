@@ -238,6 +238,7 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"DELETE FROM sessions",
 		"DELETE FROM oidc_logins",
 		"DELETE FROM audit_entries",
+		"SELECT * FROM public.read_metrics()",
 	}
 	for _, statement := range denied {
 		expectDenied(t, pool, statement)
