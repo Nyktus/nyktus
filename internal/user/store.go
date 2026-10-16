@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"nyktus.org/nyktus/internal/platform/db"
 )
@@ -23,12 +22,6 @@ var (
 	// ErrIdentityTaken means that another account has the same identity, which
 	// a concurrent first sign-in through the identity provider created.
 	ErrIdentityTaken = errors.New("identity is already in use")
-)
-
-// SQLSTATE codes mapped by the store.
-const (
-	uniqueViolation           = "23505"
-	invalidTextRepresentation = "22P02"
 )
 
 // Store persists users in PostgreSQL.
@@ -106,14 +99,11 @@ INSERT INTO users (email, display_name, role, status, password_hash, oidc_issuer
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING `+userColumns,
 		email, name, nu.Role, status, hash, issuer, subject))
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
-		switch pgErr.ConstraintName {
-		case "users_email_key":
-			return User{}, ErrEmailTaken
-		case "users_oidc_key":
-			return User{}, ErrIdentityTaken
-		}
+	switch db.Violation(err, db.UniqueViolation) {
+	case "users_email_key":
+		return User{}, ErrEmailTaken
+	case "users_oidc_key":
+		return User{}, ErrIdentityTaken
 	}
 	if err != nil {
 		return User{}, fmt.Errorf("create user: %w", err)
@@ -127,9 +117,7 @@ func (s *Store) Get(ctx context.Context, id string) (User, error) {
 SELECT `+userColumns+`
 FROM users
 WHERE id = $1`, id))
-	var pgErr *pgconn.PgError
-	// An ID that is not a UUID cannot belong to an account.
-	if errors.Is(err, pgx.ErrNoRows) || (errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation) {
+	if db.NotFound(err) {
 		return User{}, ErrNotFound
 	}
 	if err != nil {
@@ -252,8 +240,7 @@ SELECT status, role, coalesce(password_hash, ''), coalesce(greatest(extract(epoc
 FROM users
 WHERE id = $1
 FOR UPDATE`, id).Scan(&state.Status, &state.Role, &state.PasswordHash, &seconds)
-	var pgErr *pgconn.PgError
-	if errors.Is(err, pgx.ErrNoRows) || (errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation) {
+	if db.NotFound(err) {
 		return SignInState{}, ErrNotFound
 	}
 	if err != nil {

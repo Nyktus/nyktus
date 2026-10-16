@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
@@ -60,12 +59,6 @@ var (
 	// ErrTooManyKeys means that the installation has MaxKeys keys that have not
 	// expired.
 	ErrTooManyKeys = errors.New("too many API keys")
-)
-
-// SQLSTATE codes mapped by the store.
-const (
-	checkViolation            = "23514"
-	invalidTextRepresentation = "22P02"
 )
 
 // Key describes an API key without its secret.
@@ -185,16 +178,13 @@ func (s *Store) Create(ctx context.Context, createdBy string, spec Spec) (Key, s
 	k, err := scanKey(s.db.QueryRow(ctx, `
 INSERT INTO api_keys (created_by, name, secret_hash, scopes, expires_at) VALUES ($1, $2, $3, $4, $5)
 RETURNING `+keyColumns, createdBy, spec.Name, hashSecret(secret), scopes, spec.ExpiresAt))
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == checkViolation {
-		switch pgErr.ConstraintName {
-		case "api_keys_expires_at_check":
-			return Key{}, "", ErrInvalidExpiry
-		case "api_keys_name_check":
-			return Key{}, "", ErrInvalidName
-		case "api_keys_scopes_check":
-			return Key{}, "", ErrInvalidScopes
-		}
+	switch db.Violation(err, db.CheckViolation) {
+	case "api_keys_expires_at_check":
+		return Key{}, "", ErrInvalidExpiry
+	case "api_keys_name_check":
+		return Key{}, "", ErrInvalidName
+	case "api_keys_scopes_check":
+		return Key{}, "", ErrInvalidScopes
 	}
 	if err != nil {
 		return Key{}, "", fmt.Errorf("insert API key: %w", err)
@@ -226,9 +216,7 @@ ORDER BY created_at DESC, id DESC`)
 // Delete revokes the key id. It returns ErrNotFound if there is no such key.
 func (s *Store) Delete(ctx context.Context, id string) error {
 	tag, err := s.db.Exec(ctx, `DELETE FROM api_keys WHERE id = $1`, id)
-	var pgErr *pgconn.PgError
-	// An identifier that is not a UUID cannot belong to a key.
-	if errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation {
+	if db.NotFound(err) {
 		return ErrNotFound
 	}
 	if err != nil {
