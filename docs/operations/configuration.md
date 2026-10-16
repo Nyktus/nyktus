@@ -76,6 +76,7 @@ The worker correlates the events of honeytokens into [incidents](incidents.md) a
 | `NYKTUS_WORKER_DELIVERY_CONCURRENCY` | `4` | Alerts that the worker delivers at a time, between 1 and 32. A delivery holds a connection to the database only while it records an attempt, not while it waits for the receiver. The worker opens up to both values together of connections. |
 | `NYKTUS_CONSOLE_URL` | required; in development `http://127.0.0.1:8080` | The address of the console, as for the role `console`. Alerts link their incident under it. |
 | `NYKTUS_AUDIT_RETENTION_DAYS` | `365` | Days that the [audit log](audit-log.md#retention) keeps an entry, between 90 and 3650. |
+| `NYKTUS_INCIDENT_AUTO_CLOSE_DAYS` | `14` | Days without a new event after which the worker [closes an incident](incidents.md#closing-inactive-incidents), between 1 and 365, or `0` to close incidents only by triage. |
 | `NYKTUS_EVENT_RETENTION_DAYS` | `180` | Days that [events](incidents.md#retention) are kept after they were recorded, and closed incidents with their alerts and deliveries after they closed, between 30 and 3650. |
 
 ### Sign-in through an identity provider

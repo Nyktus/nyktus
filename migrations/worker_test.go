@@ -44,6 +44,7 @@ var workerGrants = []string{
 	"alerts.techniques: INSERT",
 	"alerts: SELECT",
 	"attack_technique_ids_valid(text[]): EXECUTE",
+	"close_inactive_incidents(integer,integer): EXECUTE",
 	"delete_expired_audit_entries(integer,integer): EXECUTE",
 	"delete_expired_incident_data(integer,integer): EXECUTE",
 	"delete_expired_sign_in_data(integer): EXECUTE",
@@ -173,6 +174,7 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT public.delete_expired_sign_in_data(1)",
 		"SELECT public.delete_expired_audit_entries(365, 1)",
 		"SELECT public.delete_expired_incident_data(180, 1)",
+		"SELECT public.close_inactive_incidents(14, 1)",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {

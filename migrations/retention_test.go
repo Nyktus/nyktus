@@ -307,7 +307,7 @@ func TestDeleteExpiredIncidentData_SkipsHeldIncidents(t *testing.T) {
 	}
 }
 
-// The functions find expired rows by seeking into an index, also with the
+// The functions find expired rows and quiet incidents by seeking into an index, also with the
 // generic plan that PostgreSQL may choose for the statements of a function
 // after a few calls, instead of reading every row that is still kept. The test
 // counts the entries that each index returned: a seek returns those beyond the
@@ -340,6 +340,14 @@ FROM generate_series(0, $2::int) AS i, LATERAL (SELECT clock_timestamp() - CASE 
 		t.Fatalf("insert incidents: %v", err)
 	}
 	if _, err := owner.Exec(t.Context(), `
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, opened_at)
+SELECT 'honeytoken', gen_random_uuid(), 'low', t, t, t
+FROM generate_series(0, $2::int) AS i,
+	LATERAL (SELECT clock_timestamp() - CASE WHEN i = 0 THEN $1::interval ELSE interval '0' END) AS c (t)`,
+		days(config.MaxAutoCloseDays)+margin, kept); err != nil {
+		t.Fatalf("insert open incidents: %v", err)
+	}
+	if _, err := owner.Exec(t.Context(), `
 INSERT INTO alert_deliveries (channel_id, channel_type, channel_name, status, attempts, last_attempt_at, delivered_at, created_at)
 SELECT gen_random_uuid(), 'webhook', 'c', 'delivered', 1, clock_timestamp(), clock_timestamp(),
 	clock_timestamp() - CASE WHEN i = 0 THEN $1::interval ELSE interval '0' END
@@ -356,6 +364,7 @@ FROM generate_series(0, $2::int) AS i`, beyond, kept); err != nil {
 	defer func() { _ = conn.Close(context.WithoutCancel(t.Context())) }()
 	indexes := []string{
 		"audit_entries_occurred_at_id_idx", "events_recorded_at_id_idx", "incidents_closed_at_idx", "alert_deliveries_test_created_at_idx",
+		"incidents_open_last_event_at_idx",
 	}
 	read := func() map[string]int64 {
 		t.Helper()
@@ -390,11 +399,12 @@ FROM generate_series(0, $2::int) AS i`, beyond, kept); err != nil {
 		}
 	}
 	before := read()
-	for _, call := range []string{
-		"SELECT public.delete_expired_audit_entries($1, 1000)",
-		"SELECT public.delete_expired_incident_data($1, 1000)",
+	for call, retention := range map[string]int{
+		"SELECT public.delete_expired_audit_entries($1, 1000)": config.MaxRetentionDays,
+		"SELECT public.delete_expired_incident_data($1, 1000)": config.MaxRetentionDays,
+		"SELECT public.close_inactive_incidents($1, 1000)":     config.MaxAutoCloseDays,
 	} {
-		if _, err := conn.Exec(t.Context(), call, config.MaxRetentionDays); err != nil {
+		if _, err := conn.Exec(t.Context(), call, retention); err != nil {
 			t.Fatalf("%s: %v", call, err)
 		}
 	}
