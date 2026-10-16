@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/platform/schematest"
 )
 
@@ -372,9 +373,24 @@ func TestSchema_AllowsChangesThatKeepAnActiveAdmin(t *testing.T) {
 	}
 }
 
+// The store checks the rule before the trigger does, so the trigger only fires
+// if the store ever misses a case. The mapping still turns its rejection into
+// ErrLastActiveAdmin, also when it is wrapped, and leaves other checks alone.
+func TestMapWriteError_MapsTheTriggerOfTheLastActiveAdmin(t *testing.T) {
+	t.Parallel()
+
+	err := fmt.Errorf("update: %w", &pgconn.PgError{Code: db.CheckViolation, ConstraintName: "users_active_admin_check"})
+	if got := mapWriteError(err); !errors.Is(got, ErrLastActiveAdmin) {
+		t.Errorf("mapWriteError(users_active_admin_check) = %v, want ErrLastActiveAdmin", got)
+	}
+	other := &pgconn.PgError{Code: db.CheckViolation, ConstraintName: "users_role_check"}
+	if got := mapWriteError(other); !errors.Is(got, other) {
+		t.Errorf("mapWriteError(other check) = %v, want it unchanged", got)
+	}
+}
+
 func isLastAdminViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == checkViolation && pgErr.ConstraintName == "users_active_admin_check"
+	return db.Violation(err, db.CheckViolation) == "users_active_admin_check"
 }
 
 // The store locks every active administrator before it decides, also when the

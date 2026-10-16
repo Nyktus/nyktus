@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/honeytoken"
@@ -139,12 +138,6 @@ func ValidateNotes(s string) error {
 	return nil
 }
 
-// SQLSTATE codes mapped by the triage.
-const (
-	checkViolation            = "23514"
-	invalidTextRepresentation = "22P02"
-)
-
 // constraintErrors maps the checks of the schema to the errors of the
 // validation, in case the rules of both ever differ.
 var constraintErrors = map[string]error{
@@ -156,20 +149,10 @@ var constraintErrors = map[string]error{
 }
 
 func mapWriteError(err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == checkViolation {
-		if mapped, ok := constraintErrors[pgErr.ConstraintName]; ok {
-			return mapped
-		}
+	if mapped, ok := constraintErrors[db.Violation(err, db.CheckViolation)]; ok {
+		return mapped
 	}
 	return err
-}
-
-// notFound reports whether err means that no incident has the identifier. An
-// identifier that is not a UUID cannot belong to one.
-func notFound(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.Is(err, pgx.ErrNoRows) || (errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation)
 }
 
 const incidentColumns = `id, resource_type, resource_id, status, severity, techniques, severity_override,
@@ -262,7 +245,7 @@ func ListIncidents(ctx context.Context, q db.Querier, f Filter, size int, after 
 // none.
 func GetIncident(ctx context.Context, q db.Querier, id string) (Incident, error) {
 	i, err := scanIncident(q.QueryRow(ctx, `SELECT `+incidentColumns+` FROM public.incidents WHERE id = $1`, id))
-	if notFound(err) {
+	if db.NotFound(err) {
 		return Incident{}, ErrNotFound
 	}
 	if err != nil {
@@ -291,7 +274,7 @@ func Triage(ctx context.Context, d DB, actor audit.Actor, id string, c Change) (
 		// NO KEY: the triage never changes the identifier, so the checks of
 		// the foreign keys that refer to it need not wait for it.
 		current, err := scanIncident(tx.QueryRow(ctx, `SELECT `+incidentColumns+` FROM public.incidents WHERE id = $1 FOR NO KEY UPDATE`, id))
-		if notFound(err) {
+		if db.NotFound(err) {
 			return ErrNotFound
 		}
 		if err != nil {

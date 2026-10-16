@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+
+	"nyktus.org/nyktus/internal/platform/db"
 )
 
 // Errors of the management of accounts.
@@ -32,8 +33,6 @@ var (
 	// identity provider: it has no password, and its role follows its groups.
 	ErrOIDCAccount = errors.New("the account signs in through the identity provider")
 )
-
-const checkViolation = "23514"
 
 // MaxPageSize is the largest page that List returns.
 const MaxPageSize = 200
@@ -250,8 +249,7 @@ UPDATE users SET
 	updated_at = clock_timestamp()
 WHERE id = $1 AND status = $4
 RETURNING `+userColumns, id, StatusActive, passwordHash, StatusPending))
-	var pgErr *pgconn.PgError
-	if errors.Is(err, pgx.ErrNoRows) || (errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation) {
+	if db.NotFound(err) {
 		return User{}, ErrNotFound
 	}
 	if err != nil {
@@ -279,8 +277,7 @@ UPDATE users SET
 	updated_at = clock_timestamp()
 WHERE id = $1 AND status = $3
 RETURNING `+userColumns, id, passwordHash, StatusActive))
-	var pgErr *pgconn.PgError
-	if errors.Is(err, pgx.ErrNoRows) || (errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation) {
+	if db.NotFound(err) {
 		return User{}, ErrNotFound
 	}
 	if err != nil {
@@ -317,9 +314,7 @@ FOR UPDATE`, RoleAdmin, StatusActive)
 // returns ErrNotFound if the account does not exist.
 func (s *Store) Lock(ctx context.Context, id string) (User, error) {
 	u, err := scan(s.db.QueryRow(ctx, `SELECT `+userColumns+` FROM users WHERE id = $1 FOR UPDATE`, id))
-	var pgErr *pgconn.PgError
-	// An ID that is not a UUID cannot belong to an account.
-	if errors.Is(err, pgx.ErrNoRows) || (errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation) {
+	if db.NotFound(err) {
 		return User{}, ErrNotFound
 	}
 	if err != nil {
@@ -342,8 +337,7 @@ func onlyAdmin(admins []string, id string) bool {
 // administrator. The store checks the rule itself, so the trigger fires only if
 // the store missed a case.
 func mapWriteError(err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == checkViolation && pgErr.ConstraintName == "users_active_admin_check" {
+	if db.Violation(err, db.CheckViolation) == "users_active_admin_check" {
 		return ErrLastActiveAdmin
 	}
 	return err

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/platform/db"
@@ -27,12 +26,6 @@ var (
 // MaxPageSize is the largest page that List returns.
 const MaxPageSize = 200
 
-// SQLSTATE codes mapped by the store.
-const (
-	checkViolation            = "23514"
-	invalidTextRepresentation = "22P02"
-)
-
 // constraintErrors maps the checks of the schema to the errors of the
 // validation, in case the rules of both ever differ.
 var constraintErrors = map[string]error{
@@ -44,11 +37,8 @@ var constraintErrors = map[string]error{
 }
 
 func mapWriteError(err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == checkViolation {
-		if mapped, ok := constraintErrors[pgErr.ConstraintName]; ok {
-			return mapped
-		}
+	if mapped, ok := constraintErrors[db.Violation(err, db.CheckViolation)]; ok {
+		return mapped
 	}
 	return err
 }
@@ -76,13 +66,6 @@ func scan(row pgx.Row) (Honeytoken, error) {
 	return h, err
 }
 
-// notFound reports whether err means that no honeytoken has the identifier. An
-// identifier that is not a UUID cannot belong to one.
-func notFound(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.Is(err, pgx.ErrNoRows) || (errors.As(err, &pgErr) && pgErr.Code == invalidTextRepresentation)
-}
-
 // Create validates spec and stores a new honeytoken with a new trigger value.
 // The fields are validated before the insert, although the schema checks the
 // same rules, so that the stored techniques exist in the bundled version of
@@ -108,7 +91,7 @@ RETURNING `+columns, spec.Type, spec.Name, spec.Notes, spec.Enabled, spec.Redire
 // Get returns the honeytoken id. It returns ErrNotFound if there is none.
 func (s *Store) Get(ctx context.Context, id string) (Honeytoken, error) {
 	h, err := scan(s.db.QueryRow(ctx, `SELECT `+columns+` FROM honeytokens WHERE id = $1`, id))
-	if notFound(err) {
+	if db.NotFound(err) {
 		return Honeytoken{}, ErrNotFound
 	}
 	if err != nil {
@@ -200,7 +183,7 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (Honeytoken, []
 		return Honeytoken{}, nil, err
 	}
 	current, err := scan(s.db.QueryRow(ctx, `SELECT `+columns+` FROM honeytokens WHERE id = $1 FOR UPDATE`, id))
-	if notFound(err) {
+	if db.NotFound(err) {
 		return Honeytoken{}, nil, ErrNotFound
 	}
 	if err != nil {
@@ -266,7 +249,7 @@ RETURNING `+columns, id, updated.Name, updated.Notes, updated.Enabled, updated.R
 // Delete deletes the honeytoken id. It returns ErrNotFound if there is none.
 func (s *Store) Delete(ctx context.Context, id string) error {
 	tag, err := s.db.Exec(ctx, `DELETE FROM honeytokens WHERE id = $1`, id)
-	if notFound(err) {
+	if db.NotFound(err) {
 		return ErrNotFound
 	}
 	if err != nil {
