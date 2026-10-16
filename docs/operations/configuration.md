@@ -91,9 +91,8 @@ The worker correlates the events of honeytokens into [incidents](incidents.md) a
 | `NYKTUS_SMTP_USERNAME` | empty | User with which the worker authenticates, with `AUTH PLAIN` or, where the server offers only that, `AUTH LOGIN`. Leave it empty for a relay that admits the worker without authentication. |
 | `NYKTUS_SMTP_PASSWORD` | required with the username, secret | Password of the user. |
 | `NYKTUS_SMTP_FROM` | required with the host | Address that the mail is sent from, such as `nyktus@example.com`, without display name. Its domain also completes the `Message-ID` of every mail. |
-| `NYKTUS_SMTP_HELO_NAME` | name of the host | Name with which the worker greets the server. Set it if the server expects a fully qualified name that the host does not have. |
 
-The worker verifies the certificate of the server against the roots of the system, with TLS 1.2 or later; there is no setting to turn the check off. For a server with a certificate of a private authority, add the authority with the variables `SSL_CERT_FILE` or `SSL_CERT_DIR` of Go. The server is chosen by the operator and is often internal, so the worker reaches it without the checks of [allowed targets](alerting.md#allowed-targets) and `NYKTUS_ALERTING_ALLOWED_NETWORKS`, and ignores `HTTP_PROXY` and `HTTPS_PROXY`.
+The worker greets the server with the name of its host. It verifies the certificate of the server against the roots of the system, with TLS 1.2 or later; there is no setting to turn the check off. For a server with a certificate of a private authority, add the authority with the variables `SSL_CERT_FILE` or `SSL_CERT_DIR` of Go. The server is chosen by the operator and is often internal, so the worker reaches it without the checks of [allowed targets](alerting.md#allowed-targets) and `NYKTUS_ALERTING_ALLOWED_NETWORKS`, and ignores `HTTP_PROXY` and `HTTPS_PROXY`.
 
 ### Sign-in through an identity provider
 

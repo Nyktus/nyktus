@@ -217,15 +217,12 @@ type SMTP struct {
 	Password Secret
 	// From is the address that mail is sent from.
 	From string
-	// HeloName is the name with which the worker greets the server, or empty
-	// for the name of the host.
-	HeloName string
 }
 
 // smtpVariables are the settings of the SMTP server other than the host,
 // which enables it.
 var smtpVariables = []string{
-	"SMTP_PORT", "SMTP_TLS", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_PASSWORD_FILE", "SMTP_FROM", "SMTP_HELO_NAME",
+	"SMTP_PORT", "SMTP_TLS", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_PASSWORD_FILE", "SMTP_FROM",
 }
 
 // Limits of the retention, in days. Audit entries prove what happened long
@@ -443,10 +440,7 @@ func (r *reader) smtp(env Environment) *SMTP {
 		}
 		return nil
 	}
-	c := &SMTP{
-		Host: host, TLS: smtp.TLSStartTLS, Username: r.get("SMTP_USERNAME"), From: r.get("SMTP_FROM"),
-		HeloName: r.get("SMTP_HELO_NAME"),
-	}
+	c := &SMTP{Host: host, TLS: smtp.TLSStartTLS, Username: r.get("SMTP_USERNAME"), From: r.get("SMTP_FROM")}
 	if !validHost(host) {
 		r.fail("%sSMTP_HOST: %q is not a host name or an IP address", prefix, host)
 	}
@@ -466,9 +460,6 @@ func (r *reader) smtp(env Environment) *SMTP {
 		r.fail("%sSMTP_FROM is required with %sSMTP_HOST", prefix, prefix)
 	case smtp.ValidateAddress(c.From) != nil:
 		r.fail("%sSMTP_FROM: %q is not an address of the form local@domain in ASCII, without display name", prefix, c.From)
-	}
-	if c.HeloName != "" && !validHost(c.HeloName) {
-		r.fail("%sSMTP_HELO_NAME: %q is not a host name", prefix, c.HeloName)
 	}
 	hasPassword := r.get("SMTP_PASSWORD") != "" || r.get("SMTP_PASSWORD_FILE") != ""
 	switch {

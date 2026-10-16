@@ -42,7 +42,6 @@ func TestLoadServe_SMTP(t *testing.T) {
 	env["NYKTUS_SMTP_PASSWORD_FILE"] = "/run/secrets/smtp"
 	env["NYKTUS_SMTP_TLS"] = "tls"
 	env["NYKTUS_SMTP_PORT"] = "2465"
-	env["NYKTUS_SMTP_HELO_NAME"] = "worker.example.com"
 	src := fakeSource{env: env, files: map[string]string{"/run/secrets/smtp": "from-file\n"}}
 	cfg, err = LoadServe(src.source(), []Role{RoleWorker})
 	if err != nil {
@@ -50,7 +49,7 @@ func TestLoadServe_SMTP(t *testing.T) {
 	}
 	want = SMTP{
 		Host: "mail.example.com", Port: 2465, TLS: smtp.TLSImplicit, Username: "nyktus", Password: "from-file",
-		From: "nyktus@example.com", HeloName: "worker.example.com",
+		From: "nyktus@example.com",
 	}
 	if *cfg.Worker.SMTP != want {
 		t.Errorf("SMTP = %+v, want %+v", *cfg.Worker.SMTP, want)
@@ -113,9 +112,6 @@ func TestLoadServe_SMTPRejections(t *testing.T) {
 		{"sender with line break", func(env map[string]string) {
 			env["NYKTUS_SMTP_FROM"] = "nyktus@example.com\r\nBcc: x@example.net"
 		}, "NYKTUS_SMTP_FROM"},
-		{"greeting with line break", func(env map[string]string) {
-			env["NYKTUS_SMTP_HELO_NAME"] = "worker\r\nRCPT TO:<x@example.net>"
-		}, "NYKTUS_SMTP_HELO_NAME"},
 		{"username without password", func(env map[string]string) { delete(env, "NYKTUS_SMTP_PASSWORD") }, "NYKTUS_SMTP_PASSWORD"},
 		{"password without username", func(env map[string]string) { delete(env, "NYKTUS_SMTP_USERNAME") }, "NYKTUS_SMTP_USERNAME"},
 		{"settings without host", func(env map[string]string) { delete(env, "NYKTUS_SMTP_HOST") }, "NYKTUS_SMTP_HOST is not"},

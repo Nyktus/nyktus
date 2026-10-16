@@ -541,18 +541,15 @@ func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, sta
 }
 
 // mailClient returns the client of the SMTP server c, or nil if none is
-// configured. Without a configured name, it greets the server with the name
-// of the host.
+// configured. It greets the server with the name of the host, or with
+// "localhost", as net/smtp does, if the host has none.
 func mailClient(c *config.SMTP) *smtp.Client {
 	if c == nil {
 		return nil
 	}
-	helo := c.HeloName
-	if helo == "" {
-		var err error
-		if helo, err = os.Hostname(); err != nil || helo == "" {
-			helo = "localhost"
-		}
+	helo, err := os.Hostname()
+	if err != nil || helo == "" {
+		helo = "localhost"
 	}
 	return smtp.New(smtp.Options{
 		Host: c.Host, Port: c.Port, TLS: c.TLS, Username: c.Username, Password: c.Password.Value(), From: c.From,

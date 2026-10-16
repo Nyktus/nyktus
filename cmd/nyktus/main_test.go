@@ -434,8 +434,8 @@ func TestMailClient(t *testing.T) {
 	if mailClient(nil) != nil {
 		t.Error("mailClient(nil) is not nil")
 	}
-	// Without a name to greet with, the client greets with the name of the
-	// host; New panics on an empty one.
+	// The client greets with the name of the host; New panics on an empty
+	// one.
 	if mailClient(&config.SMTP{Host: "mail.example.com", TLS: smtp.TLSStartTLS, From: "nyktus@example.com"}) == nil {
 		t.Error("mailClient returned no client")
 	}
