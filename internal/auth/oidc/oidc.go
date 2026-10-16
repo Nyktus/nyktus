@@ -160,10 +160,7 @@ func (s *Service) begin(ctx context.Context, l login, opts ...oauth2.AuthCodeOpt
 			return "", "", err
 		}
 	}
-	// Sign-ins that were abandoned are removed when the next one starts.
-	if _, err := s.db.Exec(ctx, `DELETE FROM oidc_logins WHERE expires_at <= clock_timestamp()`); err != nil {
-		return "", "", fmt.Errorf("delete expired sign-ins: %w", err)
-	}
+	// The worker removes sign-ins that were abandoned.
 	_, err = s.db.Exec(ctx, `
 INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, purpose, previous_session_hash, session_id, return_to)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,

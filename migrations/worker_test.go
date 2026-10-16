@@ -44,6 +44,7 @@ var workerGrants = []string{
 	"alerts.techniques: INSERT",
 	"alerts: SELECT",
 	"attack_technique_ids_valid(text[]): EXECUTE",
+	"delete_expired_sign_in_data(integer): EXECUTE",
 	"event_jobs.attempts: UPDATE",
 	"event_jobs.not_before: UPDATE",
 	"event_jobs: DELETE",
@@ -62,6 +63,12 @@ var workerGrants = []string{
 	"incidents.techniques: INSERT",
 	"incidents.techniques: UPDATE",
 	"incidents: SELECT",
+	"periodic_tasks.last_failed_at: UPDATE",
+	"periodic_tasks.last_rows: UPDATE",
+	"periodic_tasks.last_started_at: UPDATE",
+	"periodic_tasks.last_succeeded_at: UPDATE",
+	"periodic_tasks.next_run_at: UPDATE",
+	"periodic_tasks: SELECT",
 	"schema public: USAGE",
 }
 
@@ -159,6 +166,9 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE alert_deliveries SET status = 'dead', attempts = 1, not_before = clock_timestamp(), last_attempt_at = clock_timestamp(), last_status_code = 500, last_error = 'http_status', last_duration_ms = 1, delivered_at = NULL",
 		"SELECT count(*) FROM alert_deliveries",
 		"DELETE FROM event_jobs",
+		"SELECT count(*) FROM periodic_tasks",
+		"UPDATE periodic_tasks SET next_run_at = clock_timestamp(), last_started_at = clock_timestamp(), last_succeeded_at = clock_timestamp(), last_failed_at = clock_timestamp(), last_rows = 0",
+		"SELECT public.delete_expired_sign_in_data(1)",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -213,6 +223,14 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT public.audit_field_names_valid('{name}')",
 		"SELECT public.set_updated_at()",
 		"SELECT public.incidents_change_status()",
+		"INSERT INTO periodic_tasks (name) VALUES ('delete_expired_sign_in_data')",
+		"UPDATE periodic_tasks SET name = name",
+		"DELETE FROM periodic_tasks",
+		"TRUNCATE periodic_tasks",
+		"SELECT count(*) FROM sign_in_challenges",
+		"SELECT count(*) FROM oidc_logins",
+		"DELETE FROM sessions",
+		"DELETE FROM oidc_logins",
 	}
 	for _, statement := range denied {
 		expectDenied(t, pool, statement)

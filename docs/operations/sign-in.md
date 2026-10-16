@@ -55,6 +55,7 @@ With a provider, only administrators sign in with a password by default (`NYKTUS
 - A session ends after a period without requests (`NYKTUS_SESSION_IDLE_TIMEOUT`, default one hour) and at the latest after its maximum age (`NYKTUS_SESSION_MAX_AGE`, default 12 hours), and when the user signs out. See [Configuration](configuration.md).
 - The cookie `__Host-nyktus_session` is `Secure`, `HttpOnly` and `SameSite=Strict`. The console must therefore be reached over HTTPS. Browsers also accept the cookie on `http://localhost` and `http://127.0.0.1` during development.
 - The database stores only a hash of the session token. Signing in again ends the session that the browser held before.
+- The [worker](database.md#periodic-tasks) removes expired sessions from the database.
 - Changing or resetting the password, enabling or removing the second factor, deactivating the account or changing its role ends its sessions. See [Managing accounts](users.md).
 - Integrations use [API keys](api-keys.md) instead of sessions.
 
@@ -62,7 +63,7 @@ With a provider, only administrators sign in with a password by default (`NYKTUS
 
 - `NYKTUS_CONSOLE_URL` must be exactly the address that users open in the browser, including the port if it is not the default. Requests that change state, such as a sign-in, are rejected with `403` if the browser reports another origin. This protects sessions against requests from other sites, including pages on other subdomains of your domain.
 - Pass the `Origin` header to the console unchanged.
-- Rate-limit the sign-in endpoints `POST /api/v1/session`, `POST /api/v1/session/second-factor`, `GET /api/v1/oidc/authorize` and `GET /api/v1/oidc/callback` and the endpoints `POST /api/v1/activation` and `POST /api/v1/password-reset` at the proxy, per client address. Each request to `GET /api/v1/oidc/authorize` stores a sign-in for ten minutes.
+- Rate-limit the sign-in endpoints `POST /api/v1/session`, `POST /api/v1/session/second-factor`, `GET /api/v1/oidc/authorize` and `GET /api/v1/oidc/callback` and the endpoints `POST /api/v1/activation` and `POST /api/v1/password-reset` at the proxy, per client address. Each request to `GET /api/v1/oidc/authorize` stores a sign-in for ten minutes, which the [worker](database.md#periodic-tasks) removes within five minutes after it expires.
 
 ## Changing the password
 
