@@ -280,7 +280,7 @@ Honeytokens, scenarios and artifacts produce files and snippets that operators p
 
 ## Output encoding
 
-- Email uses `html/template`. Values that end up in mail headers have `\r` and `\n` removed.
+- Mail is plain text in printable ASCII, see [Mail](#mail). A value with a line break or another control character is rejected before it reaches a header or the body, never silently stripped: a stripped value could still change what the header says.
 - CSV exports neutralize formula injection: every field starting with `=`, `+`, `-`, `@`, tab or carriage return is prefixed with `'`.
 - Attacker-controlled values, such as user agents or captured credentials, are always treated as untrusted data in every output: console, email, chat messages, exports and logs.
 
