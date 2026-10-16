@@ -200,6 +200,13 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM events",
 		"SELECT count(*) FROM incidents",
 		"UPDATE incidents SET status = status, notes = notes, severity_override = NULL, techniques_override = NULL",
+		"INSERT INTO alert_channels (name, type, enabled, target, header_name) VALUES ('c', 'webhook', true, 'https://h.example.com', 'X-Token')",
+		"INSERT INTO alert_channel_secrets (channel_id, url, header_value) SELECT id, decode(repeat('01', 40), 'hex'), decode(repeat('01', 40), 'hex') FROM alert_channels",
+		"UPDATE alert_channel_secrets SET url = decode(repeat('02', 40), 'hex'), header_value = NULL WHERE channel_id = channel_id",
+		"UPDATE alert_channels SET name = 'd', enabled = false, target = 'https://i.example.com', header_name = NULL, updated_at = clock_timestamp()",
+		"SELECT count(*) FROM alert_channels",
+		"SELECT channel_id FROM alert_channel_secrets",
+		"DELETE FROM alert_channels",
 	}
 	for _, statement := range allowed {
 		if _, err := pool.Exec(t.Context(), statement); err != nil {
@@ -299,6 +306,18 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM alerts",
 		"INSERT INTO alerts (incident_id, severity) VALUES (gen_random_uuid(), 'low')",
 		"SELECT public.incidents_change_status()",
+		"SELECT url FROM alert_channel_secrets",
+		"SELECT header_value FROM alert_channel_secrets",
+		"UPDATE alert_channel_secrets SET channel_id = channel_id",
+		"DELETE FROM alert_channel_secrets",
+		"TRUNCATE alert_channel_secrets",
+		"INSERT INTO alert_channels (id, name, type, target) VALUES (gen_random_uuid(), 'e', 'slack', 'https://h.example.com')",
+		"INSERT INTO alert_channels (name, type, target, created_at) VALUES ('f', 'slack', 'https://h.example.com', now())",
+		"INSERT INTO alert_channels (name, type, target, updated_at) VALUES ('g', 'slack', 'https://h.example.com', now())",
+		"UPDATE alert_channels SET type = 'slack'",
+		"UPDATE alert_channels SET id = gen_random_uuid()",
+		"UPDATE alert_channels SET created_at = now()",
+		"TRUNCATE alert_channels",
 	}
 	for _, statement := range denied {
 		_, err := pool.Exec(t.Context(), statement)

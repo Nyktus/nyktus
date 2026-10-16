@@ -90,12 +90,13 @@ func TestPrincipal_AllowedForAPIKeyFollowsItsScopes(t *testing.T) {
 	}
 }
 
-// Keys never manage accounts or keys.
-func TestKeyScopes_ExcludeAccountsAndKeys(t *testing.T) {
+// Keys never manage accounts, keys or alert channels.
+func TestKeyScopes_ExcludeAccountsKeysAndAlertChannels(t *testing.T) {
 	t.Parallel()
 
 	for _, s := range KeyScopes() {
-		if strings.HasPrefix(string(s), "users:") || strings.HasPrefix(string(s), "api_keys:") {
+		if strings.HasPrefix(string(s), "users:") || strings.HasPrefix(string(s), "api_keys:") ||
+			strings.HasPrefix(string(s), "alert_channels:") {
 			t.Errorf("API keys may carry %s", s)
 		}
 	}
@@ -240,5 +241,19 @@ func TestKeyScopeRequires_NamesScopesKeysMayCarry(t *testing.T) {
 	}
 	if got, ok := KeyScopeRequires("honeytokens:write"); !ok || got != "honeytokens:read" {
 		t.Errorf("KeyScopeRequires(honeytokens:write) = %s, %v", got, ok)
+	}
+}
+
+// Only administrators manage alert channels: whoever changes them decides where
+// alerts go, or whether they go anywhere.
+func TestAlertChannels_ManagedByAdminsOnly(t *testing.T) {
+	t.Parallel()
+
+	for _, role := range []user.Role{user.RoleAdmin, user.RoleUser, user.RoleViewer, ""} {
+		for _, perm := range []httpx.Permission{"alert_channels:read", "alert_channels:write"} {
+			if got, want := Allowed(role, perm), role == user.RoleAdmin; got != want {
+				t.Errorf("Allowed(%q, %s) = %v, want %v", role, perm, got, want)
+			}
+		}
 	}
 }

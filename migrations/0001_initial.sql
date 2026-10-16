@@ -1505,6 +1505,141 @@ BEGIN
 END
 $$;
 
+-- An alert channel is a target that every alert is delivered to. Its URL and
+-- the value of its header are secrets: a chat webhook accepts messages from
+-- whoever knows its URL, and a header authenticates at the receiver. They are
+-- kept apart in alert_channel_secrets, which the console can write but not
+-- read; the channel shows only the scheme, host and port of its URL.
+CREATE TABLE public.alert_channels (
+	id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	name        text NOT NULL,
+	-- The type chooses the format of the request body. It cannot change,
+	-- because the URL of one type is no URL of another.
+	type        text NOT NULL,
+	enabled     boolean NOT NULL DEFAULT true,
+	-- The scheme, host and port of the URL, shown instead of it.
+	target      text NOT NULL,
+	-- The name of a header that a webhook sends, whose value is a secret.
+	header_name text,
+	created_at  timestamptz NOT NULL DEFAULT clock_timestamp(),
+	-- Set by the trigger below on insert, as for accounts.
+	updated_at  timestamptz NOT NULL,
+
+	CONSTRAINT alert_channels_name_key UNIQUE (name),
+	CONSTRAINT alert_channels_name_check CHECK (
+		char_length(name) BETWEEN 1 AND 64
+		AND name = btrim(name)
+		AND name !~ '[\x01-\x1f\x7f]'
+	),
+	CONSTRAINT alert_channels_type_check CHECK (type IN ('webhook', 'slack', 'teams')),
+	CONSTRAINT alert_channels_target_check CHECK (
+		octet_length(target) <= 300 AND target ~ '^https?://[\x21-\x2e\x30-\x3e\x41-\x7e]+$'
+	),
+	-- A token of RFC 9110, other than the headers that the client sets
+	-- itself or that change how the request is transferred.
+	CONSTRAINT alert_channels_header_name_check CHECK (
+		header_name IS NULL OR (
+			type = 'webhook'
+			AND header_name ~ '^[!#$%&''*+.^_`|~0-9A-Za-z-]{1,64}$'
+			AND lower(header_name) NOT IN ('host', 'content-length', 'content-type', 'content-encoding',
+				'transfer-encoding', 'connection', 'keep-alive', 'te', 'trailer', 'upgrade', 'expect')
+			AND lower(header_name) NOT LIKE 'proxy-%'
+		)
+	),
+	CONSTRAINT alert_channels_updated_at_check CHECK (updated_at >= created_at)
+);
+
+CREATE TRIGGER alert_channels_set_updated_at
+	BEFORE INSERT ON public.alert_channels
+	FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- The secrets of a channel, encrypted with AES-256-GCM: a key identifier, a
+-- nonce and the sealed value, bound to the channel and the purpose.
+CREATE TABLE public.alert_channel_secrets (
+	channel_id   uuid PRIMARY KEY REFERENCES public.alert_channels (id) ON DELETE CASCADE,
+	url          bytea NOT NULL,
+	header_value bytea,
+
+	CONSTRAINT alert_channel_secrets_url_check CHECK (octet_length(url) BETWEEN 30 AND 4096),
+	CONSTRAINT alert_channel_secrets_header_value_check CHECK (octet_length(header_value) BETWEEN 30 AND 2048)
+);
+
+REVOKE ALL ON public.alert_channels, public.alert_channel_secrets FROM PUBLIC, nyktus_console;
+
+-- The console manages the channels and writes their secrets, but never reads
+-- them: it needs the identifier of a secret only to replace it. Identifiers
+-- and creation times come from the database, and the type of a channel never
+-- changes. The secrets of a deleted channel go with it.
+GRANT SELECT, DELETE ON public.alert_channels TO nyktus_console;
+GRANT INSERT (name, type, enabled, target, header_name) ON public.alert_channels TO nyktus_console;
+GRANT UPDATE (name, enabled, target, header_name, updated_at) ON public.alert_channels TO nyktus_console;
+GRANT SELECT (channel_id) ON public.alert_channel_secrets TO nyktus_console;
+GRANT INSERT (channel_id, url, header_value) ON public.alert_channel_secrets TO nyktus_console;
+GRANT UPDATE (url, header_value) ON public.alert_channel_secrets TO nyktus_console;
+
+-- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
+-- result is verified instead of assumed, in both directions: every privilege on
+-- these tables and their columns is compared with the grants above. A console
+-- that could read the secrets would hand out every channel to whoever
+-- compromises it.
+DO $$
+DECLARE
+	missing text;
+	extra text;
+BEGIN
+	WITH granted (relname, attname, privilege) AS (
+		-- A NULL column stands for the whole table.
+		VALUES
+			('alert_channels', NULL, 'SELECT'), ('alert_channels', NULL, 'DELETE'),
+			('alert_channels', 'name', 'INSERT'), ('alert_channels', 'type', 'INSERT'),
+			('alert_channels', 'enabled', 'INSERT'), ('alert_channels', 'target', 'INSERT'),
+			('alert_channels', 'header_name', 'INSERT'),
+			('alert_channels', 'name', 'UPDATE'), ('alert_channels', 'enabled', 'UPDATE'),
+			('alert_channels', 'target', 'UPDATE'), ('alert_channels', 'header_name', 'UPDATE'),
+			('alert_channels', 'updated_at', 'UPDATE'),
+			('alert_channel_secrets', 'channel_id', 'SELECT'),
+			('alert_channel_secrets', 'channel_id', 'INSERT'), ('alert_channel_secrets', 'url', 'INSERT'),
+			('alert_channel_secrets', 'header_value', 'INSERT'),
+			('alert_channel_secrets', 'url', 'UPDATE'), ('alert_channel_secrets', 'header_value', 'UPDATE')
+	),
+	tables AS (
+		SELECT c.oid, c.relname FROM pg_catalog.pg_class AS c
+		WHERE c.oid IN ('public.alert_channels'::regclass, 'public.alert_channel_secrets'::regclass)
+	),
+	privileges (object, privilege, held, wanted) AS (
+		SELECT t.relname::text, p.privilege,
+			has_table_privilege('nyktus_console', t.oid, p.privilege),
+			EXISTS (
+				SELECT FROM granted AS g
+				WHERE g.relname = t.relname AND g.attname IS NULL AND g.privilege = p.privilege
+			)
+		FROM tables AS t
+		CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS p (privilege)
+		UNION ALL
+		SELECT t.relname || '.' || a.attname, p.privilege,
+			has_column_privilege('nyktus_console', t.oid, a.attnum, p.privilege),
+			EXISTS (
+				SELECT FROM granted AS g
+				WHERE g.relname = t.relname AND coalesce(g.attname, a.attname) = a.attname AND g.privilege = p.privilege
+			)
+		FROM tables AS t
+		JOIN pg_catalog.pg_attribute AS a ON a.attrelid = t.oid AND a.attnum > 0 AND NOT a.attisdropped
+		CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) AS p (privilege)
+	)
+	SELECT string_agg(object || ': ' || privilege, ', ' ORDER BY object, privilege) FILTER (WHERE wanted AND NOT held),
+		string_agg(object || ': ' || privilege, ', ' ORDER BY object, privilege) FILTER (WHERE held AND NOT wanted)
+	INTO missing, extra
+	FROM privileges;
+
+	IF missing IS NOT NULL THEN
+		RAISE EXCEPTION 'nyktus_console lacks privileges on the alert channels (%); run migrations as the owner of the schema', missing;
+	END IF;
+	IF extra IS NOT NULL THEN
+		RAISE EXCEPTION 'nyktus_console has more privileges on the alert channels than granted (%); check the default privileges of the owner', extra;
+	END IF;
+END
+$$;
+
 -- The trigger and the DNS role reach nothing but their function, and the
 -- worker nothing but its tables. Everything in the schema is revoked here, at
 -- its end, including the table of the migration runner, so that default

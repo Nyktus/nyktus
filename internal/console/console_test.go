@@ -54,8 +54,12 @@ func deps(db Pinger) Deps {
 		},
 		Incidents: Incidents{List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Update: http.NotFoundHandler()},
 		Events:    Events{List: http.NotFoundHandler(), Get: http.NotFoundHandler()},
-		OIDC:      OIDC{Authorize: http.NotFoundHandler(), Reauthenticate: http.NotFoundHandler(), Callback: http.NotFoundHandler()},
-		Origin:    "https://nyktus.example.com",
+		AlertChannels: AlertChannels{
+			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
+			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(),
+		},
+		OIDC:   OIDC{Authorize: http.NotFoundHandler(), Reauthenticate: http.NotFoundHandler(), Callback: http.NotFoundHandler()},
+		Origin: "https://nyktus.example.com",
 	}
 }
 
@@ -140,17 +144,18 @@ func TestRoutes_RequireOnlyGrantedPermissions(t *testing.T) {
 	}
 }
 
-// The session and how the account signs in, under /api/v1/session, and the API
-// keys are managed only with a session, so that a leaked API key can neither
-// end the session, take over the account nor issue itself a successor. The
-// authorizer enforces the restriction that the route declares.
+// The session and how the account signs in, under /api/v1/session, the API keys
+// and the alert channels are managed only with a session, so that a leaked API
+// key can neither end the session, take over the account, issue itself a
+// successor nor redirect or stop the alerts. The authorizer enforces the
+// restriction that the route declares.
 func TestSessionRoutes_AdmitOnlySessions(t *testing.T) {
 	t.Parallel()
 
 	under := func(path, prefix string) bool { return path == prefix || strings.HasPrefix(path, prefix+"/") }
 	for _, route := range NewRouter(deps(fakePinger{})).Routes() {
 		managed := under(route.Path, "/api/v1/session") || under(route.Path, "/api/v1/api-keys") ||
-			route.Path == "/api/v1/oidc/reauthenticate"
+			under(route.Path, "/api/v1/alert-channels") || route.Path == "/api/v1/oidc/reauthenticate"
 		protected := route.Access != httpx.Public
 		if want := managed && protected; route.Access.RequiresSession() != want {
 			t.Errorf("route %s %s: RequiresSession() = %v, want %v", route.Method, route.Path, route.Access.RequiresSession(), want)
