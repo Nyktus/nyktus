@@ -194,6 +194,30 @@ func TestHoneytokens_ReadByEveryRoleWrittenByAdminsAndUsers(t *testing.T) {
 	}
 }
 
+// The catalog holds no inventory, so every role and every key with the scope
+// reads it; nobody changes it, because it ships with the server.
+func TestCatalog_ReadByEveryRoleAndKeysWithTheScope(t *testing.T) {
+	t.Parallel()
+
+	for _, role := range []user.Role{user.RoleAdmin, user.RoleUser, user.RoleViewer} {
+		if !Allowed(role, "catalog:read") {
+			t.Errorf("%s cannot read the catalog", role)
+		}
+	}
+	if Allowed("", "catalog:read") {
+		t.Error("an unknown role reads the catalog")
+	}
+	for _, perm := range Permissions() {
+		if strings.HasPrefix(string(perm), "catalog:") && perm != "catalog:read" {
+			t.Errorf("a role holds %s", perm)
+		}
+	}
+	key := Principal{Method: audit.AuthAPIKey, APIKeyID: "k1", Scopes: []httpx.Permission{"catalog:read"}}
+	if !key.Allowed("catalog:read") || key.Allowed("honeytokens:read") {
+		t.Error("a key with catalog:read must read the catalog and nothing else")
+	}
+}
+
 // Every role reads events and incidents; admins and users triage incidents,
 // viewers do not. A key with only the scope to read incidents cannot triage
 // them.

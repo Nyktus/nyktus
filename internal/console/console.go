@@ -48,6 +48,8 @@ type Deps struct {
 	Metrics http.Handler
 	// Accounts manages accounts and activates them.
 	Accounts Accounts
+	// Catalog lists the deceptions of the catalog.
+	Catalog Catalog
 	// Honeytokens manages the honeytokens of the team.
 	Honeytokens Honeytokens
 	// Incidents lists and triages the incidents of the team.
@@ -79,6 +81,15 @@ type SecondFactor struct {
 // APIKeys are the handlers of the management of the API keys of the team.
 type APIKeys struct {
 	List, Create, Revoke http.Handler
+}
+
+// Catalog are the handlers of the catalog.
+type Catalog struct {
+	List, Get http.Handler
+}
+
+func (c Catalog) complete() bool {
+	return c.List != nil && c.Get != nil
 }
 
 // Honeytokens are the handlers of the management of the honeytokens.
@@ -149,8 +160,8 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Honeytokens.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
-		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, honeytoken, incident, event and alert channel handlers")
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
+		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, catalog, honeytoken, incident, event and alert channel handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	// The session itself and how the account signs in are managed only with a
@@ -191,6 +202,8 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPost, "/api/v1/activation", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.Activate))
 	rt.Handle(http.MethodPost, "/api/v1/users/{id}/password-reset-link", httpx.Require("users:write"), d.Accounts.IssueResetLink)
 	rt.Handle(http.MethodPost, "/api/v1/password-reset", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.ResetPassword))
+	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions", httpx.Require("catalog:read"), d.Catalog.List)
+	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions/{id}", httpx.Require("catalog:read"), d.Catalog.Get)
 	rt.Handle(http.MethodGet, "/api/v1/honeytokens", httpx.Require("honeytokens:read"), d.Honeytokens.List)
 	rt.Handle(http.MethodPost, "/api/v1/honeytokens", httpx.Require("honeytokens:write"), d.Honeytokens.Create)
 	rt.Handle(http.MethodGet, "/api/v1/honeytokens/{id}", httpx.Require("honeytokens:read"), d.Honeytokens.Get)

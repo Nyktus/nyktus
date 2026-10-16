@@ -1,0 +1,176 @@
+// SPDX-FileCopyrightText: The Nyktus Authors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Package catalogapi serves the deceptions of the catalog. The routes must
+// require the permission catalog:read. The catalog is the same in every
+// installation and holds no inventory, so every role reads it.
+package catalogapi
+
+import (
+	"net/http"
+	"net/url"
+	"slices"
+
+	"nyktus.org/nyktus/internal/catalog"
+	"nyktus.org/nyktus/internal/honeytoken"
+	"nyktus.org/nyktus/internal/platform/httpx"
+)
+
+// paramLang selects the language of the texts. Without it, they are English.
+const paramLang = "lang"
+
+// defaultLang is the language of the texts if the request names none.
+const defaultLang = "en"
+
+// Handler serves the deceptions of the catalog.
+type Handler struct {
+	catalog *catalog.Catalog
+}
+
+// NewHandler returns the handlers of the catalog c.
+func NewHandler(c *catalog.Catalog) *Handler {
+	if c == nil {
+		panic("catalogapi: handler needs a catalog")
+	}
+	return &Handler{catalog: c}
+}
+
+// summary is a deception as the list shows it.
+type summary struct {
+	ID               string           `json:"id"`
+	Category         catalog.Category `json:"category"`
+	Title            string           `json:"title"`
+	Summary          string           `json:"summary"`
+	Techniques       []string         `json:"techniques"`
+	EngageActivities []string         `json:"engage_activities"`
+}
+
+// detail is a deception with what applying it creates and asks for.
+type detail struct {
+	summary
+	Honeytokens []honeytokenResponse `json:"honeytokens"`
+	Persona     []personaResponse    `json:"persona"`
+	Secrets     []secretResponse     `json:"secrets"`
+	Artifacts   []artifactResponse   `json:"artifacts"`
+}
+
+type (
+	honeytokenResponse struct {
+		Key        string          `json:"key"`
+		Type       honeytoken.Type `json:"type"`
+		Label      string          `json:"label"`
+		Techniques []string        `json:"techniques"`
+	}
+	personaResponse struct {
+		Key     string       `json:"key"`
+		Kind    catalog.Kind `json:"kind"`
+		Label   string       `json:"label"`
+		Example string       `json:"example"`
+	}
+	secretResponse struct {
+		Key    string `json:"key"`
+		Length int    `json:"length"`
+	}
+	artifactResponse struct {
+		Key      string         `json:"key"`
+		FileName string         `json:"file_name"`
+		Format   catalog.Format `json:"format"`
+	}
+)
+
+func toSummary(d catalog.Deception, lang string) summary {
+	return summary{
+		ID: d.ID, Category: d.Category, Title: d.Title[lang], Summary: d.Summary[lang],
+		Techniques: nonNil(d.Techniques), EngageActivities: nonNil(d.EngageActivities),
+	}
+}
+
+func toDetail(d catalog.Deception, lang string) detail {
+	resp := detail{
+		summary:     toSummary(d, lang),
+		Honeytokens: make([]honeytokenResponse, 0, len(d.Honeytokens)),
+		Persona:     make([]personaResponse, 0, len(d.Persona)),
+		Secrets:     make([]secretResponse, 0, len(d.Secrets)),
+		Artifacts:   make([]artifactResponse, 0, len(d.Artifacts)),
+	}
+	for _, h := range d.Honeytokens {
+		resp.Honeytokens = append(resp.Honeytokens, honeytokenResponse{
+			Key: h.Key, Type: h.Type, Label: h.Label[lang], Techniques: nonNil(h.Techniques),
+		})
+	}
+	for _, p := range d.Persona {
+		resp.Persona = append(resp.Persona, personaResponse{Key: p.Key, Kind: p.Kind, Label: p.Label[lang], Example: p.Example})
+	}
+	for _, s := range d.Secrets {
+		resp.Secrets = append(resp.Secrets, secretResponse(s))
+	}
+	for _, a := range d.Artifacts {
+		resp.Artifacts = append(resp.Artifacts, artifactResponse{Key: a.Key, FileName: a.FileName, Format: a.Format})
+	}
+	return resp
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+type listResponse struct {
+	Deceptions []summary `json:"deceptions"`
+}
+
+// List handles GET /api/v1/catalog/deceptions. The catalog is small and
+// fixed at build time, so the list is not paged.
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	lang, ok := decodeLang(w, r)
+	if !ok {
+		return
+	}
+	resp := listResponse{Deceptions: []summary{}}
+	for _, d := range h.catalog.Deceptions() {
+		resp.Deceptions = append(resp.Deceptions, toSummary(d, lang))
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+// Get handles GET /api/v1/catalog/deceptions/{id}.
+func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
+	lang, ok := decodeLang(w, r)
+	if !ok {
+		return
+	}
+	d, found := h.catalog.Lookup(r.PathValue("id"))
+	if !found {
+		httpx.NotFound(w, r)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toDetail(d, lang))
+}
+
+// decodeLang returns the language that the query selects, the default
+// without one. It rejects other parameters, a repeated parameter and an
+// unknown language with 400.
+func decodeLang(w http.ResponseWriter, r *http.Request) (string, bool) {
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "query string is invalid")
+		return "", false
+	}
+	for name := range query {
+		if name != paramLang {
+			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "unknown query parameter; use lang")
+			return "", false
+		}
+	}
+	values, ok := query[paramLang]
+	if !ok {
+		return defaultLang, true
+	}
+	if len(values) != 1 || !slices.Contains(catalog.Languages, values[0]) {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "lang must be en or de")
+		return "", false
+	}
+	return values[0], true
+}

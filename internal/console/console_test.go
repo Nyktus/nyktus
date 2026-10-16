@@ -6,18 +6,21 @@ package console
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"go.yaml.in/yaml/v3"
 
 	"nyktus.org/nyktus/api"
 	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/catalog"
 	"nyktus.org/nyktus/internal/platform/apispec"
 	"nyktus.org/nyktus/internal/platform/httpx"
 )
@@ -48,6 +51,7 @@ func deps(db Pinger) Deps {
 			Activate: http.NotFoundHandler(), IssueResetLink: http.NotFoundHandler(), ResetPassword: http.NotFoundHandler(),
 		},
 		APIKeys: APIKeys{List: http.NotFoundHandler(), Create: http.NotFoundHandler(), Revoke: http.NotFoundHandler()},
+		Catalog: Catalog{List: http.NotFoundHandler(), Get: http.NotFoundHandler()},
 		Honeytokens: Honeytokens{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
 			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(),
@@ -235,4 +239,28 @@ func TestCreateAPIKeyRequest_ListsTheScopesKeysMayCarry(t *testing.T) {
 	if want := slices.Sorted(slices.Values(access.KeyScopes())); !slices.Equal(got, want) {
 		t.Errorf("documented scopes %v, want %v", got, want)
 	}
+}
+
+// The console loads the catalog before anything else and refuses to start
+// with one that does not validate, so that it never offers a deception that it
+// cannot apply.
+func TestNew_RefusesAnInvalidCatalog(t *testing.T) {
+	t.Parallel()
+
+	invalid := fstest.MapFS{"ssh-config/deception.json": {Data: []byte(`{"schema_version": 2}`)}}
+	if _, err := New(t.Context(), Options{Catalog: invalid}); !errors.Is(err, catalog.ErrInvalidDeception) {
+		t.Errorf("New(invalid catalog) error = %v, want ErrInvalidDeception", err)
+	}
+	if _, err := New(t.Context(), Options{Catalog: fstest.MapFS{}}); err == nil {
+		t.Error("New(empty catalog) error = nil")
+	}
+
+	// Load would panic on a nil catalog as well; the message tells that the
+	// console checked it.
+	defer func() {
+		if v := recover(); !strings.Contains(fmt.Sprint(v), "no catalog") {
+			t.Errorf("New without a catalog: recovered %v, want a panic about the missing catalog", v)
+		}
+	}()
+	_, _ = New(t.Context(), Options{})
 }
