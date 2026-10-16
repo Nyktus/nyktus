@@ -5,6 +5,7 @@ package console
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -20,6 +21,8 @@ import (
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
+	"nyktus.org/nyktus/internal/catalog"
+	"nyktus.org/nyktus/internal/catalog/catalogapi"
 	"nyktus.org/nyktus/internal/honeytoken/honeytokenapi"
 	"nyktus.org/nyktus/internal/incident/incidentapi"
 	"nyktus.org/nyktus/internal/metrics"
@@ -57,11 +60,23 @@ type Options struct {
 	DNSZones []string
 	// Outbound checks the targets of alert channels.
 	Outbound *ssrf.Guard
+	// Catalog holds the deceptions of the catalog, one directory each, such
+	// as those that the package nyktus.org/nyktus/catalog embeds.
+	Catalog fs.FS
 }
 
 // New wires the console and returns its HTTP handler. It computes the dummy
 // password hash of the sign-in, so it takes as long as one password hash.
 func New(ctx context.Context, o Options) (http.Handler, error) {
+	if o.Catalog == nil {
+		panic("console: no catalog")
+	}
+	// An invalid catalog stops the console before it accepts a request, so
+	// that it never offers a deception that it cannot apply.
+	deceptions, err := catalog.Load(o.Catalog)
+	if err != nil {
+		return nil, err
+	}
 	sessions, err := session.NewService(ctx, o.DB, o.Hasher, o.Keys, o.Sessions)
 	if err != nil {
 		return nil, err
@@ -81,6 +96,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		}
 	}
 	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
+	cat := catalogapi.NewHandler(deceptions)
 	t := honeytokenapi.NewHandler(o.Logger, o.DB, o.TriggerURL, o.DNSZones)
 	i := incidentapi.NewHandler(o.Logger, o.DB)
 	c := alertingapi.NewHandler(o.Logger, o.DB, o.Keys, sessions, o.Outbound)
@@ -118,6 +134,10 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Activate:       http.HandlerFunc(a.Activate),
 			IssueResetLink: http.HandlerFunc(a.IssueResetLink),
 			ResetPassword:  http.HandlerFunc(a.ResetPassword),
+		},
+		Catalog: Catalog{
+			List: http.HandlerFunc(cat.List),
+			Get:  http.HandlerFunc(cat.Get),
 		},
 		Honeytokens: Honeytokens{
 			List:   http.HandlerFunc(t.List),

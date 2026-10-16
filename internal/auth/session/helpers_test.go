@@ -17,6 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	embedded "nyktus.org/nyktus/catalog"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
@@ -92,6 +93,7 @@ RETURNING id`, email, role, status, hash).Scan(&id)
 func startConsole(t *testing.T, d testDB) *httptest.Server {
 	t.Helper()
 	h, err := console.New(t.Context(), console.Options{
+		Catalog:        embedded.Deceptions(),
 		Logger:         slog.New(slog.DiscardHandler),
 		DB:             d.console,
 		Setup:          setup.NewService(d.console),

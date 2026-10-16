@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	embedded "nyktus.org/nyktus/catalog"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/auth/token"
@@ -49,6 +50,7 @@ func sessionOf(t *testing.T, d testDB, id string) *http.Cookie {
 func startConsoleWith(t *testing.T, d testDB, cfg session.Config) *httptest.Server {
 	t.Helper()
 	h, err := console.New(t.Context(), console.Options{
+		Catalog:        embedded.Deceptions(),
 		Logger:         slog.New(slog.DiscardHandler),
 		DB:             d.console,
 		Setup:          setup.NewService(d.console),

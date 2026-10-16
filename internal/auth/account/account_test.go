@@ -19,6 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	embedded "nyktus.org/nyktus/catalog"
 	"nyktus.org/nyktus/internal/auth/password"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
@@ -47,6 +48,7 @@ func newEnv(t *testing.T) env {
 	ownerURL, consoleDBURL := schematest.Console(t)
 	pool := schematest.Open(t, consoleDBURL)
 	h, err := console.New(t.Context(), console.Options{
+		Catalog:    embedded.Deceptions(),
 		Logger:     slog.New(slog.DiscardHandler),
 		DB:         pool,
 		Setup:      setup.NewService(pool),
