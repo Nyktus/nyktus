@@ -4,13 +4,14 @@ An [incident](incidents.md) raises a single alert when it opens. Nyktus delivers
 
 ## Alert channels
 
-A channel is a URL that receives an HTTP `POST` for every alert. Its type chooses the format of the request body:
+Most channels are a URL that receives an HTTP `POST` for every alert, and a channel of the type `email` sends mail to its recipients. The type chooses how the alert is sent:
 
 | Type | Receiver |
 |---|---|
 | `webhook` | Any receiver of JSON, such as a SOAR platform, a SIEM or an automation tool. It can send one additional header, for receivers that expect a token in a header. |
 | `slack` | An [incoming webhook](https://api.slack.com/messaging/webhooks) of Slack. |
 | `teams` | A workflow of Microsoft Teams that posts to a channel ("Post to a channel when a webhook request is received"). The retired Office 365 connectors are not supported. |
+| `email` | Up to 10 addresses, such as the mailbox of a security team, through the [SMTP server](configuration.md#mail) of the operator. See [Mail](#mail). |
 
 Only administrators manage channels, and only with a session: API keys never manage channels, because a leaked key could redirect the alerts or stop them.
 
@@ -23,6 +24,16 @@ Whoever knows the URL of a Slack or Teams webhook can post into the channel, and
 - The console can write them, but its database role cannot read them back. To change one, enter it again.
 
 Keep a copy in your secret store if you need it elsewhere.
+
+### Mail
+
+A channel of the type `email` has `recipients` instead of a URL: 1 to 10 addresses of the form `local@domain` in ASCII, without display name, comment or quoting, none twice; write an internationalized domain in its ASCII form (`xn--…`). Addresses grant nothing to whoever knows them, unlike the URL of a webhook, so they are no secret: they are stored as they are, returned in the API and may appear in the [log](logs.md) of the worker. A channel shows them in `recipients`; its `target` is `null`.
+
+Addresses that name a person are personal data. Prefer the address of a team or a distribution list, which also keeps the alerts flowing when people leave; administrators see the recipients of every channel.
+
+The worker sends the mail through the SMTP server that the operator configures with [`NYKTUS_SMTP_HOST`](configuration.md#mail). The console accepts channels of the type `email` without it, because it does not know the configuration of the worker; their deliveries are then dead with the class `not_configured`, and the worker warns with `worker: email channels without smtp server` when it starts. Send a [test](#testing-a-channel) after you created a channel.
+
+Whether the mail reaches the inbox is the business of the mail server: it signs the mail (DKIM), and the domain of `NYKTUS_SMTP_FROM` must allow it to send (SPF, DMARC). Use an address of its own as the sender, so that receivers can filter on it, and make sure that the mail of Nyktus is not held in a quarantine for spam.
 
 ### Allowed targets
 
@@ -50,17 +61,29 @@ Creating a channel is confirmed with the password of the administrator, as is ev
 curl --json @channel.json -b cookies.txt https://nyktus.example.com/api/v1/alert-channels
 ```
 
+A channel of the type `email` has recipients instead of a URL:
+
+```json
+{
+  "name": "SOC mailbox",
+  "type": "email",
+  "recipients": ["soc@example.com"],
+  "password": "<your password>"
+}
+```
+
 An administrator of the identity provider leaves out the password and [signs in there again](sign-in.md#confirming-sensitive-actions) first.
 
 - **Names** have 1 to 64 characters and are unique.
+- **URL** for every type but `email`, **recipients** only for `email` (`422`, codes `url_not_allowed` and `recipients_not_allowed`).
 - **Header** only for a `webhook`. Its name may be any header name other than those that the client sets itself or that change how the request is transferred (`Host`, `Content-Length`, `Content-Type`, `Content-Encoding`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `TE`, `Trailer`, `Upgrade`, `Expect` and `Proxy-*`). Its value has at most 1024 printable ASCII characters.
 - **Limit.** An installation has at most 20 channels.
 
 ### Changing and deleting a channel
 
-`PATCH /api/v1/alert-channels/{id}` changes `name`, `enabled`, `url` or `header`; `"header": null` removes the header. The type never changes; create a new channel instead.
+`PATCH /api/v1/alert-channels/{id}` changes `name`, `enabled`, `url`, `header` or `recipients`; `"header": null` removes the header, and `recipients` replaces the list. The type never changes; create a new channel instead.
 
-Every change other than a new `name` decides where alerts go, what authenticates them, or whether they go at all, so it needs the `password`, as on creation; a missing password counts as a wrong one. This includes enabling a channel again: its URL may have changed hands since it was disabled, for example with a lapsed domain. A taken-over session can therefore neither silence nor redirect the alerts without the password.
+Every change other than a new `name` decides where alerts go, what authenticates them, or whether they go at all, so it needs the `password`, as on creation; a missing password counts as a wrong one. This includes new recipients, and enabling a channel again: its URL or the domain of its recipients may have changed hands since it was disabled, for example with a lapsed domain. A taken-over session can therefore neither silence nor redirect the alerts without the password.
 
 Only a disabled channel can be deleted (`DELETE /api/v1/alert-channels/{id}`); an enabled one receives `409` with the code `alert_channel_enabled`.
 
@@ -78,6 +101,13 @@ Each delivery is attempted on its own: a channel that fails or answers slowly ne
 - follows no redirect, and ignores `HTTP_PROXY` and `HTTPS_PROXY`,
 - ends after 10 seconds,
 - counts as delivered if the receiver answers with `2xx`. The response itself is read and discarded, never stored or logged.
+
+Mail goes to the SMTP server of the operator, in a conversation of its own for every delivery:
+
+- The worker connects with TLS, as [configured](configuration.md#mail), and verifies the certificate of the server. With STARTTLS, a server that does not offer it receives nothing but the greeting. The password goes only over TLS.
+- The server must accept every recipient; if it refuses one, the worker sends nothing, so that a mail never reaches only some of them.
+- A mail counts as delivered once the server has accepted it. What happens afterwards, such as the delivery into the mailbox, is beyond the sight of Nyktus.
+- The connection must stand within 10 seconds, and the conversation ends after 20 seconds at the latest, the time that the worker gives a delivery. The replies of the server are read up to 64 KiB, never stored or logged; a refusal keeps only its reply code.
 
 ### Message of a webhook
 
@@ -113,13 +143,32 @@ Slack and Teams receive a message for people: the title "Nyktus: incident opened
 - **Slack:** create an [incoming webhook](https://api.slack.com/messaging/webhooks) for the channel and use its URL, `https://hooks.slack.com/services/…`. The message uses blocks, with a text that notifications show.
 - **Teams:** in the channel, create a workflow from the template "Post to a channel when a webhook request is received" and use the URL that it shows. The message is an adaptive card (version 1.4) with a button that opens the incident.
 
+### Mail of a channel of the type email
+
+A channel of the type `email` receives plain text in ASCII, with the subject "Nyktus: incident opened (severity)":
+
+```text
+An incident opened in Nyktus.
+
+Severity:    medium
+Techniques:  T1078
+Resource:    honeytoken 9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+First event: 2026-10-15T10:00:00Z
+
+Open the incident: https://nyktus.example.com/incidents/0b9e7a52-3c1d-4e8f-a6b2-7d4c5e6f7a8b
+
+Delivery 6f1d2c1e-8f0a-4f5b-9a4e-1c2b3d4e5f60
+```
+
+It holds what a chat message holds, and no more: no inventory, no personal data and not the name of the channel. `To` names every recipient of the channel. The `Message-ID` is the identifier of the delivery at the domain of the sender, such as `<6f1d2c1e-…@example.com>`, so that a mail sent twice can be recognized, and `Auto-Submitted: auto-generated` keeps automatic replies, such as out-of-office notes, from answering it. A test sends "Nyktus: test message".
+
 ### Authenticating the messages
 
 Nyktus does not sign messages. A receiver tells messages of Nyktus from others by a secret it chose: a token in the URL, as with Slack, Teams and most automation tools, or in the header of the webhook, such as `Authorization: Bearer <token>`. HTTPS keeps it from third parties on the way. A signature would protect only the receiver, against forged alerts, which a token prevents as well, and most receivers check a token, not a signature.
 
 ### At least once
 
-A delivery reaches its receiver at least once. If the worker stops or loses the database after the receiver accepted a message but before it recorded that, it sends the message again later. Receivers that act on alerts, such as a SOAR platform, should ignore a `delivery_id` they have seen.
+A delivery reaches its receiver at least once. If the worker stops or loses the database after the receiver accepted a message but before it recorded that, it sends the message again later. Receivers that act on alerts, such as a SOAR platform, should ignore a `delivery_id` they have seen. A mail sent again has the same `Message-ID`.
 
 ### Retries
 
@@ -129,8 +178,10 @@ A delivery reaches its receiver at least once. If the worker stops or loses the 
 | Other `5xx`, `408`, a timeout, a failed connection or TLS handshake | Tried again: after 30 seconds, then after twice the previous wait, up to an hour. |
 | `429`, `503` | Tried again, as above, or after the wait of `Retry-After` if the receiver names a longer one, at most an hour. |
 | Any other `4xx`, a redirect, a target that resolves to a blocked address, a secret that cannot be decrypted | Dead at once: no retry can mend it. |
+| Mail: a reply `4xx` of the SMTP server, a server without STARTTLS | Tried again, as above. |
+| Mail: a reply `5xx`, such as a refused recipient or a failed authentication (`535`), no configured SMTP server, a server that offers no authentication although a username is configured | Dead at once. |
 
-After 10 attempts, the last about three hours after the first, a delivery is dead. The worker logs every failed attempt as `alerting: delivery failed` and a dead delivery as `alerting: delivery dead`, with the class of the failure and the status code, never the URL or the response. See [Logs](logs.md#worker).
+After 10 attempts, the last about three hours after the first, a delivery is dead. The worker logs every failed attempt as `alerting: delivery failed` and a dead delivery as `alerting: delivery dead`, with the class of the failure and the status code, never the URL, the response or the password of the SMTP server. See [Logs](logs.md#worker).
 
 A delivery whose channel was disabled or deleted before it was sent is `canceled`.
 
@@ -146,7 +197,7 @@ It starts again with a new count of attempts. The retry is recorded in the audit
 
 ### Reading deliveries
 
-`GET /api/v1/incidents/{id}/deliveries` lists the deliveries of the alert of an incident, for every user who reads incidents and for API keys with `incidents:read`. Each names its channel, its `status` (`pending`, `delivered`, `dead` or `canceled`), the number of `attempts`, `next_attempt_at` while it is pending, and the last attempt: when it was, the `last_status_code` of the response, if there was one, the class of its failure in `last_error` and how long it took. Administrators read a single delivery with `GET /api/v1/alert-deliveries/{id}`. Deliveries are kept as receipts: the deliveries of an alert as long as its incident, which the worker deletes after the [retention](incidents.md#retention) of closed incidents, and tests of channels for the same number of days after they were requested, once they are no longer waiting.
+`GET /api/v1/incidents/{id}/deliveries` lists the deliveries of the alert of an incident, for every user who reads incidents and for API keys with `incidents:read`. Each names its channel, its `status` (`pending`, `delivered`, `dead` or `canceled`), the number of `attempts`, `next_attempt_at` while it is pending, and the last attempt: when it was, the `last_status_code` of the response or, for mail, the reply code of a refusal, if there was one, the class of its failure in `last_error` and how long it took. Administrators read a single delivery with `GET /api/v1/alert-deliveries/{id}`. Deliveries are kept as receipts: the deliveries of an alert as long as its incident, which the worker deletes after the [retention](incidents.md#retention) of closed incidents, and tests of channels for the same number of days after they were requested, once they are no longer waiting.
 
 ### Testing a channel
 
@@ -154,4 +205,4 @@ It starts again with a new count of attempts. The retry is recorded in the audit
 
 ### Encryption keys
 
-The worker decrypts the secrets of the channels with the [encryption keys](configuration.md#encryption-keys) and refuses to start if a secret was encrypted with a key that is not listed. After a new key was put first, it encrypts the secrets of a channel again with it the next time it delivers to it. To retire the old key sooner, enter the URL and header of the remaining channels again.
+Channels of the type `email` have no secrets. The worker decrypts the secrets of the other channels with the [encryption keys](configuration.md#encryption-keys) and refuses to start if a secret was encrypted with a key that is not listed. After a new key was put first, it encrypts the secrets of a channel again with it the next time it delivers to it. To retire the old key sooner, enter the URL and header of the remaining channels again.

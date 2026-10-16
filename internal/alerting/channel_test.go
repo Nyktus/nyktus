@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -28,7 +29,14 @@ func TestSpecValidate(t *testing.T) {
 		{"webhook with header", Spec{Name: "SOAR", Type: TypeWebhook, URL: hookURL, Header: header}, nil},
 		{"slack", Spec{Name: "Slack", Type: TypeSlack, URL: hookURL}, nil},
 		{"teams", Spec{Name: "Teams", Type: TypeTeams, URL: hookURL}, nil},
-		{"unknown type", Spec{Name: "x", Type: "email", URL: hookURL}, ErrInvalidType},
+		{"unknown type", Spec{Name: "x", Type: "sms", URL: hookURL}, ErrInvalidType},
+		{"email", Spec{Name: "SOC", Type: TypeEmail, Recipients: []string{"soc@example.com", "oncall@example.org"}}, nil},
+		{"email with URL", Spec{Name: "x", Type: TypeEmail, URL: hookURL, Recipients: []string{"soc@example.com"}}, ErrURLNotAllowed},
+		{"email with header", Spec{Name: "x", Type: TypeEmail, Header: header, Recipients: []string{"soc@example.com"}}, ErrHeaderNotAllowed},
+		{"email without recipients", Spec{Name: "x", Type: TypeEmail}, ErrInvalidRecipients},
+		{"email with invalid name", Spec{Name: " x", Type: TypeEmail, Recipients: []string{"soc@example.com"}}, ErrInvalidName},
+		{"recipients for a webhook", Spec{Name: "x", Type: TypeWebhook, URL: hookURL, Recipients: []string{"soc@example.com"}}, ErrRecipientsNotAllowed},
+		{"empty recipients for slack", Spec{Name: "x", Type: TypeSlack, URL: hookURL, Recipients: []string{}}, ErrRecipientsNotAllowed},
 		{"empty name", Spec{Type: TypeWebhook, URL: hookURL}, ErrInvalidName},
 		{"name with spaces around", Spec{Name: " x", Type: TypeWebhook, URL: hookURL}, ErrInvalidName},
 		{"name too long", Spec{Name: strings.Repeat("x", MaxNameLength+1), Type: TypeWebhook, URL: hookURL}, ErrInvalidName},
@@ -85,6 +93,56 @@ func TestHeaderValue(t *testing.T) {
 	}
 }
 
+func TestValidateRecipients(t *testing.T) {
+	t.Parallel()
+
+	ten := make([]string, MaxRecipients)
+	for i := range ten {
+		ten[i] = fmt.Sprintf("soc%d@example.com", i)
+	}
+	for _, list := range [][]string{{"soc@example.com"}, {"soc@example.com", "soc@example.org"}, ten} {
+		if err := ValidateRecipients(list); err != nil {
+			t.Errorf("ValidateRecipients(%q) = %v", list, err)
+		}
+	}
+	rejected := [][]string{
+		nil,
+		{},
+		append(slices.Clone(ten), "one@example.com"),
+		{"soc@example.com", "SOC@Example.com"},
+		{"soc@example.com\r\nBcc: attacker@example.net"},
+		{"soc@example.com\nBcc: attacker@example.net"},
+		{"SOC <soc@example.com>"},
+		{"soc@example.com (SOC)"},
+		{`"soc"@example.com`},
+		{"soc@example.com,x@example.net"},
+		{"soc@example.com;x@example.net"},
+		{"soc@[192.0.2.1]"},
+		{"s\u00f6c@example.com"},
+		{""},
+	}
+	for _, list := range rejected {
+		if err := ValidateRecipients(list); !errors.Is(err, ErrInvalidRecipients) {
+			t.Errorf("ValidateRecipients(%q) = %v, want ErrInvalidRecipients", list, err)
+		}
+	}
+}
+
+func TestChange_Validate(t *testing.T) {
+	t.Parallel()
+
+	valid, invalid := []string{"soc@example.com"}, []string{"soc@example.com\r\nBcc: attacker@example.net"}
+	if err := (Change{Recipients: &valid}).Validate(); err != nil {
+		t.Errorf("Validate(recipients) = %v", err)
+	}
+	if err := (Change{Recipients: &invalid}).Validate(); !errors.Is(err, ErrInvalidRecipients) {
+		t.Errorf("Validate(recipients with line break) = %v, want ErrInvalidRecipients", err)
+	}
+	if (Change{Recipients: &valid}).IsEmpty() {
+		t.Error("a change of the recipients is empty")
+	}
+}
+
 func TestTarget_ShowsSchemeHostAndPortOnly(t *testing.T) {
 	t.Parallel()
 
@@ -121,6 +179,7 @@ func TestChange_NeedsConfirmation(t *testing.T) {
 		{"new header", Change{Header: &Header{Name: "X-Token", Value: "y"}}, true},
 		{"remove header", Change{RemoveHeader: true}, true},
 		{"rename and new URL", Change{Name: &name, URL: &u}, true},
+		{"new recipients", Change{Recipients: &[]string{"soc@example.com"}}, true},
 	}
 	for _, tt := range tests {
 		if got := tt.change.NeedsConfirmation(); got != tt.want {

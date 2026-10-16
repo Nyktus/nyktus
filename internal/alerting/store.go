@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 
@@ -21,6 +22,8 @@ const (
 	FieldEnabled = "enabled"
 	FieldURL     = "url"
 	FieldHeader  = "header"
+	// FieldRecipients names the recipients of a channel of the type email.
+	FieldRecipients = "recipients"
 )
 
 // Purposes of the encrypted secrets. Each binds a value to its use, so that a
@@ -43,6 +46,7 @@ var constraintErrors = map[string]error{
 	"alert_channels_type_check":        ErrInvalidType,
 	"alert_channels_target_check":      ErrInvalidURL,
 	"alert_channels_header_name_check": ErrInvalidHeaderName,
+	"alert_channels_recipients_check":  ErrInvalidRecipients,
 }
 
 func mapWriteError(err error) error {
@@ -75,11 +79,12 @@ func NewStore(q db.Querier, keys *secretbox.Keyring) *Store {
 // errNoKeys means that a store without keys was asked to write a secret.
 var errNoKeys = errors.New("alerting: store has no encryption keys")
 
-const columns = `id, name, type, enabled, target, header_name, created_at, updated_at`
+const columns = `id, name, type, enabled, target, header_name, recipients, created_at, updated_at`
 
 func scan(row pgx.Row) (Channel, error) {
 	var c Channel
-	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Enabled, &c.Target, &c.HeaderName, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.Name, &c.Type, &c.Enabled, &c.Target, &c.HeaderName, &c.Recipients, &c.CreatedAt,
+		&c.UpdatedAt)
 	return c, err
 }
 
@@ -109,9 +114,9 @@ func (s *Store) Get(ctx context.Context, id string) (Channel, error) {
 	return c, nil
 }
 
-// Create validates spec and stores a new channel with its secrets. The caller
-// serializes creations, so that the count of channels holds against
-// MaxChannels; it returns ErrTooManyChannels beyond it.
+// Create validates spec and stores a new channel with its secrets, if its
+// type has any. The caller serializes creations, so that the count of channels
+// holds against MaxChannels; it returns ErrTooManyChannels beyond it.
 func (s *Store) Create(ctx context.Context, spec Spec) (Channel, error) {
 	// The fields are validated before the insert, although the schema checks
 	// them as well, so that a failing row never reaches the log of the
@@ -119,9 +124,13 @@ func (s *Store) Create(ctx context.Context, spec Spec) (Channel, error) {
 	if err := spec.Validate(); err != nil {
 		return Channel{}, err
 	}
-	target, err := Target(spec.URL)
-	if err != nil {
-		return Channel{}, err
+	var target *string
+	if spec.Type != TypeEmail {
+		t, err := Target(spec.URL)
+		if err != nil {
+			return Channel{}, err
+		}
+		target = &t
 	}
 	var n int
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM public.alert_channels`).Scan(&n); err != nil {
@@ -135,10 +144,13 @@ func (s *Store) Create(ctx context.Context, spec Spec) (Channel, error) {
 		headerName = &spec.Header.Name
 	}
 	c, err := scan(s.db.QueryRow(ctx, `
-INSERT INTO public.alert_channels (name, type, enabled, target, header_name) VALUES ($1, $2, $3, $4, $5)
-RETURNING `+columns, spec.Name, spec.Type, spec.Enabled, target, headerName))
+INSERT INTO public.alert_channels (name, type, enabled, target, header_name, recipients) VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING `+columns, spec.Name, spec.Type, spec.Enabled, target, headerName, spec.Recipients))
 	if err != nil {
 		return Channel{}, fmt.Errorf("insert alert channel: %w", mapWriteError(err))
+	}
+	if spec.Type == TypeEmail {
+		return c, nil
 	}
 	sealedURL, sealedHeader, err := s.seal(c.ID, &spec.URL, spec.Header)
 	if err != nil {
@@ -173,8 +185,10 @@ func (s *Store) seal(id string, u *Secret, h *Header) (sealedURL, sealedHeader [
 // Update applies c to the channel id and returns it with the names of the
 // changed fields, which is empty if c changes nothing. A new URL or header
 // counts as a change, because the stored one cannot be read to compare. It
-// returns ErrNotFound if there is no such channel and ErrHeaderNotAllowed if
-// c sets a header for a channel other than a webhook.
+// returns ErrNotFound if there is no such channel, ErrHeaderNotAllowed if c
+// sets a header for a channel other than a webhook, ErrURLNotAllowed if c
+// sets a URL for a channel of the type email and ErrRecipientsNotAllowed if c
+// sets recipients for one of another type.
 //
 // Update must run in a transaction: it locks the channel until the end of the
 // transaction, so that the row and its secrets change together.
@@ -189,8 +203,13 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (Channel, []str
 	if err != nil {
 		return Channel{}, nil, fmt.Errorf("lock alert channel %s: %w", id, err)
 	}
-	if c.Header != nil && current.Type != TypeWebhook {
+	switch {
+	case c.Header != nil && current.Type != TypeWebhook:
 		return Channel{}, nil, ErrHeaderNotAllowed
+	case c.URL != nil && current.Type == TypeEmail:
+		return Channel{}, nil, ErrURLNotAllowed
+	case c.Recipients != nil && current.Type != TypeEmail:
+		return Channel{}, nil, ErrRecipientsNotAllowed
 	}
 
 	updated := current
@@ -204,10 +223,16 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (Channel, []str
 		changed = append(changed, FieldEnabled)
 	}
 	if c.URL != nil {
-		if updated.Target, err = Target(*c.URL); err != nil {
+		t, err := Target(*c.URL)
+		if err != nil {
 			return Channel{}, nil, err
 		}
+		updated.Target = &t
 		changed = append(changed, FieldURL)
+	}
+	if c.Recipients != nil && !slices.Equal(*c.Recipients, current.Recipients) {
+		updated.Recipients = *c.Recipients
+		changed = append(changed, FieldRecipients)
 	}
 	switch {
 	case c.Header != nil:
@@ -227,9 +252,10 @@ UPDATE public.alert_channels SET
 	enabled = $3,
 	target = $4,
 	header_name = $5,
+	recipients = $6,
 	updated_at = clock_timestamp()
 WHERE id = $1
-RETURNING `+columns, id, updated.Name, updated.Enabled, updated.Target, updated.HeaderName))
+RETURNING `+columns, id, updated.Name, updated.Enabled, updated.Target, updated.HeaderName, updated.Recipients))
 	if err != nil {
 		return Channel{}, nil, fmt.Errorf("update alert channel %s: %w", id, mapWriteError(err))
 	}
@@ -257,6 +283,16 @@ func (s *Store) updateSecrets(ctx context.Context, id string, c Change) error {
 		}
 	}
 	return nil
+}
+
+// CountEnabled returns how many channels of type t are enabled. The worker
+// reads it to warn about channels that it cannot send to.
+func CountEnabled(ctx context.Context, q db.Querier, t Type) (int, error) {
+	var n int
+	if err := q.QueryRow(ctx, `SELECT count(*) FROM public.alert_channels WHERE enabled AND type = $1`, t).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count enabled alert channels: %w", err)
+	}
+	return n, nil
 }
 
 // Delete deletes the channel id with its secrets. It returns ErrNotFound if

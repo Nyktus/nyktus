@@ -44,6 +44,9 @@ const (
 	// FailureHTTPStatus means that the receiver answered with a status other
 	// than 2xx.
 	FailureHTTPStatus Failure = "http_status"
+	// FailureSMTPStatus means that the SMTP server refused a command or the
+	// message, with a reply code of 4xx or 5xx.
+	FailureSMTPStatus Failure = "smtp_status"
 	// FailureRedirect means that the receiver answered with a redirect, which
 	// is never followed.
 	FailureRedirect Failure = "redirect"
@@ -56,11 +59,15 @@ const (
 	// FailureInvalidChannel means that the channel cannot be sent to, for
 	// example because its secret cannot be decrypted.
 	FailureInvalidChannel Failure = "invalid_channel"
+	// FailureNotConfigured means that mail cannot be sent, because no SMTP
+	// server is configured or the server does not offer authentication.
+	FailureNotConfigured Failure = "not_configured"
 )
 
 // Failures lists every class of failure.
 var Failures = []Failure{
-	FailureHTTPStatus, FailureRedirect, FailureTimeout, FailureNetwork, FailureTLS, FailureBlocked, FailureInvalidChannel,
+	FailureHTTPStatus, FailureSMTPStatus, FailureRedirect, FailureTimeout, FailureNetwork, FailureTLS, FailureBlocked,
+	FailureInvalidChannel, FailureNotConfigured,
 }
 
 // Limits of the retries.

@@ -171,7 +171,7 @@ func TestCreate_ConfirmsAndNeverReturnsTheSecrets(t *testing.T) {
 		t.Errorf("the response contains a secret: %s", body)
 	}
 	c := decode[response](t, rec)
-	if c.Name != "SOAR" || c.Type != alerting.TypeWebhook || !c.Enabled || c.Target != "https://hooks.example.com" ||
+	if c.Name != "SOAR" || c.Type != alerting.TypeWebhook || !c.Enabled || (c.Target == nil || *c.Target != "https://hooks.example.com") ||
 		c.HeaderName == nil || *c.HeaderName != "Authorization" {
 		t.Errorf("channel = %+v", c)
 	}
@@ -200,7 +200,13 @@ func TestCreate_Rejections(t *testing.T) {
 	}{
 		{"wrong password", strings.Replace(webhookBody("A"), password, "wrong", 1), http.StatusForbidden, "wrong_password"},
 		{"no password", `{"name":"A","type":"slack","url":"` + hookURL + `"}`, http.StatusForbidden, "wrong_password"},
-		{"unknown type", `{"name":"A","type":"email","url":"` + hookURL + `","password":"` + password + `"}`, http.StatusBadRequest, "invalid_request"},
+		{"unknown type", `{"name":"A","type":"sms","url":"` + hookURL + `","password":"` + password + `"}`, http.StatusBadRequest, "invalid_request"},
+		{"email with URL", `{"name":"A","type":"email","url":"` + hookURL + `","recipients":["soc@example.com"],"password":"` + password + `"}`, http.StatusUnprocessableEntity, "url_not_allowed"},
+		{"recipients for slack", `{"name":"A","type":"slack","url":"` + hookURL + `","recipients":["soc@example.com"],"password":"` + password + `"}`, http.StatusUnprocessableEntity, "recipients_not_allowed"},
+		{"email without recipients", `{"name":"A","type":"email","password":"` + password + `"}`, http.StatusBadRequest, "invalid_request"},
+		{"recipient with line break", `{"name":"A","type":"email","recipients":["soc@example.com\r\nBcc: x@example.net"],"password":"` + password + `"}`, http.StatusBadRequest, "invalid_request"},
+		{"recipient with name", `{"name":"A","type":"email","recipients":["SOC <soc@example.com>"],"password":"` + password + `"}`, http.StatusBadRequest, "invalid_request"},
+		{"repeated recipient", `{"name":"A","type":"email","recipients":["soc@example.com","SOC@example.com"],"password":"` + password + `"}`, http.StatusBadRequest, "invalid_request"},
 		{"invalid name", `{"name":" A","type":"slack","url":"` + hookURL + `","password":"` + password + `"}`, http.StatusBadRequest, "invalid_request"},
 		{"plain http", `{"name":"A","type":"slack","url":"http://hooks.example.com/x","password":"` + password + `"}`, http.StatusBadRequest, "invalid_request"},
 		{"internal target", `{"name":"A","type":"slack","url":"https://soar.internal/x","password":"` + password + `"}`, http.StatusUnprocessableEntity, "target_not_allowed"},
@@ -225,6 +231,41 @@ func TestCreate_Rejections(t *testing.T) {
 	var n int
 	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM alert_channels`).Scan(&n); err != nil || n != 1 {
 		t.Errorf("channels = %d, %v; want 1", n, err)
+	}
+}
+
+func TestEmailChannel_ShowsItsRecipientsAndConfirmsTheirChange(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	c := f.create(t, `{"name":"SOC","type":"email","recipients":["soc@example.com"],"password":"`+password+`"}`)
+	if c.Type != alerting.TypeEmail || c.Target != nil || !slices.Equal(c.Recipients, []string{"soc@example.com"}) {
+		t.Errorf("channel = %+v", c)
+	}
+	rec := f.serve(t, f.h.Update, http.MethodPatch, c.ID, `{"recipients":["attacker@example.net"]}`)
+	if rec.Code != http.StatusForbidden || errorCode(t, rec) != "wrong_password" {
+		t.Errorf("recipients without password: status %d, body %s; want 403 wrong_password", rec.Code, rec.Body)
+	}
+	rec = f.serve(t, f.h.Update, http.MethodPatch, c.ID, `{"recipients":["soc@example.com","oncall@example.org"],"password":"`+password+`"}`)
+	if got := decode[response](t, rec); rec.Code != http.StatusOK || !slices.Equal(got.Recipients, []string{"soc@example.com", "oncall@example.org"}) {
+		t.Errorf("confirmed recipients: status %d, body %s", rec.Code, rec.Body)
+	}
+	for _, tt := range []struct{ body, code string }{
+		{`{"url":"` + hookURL + `","password":"` + password + `"}`, "url_not_allowed"},
+		{`{"header":{"name":"X","value":"y"},"password":"` + password + `"}`, "header_not_allowed"},
+		{`{"recipients":[],"password":"` + password + `"}`, "invalid_request"},
+		{`{"recipients":["soc@example.com\r\nBcc: x@example.net"],"password":"` + password + `"}`, "invalid_request"},
+	} {
+		if rec := f.serve(t, f.h.Update, http.MethodPatch, c.ID, tt.body); errorCode(t, rec) != tt.code {
+			t.Errorf("%s: status %d, body %s; want %s", tt.body, rec.Code, rec.Body, tt.code)
+		}
+	}
+	hook := f.create(t, webhookBody("SOAR"))
+	if rec := f.serve(t, f.h.Update, http.MethodPatch, hook.ID, `{"recipients":["soc@example.com"],"password":"`+password+`"}`); errorCode(t, rec) != "recipients_not_allowed" {
+		t.Errorf("recipients for a webhook: status %d, body %s", rec.Code, rec.Body)
+	}
+	if hook.Recipients != nil || hook.Target == nil {
+		t.Errorf("webhook = %+v, want a target and no recipients", hook)
 	}
 }
 
@@ -261,7 +302,7 @@ func TestUpdate_ConfirmsChangesThatRedirectOrStopAlerts(t *testing.T) {
 		}
 	}
 	got := decode[response](t, f.serve(t, f.h.Get, http.MethodGet, c.ID, ""))
-	if got.Name != "Renamed" || !got.Enabled || got.Target != "https://hooks.example.com" || got.HeaderName == nil {
+	if got.Name != "Renamed" || !got.Enabled || (got.Target == nil || *got.Target != "https://hooks.example.com") || got.HeaderName == nil {
 		t.Errorf("unconfirmed changes took effect: %+v", got)
 	}
 
@@ -271,7 +312,7 @@ func TestUpdate_ConfirmsChangesThatRedirectOrStopAlerts(t *testing.T) {
 		t.Fatalf("confirmed change: status %d, body %s", rec.Code, rec.Body)
 	}
 	got = decode[response](t, rec)
-	if got.Enabled || got.Target != "https://other.example.com:8443" || got.HeaderName != nil {
+	if got.Enabled || (got.Target == nil || *got.Target != "https://other.example.com:8443") || got.HeaderName != nil {
 		t.Errorf("confirmed change = %+v", got)
 	}
 	if actions := f.confirmer.confirmed(); actions[len(actions)-1] != audit.ActionAlertChannelUpdate {
