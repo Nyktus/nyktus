@@ -3,11 +3,15 @@
 
 // Package alerting manages the channels that alerts are delivered to.
 //
-// A channel is a URL that receives a POST with the alert, formatted for its
-// type. The URL is a secret: a chat webhook accepts messages from whoever
+// Most channels are a URL that receives a POST with the alert, formatted for
+// its type. The URL is a secret: a chat webhook accepts messages from whoever
 // knows it. A webhook may send one header in addition, whose value is a secret
 // as well. Secrets are encrypted at rest, bound to their channel and purpose,
 // and never logged; the console writes them but cannot read them back.
+//
+// A channel of the type email sends the alert as mail to its recipients
+// through the SMTP server of the operator. Addresses grant nothing to whoever
+// knows them, so they are no secret: they are stored and shown as they are.
 package alerting
 
 import (
@@ -20,6 +24,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"nyktus.org/nyktus/internal/platform/smtp"
 )
 
 // ResourceType names channels in the audit log.
@@ -37,10 +43,12 @@ const (
 	TypeSlack Type = "slack"
 	// TypeTeams is a workflow of Microsoft Teams that posts to a channel.
 	TypeTeams Type = "teams"
+	// TypeEmail sends mail to its recipients.
+	TypeEmail Type = "email"
 )
 
 // Types lists every type, in the order of the documentation.
-var Types = []Type{TypeWebhook, TypeSlack, TypeTeams}
+var Types = []Type{TypeWebhook, TypeSlack, TypeTeams, TypeEmail}
 
 // Valid reports whether t is a known type.
 func (t Type) Valid() bool { return slices.Contains(Types, t) }
@@ -52,6 +60,8 @@ const (
 	MaxURLLength         = 2048
 	MaxHeaderNameLength  = 64
 	MaxHeaderValueLength = 1024
+	// MaxRecipients bounds the recipients of a channel of the type email.
+	MaxRecipients = smtp.MaxRecipients
 	// MaxChannels bounds the channels of an installation. Every alert is
 	// delivered to every channel.
 	MaxChannels = 20
@@ -65,11 +75,18 @@ var (
 	ErrInvalidURL         = errors.New("invalid alert channel URL")
 	ErrInvalidHeaderName  = errors.New("invalid header name")
 	ErrInvalidHeaderValue = errors.New("invalid header value")
+	ErrInvalidRecipients  = errors.New("invalid recipients")
 	// ErrHeaderNotAllowed means that a header was set for a channel whose
 	// receiver reads none.
 	ErrHeaderNotAllowed = errors.New("only a webhook sends a header")
-	ErrNameTaken        = errors.New("alert channel name is already in use")
-	ErrTooManyChannels  = errors.New("too many alert channels")
+	// ErrURLNotAllowed means that a URL was set for a channel of the type
+	// email, which has recipients instead.
+	ErrURLNotAllowed = errors.New("a channel of the type email has no URL")
+	// ErrRecipientsNotAllowed means that recipients were set for a channel
+	// that is not of the type email.
+	ErrRecipientsNotAllowed = errors.New("only a channel of the type email has recipients")
+	ErrNameTaken            = errors.New("alert channel name is already in use")
+	ErrTooManyChannels      = errors.New("too many alert channels")
 	// ErrEnabled means that a channel must be disabled before it is deleted.
 	ErrEnabled = errors.New("alert channel is enabled")
 )
@@ -108,8 +125,10 @@ type Channel struct {
 	Type    Type
 	Enabled bool
 	// Target is the scheme, host and port of the URL, which is shown
-	// instead of it.
-	Target string
+	// instead of it, or nil for email.
+	Target *string
+	// Recipients are the addresses of a channel of the type email, or nil.
+	Recipients []string
 	// HeaderName is the name of the header that a webhook sends, or nil.
 	HeaderName *string
 	CreatedAt  time.Time
@@ -129,6 +148,9 @@ type Spec struct {
 	Enabled bool
 	URL     Secret
 	Header  *Header
+	// Recipients are the addresses of a channel of the type email, which
+	// has no URL.
+	Recipients []string
 }
 
 // LogValue names the type of the channel, without its secrets.
@@ -141,6 +163,18 @@ func (s Spec) Validate() error {
 	}
 	if err := ValidateName(s.Name); err != nil {
 		return err
+	}
+	if s.Type == TypeEmail {
+		switch {
+		case s.URL != "":
+			return ErrURLNotAllowed
+		case s.Header != nil:
+			return ErrHeaderNotAllowed
+		}
+		return ValidateRecipients(s.Recipients)
+	}
+	if s.Recipients != nil {
+		return ErrRecipientsNotAllowed
 	}
 	if _, err := Target(s.URL); err != nil {
 		return err
@@ -164,6 +198,8 @@ type Change struct {
 	Header *Header
 	// RemoveHeader removes the header.
 	RemoveHeader bool
+	// Recipients replaces the recipients of a channel of the type email.
+	Recipients *[]string
 }
 
 // LogValue keeps the secrets of the change out of logs.
@@ -171,7 +207,7 @@ func (Change) LogValue() slog.Value { return slog.StringValue("[redacted]") }
 
 // IsEmpty reports whether c changes nothing.
 func (c Change) IsEmpty() bool {
-	return c.Name == nil && c.Enabled == nil && c.URL == nil && c.Header == nil && !c.RemoveHeader
+	return c.Name == nil && c.Enabled == nil && c.URL == nil && c.Header == nil && !c.RemoveHeader && c.Recipients == nil
 }
 
 // NeedsConfirmation reports whether c must be confirmed with the password of
@@ -181,7 +217,7 @@ func (c Change) IsEmpty() bool {
 // a target that an administrator disabled, for example after its domain
 // lapsed.
 func (c Change) NeedsConfirmation() bool {
-	return c.URL != nil || c.Header != nil || c.RemoveHeader || c.Enabled != nil
+	return c.URL != nil || c.Header != nil || c.RemoveHeader || c.Enabled != nil || c.Recipients != nil
 }
 
 // Validate checks every field of c.
@@ -196,8 +232,29 @@ func (c Change) Validate() error {
 			return err
 		}
 	}
+	if c.Recipients != nil {
+		if err := ValidateRecipients(*c.Recipients); err != nil {
+			return err
+		}
+	}
 	if c.Header != nil {
 		return c.Header.validate()
+	}
+	return nil
+}
+
+// ValidateRecipients accepts 1 to MaxRecipients addresses as the SMTP client
+// sends them, none twice, ignoring case.
+func ValidateRecipients(list []string) error {
+	if len(list) == 0 || len(list) > MaxRecipients {
+		return ErrInvalidRecipients
+	}
+	seen := make(map[string]bool, len(list))
+	for _, a := range list {
+		if smtp.ValidateAddress(a) != nil || seen[strings.ToLower(a)] {
+			return ErrInvalidRecipients
+		}
+		seen[strings.ToLower(a)] = true
 	}
 	return nil
 }

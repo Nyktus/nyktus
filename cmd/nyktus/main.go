@@ -33,6 +33,7 @@ import (
 	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/platform/logging"
 	"nyktus.org/nyktus/internal/platform/migrate"
+	"nyktus.org/nyktus/internal/platform/smtp"
 	"nyktus.org/nyktus/internal/platform/ssrf"
 	"nyktus.org/nyktus/internal/trigger"
 	"nyktus.org/nyktus/internal/worker"
@@ -432,7 +433,8 @@ const (
 	workerMaxBackoff   = 30 * time.Second
 	workerJobTimeout   = 10 * time.Second
 	// deliveryJobTimeout bounds a delivery: claiming it, a request of at most
-	// ssrf.RequestTimeout, and recording its outcome.
+	// ssrf.RequestTimeout or a conversation with the SMTP server, which it
+	// ends before the client's own bound, and recording its outcome.
 	deliveryJobTimeout = 20 * time.Second
 	// Periodic tasks are due every few minutes at most, so the worker looks
 	// for them less often. A run removes rows in batches and is cut short
@@ -491,10 +493,24 @@ func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, sta
 		AllowedNetworks: cfg.AlertingAllowedNetworks,
 		AllowHTTP:       cfg.Environment == config.Development,
 	})
+	mail := mailClient(cfg.Worker.SMTP)
+	if mail == nil {
+		// A channel of the type email can be created without an SMTP
+		// server, because the console does not know the configuration of the
+		// worker; its deliveries are dead.
+		n, err := alerting.CountEnabled(ctx, pool, alerting.TypeEmail)
+		if err != nil {
+			return fmt.Errorf("worker: %w", err)
+		}
+		if n > 0 {
+			logger.WarnContext(ctx, "worker: email channels without smtp server", slog.Int("channels", n))
+		}
+	}
 	deliveries := worker.New(worker.Options{
 		Logger: logger,
 		Queue: alerting.NewDeliverer(alerting.DelivererOptions{
 			Logger: logger, DB: pool, Keys: cfg.EncryptionKeys, Client: guard.Client(), ConsoleURL: cfg.Worker.ConsoleURL,
+			Mail: mail,
 		}),
 		Concurrency:  cfg.Worker.DeliveryConcurrency,
 		PollInterval: workerPollInterval,
@@ -513,7 +529,7 @@ func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, sta
 		slog.Int("delivery_concurrency", cfg.Worker.DeliveryConcurrency),
 		slog.Int("audit_retention_days", cfg.Worker.AuditRetentionDays),
 		slog.Int("event_retention_days", cfg.Worker.EventRetentionDays),
-		slog.Int("incident_auto_close_days", cfg.Worker.AutoCloseDays))
+		slog.Int("incident_auto_close_days", cfg.Worker.AutoCloseDays), slog.Bool("smtp", mail != nil))
 	started()
 	var wg sync.WaitGroup
 	wg.Go(func() { events.Run(ctx) })
@@ -522,6 +538,26 @@ func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, sta
 	wg.Wait()
 	logger.InfoContext(ctx, "worker: stopped")
 	return nil
+}
+
+// mailClient returns the client of the SMTP server c, or nil if none is
+// configured. Without a configured name, it greets the server with the name
+// of the host.
+func mailClient(c *config.SMTP) *smtp.Client {
+	if c == nil {
+		return nil
+	}
+	helo := c.HeloName
+	if helo == "" {
+		var err error
+		if helo, err = os.Hostname(); err != nil || helo == "" {
+			helo = "localhost"
+		}
+	}
+	return smtp.New(smtp.Options{
+		Host: c.Host, Port: c.Port, TLS: c.TLS, Username: c.Username, Password: c.Password.Value(), From: c.From,
+		HeloName: helo,
+	})
 }
 
 // announceSetup issues a setup token while no administrator exists and writes the

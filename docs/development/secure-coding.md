@@ -231,10 +231,11 @@ The alert path must survive a compromise of the monitored environment, including
 
 - The URL of a channel, with its path and query, and the value of its header are secrets: a chat webhook accepts messages from whoever knows its URL. They are encrypted, bound to the channel and their purpose, never returned, also not on creation, and never logged; types that carry them redact them in `String`, `GoString`, `LogValue` and `MarshalJSON`.
 - The console writes the secrets but its database role cannot read them back. A change replaces a secret without comparing it, so the audit log counts it as changed.
+- The recipients of a channel of the type `email` are no secret: an address grants nothing to whoever knows it. They are stored and returned as they are, may appear in logs, and are confirmed with the password like a URL. Every address is a bare `local@domain`, checked by the SMTP client.
 - Every change other than a new name decides where alerts go, what authenticates them or whether they go at all, and is confirmed with the password through `session.Service.Confirm`, like the creation of an API key. This includes enabling a channel again, whose target may have changed hands meanwhile. A channel is deleted only once it is disabled, so that `DELETE` needs no body.
 - API keys never manage channels, not even by reading them.
 - Only the worker connects to receivers, also for tests, so that one host needs outbound access and no answer of the console reveals the network. A delivery records the status code and the class of a failure, never the response or the error, which names the URL.
-- A message carries no inventory and no personal data, because it often leaves for a service of a third party.
+- A message carries no inventory and no personal data, because it often leaves for a service of a third party. Mail names its recipients and nothing else of a person.
 
 ### Mail
 

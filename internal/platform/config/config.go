@@ -21,6 +21,7 @@ import (
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/logging"
 	"nyktus.org/nyktus/internal/platform/secretbox"
+	"nyktus.org/nyktus/internal/platform/smtp"
 )
 
 const prefix = "NYKTUS_"
@@ -197,6 +198,34 @@ type Worker struct {
 	// AutoCloseDays is how long an incident stays open without a new event
 	// before the worker closes it, or 0 to never close incidents on their own.
 	AutoCloseDays int
+	// SMTP is the server that sends the mail of alert channels of the type
+	// email, or nil if none is configured.
+	SMTP *SMTP
+}
+
+// SMTP configures the server that the worker sends mail through. It is chosen
+// by the operator, never by a user of the console, and therefore reached
+// without the SSRF guard, like the identity provider.
+type SMTP struct {
+	Host string
+	// Port is the port of the server; 0 stands for the default of the mode.
+	Port int
+	TLS  smtp.TLSMode
+	// Username and Password authenticate the worker, or are empty for a
+	// relay that admits it without authentication.
+	Username string
+	Password Secret
+	// From is the address that mail is sent from.
+	From string
+	// HeloName is the name with which the worker greets the server, or empty
+	// for the name of the host.
+	HeloName string
+}
+
+// smtpVariables are the settings of the SMTP server other than the host,
+// which enables it.
+var smtpVariables = []string{
+	"SMTP_PORT", "SMTP_TLS", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_PASSWORD_FILE", "SMTP_FROM", "SMTP_HELO_NAME",
 }
 
 // Limits of the retention, in days. Audit entries prove what happened long
@@ -389,6 +418,7 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 			AuditRetentionDays:  r.integer("AUDIT_RETENTION_DAYS", 365, MinAuditRetentionDays, MaxRetentionDays),
 			EventRetentionDays:  r.integer("EVENT_RETENTION_DAYS", 180, MinEventRetentionDays, MaxRetentionDays),
 			AutoCloseDays:       r.integer("INCIDENT_AUTO_CLOSE_DAYS", 14, 0, MaxAutoCloseDays),
+			SMTP:                r.smtp(cfg.Environment),
 		}
 	}
 	// The console encrypts the secrets of second factors and alert channels,
@@ -398,6 +428,74 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 		cfg.AlertingAllowedNetworks = r.prefixes("ALERTING_ALLOWED_NETWORKS")
 	}
 	return cfg, r.err()
+}
+
+// smtp reads the SMTP server, which NYKTUS_SMTP_HOST enables. Plain SMTP is
+// for development only: outside it, the password and every alert would cross
+// the network readable to anyone on the way.
+func (r *reader) smtp(env Environment) *SMTP {
+	host := r.get("SMTP_HOST")
+	if host == "" {
+		for _, name := range smtpVariables {
+			if r.get(name) != "" {
+				r.fail("%s%s is set, but %sSMTP_HOST is not; set it to send mail", prefix, name, prefix)
+			}
+		}
+		return nil
+	}
+	c := &SMTP{
+		Host: host, TLS: smtp.TLSStartTLS, Username: r.get("SMTP_USERNAME"), From: r.get("SMTP_FROM"),
+		HeloName: r.get("SMTP_HELO_NAME"),
+	}
+	if !validHost(host) {
+		r.fail("%sSMTP_HOST: %q is not a host name or an IP address", prefix, host)
+	}
+	if mode := r.get("SMTP_TLS"); mode != "" {
+		c.TLS = smtp.TLSMode(mode)
+		if !slices.Contains(smtp.TLSModes, c.TLS) {
+			r.fail("%sSMTP_TLS: must be %q, %q or %q, got %q", prefix, smtp.TLSStartTLS, smtp.TLSImplicit, smtp.TLSNone, mode)
+		}
+	}
+	if c.TLS == smtp.TLSNone && env != Development {
+		r.fail("%sSMTP_TLS: %q is allowed in development only; use %q or %q", prefix, smtp.TLSNone, smtp.TLSStartTLS,
+			smtp.TLSImplicit)
+	}
+	c.Port = r.integer("SMTP_PORT", 0, 1, 65535)
+	switch {
+	case c.From == "":
+		r.fail("%sSMTP_FROM is required with %sSMTP_HOST", prefix, prefix)
+	case smtp.ValidateAddress(c.From) != nil:
+		r.fail("%sSMTP_FROM: %q is not an address of the form local@domain in ASCII, without display name", prefix, c.From)
+	}
+	if c.HeloName != "" && !validHost(c.HeloName) {
+		r.fail("%sSMTP_HELO_NAME: %q is not a host name", prefix, c.HeloName)
+	}
+	hasPassword := r.get("SMTP_PASSWORD") != "" || r.get("SMTP_PASSWORD_FILE") != ""
+	switch {
+	case c.Username != "":
+		c.Password = r.requiredSecret("SMTP_PASSWORD")
+	case hasPassword:
+		r.fail("%sSMTP_PASSWORD is set, but %sSMTP_USERNAME is not", prefix, prefix)
+	}
+	return c
+}
+
+// validHost reports whether s is an IP address or a host name of one or more
+// labels, as an internal mail relay may have.
+func validHost(s string) bool {
+	if _, err := netip.ParseAddr(s); err == nil {
+		return true
+	}
+	name := strings.ToLower(strings.TrimSuffix(s, "."))
+	if name == "" || len(name) > 253 {
+		return false
+	}
+	for label := range strings.SplitSeq(name, ".") {
+		if !validLabel(label) {
+			return false
+		}
+	}
+	return true
 }
 
 // LoadAdmin reads the configuration of the admin commands from the settings of

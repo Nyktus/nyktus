@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"nyktus.org/nyktus/internal/platform/secretbox"
+	"nyktus.org/nyktus/internal/platform/smtp"
 )
 
 // DelivererOptions configures a Deliverer.
@@ -25,6 +26,9 @@ type DelivererOptions struct {
 	// ConsoleURL is the address of the console, to which an alert links its
 	// incident.
 	ConsoleURL string
+	// Mail sends the mail of channels of the type email, or is nil if no SMTP
+	// server is configured; their deliveries are then dead.
+	Mail *smtp.Client
 }
 
 // Deliverer delivers alerts and tests to their channels, one delivery at a
@@ -52,7 +56,10 @@ func NewDeliverer(o DelivererOptions) *Deliverer {
 	web := &httpTransport{client: o.Client, consoleURL: o.ConsoleURL}
 	return &Deliverer{
 		logger: o.Logger, db: o.DB, keys: o.Keys,
-		transports: map[Type]transport{TypeWebhook: web, TypeSlack: web, TypeTeams: web},
+		transports: map[Type]transport{
+			TypeWebhook: web, TypeSlack: web, TypeTeams: web,
+			TypeEmail: &mailTransport{client: o.Mail, consoleURL: o.ConsoleURL},
+		},
 	}
 }
 
@@ -77,6 +84,7 @@ type target struct {
 	url         Secret
 	headerName  *string
 	headerValue Secret
+	recipients  []string
 }
 
 // Process delivers the next delivery that is due, if there is one. It claims
@@ -211,32 +219,42 @@ WHERE id = $1 AND status = 'pending'`, del.ID, Backoff(del.Attempts+1))
 type storedChannel struct {
 	typ         Type
 	headerName  *string
+	recipients  []string
 	url         []byte
 	headerValue []byte
 }
 
-// loadChannel reads the channel id with its sealed secrets. It reports false if
-// the channel is gone, or disabled unless the delivery is a test, which may
-// try a channel before it is enabled. It locks the secrets until the end of
-// the claim, so that encrypting them again with a new key never overwrites
-// secrets that an administrator replaced meanwhile; a replacement waits for
-// the claim, or the claim reads the replacement.
+// loadChannel reads the channel id with its sealed secrets, if its type has
+// any. It reports false if the channel is gone, or disabled unless the
+// delivery is a test, which may try a channel before it is enabled. It locks
+// the secrets until the end of the claim, so that encrypting them again with a
+// new key never overwrites secrets that an administrator replaced meanwhile; a
+// replacement waits for the claim, or the claim reads the replacement.
 func (d *Deliverer) loadChannel(ctx context.Context, tx pgx.Tx, id string, test bool) (storedChannel, bool, error) {
 	var (
 		c       storedChannel
 		enabled bool
 	)
-	err := tx.QueryRow(ctx, `
-SELECT c.type, c.enabled, c.header_name, s.url, s.header_value
-FROM public.alert_channels AS c
-JOIN public.alert_channel_secrets AS s ON s.channel_id = c.id
-WHERE c.id = $1
-FOR NO KEY UPDATE OF s`, id).Scan(&c.typ, &enabled, &c.headerName, &c.url, &c.headerValue)
+	err := tx.QueryRow(ctx, `SELECT type, enabled, header_name, recipients FROM public.alert_channels WHERE id = $1`, id).
+		Scan(&c.typ, &enabled, &c.headerName, &c.recipients)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return storedChannel{}, false, nil
 	}
 	if err != nil {
 		return storedChannel{}, false, fmt.Errorf("load alert channel %s: %w", id, err)
+	}
+	if c.typ == TypeEmail {
+		return c, enabled || test, nil
+	}
+	err = tx.QueryRow(ctx, `
+SELECT url, header_value FROM public.alert_channel_secrets WHERE channel_id = $1
+FOR NO KEY UPDATE`, id).Scan(&c.url, &c.headerValue)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// The channel was deleted after it was read.
+		return storedChannel{}, false, nil
+	}
+	if err != nil {
+		return storedChannel{}, false, fmt.Errorf("load secrets of alert channel %s: %w", id, err)
 	}
 	return c, enabled || test, nil
 }
@@ -252,8 +270,11 @@ func (e *unreadableError) Unwrap() error { return e.err }
 // open decrypts the secrets of the channel id and encrypts them again with the
 // current key if another one sealed them, so that an old key can be retired
 // once every channel has delivered. It returns an *unreadableError if they do
-// not decrypt.
+// not decrypt. A channel of the type email has no secrets.
 func (d *Deliverer) open(ctx context.Context, tx pgx.Tx, id string, c storedChannel) (target, error) {
+	if c.typ == TypeEmail {
+		return target{recipients: c.recipients}, nil
+	}
 	plainURL, err := d.keys.Open(c.url, associatedData(purposeURL, id))
 	if err != nil {
 		return target{}, &unreadableError{fmt.Errorf("decrypt URL of alert channel %s: %w", id, err)}

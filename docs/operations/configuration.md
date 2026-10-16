@@ -79,6 +79,22 @@ The worker correlates the events of honeytokens into [incidents](incidents.md) a
 | `NYKTUS_INCIDENT_AUTO_CLOSE_DAYS` | `14` | Days without a new event after which the worker [closes an incident](incidents.md#closing-inactive-incidents), between 1 and 365, or `0` to close incidents only by triage. |
 | `NYKTUS_EVENT_RETENTION_DAYS` | `180` | Days that [events](incidents.md#retention) are kept after they were recorded, and closed incidents with their alerts and deliveries after they closed, between 30 and 3650. |
 
+### Mail
+
+`NYKTUS_SMTP_HOST` enables the SMTP server through which the worker sends the mail of [alert channels of the type `email`](alerting.md#mail). The other settings are rejected without it. Only the worker reads them; the console accepts channels of the type `email` without them, and their deliveries are dead until the worker has a server.
+
+| Variable | Default | Description |
+|---|---|---|
+| `NYKTUS_SMTP_HOST` | empty | Host name or IP address of the SMTP server, such as `smtp.example.com`. An internal relay may have a name of a single label. |
+| `NYKTUS_SMTP_TLS` | `starttls` | `starttls` connects in plain text and switches to TLS before anything else is sent, `tls` speaks TLS from the start. `none` sends in plain text and is allowed in development only, for a local mail catcher. |
+| `NYKTUS_SMTP_PORT` | `587` with `starttls`, `465` with `tls`, `25` with `none` | Port of the server. |
+| `NYKTUS_SMTP_USERNAME` | empty | User with which the worker authenticates, with `AUTH PLAIN` or, where the server offers only that, `AUTH LOGIN`. Leave it empty for a relay that admits the worker without authentication. |
+| `NYKTUS_SMTP_PASSWORD` | required with the username, secret | Password of the user. |
+| `NYKTUS_SMTP_FROM` | required with the host | Address that the mail is sent from, such as `nyktus@example.com`, without display name. Its domain also completes the `Message-ID` of every mail. |
+| `NYKTUS_SMTP_HELO_NAME` | name of the host | Name with which the worker greets the server. Set it if the server expects a fully qualified name that the host does not have. |
+
+The worker verifies the certificate of the server against the roots of the system, with TLS 1.2 or later; there is no setting to turn the check off. For a server with a certificate of a private authority, add the authority with the variables `SSL_CERT_FILE` or `SSL_CERT_DIR` of Go. The server is chosen by the operator and is often internal, so the worker reaches it without the checks of [allowed targets](alerting.md#allowed-targets) and `NYKTUS_ALERTING_ALLOWED_NETWORKS`, and ignores `HTTP_PROXY` and `HTTPS_PROXY`.
+
 ### Sign-in through an identity provider
 
 `NYKTUS_OIDC_ISSUER` enables the sign-in through an OpenID Connect provider. The other settings are rejected without it. See [Sign-in and sessions](sign-in.md#identity-provider).

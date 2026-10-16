@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"nyktus.org/nyktus/internal/platform/smtp"
 )
 
 // PayloadVersion is the version of the JSON that a webhook receives. It
@@ -133,6 +135,63 @@ const (
 	testText     = "This channel receives the alerts of Nyktus."
 	openIncident = "Open the incident"
 )
+
+// Layout of a mail: labels are padded to the same width, and lists wrap
+// before mailWidth, so that no line comes near the limit of SMTP.
+const (
+	mailLabelWidth = 13
+	mailWidth      = 76
+)
+
+// emailMessage is the mail of a delivery d of the message m to the
+// recipients to: plain text with what a chat message says. The subject names
+// the severity, so that a list of mail shows it; the delivery is the
+// identifier of the message. A test has no message.
+func emailMessage(m message, d Delivery, to []string, consoleURL string) smtp.Message {
+	msg := smtp.Message{To: to, ID: d.ID}
+	if d.AlertID == nil {
+		msg.Subject = testTitle
+		msg.Body = testText + "\n\nDelivery " + d.ID + "\n"
+		return msg
+	}
+	msg.Subject = alertTitle + " (" + m.severity + ")"
+	var b strings.Builder
+	b.WriteString("An incident opened in Nyktus.\n\n")
+	for _, f := range summary(m) {
+		value := f[1]
+		if f[0] == "Techniques" && len(m.techniques) > 0 {
+			value = wrapList(m.techniques, mailLabelWidth, mailWidth)
+		}
+		fmt.Fprintf(&b, "%-*s%s\n", mailLabelWidth, f[0]+":", value)
+	}
+	b.WriteString("\n" + openIncident + ": " + incidentURL(consoleURL, m.incidentID) + "\n\n")
+	b.WriteString("Delivery " + d.ID + "\n")
+	msg.Body = b.String()
+	return msg
+}
+
+// wrapList joins items with commas into lines of at most width characters,
+// indenting every line after the first by indent.
+func wrapList(items []string, indent, width int) string {
+	var b strings.Builder
+	col := indent
+	for i, item := range items {
+		if i > 0 {
+			b.WriteString(",")
+			col++
+			if col+1+len(item) > width {
+				b.WriteString("\n" + strings.Repeat(" ", indent))
+				col = indent
+			} else {
+				b.WriteString(" ")
+				col++
+			}
+		}
+		b.WriteString(item)
+		col += len(item)
+	}
+	return b.String()
+}
 
 // slackEscape escapes the characters that Slack reads as markup in text.
 func slackEscape(s string) string {

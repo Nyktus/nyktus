@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,8 @@ import (
 	"nyktus.org/nyktus/internal/platform/migrate"
 	"nyktus.org/nyktus/internal/platform/schematest"
 	"nyktus.org/nyktus/internal/platform/secretbox"
+	"nyktus.org/nyktus/internal/platform/smtp"
+	"nyktus.org/nyktus/internal/platform/smtp/smtptest"
 	"nyktus.org/nyktus/migrations"
 )
 
@@ -302,6 +305,13 @@ func TestRun_WorkerProcessesRecordedEvents(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Without an SMTP server, the worker warns about the channel at the
+	// start, and its delivery dies.
+	if _, err := alerting.NewStore(owner, keyring).Create(t.Context(), alerting.Spec{
+		Name: "mail", Type: alerting.TypeEmail, Enabled: true, Recipients: []string{"soc@example.com"},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := owner.Exec(t.Context(), `
 INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repeat('a', 26))`); err != nil {
 		t.Fatal(err)
@@ -329,13 +339,14 @@ VALUES (sha256('s'), sha256('b'), repeat('n', 43), repeat('v', 43), 'sign_in', c
 
 	// The worker looks for jobs and periodic tasks right after it started.
 	for {
-		var blocked, logins int
+		var blocked, unsent, logins int
 		if err := owner.QueryRow(ctx, `
 SELECT (SELECT count(*) FROM alert_deliveries WHERE status = 'dead' AND last_error = 'blocked'),
-	(SELECT count(*) FROM oidc_logins)`).Scan(&blocked, &logins); err != nil {
+	(SELECT count(*) FROM alert_deliveries WHERE status = 'dead' AND last_error = 'not_configured'),
+	(SELECT count(*) FROM oidc_logins)`).Scan(&blocked, &unsent, &logins); err != nil {
 			t.Fatalf("count deliveries and sign-ins: %v", err)
 		}
-		if blocked == 1 && logins == 0 {
+		if blocked == 1 && unsent == 1 && logins == 0 {
 			break
 		}
 		select {
@@ -351,12 +362,82 @@ SELECT (SELECT count(*) FROM alert_deliveries WHERE status = 'dead' AND last_err
 		t.Errorf("exit code = %d, want %d; stderr: %s", code, exitOK, stderr.String())
 	}
 	for _, want := range []string{
-		`"msg":"worker: started"`, `"msg":"incident: opened"`, `"msg":"alerting: delivery dead"`,
+		`"msg":"worker: email channels without smtp server","channels":1`, `"msg":"worker: started"`,
+		`"smtp":false`, `"msg":"incident: opened"`, `"msg":"alerting: delivery dead"`,
 		`"msg":"worker: periodic task completed","task":"delete_expired_sign_in_data","rows":1`, `"msg":"worker: stopped"`,
 	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("log does not contain %s: %s", want, stderr.String())
 		}
+	}
+}
+
+// The worker sends the mail of a channel of the type email through the
+// configured SMTP server; plain SMTP is allowed in development only.
+func TestRun_WorkerSendsMail(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, workerURL := schematest.Worker(t)
+	owner := schematest.Open(t, ownerURL)
+	keys := testKeys(t)
+	keyring, err := secretbox.ParseKeyring(keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := smtptest.New(t, smtptest.Options{NoSTARTTLS: true})
+	c, err := alerting.NewStore(owner, keyring).Create(t.Context(), alerting.Spec{
+		Name: "mail", Type: alerting.TypeEmail, Recipients: []string{"soc@example.com"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alerting.RequestTest(t.Context(), owner, c.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	env := map[string]string{
+		"NYKTUS_ENV":                 "development",
+		"NYKTUS_WORKER_DATABASE_URL": workerURL,
+		"NYKTUS_ENCRYPTION_KEYS":     keys,
+		"NYKTUS_SMTP_HOST":           server.Host,
+		"NYKTUS_SMTP_PORT":           strconv.Itoa(server.Port),
+		"NYKTUS_SMTP_TLS":            "none",
+		"NYKTUS_SMTP_FROM":           "nyktus@example.com",
+	}
+	var stderr bytes.Buffer
+	exited := make(chan int, 1)
+	go func() { exited <- run(ctx, []string{"serve", "--roles=worker"}, source(env), &bytes.Buffer{}, &stderr) }()
+	for len(server.Messages()) == 0 {
+		select {
+		case code := <-exited:
+			t.Fatalf("worker exited with %d before it sent the mail; stderr: %s", code, stderr.String())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	cancel()
+	if code := <-exited; code != exitOK {
+		t.Errorf("exit code = %d, want %d; stderr: %s", code, exitOK, stderr.String())
+	}
+	if m := server.Messages()[0]; !slices.Equal(m.To, []string{"soc@example.com"}) || m.From != "nyktus@example.com" {
+		t.Errorf("message from %s to %v", m.From, m.To)
+	}
+	if !strings.Contains(stderr.String(), `"smtp":true`) {
+		t.Errorf("log = %s", stderr.String())
+	}
+}
+
+func TestMailClient(t *testing.T) {
+	t.Parallel()
+
+	if mailClient(nil) != nil {
+		t.Error("mailClient(nil) is not nil")
+	}
+	// Without a name to greet with, the client greets with the name of the
+	// host; New panics on an empty one.
+	if mailClient(&config.SMTP{Host: "mail.example.com", TLS: smtp.TLSStartTLS, From: "nyktus@example.com"}) == nil {
+		t.Error("mailClient returned no client")
 	}
 }
 

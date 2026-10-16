@@ -1525,7 +1525,9 @@ $$;
 -- the value of its header are secrets: a chat webhook accepts messages from
 -- whoever knows its URL, and a header authenticates at the receiver. They are
 -- kept apart in alert_channel_secrets, which the console can write but not
--- read; the channel shows only the scheme, host and port of its URL.
+-- read; the channel shows only the scheme, host and port of its URL. A channel
+-- of the type email has no URL and no secret: its recipients are addresses,
+-- which grant nothing to whoever knows them.
 CREATE TABLE public.alert_channels (
 	id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 	name        text NOT NULL,
@@ -1533,8 +1535,11 @@ CREATE TABLE public.alert_channels (
 	-- because the URL of one type is no URL of another.
 	type        text NOT NULL,
 	enabled     boolean NOT NULL DEFAULT true,
-	-- The scheme, host and port of the URL, shown instead of it.
-	target      text NOT NULL,
+	-- The scheme, host and port of the URL, shown instead of it. Empty for
+	-- email.
+	target      text,
+	-- The addresses that a channel of the type email sends to.
+	recipients  text[],
 	-- The name of a header that a webhook sends, whose value is a secret.
 	header_name text,
 	created_at  timestamptz NOT NULL DEFAULT clock_timestamp(),
@@ -1547,7 +1552,25 @@ CREATE TABLE public.alert_channels (
 		AND name = btrim(name)
 		AND name !~ '[\x01-\x1f\x7f]'
 	),
-	CONSTRAINT alert_channels_type_check CHECK (type IN ('webhook', 'slack', 'teams')),
+	CONSTRAINT alert_channels_type_check CHECK (type IN ('webhook', 'slack', 'teams', 'email')),
+	-- A channel of the type email has recipients, every other type a URL.
+	CONSTRAINT alert_channels_destination_check CHECK (
+		(type = 'email') = (recipients IS NOT NULL) AND (type = 'email') = (target IS NULL)
+	),
+	-- Up to ten bare addresses in printable ASCII, without display name,
+	-- comment or quoting. The application checks the addresses in detail and
+	-- that none repeats. The addresses are checked as one list joined by
+	-- commas; that the list has one comma less than addresses keeps a comma
+	-- out of every address.
+	CONSTRAINT alert_channels_recipients_check CHECK (
+		cardinality(recipients) BETWEEN 1 AND 10
+		AND array_ndims(recipients) = 1
+		AND octet_length(array_to_string(recipients, ',', ' ')) <= 2600
+		AND octet_length(array_to_string(recipients, ',', ' '))
+			- octet_length(replace(array_to_string(recipients, ',', ' '), ',', '')) = cardinality(recipients) - 1
+		AND array_to_string(recipients, ',', ' ')
+			~ '^[A-Za-z0-9!#$%&''*+/=?^_`{|}~.-]{1,64}@[A-Za-z0-9.-]{3,253}(,[A-Za-z0-9!#$%&''*+/=?^_`{|}~.-]{1,64}@[A-Za-z0-9.-]{3,253})*$'
+	),
 	CONSTRAINT alert_channels_target_check CHECK (
 		octet_length(target) <= 300 AND target ~ '^https?://[\x21-\x2e\x30-\x3e\x41-\x7e]+$'
 	),
@@ -1587,8 +1610,8 @@ REVOKE ALL ON public.alert_channels, public.alert_channel_secrets FROM PUBLIC, n
 -- and creation times come from the database, and the type of a channel never
 -- changes. The secrets of a deleted channel go with it.
 GRANT SELECT, DELETE ON public.alert_channels TO nyktus_console;
-GRANT INSERT (name, type, enabled, target, header_name) ON public.alert_channels TO nyktus_console;
-GRANT UPDATE (name, enabled, target, header_name, updated_at) ON public.alert_channels TO nyktus_console;
+GRANT INSERT (name, type, enabled, target, header_name, recipients) ON public.alert_channels TO nyktus_console;
+GRANT UPDATE (name, enabled, target, header_name, recipients, updated_at) ON public.alert_channels TO nyktus_console;
 GRANT SELECT (channel_id) ON public.alert_channel_secrets TO nyktus_console;
 GRANT INSERT (channel_id, url, header_value) ON public.alert_channel_secrets TO nyktus_console;
 GRANT UPDATE (url, header_value) ON public.alert_channel_secrets TO nyktus_console;
@@ -1609,9 +1632,10 @@ BEGIN
 			('alert_channels', NULL, 'SELECT'), ('alert_channels', NULL, 'DELETE'),
 			('alert_channels', 'name', 'INSERT'), ('alert_channels', 'type', 'INSERT'),
 			('alert_channels', 'enabled', 'INSERT'), ('alert_channels', 'target', 'INSERT'),
-			('alert_channels', 'header_name', 'INSERT'),
+			('alert_channels', 'header_name', 'INSERT'), ('alert_channels', 'recipients', 'INSERT'),
 			('alert_channels', 'name', 'UPDATE'), ('alert_channels', 'enabled', 'UPDATE'),
 			('alert_channels', 'target', 'UPDATE'), ('alert_channels', 'header_name', 'UPDATE'),
+			('alert_channels', 'recipients', 'UPDATE'),
 			('alert_channels', 'updated_at', 'UPDATE'),
 			('alert_channel_secrets', 'channel_id', 'SELECT'),
 			('alert_channel_secrets', 'channel_id', 'INSERT'), ('alert_channel_secrets', 'url', 'INSERT'),
@@ -1677,9 +1701,9 @@ CREATE TABLE public.alert_deliveries (
 	attempts         integer NOT NULL DEFAULT 0,
 	-- When the next attempt is due.
 	not_before       timestamptz NOT NULL DEFAULT clock_timestamp(),
-	-- The last attempt: its time, the status code of the response, if there
-	-- was one, the class of its failure and how long it took. The response
-	-- itself is never stored.
+	-- The last attempt: its time, the status code of the response or the
+	-- reply code of the SMTP server, if there was one, the class of its
+	-- failure and how long it took. The response itself is never stored.
 	last_attempt_at  timestamptz,
 	last_status_code integer,
 	last_error       text,
@@ -1687,7 +1711,7 @@ CREATE TABLE public.alert_deliveries (
 	delivered_at     timestamptz,
 	created_at       timestamptz NOT NULL DEFAULT clock_timestamp(),
 
-	CONSTRAINT alert_deliveries_channel_type_check CHECK (channel_type IN ('webhook', 'slack', 'teams')),
+	CONSTRAINT alert_deliveries_channel_type_check CHECK (channel_type IN ('webhook', 'slack', 'teams', 'email')),
 	CONSTRAINT alert_deliveries_channel_name_check CHECK (char_length(channel_name) BETWEEN 1 AND 64),
 	CONSTRAINT alert_deliveries_status_check CHECK (status IN ('pending', 'delivered', 'dead', 'canceled')),
 	CONSTRAINT alert_deliveries_attempts_check CHECK (attempts BETWEEN 0 AND 100),
@@ -1698,7 +1722,8 @@ CREATE TABLE public.alert_deliveries (
 	),
 	CONSTRAINT alert_deliveries_last_status_code_check CHECK (last_status_code BETWEEN 100 AND 599),
 	CONSTRAINT alert_deliveries_last_error_check CHECK (
-		last_error IN ('http_status', 'redirect', 'timeout', 'network', 'tls', 'blocked', 'invalid_channel')
+		last_error IN ('http_status', 'smtp_status', 'redirect', 'timeout', 'network', 'tls', 'blocked', 'invalid_channel',
+			'not_configured')
 	),
 	CONSTRAINT alert_deliveries_last_duration_check CHECK (last_duration_ms >= 0)
 )

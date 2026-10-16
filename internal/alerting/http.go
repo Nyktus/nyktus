@@ -62,26 +62,13 @@ func (t *httpTransport) send(ctx context.Context, a attempt) outcome {
 // never kept: the error of a request names its URL, which is a secret.
 func classify(resp *http.Response, err error) outcome {
 	if err != nil {
-		var (
-			netErr  net.Error
-			certErr *tls.CertificateVerificationError
-			unknown x509.UnknownAuthorityError
-			invalid x509.CertificateInvalidError
-			host    x509.HostnameError
-			record  tls.RecordHeaderError
-		)
 		switch {
 		case errors.Is(err, ssrf.ErrBlocked):
 			return outcome{permanent: true, failure: FailureBlocked}
 		case errors.Is(err, ssrf.ErrInvalidURL):
 			return outcome{permanent: true, failure: FailureInvalidChannel}
-		case errors.As(err, &certErr), errors.As(err, &unknown), errors.As(err, &invalid), errors.As(err, &host),
-			errors.As(err, &record):
-			return outcome{failure: FailureTLS}
-		case errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr) && netErr.Timeout():
-			return outcome{failure: FailureTimeout}
 		default:
-			return outcome{failure: FailureNetwork}
+			return classifyConnection(err)
 		}
 	}
 	code := resp.StatusCode
@@ -100,6 +87,28 @@ func classify(resp *http.Response, err error) outcome {
 		o.permanent, o.failure = true, FailureHTTPStatus
 	}
 	return o
+}
+
+// classifyConnection maps an error of the connection to a receiver, of any
+// kind of channel, to an outcome that is tried again.
+func classifyConnection(err error) outcome {
+	var (
+		netErr  net.Error
+		certErr *tls.CertificateVerificationError
+		unknown x509.UnknownAuthorityError
+		invalid x509.CertificateInvalidError
+		host    x509.HostnameError
+		record  tls.RecordHeaderError
+	)
+	switch {
+	case errors.As(err, &certErr), errors.As(err, &unknown), errors.As(err, &invalid), errors.As(err, &host),
+		errors.As(err, &record):
+		return outcome{failure: FailureTLS}
+	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr) && netErr.Timeout():
+		return outcome{failure: FailureTimeout}
+	default:
+		return outcome{failure: FailureNetwork}
+	}
 }
 
 // retryAfter reads the wait that a receiver asks for, in seconds or as a date,
