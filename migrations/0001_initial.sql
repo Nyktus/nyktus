@@ -505,7 +505,13 @@ CREATE TABLE public.sessions (
 	CONSTRAINT sessions_token_hash_check CHECK (octet_length(token_hash) = 32),
 	CONSTRAINT sessions_last_seen_at_check CHECK (last_seen_at >= created_at),
 	CONSTRAINT sessions_reauthenticated_at_check CHECK (reauthenticated_at >= created_at)
-);
+)
+-- Rows of this table come and go all the time while few of them live at once.
+-- The default lets dead rows reach a fifth of the table before autovacuum
+-- removes them, which for a small, busy table means scans over mostly dead
+-- rows; a fiftieth keeps it compact. The same applies to the other tables
+-- with these settings.
+WITH (autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0.05);
 
 -- Signing in removes the expired sessions of the user, and deleting a user
 -- removes all of them.
@@ -732,9 +738,12 @@ CREATE TABLE public.oidc_logins (
 	-- unreserved characters (RFC 7636, section 4.1).
 	CONSTRAINT oidc_logins_nonce_check CHECK (nonce ~ '^[A-Za-z0-9_-]{43}$'),
 	CONSTRAINT oidc_logins_code_verifier_check CHECK (code_verifier ~ '^[A-Za-z0-9_-]{43}$')
-);
+)
+-- Busy and short-lived, like sessions.
+WITH (autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0.05);
 
--- Starting a sign-in removes the expired ones.
+-- The worker removes the expired sign-ins through this index. Every request
+-- that starts a sign-in adds a row, before any authentication.
 CREATE INDEX oidc_logins_expires_at_idx ON public.oidc_logins (expires_at);
 
 -- Ending a session removes its reauthentication.
@@ -1139,7 +1148,9 @@ CREATE TABLE public.event_jobs (
 	not_before timestamptz NOT NULL DEFAULT clock_timestamp(),
 
 	CONSTRAINT event_jobs_attempts_check CHECK (attempts >= 0)
-);
+)
+-- A queue: busy and short-lived, like sessions.
+WITH (autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0.05);
 
 -- The worker takes the due job that has waited longest. The window starts at
 -- statement_timestamp(), so that the index can be used.
@@ -1685,7 +1696,9 @@ CREATE TABLE public.alert_deliveries (
 		last_error IN ('http_status', 'redirect', 'timeout', 'network', 'tls', 'blocked', 'invalid_channel')
 	),
 	CONSTRAINT alert_deliveries_last_duration_check CHECK (last_duration_ms >= 0)
-);
+)
+-- A queue as well: every attempt updates its delivery.
+WITH (autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0.05);
 
 -- An alert reaches each channel once, also when two workers raise it.
 CREATE UNIQUE INDEX alert_deliveries_alert_channel_key ON public.alert_deliveries (alert_id, channel_id)
@@ -1773,6 +1786,123 @@ BEGIN
 END
 $$;
 
+-- Periodic tasks of the worker, such as removing expired rows. Each task has a
+-- row that says when it is due next. A worker takes a due task with
+-- SELECT ... FOR UPDATE SKIP LOCKED and moves it to its next run before it
+-- runs it, so that several workers share the tasks without coordination and a
+-- task runs once per interval, not once per worker. The rows are fixed: the
+-- migration creates them, and the worker only records when they ran.
+CREATE TABLE public.periodic_tasks (
+	name              text PRIMARY KEY,
+	next_run_at       timestamptz NOT NULL DEFAULT clock_timestamp(),
+	last_started_at   timestamptz,
+	last_succeeded_at timestamptz,
+	last_failed_at    timestamptz,
+	-- The rows that the last successful run removed or changed.
+	last_rows         bigint,
+
+	CONSTRAINT periodic_tasks_name_check CHECK (name IN ('delete_expired_sign_in_data')),
+	CONSTRAINT periodic_tasks_last_rows_check CHECK (last_rows >= 0)
+);
+
+INSERT INTO public.periodic_tasks (name) VALUES ('delete_expired_sign_in_data');
+
+-- Removes expired sign-in data: sessions, challenges of the second factor,
+-- unconfirmed TOTP factors, activation and reset links, API keys, sign-ins
+-- through the identity provider and setup tokens. The console removes some of
+-- them on the way, but only for the account at hand; without this function,
+-- data of accounts that never sign in again, and sign-ins that anyone can
+-- start, would stay forever.
+--
+-- The worker reads no accounts, so it calls this function instead of holding
+-- privileges on these tables. It removes only what has expired by the rules of
+-- the schema, never anything the console would still accept: sessions by the
+-- longest idle timeout (24 hours) and lifetime (30 days) that the console can
+-- be configured with, and unconfirmed factors after the ten minutes in which
+-- they can be confirmed. Shorter settings of the console leave expired
+-- sessions a little longer, which nobody can use.
+--
+-- It removes at most batch rows of each table, skipping rows that another
+-- transaction holds, and returns how many it removed, so that the worker calls
+-- it again while rows remain and no call holds locks for long. The times are
+-- compared with statement_timestamp(), which lets the indexes be used and lies
+-- before clock_timestamp(), against which the console checks expiry.
+CREATE FUNCTION public.delete_expired_sign_in_data(batch integer) RETURNS integer
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = ''
+	SET lock_timeout = '5s'
+AS $$
+DECLARE
+	removed integer := 0;
+	n integer;
+	now_at timestamptz := statement_timestamp();
+BEGIN
+	IF batch IS NULL OR batch NOT BETWEEN 1 AND 10000 THEN
+		RAISE EXCEPTION 'batch must be between 1 and 10000, not %', batch USING ERRCODE = 'invalid_parameter_value';
+	END IF;
+
+	DELETE FROM public.sessions WHERE id IN (
+		SELECT s.id FROM public.sessions AS s
+		WHERE s.last_seen_at <= now_at - interval '24 hours' OR s.created_at <= now_at - interval '30 days'
+		LIMIT batch FOR UPDATE SKIP LOCKED
+	);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	removed := removed + n;
+
+	DELETE FROM public.sign_in_challenges WHERE token_hash IN (
+		SELECT c.token_hash FROM public.sign_in_challenges AS c
+		WHERE c.expires_at <= now_at
+		LIMIT batch FOR UPDATE SKIP LOCKED
+	);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	removed := removed + n;
+
+	DELETE FROM public.totp_factors WHERE user_id IN (
+		SELECT f.user_id FROM public.totp_factors AS f
+		WHERE f.confirmed_at IS NULL AND f.created_at <= now_at - interval '10 minutes'
+		LIMIT batch FOR UPDATE SKIP LOCKED
+	);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	removed := removed + n;
+
+	DELETE FROM public.account_links WHERE user_id IN (
+		SELECT l.user_id FROM public.account_links AS l
+		WHERE l.expires_at <= now_at
+		LIMIT batch FOR UPDATE SKIP LOCKED
+	);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	removed := removed + n;
+
+	DELETE FROM public.api_keys WHERE id IN (
+		SELECT k.id FROM public.api_keys AS k
+		WHERE k.expires_at <= now_at
+		LIMIT batch FOR UPDATE SKIP LOCKED
+	);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	removed := removed + n;
+
+	DELETE FROM public.oidc_logins WHERE state_hash IN (
+		SELECT o.state_hash FROM public.oidc_logins AS o
+		WHERE o.expires_at <= now_at
+		LIMIT batch FOR UPDATE SKIP LOCKED
+	);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	removed := removed + n;
+
+	DELETE FROM public.setup_tokens WHERE token_hash IN (
+		SELECT t.token_hash FROM public.setup_tokens AS t
+		WHERE t.expires_at <= now_at
+		LIMIT batch FOR UPDATE SKIP LOCKED
+	);
+	GET DIAGNOSTICS n = ROW_COUNT;
+	RETURN removed + n;
+END
+$$;
+
+REVOKE ALL ON public.periodic_tasks FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.delete_expired_sign_in_data(integer) FROM PUBLIC, nyktus_console;
+
 -- The trigger and the DNS role reach nothing but their function, and the
 -- worker nothing but its tables. Everything in the schema is revoked here, at
 -- its end, including the table of the migration runner, so that default
@@ -1852,6 +1982,14 @@ GRANT INSERT (alert_id, channel_id, channel_type, channel_name) ON public.alert_
 GRANT UPDATE (status, attempts, not_before, last_attempt_at, last_status_code, last_error, last_duration_ms, delivered_at)
 	ON public.alert_deliveries TO nyktus_worker;
 
+-- The worker takes the periodic tasks and records when they ran. It cannot
+-- add or rename a task. What a task removes, it removes through a function,
+-- which decides what has expired.
+GRANT SELECT ON public.periodic_tasks TO nyktus_worker;
+GRANT UPDATE (next_run_at, last_started_at, last_succeeded_at, last_failed_at, last_rows)
+	ON public.periodic_tasks TO nyktus_worker;
+GRANT EXECUTE ON FUNCTION public.delete_expired_sign_in_data(integer) TO nyktus_worker;
+
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
 -- result is verified instead of assumed, in both directions: every privilege on
 -- every table, column, sequence and function of the schema is compared with
@@ -1883,7 +2021,14 @@ BEGIN
 			('alert_deliveries', 'status', 'UPDATE'), ('alert_deliveries', 'attempts', 'UPDATE'),
 			('alert_deliveries', 'not_before', 'UPDATE'), ('alert_deliveries', 'last_attempt_at', 'UPDATE'),
 			('alert_deliveries', 'last_status_code', 'UPDATE'), ('alert_deliveries', 'last_error', 'UPDATE'),
-			('alert_deliveries', 'last_duration_ms', 'UPDATE'), ('alert_deliveries', 'delivered_at', 'UPDATE')
+			('alert_deliveries', 'last_duration_ms', 'UPDATE'), ('alert_deliveries', 'delivered_at', 'UPDATE'),
+			('periodic_tasks', NULL, 'SELECT'),
+			('periodic_tasks', 'next_run_at', 'UPDATE'), ('periodic_tasks', 'last_started_at', 'UPDATE'),
+			('periodic_tasks', 'last_succeeded_at', 'UPDATE'), ('periodic_tasks', 'last_failed_at', 'UPDATE'),
+			('periodic_tasks', 'last_rows', 'UPDATE')
+	),
+	functions (signature) AS (
+		VALUES ('public.attack_technique_ids_valid(text[])'), ('public.delete_expired_sign_in_data(integer)')
 	),
 	privileges (object, privilege, held, wanted) AS (
 		SELECT c.relname::text, p.privilege,
@@ -1916,7 +2061,7 @@ BEGIN
 		WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'S'
 		UNION ALL
 		SELECT f.oid::regprocedure::text, 'EXECUTE', has_function_privilege('nyktus_worker', f.oid, 'EXECUTE'),
-			f.oid = 'public.attack_technique_ids_valid(text[])'::regprocedure
+			f.oid IN (SELECT signature::regprocedure FROM functions)
 		FROM pg_catalog.pg_proc AS f
 		WHERE f.pronamespace = 'public'::regnamespace
 		UNION ALL

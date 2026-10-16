@@ -36,7 +36,7 @@ with `api-key.json`:
 
   A scope to write requires the scope to read the same resource, because a key that changes a resource receives it in the responses. Honeytokens are part of the inventory: give integrations that only follow incidents or read the audit log, such as a SIEM, keys without the honeytoken scopes, and integrations that do not need client addresses keys without `events:read`. Keys never manage accounts, keys or [alert channels](alerting.md), not even by reading them: a key with access to the channels could redirect or stop the alerts.
 - **Expiry.** Every key expires, at the latest three years after it is created. There is no default; choose a period that suits the integration and your rotation policy. Nyktus does not yet remind anyone before a key expires.
-- **Limit.** The team has at most 50 keys that have not expired. Creating a key deletes the expired keys.
+- **Limit.** The team has at most 50 keys that have not expired. Creating a key deletes the expired keys, and the [worker](database.md#periodic-tasks) deletes them within five minutes after they expire.
 - **Password.** A wrong password counts as a failed sign-in, as with a change of password.
 
 `GET /api/v1/api-keys` lists the keys of the team with their scopes, creator, expiry and last use, never their secrets. The last use is exact to a minute.

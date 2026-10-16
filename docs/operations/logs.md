@@ -64,11 +64,11 @@ Other queries, such as those of names without a value or outside the zones, are 
 
 ## Worker
 
-The [worker](incidents.md) logs what became of the events it processed and of the [alerts](alerting.md) it delivered. Records of deliveries name the delivery, its channel and the incident by their identifiers, never the URL of the channel or the response of the receiver.
+The [worker](incidents.md) logs what became of the events it processed, of the [alerts](alerting.md) it delivered and of its [periodic tasks](database.md#periodic-tasks). Records of deliveries name the delivery, its channel and the incident by their identifiers, never the URL of the channel or the response of the receiver.
 
 | Message | Level | Content |
 |---|---|---|
-| `worker: started` | info | The worker looks for events to process and alerts to deliver; `concurrency` and `delivery_concurrency` are the numbers it handles at a time. |
+| `worker: started` | info | The worker looks for events to process, alerts to deliver and periodic tasks that are due; `concurrency` and `delivery_concurrency` are the numbers of events and alerts it handles at a time. |
 | `worker: stopped` | info | The worker processed its last event and stopped. |
 | `incident: opened` | info | An event opened an incident and raised its alert. `incident` holds `incident_id`, `event_id`, `resource_type`, `resource_id` and `severity`; `deliveries` counts the channels the alert goes to. |
 | `alerting: no enabled channel` | warn | An incident opened while no alert channel was enabled, so its alert reaches nobody. `incident_id` names it. |
@@ -79,7 +79,8 @@ The [worker](incidents.md) logs what became of the events it processed and of th
 | `alerting: attempt not recorded` | warn | The outcome of an attempt was not recorded, because the delivery was claimed again or settled meanwhile; the later state stands. |
 | `incident: event assigned` | debug | An event was added to an open incident. Same fields as above. |
 | `incident: event not processed` | error | An event could not be assigned to an incident. It stays and is tried again at `retry_at`; `attempts` counts the failed attempts, `error` names the cause. The event is not lost, but it raises no alert until it is processed. |
-| `worker: job failed` | error | The worker could not reach the database or complete a transaction. `error` names the cause. Unless `claimed` is `true`, the worker waits before it tries again, longer after every failure in a row, up to 30 seconds. A delivery that could not be claimed is postponed by its backoff, without counting an attempt, so that the deliveries behind it go out. |
+| `worker: periodic task completed` | info | A [periodic task](database.md#periodic-tasks) `task` ran to its end and removed `rows` rows. A run that removed nothing is logged at debug. |
+| `worker: job failed` | error | The worker could not reach the database or complete a transaction. `error` names the cause. Unless `claimed` is `true`, the worker waits before it tries again, longer after every failure in a row, up to 30 seconds, or 5 minutes when it looks for periodic tasks. A delivery that could not be claimed is postponed by its backoff, without counting an attempt, so that the deliveries behind it go out. A periodic task that failed starts again within a minute. |
 
 ## Sign-in through an identity provider
 

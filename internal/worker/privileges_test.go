@@ -26,8 +26,10 @@ func TestCheckPrivileges(t *testing.T) {
 	}
 
 	_, consoleURL := dbtest.Role(t, ownerURL, "console", "IN ROLE "+pgx.Identifier{schematest.ConsoleRole}.Sanitize())
-	if err := CheckPrivileges(t.Context(), schematest.Open(t, consoleURL)); !errors.Is(err, db.ErrRolePrivileges) || !strings.Contains(err.Error(), "member of [nyktus_console]") {
-		t.Errorf("CheckPrivileges(console) = %v, want ErrRolePrivileges naming the console role", err)
+	// The console cannot run the functions of the worker, which is checked
+	// before its other privileges.
+	if err := CheckPrivileges(t.Context(), schematest.Open(t, consoleURL)); !errors.Is(err, db.ErrRolePrivileges) || !strings.Contains(err.Error(), "cannot execute public.delete_expired_sign_in_data(integer)") {
+		t.Errorf("CheckPrivileges(console) = %v, want ErrRolePrivileges naming the function of the worker", err)
 	}
 	// A member of the worker's group role with a privilege of its own.
 	name, widerURL := dbtest.Role(t, ownerURL, "wider", "IN ROLE "+pgx.Identifier{schematest.WorkerRole}.Sanitize())

@@ -250,11 +250,14 @@ var oidcVariables = []string{
 }
 
 // Limits of the session durations. A session must be able to outlast a short
-// pause, and must end within a month at the latest.
+// pause, and must end within a month at the latest. The worker removes
+// sessions beyond the upper limits, which the schema repeats.
 const (
 	minSessionIdleTimeout = 5 * time.Minute
-	maxSessionIdleTimeout = 24 * time.Hour
-	maxSessionMaxAge      = 30 * 24 * time.Hour
+	// MaxSessionIdleTimeout is the longest idle timeout of a session.
+	MaxSessionIdleTimeout = 24 * time.Hour
+	// MaxSessionMaxAge is the longest lifetime of a session.
+	MaxSessionMaxAge = 30 * 24 * time.Hour
 )
 
 // Serve is the configuration of the serve command.
@@ -310,10 +313,10 @@ func LoadServe(src Source, roles []Role) (Serve, error) {
 			URL:         r.consoleURL("CONSOLE_URL", cfg.Environment, addr),
 			DatabaseURL: r.requiredSecret("CONSOLE_DATABASE_URL"),
 			SessionIdleTimeout: r.duration("SESSION_IDLE_TIMEOUT", time.Hour,
-				minSessionIdleTimeout, maxSessionIdleTimeout),
+				minSessionIdleTimeout, MaxSessionIdleTimeout),
 		}
 		cfg.Console.SessionMaxAge = r.duration("SESSION_MAX_AGE", 12*time.Hour,
-			max(cfg.Console.SessionIdleTimeout, minSessionIdleTimeout), maxSessionMaxAge)
+			max(cfg.Console.SessionIdleTimeout, minSessionIdleTimeout), MaxSessionMaxAge)
 		cfg.Console.OIDC = r.oidc(cfg.Environment)
 		cfg.Console.LocalLogin = r.localLogin(cfg.Console.OIDC != nil)
 		cfg.Console.TriggerURL = r.triggerURL("TRIGGER_URL", cfg.Environment, cfg.Console.URL)
