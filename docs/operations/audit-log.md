@@ -6,7 +6,7 @@ Nyktus records security-relevant actions in an audit log in its database. The co
 
 - **Action** in the form `resource.verb`, such as `user.create`, `session.create` or `session.delete`. A request denied for a missing permission names the permission it lacked, such as `audit.read`.
 - **Outcome:** `success`, `failure` or `denied`.
-- **Actor:** who acted and how they authenticated, such as a user with a password, through the [identity provider](sign-in.md#identity-provider) (`oidc`) or with a session, an [API key](api-keys.md) with its identifier, or the holder of the setup token. For a user, the entry keeps a copy of the address and display name at the time of the entry, and for a key a copy of its name, so it stays readable after the account is deleted or the key revoked.
+- **Actor:** who acted and how they authenticated, such as a user with a password, through the [identity provider](sign-in.md#identity-provider) (`oidc`) or with a session, an [API key](api-keys.md) with its identifier, or the holder of the setup token. Commands of the [command line](users.md) and the [worker](database.md#periodic-tasks), which [closes inactive incidents](incidents.md#closing-inactive-incidents), act as the system. For a user, the entry keeps a copy of the address and display name at the time of the entry, and for a key a copy of its name, so it stays readable after the account is deleted or the key revoked.
 - **Resource** by type and identifier, never by name. Updates name the changed fields, never their values.
 - **Client address** and **request ID**, which links the entry to the [log](logs.md) records of the request.
 

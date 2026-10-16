@@ -17,6 +17,10 @@ An incident is `open` until someone looks into it, `acknowledged` while someone 
 
 Close an incident once its triage is finished. As long as it stays open, new events of its honeytoken join it without an alert, even if they come from someone else weeks later.
 
+### Closing inactive incidents
+
+The [worker](database.md#periodic-tasks) closes incidents, open or acknowledged, whose last event was more than `NYKTUS_INCIDENT_AUTO_CLOSE_DAYS` ago, 14 by default, every 15 minutes, so that a forgotten incident does not swallow the alerts of later intrusions. A triage does not count as activity: what keeps an incident open is a new event. Set the variable to `0` to leave every incident open until it is triaged; otherwise it is between 1 and 365 days. The [audit log](audit-log.md) records each closing as `incident.update` of the field `status` by the system, and the log of the worker as `incident: closed`. An event that arrives while its incident closes opens a new incident with a new alert.
+
 An event is processed once and belongs to exactly one incident. Events outlive their honeytoken, and so do incidents: deleting a honeytoken keeps both.
 
 ## Severity
