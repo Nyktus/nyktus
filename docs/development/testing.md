@@ -45,6 +45,7 @@ Each of these properties needs its own test, named after the property:
 - The console can write the secrets of alert channels but never read them, and the secrets are stored encrypted and bound to their channel.
 - Every periodic task removes exactly what has expired, also at the boundary, and nothing that is still valid; its lower bounds hold in the database; two workers run it without errors and without running it twice; and no role other than the worker can execute its functions.
 - An incident without events closes after its inactivity, open or acknowledged, with an audit entry of the system and only the lock of the incident: an event that waits for it meanwhile opens a new incident with a new alert.
+- The metrics contain no inventory and no personal data, and labels hold only fixed values.
 - Every alert reaches every enabled channel once, also when two workers look for deliveries at the same time; a failing channel never holds up the others; retries, backoff and dead deliveries are tested by moving the stored times, never by waiting; secrets of channels never reach the log, also when a request fails.
 
 ### Checks are tested against violations
