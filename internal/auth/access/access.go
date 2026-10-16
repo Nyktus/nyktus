@@ -22,12 +22,15 @@ import (
 // first route that requires it is added.
 var grants = map[user.Role][]httpx.Permission{
 	user.RoleAdmin: {
-		"alert_channels:read", "alert_channels:write", "api_keys:read", "api_keys:write", "audit:read", "events:read",
+		"alert_channels:read", "alert_channels:write", "api_keys:read", "api_keys:write", "audit:read", "catalog:read",
+		"events:read",
 		"honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write", "metrics:read", "users:read",
 		"users:write",
 	},
-	user.RoleUser:   {"events:read", "honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write"},
-	user.RoleViewer: {"events:read", "honeytokens:read", "incidents:read"},
+	user.RoleUser: {
+		"catalog:read", "events:read", "honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write",
+	},
+	user.RoleViewer: {"catalog:read", "events:read", "honeytokens:read", "incidents:read"},
 }
 
 // keyScopes lists the permissions that an API key may carry as scopes. Keys do
@@ -38,12 +41,13 @@ var grants = map[user.Role][]httpx.Permission{
 // reading the inventory, so integrations that only need other data get keys
 // without these scopes. Keys may read events and incidents and triage
 // incidents, so that a SIEM or a ticket system can follow them up. Keys may read
-// the metrics, so that a monitoring system can collect them. Keys never manage
+// the metrics, so that a monitoring system can collect them. Keys may read the
+// catalog, which holds no inventory. Keys never manage
 // alert channels: a leaked key could redirect the alerts to its holder or stop
 // them.
 var keyScopes = []httpx.Permission{
-	"audit:read", "events:read", "honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write",
-	"metrics:read",
+	"audit:read", "catalog:read", "events:read", "honeytokens:read", "honeytokens:write", "incidents:read",
+	"incidents:write", "metrics:read",
 }
 
 // keyScopeRequires names the scopes that a key may carry only together with

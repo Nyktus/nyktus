@@ -62,6 +62,8 @@ tags:
     description: The audit log of security-relevant actions.
   - name: users
     description: Management of accounts by administrators, and their activation.
+  - name: catalog
+    description: The deceptions of the catalog, blueprints of scenarios that ship with Nyktus.
   - name: honeytokens
     description: Honeytokens of the team, which raise an event when their URL is requested.
   - name: incidents
@@ -1394,6 +1396,87 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/Unavailable"
+
+  /api/v1/catalog/deceptions:
+    get:
+      operationId: listCatalogDeceptions
+      summary: List the deceptions of the catalog
+      description: |
+        Returns every deception of the catalog, ordered by identifier. The
+        catalog ships with Nyktus and is the same in every installation, so
+        the list is complete and not paged, and it holds no inventory.
+      tags: [catalog]
+      x-access: catalog:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      parameters:
+        - name: lang
+          in: query
+          description: The language of the texts. Without it, they are English.
+          schema:
+            type: string
+            enum: [en, de]
+      responses:
+        "200":
+          description: The deceptions of the catalog.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogDeceptionList"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/catalog/deceptions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+    get:
+      operationId: getCatalogDeception
+      summary: Get a deception of the catalog
+      description: |
+        Returns a deception with the honeytokens that applying it creates, the
+        values of the persona that it asks for, the secrets that it generates
+        and the artifacts that it renders.
+      tags: [catalog]
+      x-access: catalog:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      parameters:
+        - name: lang
+          in: query
+          description: The language of the texts. Without it, they are English.
+          schema:
+            type: string
+            enum: [en, de]
+      responses:
+        "200":
+          description: The deception.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogDeception"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
   /api/v1/honeytokens:
     get:
@@ -2729,7 +2812,7 @@ components:
             in the responses.
           items:
             type: string
-            enum: [audit:read, events:read, honeytokens:read, honeytokens:write, incidents:read, incidents:write, metrics:read]
+            enum: [audit:read, catalog:read, events:read, honeytokens:read, honeytokens:write, incidents:read, incidents:write, metrics:read]
         expires_at:
           type: string
           format: date-time
@@ -3054,6 +3137,142 @@ components:
           items:
             $ref: "#/components/schemas/AlertDelivery"
 
+    CatalogDeceptionList:
+      type: object
+      additionalProperties: false
+      required: [deceptions]
+      properties:
+        deceptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogDeceptionSummary"
+    CatalogDeceptionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, category, title, summary, techniques, engage_activities]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+        category:
+          type: string
+          enum: [identity, network, data, endpoint, application]
+        title:
+          type: string
+        summary:
+          type: string
+        techniques:
+          type: array
+          description: Identifiers of the MITRE ATT&CK techniques that a trigger of the deception suggests.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        engage_activities:
+          type: array
+          description: Identifiers of the MITRE Engage activities that the deception carries out.
+          items:
+            type: string
+            pattern: "^EAC[0-9]{4}$"
+    CatalogDeception:
+      type: object
+      additionalProperties: false
+      required: [id, category, title, summary, techniques, engage_activities, honeytokens, persona, secrets, artifacts]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+        category:
+          type: string
+          enum: [identity, network, data, endpoint, application]
+        title:
+          type: string
+        summary:
+          type: string
+        techniques:
+          type: array
+          description: Identifiers of the MITRE ATT&CK techniques that a trigger of the deception suggests.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        engage_activities:
+          type: array
+          description: Identifiers of the MITRE Engage activities that the deception carries out.
+          items:
+            type: string
+            pattern: "^EAC[0-9]{4}$"
+        honeytokens:
+          type: array
+          description: The honeytokens that applying the deception creates.
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, type, label, techniques]
+            properties:
+              key:
+                type: string
+              type:
+                type: string
+                enum: [web_url, web_image, dns]
+              label:
+                type: string
+              techniques:
+                type: array
+                description: Identifiers of the MITRE ATT&CK techniques that the honeytoken receives.
+                items:
+                  type: string
+                  pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        persona:
+          type: array
+          description: |
+            The values that the administrator enters when applying the deception, so that the
+            artifacts fit the environment. `example` only illustrates a value; the deception has no
+            default for it, because a value that every installation shares would identify the artifacts.
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, kind, label, example]
+            properties:
+              key:
+                type: string
+              kind:
+                type: string
+                enum: [host, name, text]
+                description: |
+                  `host` is a host name of lowercase letters, digits, hyphens and dots, `name` an account
+                  name, and `text` free text on one line, which appears only in files that a person reads.
+              label:
+                type: string
+              example:
+                type: string
+        secrets:
+          type: array
+          description: The random values of letters and digits that applying the deception generates, such as passwords.
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, length]
+            properties:
+              key:
+                type: string
+              length:
+                type: integer
+                minimum: 8
+                maximum: 64
+        artifacts:
+          type: array
+          description: The files that applying the deception renders. A deception without artifacts consists of its guide.
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, file_name, format]
+            properties:
+              key:
+                type: string
+              file_name:
+                type: string
+              format:
+                type: string
+                enum: [text, markdown, html, config]
     Honeytoken:
       type: object
       additionalProperties: false

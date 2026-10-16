@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	embedded "nyktus.org/nyktus/catalog"
 	"nyktus.org/nyktus/internal/alerting"
 	"nyktus.org/nyktus/internal/auth/oidc"
 	"nyktus.org/nyktus/internal/auth/password"
@@ -294,6 +295,7 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 		TrustedProxies: cfg.TrustedProxies,
 		OIDC:           provider,
 		OIDCGroups:     groups,
+		Catalog:        embedded.Deceptions(),
 	})
 	if err != nil {
 		_ = ln.Close()

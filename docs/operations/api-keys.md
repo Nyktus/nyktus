@@ -30,6 +30,7 @@ with `api-key.json`:
   | Scope | Allows |
   |---|---|
   | `audit:read` | reading the [audit log](audit-log.md) |
+  | `catalog:read` | reading the [deception catalog](catalog.md), which holds no inventory |
   | `incidents:read`, `incidents:write` | reading and triaging [incidents](incidents.md), for example from a ticket system |
   | `events:read` | reading [events](incidents.md#reading-incidents-and-events), which contain personal data such as client addresses |
   | `honeytokens:read`, `honeytokens:write` | reading and managing [honeytokens](honeytokens.md), for example to roll them out by script |

@@ -21,6 +21,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"nyktus.org/nyktus/api"
+	embedded "nyktus.org/nyktus/catalog"
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/audit/auditapi"
 	"nyktus.org/nyktus/internal/auth/password"
@@ -45,6 +46,7 @@ func newEnv(t *testing.T) env {
 	ownerURL, consoleURL := schematest.Console(t)
 	pool := schematest.Open(t, consoleURL)
 	h, err := console.New(t.Context(), console.Options{
+		Catalog:    embedded.Deceptions(),
 		Logger:     slog.New(slog.DiscardHandler),
 		DB:         pool,
 		Setup:      setup.NewService(pool),
