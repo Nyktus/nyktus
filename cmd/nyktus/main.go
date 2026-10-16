@@ -434,12 +434,25 @@ const (
 	// deliveryJobTimeout bounds a delivery: claiming it, a request of at most
 	// ssrf.RequestTimeout, and recording its outcome.
 	deliveryJobTimeout = 20 * time.Second
+	// Periodic tasks are due every few minutes at most, so the worker looks
+	// for them less often. A run removes rows in batches and is cut short
+	// after periodicJobTimeout; the next run continues within a minute.
+	periodicPollInterval = 30 * time.Second
+	periodicMaxBackoff   = 5 * time.Minute
+	periodicJobTimeout   = 10 * time.Minute
 )
+
+// periodicTasks returns the periodic tasks of the worker, one for every row of
+// periodic_tasks.
+func periodicTasks(q db.Querier) []worker.Task {
+	return []worker.Task{worker.DeleteExpiredSignInData(q)}
+}
 
 func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, started func()) error {
 	// Every job in progress holds one connection; a delivery holds it only
-	// while it claims and records an attempt.
-	conns := int32(cfg.Worker.Concurrency + cfg.Worker.DeliveryConcurrency) //nolint:gosec // The configuration bounds both to 32.
+	// while it claims and records an attempt. Periodic tasks run one at a
+	// time.
+	conns := int32(cfg.Worker.Concurrency + cfg.Worker.DeliveryConcurrency + 1) //nolint:gosec // The configuration bounds both to 32.
 	pool, err := db.Open(ctx, cfg.Worker.DatabaseURL.Value(), db.Options{MaxConns: conns})
 	if err != nil {
 		return fmt.Errorf("worker: %w", err)
@@ -483,12 +496,21 @@ func serveWorker(ctx context.Context, cfg config.Serve, logger *slog.Logger, sta
 		MaxBackoff:   workerMaxBackoff,
 		JobTimeout:   deliveryJobTimeout,
 	})
+	periodic := worker.New(worker.Options{
+		Logger:       logger,
+		Queue:        worker.NewPeriodic(logger, pool, periodicTasks(pool)),
+		Concurrency:  1,
+		PollInterval: periodicPollInterval,
+		MaxBackoff:   periodicMaxBackoff,
+		JobTimeout:   periodicJobTimeout,
+	})
 	logger.InfoContext(ctx, "worker: started", slog.Int("concurrency", cfg.Worker.Concurrency),
 		slog.Int("delivery_concurrency", cfg.Worker.DeliveryConcurrency))
 	started()
 	var wg sync.WaitGroup
 	wg.Go(func() { events.Run(ctx) })
 	wg.Go(func() { deliveries.Run(ctx) })
+	wg.Go(func() { periodic.Run(ctx) })
 	wg.Wait()
 	logger.InfoContext(ctx, "worker: stopped")
 	return nil

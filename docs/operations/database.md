@@ -13,12 +13,12 @@ Nyktus stores all state in PostgreSQL 16 or later. Each server role connects wit
 | Trigger login (any name) | Login, member of `nyktus_trigger` | The trigger connects with it through `NYKTUS_TRIGGER_DATABASE_URL`. |
 | `nyktus_dns` | Group, created by the setup script | Receives the privileges of the DNS role through migrations: it can call the one function that records a query, and read or write no table. |
 | DNS login (any name) | Login, member of `nyktus_dns` | The [DNS role](dns.md) connects with it through `NYKTUS_DNS_DATABASE_URL`. |
-| `nyktus_worker` | Group, created by the setup script | Receives the privileges of the worker through migrations: it reads events, writes incidents and their alerts, and delivers the alerts, but reads no honeytokens, accounts or audit entries. |
+| `nyktus_worker` | Group, created by the setup script | Receives the privileges of the worker through migrations: it reads events, writes incidents and their alerts, delivers the alerts and runs the [periodic tasks](#periodic-tasks), but reads no honeytokens, accounts or audit entries. |
 | Worker login (any name) | Login, member of `nyktus_worker` | The worker connects with it through `NYKTUS_WORKER_DATABASE_URL`. |
 
 The trigger and the DNS role are reached from the internet. Their roles cannot read honeytokens: each hands one requested value at a time to a database function of its own, which records the request or query and returns only what the answer and the log need. Whoever takes over the host of the trigger or of the DNS role can test a URL or name they already know, but cannot list the decoys. Each role can only call its own function, so a login of the trigger cannot record DNS queries, and the other way around.
 
-The worker correlates events into [incidents](incidents.md). It needs no honeytoken to do so: every event holds the type and the techniques of its honeytoken. Its role can read events and assign them to incidents, open and update incidents and write their alerts, but cannot change what an event recorded, change the triage of an incident, change an alert once written, or delete anything other than the processing jobs of events. To deliver alerts, it reads the [alert channels](alerting.md) with their secrets, creates the deliveries of a new alert and records every attempt; it can encrypt the secrets of a channel again with a new key, but cannot create, redirect or delete a channel, change where a delivery goes, or delete one.
+The worker correlates events into [incidents](incidents.md). It needs no honeytoken to do so: every event holds the type and the techniques of its honeytoken. Its role can read events and assign them to incidents, open and update incidents and write their alerts, but cannot change what an event recorded, change the triage of an incident, change an alert once written, or delete anything other than the processing jobs of events; what it removes of the [periodic tasks](#periodic-tasks), it removes through functions of the database. To deliver alerts, it reads the [alert channels](alerting.md) with their secrets, creates the deliveries of a new alert and records every attempt; it can encrypt the secrets of a channel again with a new key, but cannot create, redirect or delete a channel, change where a delivery goes, or delete one.
 
 The console manages [alert channels](alerting.md) and writes their secrets, the URL and the value of a header, but its role cannot read them back: whoever takes over the console's login does not obtain the channels. The secrets are stored encrypted in a table of their own, `alert_channel_secrets`. The console can request a test of a channel and retry a dead delivery, the latter only through a database function, but cannot create the delivery of an alert or mark one as delivered.
 
@@ -123,4 +123,22 @@ Outside development, the server refuses to start if a role's login can bypass th
 
 The trigger and the DNS role additionally refuse to start unless their login can execute their recording function and do nothing else: it must not access any table, execute another function, create objects in the schema, or be a member of a role other than `nyktus_trigger` or `nyktus_dns`, even without inheriting from it. This catches, for example, a `NYKTUS_TRIGGER_DATABASE_URL` or `NYKTUS_DNS_DATABASE_URL` that names the login of the console by mistake.
 
-The worker refuses to start unless its login stays within its tables (`events`, `event_jobs`, `incidents` and `alerts`): it must not access any other table, execute a function other than the one that checks technique identifiers, create objects in the schema, or be a member of a role other than `nyktus_worker`. Neither may it hold a privilege that `nyktus_worker` lacks, such as one granted to the login directly. This applies to the trigger and the DNS role as well.
+The worker refuses to start unless its login stays within its tables (`events`, `event_jobs`, `incidents`, `alerts`, the tables of the [alert channels](alerting.md) and their deliveries, and `periodic_tasks`): it must not access any other table, execute a function other than the one that checks technique identifiers and those of its [periodic tasks](#periodic-tasks), create objects in the schema, or be a member of a role other than `nyktus_worker`. Neither may it hold a privilege that `nyktus_worker` lacks, such as one granted to the login directly. This applies to the trigger and the DNS role as well.
+
+## Periodic tasks
+
+The worker keeps the database from growing without bounds. It removes rows that have expired, at fixed intervals:
+
+| Task | Interval | What it removes |
+|---|---|---|
+| `delete_expired_sign_in_data` | 5 minutes | Expired [sessions](sign-in.md#sessions), sign-ins through the identity provider, challenges and unconfirmed setups of a second factor, activation and password reset links, [API keys](api-keys.md) and setup tokens. |
+
+Sessions are removed after the longest idle timeout and lifetime that the console accepts, 24 hours without a request or 30 days after the sign-in. A shorter `NYKTUS_SESSION_IDLE_TIMEOUT` or `NYKTUS_SESSION_MAX_AGE` ends sessions earlier; the expired rows stay until then, and nobody can use them.
+
+The table `periodic_tasks` records for every task when it is due next and when it last started, succeeded or failed, and how many rows the last successful run removed. Several workers share the tasks: the first worker that finds a task due moves it to its next run and runs it, so each task runs once per interval. A run removes up to 1000 rows of each table at a time, in a transaction of its own, until none remain. A run that fails, or that is cut short because the worker stops or the run took longer than ten minutes, starts again within a minute; it continues where the last one stopped. The worker removes nothing itself: it calls a function of the database for each task, which decides what has expired, so its login needs no access to the accounts.
+
+Without a worker, expired rows stay, and so does every sign-in through the identity provider that someone started, which anyone can do without an account.
+
+### Autovacuum
+
+The tables `sessions`, `oidc_logins`, `event_jobs` and `alert_deliveries` change all the time while few of their rows live at once. The migrations lower their autovacuum thresholds (`autovacuum_vacuum_scale_factor = 0.02`, `autovacuum_analyze_scale_factor = 0.05`), so that dead rows are removed before they make up a large part of the table. They need no further tuning.

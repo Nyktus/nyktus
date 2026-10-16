@@ -10,17 +10,22 @@ import (
 )
 
 // scope is everything that the worker's database role reaches: the jobs of
-// events, incidents and their alerts, and the channels and deliveries of the
-// alerts. It reads no inventory, because an event holds what its incident
-// needs, and no accounts or audit entries.
+// events, incidents and their alerts, the channels and deliveries of the
+// alerts, and the periodic tasks. It reads no inventory, because an event holds
+// what its incident needs, and no accounts or audit entries: what it removes
+// of them, it removes through functions that decide what has expired.
 var scope = db.Scope{
 	GroupRole: "nyktus_worker",
 	Tables: []string{
 		"event_jobs", "events", "incidents", "alerts", "alert_channels", "alert_channel_secrets", "alert_deliveries",
+		"periodic_tasks",
 	},
-	// The checks of the techniques run with the privileges of the role that
-	// writes.
-	Functions: []string{"public.attack_technique_ids_valid(text[])"},
+	Functions: []string{
+		// The checks of the techniques run with the privileges of the role
+		// that writes.
+		"public.attack_technique_ids_valid(text[])",
+		"public.delete_expired_sign_in_data(integer)",
+	},
 }
 
 // CheckPrivileges returns db.ErrRolePrivileges unless the connected role stays

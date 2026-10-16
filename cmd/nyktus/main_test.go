@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -307,6 +308,12 @@ INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repe
 	if _, err := owner.Exec(t.Context(), "SELECT * FROM record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')"); err != nil {
 		t.Fatal(err)
 	}
+	// An abandoned sign-in, which the periodic tasks remove.
+	if _, err := owner.Exec(t.Context(), `
+INSERT INTO oidc_logins (state_hash, browser_hash, nonce, code_verifier, purpose, expires_at)
+VALUES (sha256('s'), sha256('b'), repeat('n', 43), repeat('v', 43), 'sign_in', clock_timestamp() - interval '1 second')`); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
@@ -319,13 +326,15 @@ INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repe
 	exited := make(chan int, 1)
 	go func() { exited <- run(ctx, []string{"serve", "--roles=worker"}, source(env), &bytes.Buffer{}, &stderr) }()
 
-	// The worker looks for jobs right after it started.
+	// The worker looks for jobs and periodic tasks right after it started.
 	for {
-		var blocked int
-		if err := owner.QueryRow(ctx, "SELECT count(*) FROM alert_deliveries WHERE status = 'dead' AND last_error = 'blocked'").Scan(&blocked); err != nil {
-			t.Fatalf("count deliveries: %v", err)
+		var blocked, logins int
+		if err := owner.QueryRow(ctx, `
+SELECT (SELECT count(*) FROM alert_deliveries WHERE status = 'dead' AND last_error = 'blocked'),
+	(SELECT count(*) FROM oidc_logins)`).Scan(&blocked, &logins); err != nil {
+			t.Fatalf("count deliveries and sign-ins: %v", err)
 		}
-		if blocked == 1 {
+		if blocked == 1 && logins == 0 {
 			break
 		}
 		select {
@@ -341,11 +350,36 @@ INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repe
 		t.Errorf("exit code = %d, want %d; stderr: %s", code, exitOK, stderr.String())
 	}
 	for _, want := range []string{
-		`"msg":"worker: started"`, `"msg":"incident: opened"`, `"msg":"alerting: delivery dead"`, `"msg":"worker: stopped"`,
+		`"msg":"worker: started"`, `"msg":"incident: opened"`, `"msg":"alerting: delivery dead"`,
+		`"msg":"worker: periodic task completed","task":"delete_expired_sign_in_data","rows":1`, `"msg":"worker: stopped"`,
 	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("log does not contain %s: %s", want, stderr.String())
 		}
+	}
+}
+
+// The worker runs a task for every row of periodic_tasks, and every task has
+// a row: a task without a row would never run, and a row without a task would
+// never be taken.
+func TestPeriodicTasks_MatchTheSchema(t *testing.T) {
+	t.Parallel()
+
+	var names []string
+	for _, task := range periodicTasks(nil) {
+		names = append(names, task.Name)
+	}
+	slices.Sort(names)
+	rows, err := schematest.Open(t, schematest.New(t)).Query(t.Context(), "SELECT name FROM periodic_tasks ORDER BY name COLLATE \"C\"")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(names, stored) {
+		t.Errorf("periodic tasks = %v, rows of periodic_tasks = %v", names, stored)
 	}
 }
 
@@ -366,8 +400,9 @@ func TestRun_WorkerRefusesTheLoginOfTheConsole(t *testing.T) {
 	if code := run(ctx, []string{"serve", "--roles=worker"}, source(env), &bytes.Buffer{}, &stderr); code != exitFailure {
 		t.Fatalf("exit code = %d, want %d; stderr: %s", code, exitFailure, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "member of [nyktus_console]") {
-		t.Errorf("stderr = %q, want it to name the console role", stderr.String())
+	// The login of the console cannot run the functions of the worker.
+	if !strings.Contains(stderr.String(), "connect as a member of nyktus_worker") {
+		t.Errorf("stderr = %q, want it to name the role of the worker", stderr.String())
 	}
 }
 
