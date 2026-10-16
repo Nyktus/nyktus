@@ -129,6 +129,9 @@ type Template struct {
 	format Format
 	// fields are the values that the template references, with their kinds.
 	fields Fields
+	// static is the text of the template outside its actions, in every
+	// branch: everything that the output can contain apart from values.
+	static string
 	text   *texttemplate.Template
 	html   *htmltemplate.Template
 }
@@ -158,7 +161,8 @@ func Compile(name string, f Format, src string, fields Fields) (*Template, error
 		return nil, fmt.Errorf("%w: %s: only one template per file is allowed", ErrInvalidTemplate, name)
 	}
 	used := Fields{}
-	if err := walk(tt.Tree, tt.Root, func(n parse.Node, path string) error {
+	var static strings.Builder
+	if err := walk(tt.Tree, tt.Root, &static, func(n parse.Node, path string) error {
 		kind, ok := fields[path]
 		switch {
 		case !ok:
@@ -172,7 +176,7 @@ func Compile(name string, f Format, src string, fields Fields) (*Template, error
 		return nil, err
 	}
 
-	t := &Template{format: f, fields: used}
+	t := &Template{format: f, fields: used, static: static.String()}
 	if f == FormatHTML {
 		if t.html, err = htmltemplate.New(name).Option("missingkey=error").Parse(src); err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrInvalidTemplate, err)
@@ -225,18 +229,22 @@ func (t *Template) Render(values map[string]string) ([]byte, error) {
 	return out.buf.Bytes(), nil
 }
 
-// walk checks the nodes below n and calls field for every value they
-// reference, with its name.
-func walk(tree *parse.Tree, n parse.Node, field func(n parse.Node, path string) error) error {
+// walk checks the nodes below n, writes their text to static and calls field
+// for every value they reference, with its name.
+func walk(tree *parse.Tree, n parse.Node, static *strings.Builder, field func(n parse.Node, path string) error) error {
 	switch n := n.(type) {
 	case *parse.ListNode:
 		for _, child := range n.Nodes {
-			if err := walk(tree, child, field); err != nil {
+			if err := walk(tree, child, static, field); err != nil {
 				return err
 			}
 		}
 		return nil
 	case *parse.TextNode:
+		static.Write(n.Text)
+		// Text of different nodes is separated, so that a word cannot form
+		// across a branch.
+		static.WriteByte('\n')
 		return nil
 	case *parse.ActionNode:
 		path, err := fieldOf(tree, n, n.Pipe)
@@ -252,11 +260,11 @@ func walk(tree *parse.Tree, n parse.Node, field func(n parse.Node, path string) 
 		if err := field(n, path); err != nil {
 			return err
 		}
-		if err := walk(tree, n.List, field); err != nil {
+		if err := walk(tree, n.List, static, field); err != nil {
 			return err
 		}
 		if n.ElseList != nil {
-			return walk(tree, n.ElseList, field)
+			return walk(tree, n.ElseList, static, field)
 		}
 		return nil
 	default:

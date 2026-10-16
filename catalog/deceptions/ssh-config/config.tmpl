@@ -1,0 +1,8 @@
+Host jump
+    HostName {{.Honeytokens.JumpHost.Host}}
+    User {{.Persona.Account}}
+
+Host *.{{.Persona.Domain}}
+    User {{.Persona.Account}}
+    ProxyJump jump
+    ServerAliveInterval 60
