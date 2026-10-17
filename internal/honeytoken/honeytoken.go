@@ -20,8 +20,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"nyktus.org/nyktus/internal/attack"
 	"nyktus.org/nyktus/internal/platform/text"
@@ -216,19 +214,11 @@ func (c Change) validate() error {
 	return nil
 }
 
-// ValidateName accepts a name of 1 to MaxNameLength printable characters
-// without surrounding whitespace. Format characters are rejected along with
-// control characters, because bidirectional overrides can make a name appear as
-// a different one.
+// ValidateName accepts a name of 1 to MaxNameLength characters, as
+// text.ValidName describes.
 func ValidateName(s string) error {
-	n := utf8.RuneCountInString(s)
-	if n < 1 || n > MaxNameLength || strings.TrimSpace(s) != s || !utf8.ValidString(s) {
+	if !text.ValidName(s, MaxNameLength) {
 		return ErrInvalidName
-	}
-	for _, r := range s {
-		if !unicode.IsPrint(r) {
-			return ErrInvalidName
-		}
 	}
 	return nil
 }
