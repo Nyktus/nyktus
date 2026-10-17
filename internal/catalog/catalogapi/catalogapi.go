@@ -8,7 +8,6 @@ package catalogapi
 
 import (
 	"net/http"
-	"net/url"
 	"slices"
 
 	"nyktus.org/nyktus/internal/catalog"
@@ -153,24 +152,17 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 // without one. It rejects other parameters, a repeated parameter and an
 // unknown language with 400.
 func decodeLang(w http.ResponseWriter, r *http.Request) (string, bool) {
-	query, err := url.ParseQuery(r.URL.RawQuery)
-	if err != nil {
-		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "query string is invalid")
+	query, ok := httpx.DecodeQuery(w, r, paramLang)
+	if !ok {
 		return "", false
 	}
-	for name := range query {
-		if name != paramLang {
-			httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "unknown query parameter; use lang")
-			return "", false
-		}
-	}
-	values, ok := query[paramLang]
+	lang, ok := query[paramLang]
 	if !ok {
 		return defaultLang, true
 	}
-	if len(values) != 1 || !slices.Contains(catalog.Languages, values[0]) {
+	if !slices.Contains(catalog.Languages, lang) {
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, "lang must be en or de")
 		return "", false
 	}
-	return values[0], true
+	return lang, true
 }

@@ -67,7 +67,7 @@ Configuration is read from the environment once at startup, parsed into a typed 
 - Every operation declares its access in `x-access`: `public`, `authenticated` or a permission in the form `resource:action`. `httpx.Permission.Valid` is the only definition of that format.
 - Operations that are not public document `401` explicitly, and operations that require a permission also document `403`. Ranges such as `4XX` and `default` do not count, so that every denial is visible in the specification.
 - Operations are defined inline. `$ref` path items are not supported. Specification extensions (`x-...`) are allowed on the paths object and on path items.
-- A test compares method, path and access of every operation with the router, in both directions. It covers the attack surface, not response bodies; those are covered by handler tests.
+- A test compares method, path and access of every operation with the router, in both directions. It covers the attack surface, not response bodies; those are covered by handler tests, which check every kind of response against its schema with `apispec.Schemas.Check`. The schemas set `additionalProperties: false`, so that a member added to the code fails until it is documented.
 
 ### Authorization
 

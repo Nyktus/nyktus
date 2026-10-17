@@ -26,7 +26,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/platform/httpx"
-	"nyktus.org/nyktus/internal/user"
+	"nyktus.org/nyktus/internal/platform/text"
 )
 
 // Limits of keys.
@@ -87,10 +87,10 @@ type Spec struct {
 	ExpiresAt time.Time
 }
 
-// ParseName accepts a name of 1 to MaxNameLength characters under the rules of
-// a display name and returns it unchanged.
+// ParseName accepts a name of 1 to MaxNameLength characters, as
+// text.ValidName describes, and returns it unchanged.
 func ParseName(s string) (string, error) {
-	if _, err := user.ParseDisplayName(s); err != nil || len([]rune(s)) > MaxNameLength {
+	if !text.ValidName(s, MaxNameLength) {
 		return "", ErrInvalidName
 	}
 	return s, nil

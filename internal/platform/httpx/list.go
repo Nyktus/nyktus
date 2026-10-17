@@ -7,9 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
-	"net/url"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -63,19 +61,9 @@ func DecodeListQuery(w http.ResponseWriter, r *http.Request, defaultLimit, maxLi
 }
 
 func parseListQuery(raw string, defaultLimit, maxLimit int, filters []string) (ListQuery, error) {
-	query, err := url.ParseQuery(raw)
+	query, err := parseQuery(raw, append([]string{"limit", "cursor"}, filters...))
 	if err != nil {
-		return ListQuery{}, errors.New("query string is invalid")
-	}
-	known := append([]string{"limit", "cursor"}, filters...)
-	// The messages do not repeat the parameter names, which the client chose.
-	for name, values := range query {
-		if !slices.Contains(known, name) {
-			return ListQuery{}, errors.New("unknown query parameter; use " + strings.Join(known[:len(known)-1], ", ") + " and " + known[len(known)-1])
-		}
-		if len(values) != 1 {
-			return ListQuery{}, errors.New("query parameters must be given once")
-		}
+		return ListQuery{}, err
 	}
 
 	q := ListQuery{Limit: defaultLimit}
@@ -84,20 +72,20 @@ func parseListQuery(raw string, defaultLimit, maxLimit int, filters []string) (L
 			if q.Filters == nil {
 				q.Filters = map[string]string{}
 			}
-			q.Filters[name] = s[0]
+			q.Filters[name] = s
 		}
 	}
 	if s, ok := query["limit"]; ok {
 		// One spelling per number: no sign and no leading zeros, which
 		// strconv.Atoi would accept.
-		n, err := strconv.Atoi(s[0])
-		if !limitFormat.MatchString(s[0]) || err != nil || n > maxLimit {
+		n, err := strconv.Atoi(s)
+		if !limitFormat.MatchString(s) || err != nil || n > maxLimit {
 			return ListQuery{}, errors.New("limit must be a number from 1 to " + strconv.Itoa(maxLimit))
 		}
 		q.Limit = n
 	}
 	if s, ok := query["cursor"]; ok {
-		c, err := decodeCursor(s[0])
+		c, err := decodeCursor(s)
 		if err != nil {
 			return ListQuery{}, err
 		}

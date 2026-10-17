@@ -118,3 +118,38 @@ func TestDecodeListQuery_AcceptsDeclaredFilters(t *testing.T) {
 		t.Errorf("error %s does not name the parameters of the list", rec.Body)
 	}
 }
+
+// A request accepts the parameters it names, once each, and rejects every
+// other one with an error that names what it accepts.
+func TestDecodeQuery(t *testing.T) {
+	t.Parallel()
+
+	decode := func(query string, names ...string) (map[string]string, *httptest.ResponseRecorder, bool) {
+		rec := httptest.NewRecorder()
+		values, ok := DecodeQuery(rec, httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/items/1?"+query, nil), names...)
+		return values, rec, ok
+	}
+
+	if values, rec, ok := decode("a=1&b=", "a", "b", "c"); !ok || len(values) != 2 || values["a"] != "1" || values["b"] != "" {
+		t.Errorf("decode() = %v, %v (%s)", values, ok, rec.Body)
+	}
+	if values, rec, ok := decode("", "a"); !ok || len(values) != 0 {
+		t.Errorf("decode() without parameters = %v, %v (%s)", values, ok, rec.Body)
+	}
+	for _, tt := range []struct {
+		query, message string
+		names          []string
+	}{
+		{"a=1&a=2", "query parameters must be given once", []string{"a"}},
+		{"%%%", "query string is invalid", []string{"a"}},
+		{"a=1;b=2", "query string is invalid", []string{"a", "b"}},
+		{"x=1", "unknown query parameter; this request accepts none", nil},
+		{"x=1", "unknown query parameter; use a\"", []string{"a"}},
+		{"x=1", "unknown query parameter; use a, b and c\"", []string{"a", "b", "c"}},
+	} {
+		_, rec, ok := decode(tt.query, tt.names...)
+		if ok || rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), tt.message) {
+			t.Errorf("decode(%q, %v): %v, status %d, body %s; want 400 with %q", tt.query, tt.names, ok, rec.Code, rec.Body, tt.message)
+		}
+	}
+}

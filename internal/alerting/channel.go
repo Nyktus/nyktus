@@ -22,10 +22,9 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"nyktus.org/nyktus/internal/platform/smtp"
+	"nyktus.org/nyktus/internal/platform/text"
 )
 
 // ResourceType names channels in the audit log.
@@ -259,17 +258,11 @@ func ValidateRecipients(list []string) error {
 	return nil
 }
 
-// ValidateName accepts a name of 1 to MaxNameLength printable characters
-// without surrounding whitespace.
+// ValidateName accepts a name of 1 to MaxNameLength characters, as
+// text.ValidName describes.
 func ValidateName(s string) error {
-	n := utf8.RuneCountInString(s)
-	if n < 1 || n > MaxNameLength || strings.TrimSpace(s) != s || !utf8.ValidString(s) {
+	if !text.ValidName(s, MaxNameLength) {
 		return ErrInvalidName
-	}
-	for _, r := range s {
-		if !unicode.IsPrint(r) {
-			return ErrInvalidName
-		}
 	}
 	return nil
 }
