@@ -931,3 +931,51 @@ func TestProcess_DeliversToSlackAndTeams(t *testing.T) {
 		t.Errorf("Teams received %d requests: %s", teams.count(), teams.bodies)
 	}
 }
+
+// The alert of an incident of a scenario names the scenario as its resource,
+// in every format, with the worker's role, and nothing of the scenario but its
+// identifier.
+func TestLoadAlert_NamesTheScenarioOfAnIncident(t *testing.T) {
+	t.Parallel()
+	f := newDeliveryFixture(t)
+
+	var scenarioID, incidentID string
+	if err := f.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name, notes) VALUES ('Finance share', 'fs01') RETURNING id`).Scan(&scenarioID); err != nil {
+		t.Fatal(err)
+	}
+	err := f.owner.QueryRow(t.Context(), `
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
+VALUES ('scenario', $1, 'low', clock_timestamp(), clock_timestamp()) RETURNING id`, scenarioID).Scan(&incidentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.owner.Exec(t.Context(), `INSERT INTO alerts (incident_id, severity) VALUES ($1, 'low')`, incidentID); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := f.worker.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(t.Context()) }()
+	m, err := loadAlert(t.Context(), tx, incidentID)
+	if err != nil || m.resourceType != "scenario" || m.resourceID != scenarioID {
+		t.Fatalf("loadAlert() = %+v, %v; want the scenario %s", m, err, scenarioID)
+	}
+
+	d := Delivery{ID: "33333333-3333-4333-8333-333333333333", AlertID: &incidentID}
+	for _, typ := range []Type{TypeWebhook, TypeSlack, TypeTeams} {
+		body, _, err := format(typ, m, d, "https://nyktus.example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), "scenario") || !strings.Contains(string(body), scenarioID) ||
+			strings.Contains(string(body), "Finance") || strings.Contains(string(body), "fs01") {
+			t.Errorf("%s: body %s, want the scenario by its identifier only", typ, body)
+		}
+	}
+	mail := emailMessage(m, d, []string{"soc@example.com"}, "https://nyktus.example.com")
+	if !strings.Contains(mail.Body, "scenario "+scenarioID) {
+		t.Errorf("mail body %q does not name the scenario", mail.Body)
+	}
+}

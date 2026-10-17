@@ -39,6 +39,12 @@ curl --fail-with-body --request PUT https://nyktus.example.com/api/v1/honeytoken
 
 The `scenario_id` of a honeytoken shows its scenario, and `GET /api/v1/honeytokens?scenario_id=<scenario>` lists the honeytokens of a scenario. Changing the scenario of a honeytoken needs the permission `honeytokens:write` only: the honeytoken changes, the scenario does not.
 
+## Incidents
+
+The events of every honeytoken of a scenario join one open [incident](incidents.md#how-events-become-incidents) of the scenario, with one alert. The incident and its alert name the scenario as their resource (`resource_type` `scenario`), and `GET /api/v1/incidents?resource_id=<scenario>` lists the incidents of a scenario.
+
+An event belongs to the scenario its honeytoken belonged to when the event was recorded. A honeytoken that joins a scenario while it has an open incident of its own keeps that incident open until it is triaged or closes after its inactivity; its next events join the incident of the scenario. A honeytoken that leaves a scenario opens incidents of its own again. Incidents of a scenario remain when the scenario is deleted.
+
 ## Listing, changing and deleting
 
 - `GET /api/v1/scenarios` lists scenarios from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`.

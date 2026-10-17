@@ -332,3 +332,47 @@ func TestTrigger_IdenticalResponsesWithTheDatabase(t *testing.T) {
 		t.Errorf("%d events, want 8", n)
 	}
 }
+
+// An event keeps the scenario that its honeytoken belonged to when it was
+// requested, or none, so that the worker correlates it by that scenario even
+// if the honeytoken changes its scenario before the event is processed.
+func TestStore_EventFreezesTheScenario(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	id, value := f.honeytoken(t, "web_url", true, nil, nil)
+	var first, second string
+	if err := f.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name) VALUES ('a') RETURNING id`).Scan(&first); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name) VALUES ('b') RETURNING id`).Scan(&second); err != nil {
+		t.Fatal(err)
+	}
+	record := func(scenarioID *string) {
+		t.Helper()
+		if _, err := f.owner.Exec(t.Context(), `UPDATE honeytokens SET scenario_id = $2 WHERE id = $1`, id, scenarioID); err != nil {
+			t.Fatal(err)
+		}
+		if res, err := f.store.Record(t.Context(), Request{Value: value, Method: http.MethodGet}); err != nil || res.Outcome != OutcomeRecorded {
+			t.Fatalf("Record() = %+v, %v", res, err)
+		}
+	}
+	record(nil)
+	record(&first)
+	record(&second)
+	if _, err := f.owner.Exec(t.Context(), `UPDATE honeytokens SET scenario_id = NULL WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := f.owner.Query(t.Context(), `SELECT coalesce(scenario_id::text, '') FROM events ORDER BY recorded_at`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"", first, second}; !slices.Equal(got, want) {
+		t.Errorf("scenarios of the events = %v, want %v", got, want)
+	}
+}

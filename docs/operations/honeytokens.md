@@ -105,7 +105,7 @@ An event of the trigger holds:
 
 | Field | Content |
 |---|---|
-| Honeytoken | Its identifier and type, and the [techniques](#techniques) it had when it was requested. The event keeps them when you change or delete the honeytoken. |
+| Honeytoken | Its identifier and type, and the [techniques](#techniques) and the [scenario](#scenarios) it had when it was requested. The event keeps them when you change or delete the honeytoken. |
 | Time | When the trigger recorded the request. |
 | Client address | The address of the client, as described in [Client addresses](configuration.md#client-addresses). |
 | Method | `GET` or `HEAD`. |

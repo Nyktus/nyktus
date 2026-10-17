@@ -4,9 +4,9 @@
 // Package incident correlates events into incidents.
 //
 // Every event belongs to exactly one incident: the open incident of its
-// resource, or a new one, which raises the single alert of the incident. A
-// closed incident is never opened again; the next event of its resource opens
-// a new one. The worker assigns events through Store. The console reads
+// scenario, or of its resource if it stood alone, or a new one, which raises
+// the single alert of the incident. A closed incident is never opened again;
+// the next event opens a new one. The worker assigns events through Store. The console reads
 // incidents and events and triages incidents through the functions of this
 // package; HTTP lives in incidentapi.
 package incident
@@ -16,7 +16,12 @@ import (
 	"slices"
 
 	"nyktus.org/nyktus/internal/honeytoken"
+	"nyktus.org/nyktus/internal/scenario"
 )
+
+// ResourceTypes lists what an incident can correlate: the events of a
+// scenario, or of a honeytoken that stood alone.
+var ResourceTypes = []string{honeytoken.ResourceType, scenario.ResourceType}
 
 // Status is where an incident stands in triage. It only moves forward, in the
 // order of Statuses.

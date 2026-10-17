@@ -321,3 +321,36 @@ func TestStore_LimitCountsTheTimeOfWriting(t *testing.T) {
 		}
 	}
 }
+
+// An event keeps the scenario that its honeytoken belonged to when it was
+// queried, or none, so that the worker correlates it by that scenario even if
+// the honeytoken changes its scenario before the event is processed.
+func TestStore_EventFreezesTheScenario(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	id, v := f.honeytoken(t, "dns", true, nil)
+	var sc string
+	if err := f.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name) VALUES ('a') RETURNING id`).Scan(&sc); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := f.store.Record(t.Context(), dnsQuery(v)); err != nil || res.Outcome != OutcomeRecorded {
+		t.Fatalf("Record() alone = %+v, %v", res, err)
+	}
+	if _, err := f.owner.Exec(t.Context(), `UPDATE honeytokens SET scenario_id = $2 WHERE id = $1`, id, sc); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := f.store.Record(t.Context(), dnsQuery(v)); err != nil || res.Outcome != OutcomeRecorded {
+		t.Fatalf("Record() in the scenario = %+v, %v", res, err)
+	}
+	if _, err := f.owner.Exec(t.Context(), `UPDATE honeytokens SET scenario_id = NULL WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+
+	if n := f.count(t, `SELECT count(*) FROM events WHERE resource_id = $1 AND scenario_id IS NULL`, id); n != 1 {
+		t.Errorf("%d events without a scenario, want 1", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM events WHERE resource_id = $1 AND scenario_id = $2`, id, sc); n != 1 {
+		t.Errorf("%d events in the scenario, want 1", n)
+	}
+}

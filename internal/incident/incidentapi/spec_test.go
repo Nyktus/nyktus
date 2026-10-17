@@ -121,6 +121,8 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		{"TriageIncidentRequest", "severity_override", severities},
 		{"Incident", "event_severity", eventSeverities},
 		{"Event", "channel", []string{incident.ChannelDNS, incident.ChannelHTTP}},
+		{"Incident", "resource_type", slices.Sorted(slices.Values(incident.ResourceTypes))},
+		{"Event", "resource_type", []string{honeytoken.ResourceType}},
 	} {
 		if got := enum(schemas[check.schema].Properties[check.property]); !slices.Equal(got, check.want) {
 			t.Errorf("%s.%s = %v, want %v", check.schema, check.property, got, check.want)

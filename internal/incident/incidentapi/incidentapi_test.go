@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -17,8 +16,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"nyktus.org/nyktus/api"
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/platform/apispec"
 	"nyktus.org/nyktus/internal/platform/schematest"
 	"nyktus.org/nyktus/internal/user"
 )
@@ -419,31 +420,57 @@ func TestEvents_AreNotReturnedWithoutTheAuditEntry(t *testing.T) {
 	}
 }
 
-// The representations carry exactly the members that the specification
-// documents, so that a member added to one place only fails.
-func TestResponses_HaveTheDocumentedMembers(t *testing.T) {
+// Every kind of response matches the schema of the specification: incidents
+// of a honeytoken and of a scenario, events over HTTP and DNS, alone and in a
+// scenario, one at a time and in lists.
+func TestResponses_MatchTheSpecification(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
+	schemas, err := apispec.ParseSchemas(api.OpenAPI())
+	if err != nil {
+		t.Fatal(err)
+	}
 	incidentID := f.incident(t, resourceA, "open", time.Now())
 	request := f.event(t, resourceA, incidentID, "http", time.Now())
 	query := f.event(t, resourceA, incidentID, "dns", time.Now())
-	schemas := specSchemas(t)
-	members := func(v map[string]any) []string { return slices.Sorted(maps.Keys(v)) }
-	documented := func(name string) []string { return slices.Sorted(maps.Keys(schemas[name].Properties)) }
+	var scenarioIncident, scenarioEvent string
+	if err := f.owner.QueryRow(t.Context(), `
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
+VALUES ('scenario', $1, 'low', now(), now()) RETURNING id`, resourceB).Scan(&scenarioIncident); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.owner.QueryRow(t.Context(), `
+INSERT INTO events (resource_type, resource_id, scenario_id, honeytoken_type, occurred_at, recorded_at, channel, method, incident_id)
+VALUES ('honeytoken', $1, $2, 'web_image', now(), now(), 'http', 'HEAD', $3) RETURNING id`, resourceA, resourceB, scenarioIncident).Scan(&scenarioEvent); err != nil {
+		t.Fatal(err)
+	}
 
-	inc := decode[map[string]any](t, f.serve(t, f.h.GetIncident, http.MethodGet, "/", incidentID, ""))
-	if got, want := members(inc), documented("Incident"); !slices.Equal(got, want) {
-		t.Errorf("incident members %v, documented %v", got, want)
+	for _, b := range []struct {
+		schema string
+		rec    *httptest.ResponseRecorder
+	}{
+		{"Incident", f.serve(t, f.h.GetIncident, http.MethodGet, "/", incidentID, "")},
+		{"Incident", f.serve(t, f.h.GetIncident, http.MethodGet, "/", scenarioIncident, "")},
+		{"IncidentPage", f.serve(t, f.h.ListIncidents, http.MethodGet, "/api/v1/incidents", "", "")},
+		{"Event", f.serve(t, f.h.GetEvent, http.MethodGet, "/", request, "")},
+		{"Event", f.serve(t, f.h.GetEvent, http.MethodGet, "/", query, "")},
+		{"Event", f.serve(t, f.h.GetEvent, http.MethodGet, "/", scenarioEvent, "")},
+		{"EventPage", f.serve(t, f.h.ListEvents, http.MethodGet, "/api/v1/events", "", "")},
+	} {
+		if b.rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d %s", b.schema, b.rec.Code, b.rec.Body)
+		}
+		for _, p := range schemas.Check(b.schema, b.rec.Body.Bytes()) {
+			t.Error(p)
+		}
 	}
-	httpEvent := decode[map[string]any](t, f.serve(t, f.h.GetEvent, http.MethodGet, "/", request, ""))
-	if got, want := members(httpEvent), documented("Event"); !slices.Equal(got, want) {
-		t.Errorf("event members %v, documented %v", got, want)
+
+	got := decode[eventResponse](t, f.serve(t, f.h.GetEvent, http.MethodGet, "/", scenarioEvent, ""))
+	if got.ScenarioID == nil || *got.ScenarioID != resourceB || got.ResourceID != resourceA {
+		t.Errorf("event in a scenario = %+v, want the honeytoken %s in the scenario %s", got, resourceA, resourceB)
 	}
-	if got, want := members(httpEvent["http"].(map[string]any)), documented("EventRequest"); !slices.Equal(got, want) {
-		t.Errorf("request members %v, documented %v", got, want)
-	}
-	dnsEvent := decode[map[string]any](t, f.serve(t, f.h.GetEvent, http.MethodGet, "/", query, ""))
-	if got, want := members(dnsEvent["dns"].(map[string]any)), documented("EventQuery"); !slices.Equal(got, want) {
-		t.Errorf("query members %v, documented %v", got, want)
+	page := decode[incidentListResponse](t, f.serve(t, f.h.ListIncidents, http.MethodGet, "/api/v1/incidents?resource_id="+resourceB, "", ""))
+	if ids := incidentIDs(page); !slices.Equal(ids, []string{scenarioIncident}) {
+		t.Errorf("incidents of the scenario = %v, want %s", ids, scenarioIncident)
 	}
 }
