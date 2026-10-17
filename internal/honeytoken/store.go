@@ -19,6 +19,12 @@ import (
 // Errors of the store.
 var (
 	ErrNotFound = errors.New("honeytoken not found")
+	// ErrScenarioNotFound means that the scenario that a honeytoken is to be
+	// assigned to does not exist.
+	ErrScenarioNotFound = errors.New("scenario not found")
+	// ErrInOtherScenario means that a honeytoken belongs to another scenario
+	// than the one it is to be assigned to.
+	ErrInOtherScenario = errors.New("honeytoken belongs to another scenario")
 	// ErrInvalidPageSize is returned for a page size outside [1, MaxPageSize].
 	ErrInvalidPageSize = errors.New("invalid page size")
 )
@@ -57,12 +63,13 @@ func NewStore(q db.Querier) *Store {
 	return &Store{db: q}
 }
 
-const columns = `id, type, name, notes, enabled, redirect_url, techniques, trigger_value, created_at, updated_at`
+const columns = `id, type, name, notes, enabled, redirect_url, techniques, trigger_value, scenario_id, created_at,
+updated_at`
 
 func scan(row pgx.Row) (Honeytoken, error) {
 	var h Honeytoken
 	err := row.Scan(&h.ID, &h.Type, &h.Name, &h.Notes, &h.Enabled, &h.RedirectURL, &h.Techniques, &h.TriggerValue,
-		&h.CreatedAt, &h.UpdatedAt)
+		&h.ScenarioID, &h.CreatedAt, &h.UpdatedAt)
 	return h, err
 }
 
@@ -106,26 +113,36 @@ type Cursor struct {
 	ID        string
 }
 
-// Filter narrows a list to honeytokens of a type or state. A nil field does
-// not narrow it.
+// Filter narrows a list to honeytokens of a type, state or scenario. A nil
+// or empty field does not narrow it.
 type Filter struct {
 	Type    *Type
 	Enabled *bool
+	// ScenarioID lists only the honeytokens of one scenario.
+	ScenarioID string
 }
 
-// The filters are conditions in both statements and are always active: without
-// a filter, they list every value. A condition that is active only sometimes
-// would keep a generic plan from seeking into the index; the cursor, which the
-// index serves, is therefore in a statement of its own.
+// The filters of type and state are conditions in every statement and always
+// active: without a filter, they list every value. A condition that is active
+// only sometimes would keep a generic plan from seeking into the index; the
+// scenario and the cursor, which the indexes serve, are therefore conditions
+// of statements of their own.
 const (
+	listOrder = `
+ORDER BY created_at DESC, id DESC`
 	listNewest = `SELECT ` + columns + ` FROM honeytokens
-WHERE type = ANY($1) AND enabled = ANY($2)
-ORDER BY created_at DESC, id DESC
+WHERE type = ANY($1) AND enabled = ANY($2)` + listOrder + `
 LIMIT $3`
 	listAfter = `SELECT ` + columns + ` FROM honeytokens
-WHERE (created_at, id) < ($3, $4::uuid) AND type = ANY($1) AND enabled = ANY($2)
-ORDER BY created_at DESC, id DESC
+WHERE (created_at, id) < ($3, $4::uuid) AND type = ANY($1) AND enabled = ANY($2)` + listOrder + `
 LIMIT $5`
+	listScenarioNewest = `SELECT ` + columns + ` FROM honeytokens
+WHERE scenario_id = $3 AND type = ANY($1) AND enabled = ANY($2)` + listOrder + `
+LIMIT $4`
+	listScenarioAfter = `SELECT ` + columns + ` FROM honeytokens
+WHERE scenario_id = $3 AND (created_at, id) < ($4, $5::uuid) AND type = ANY($1) AND enabled = ANY($2)` +
+		listOrder + `
+LIMIT $6`
 )
 
 // List returns up to size honeytokens that match f, from the newest to the
@@ -148,10 +165,15 @@ func (s *Store) List(ctx context.Context, f Filter, size int, after *Cursor) (li
 	}
 	// One more honeytoken than requested tells whether another page follows.
 	var rows pgx.Rows
-	if after == nil {
+	switch {
+	case f.ScenarioID == "" && after == nil:
 		rows, err = s.db.Query(ctx, listNewest, types, enabled, size+1)
-	} else {
+	case f.ScenarioID == "":
 		rows, err = s.db.Query(ctx, listAfter, types, enabled, after.CreatedAt, after.ID, size+1)
+	case after == nil:
+		rows, err = s.db.Query(ctx, listScenarioNewest, types, enabled, f.ScenarioID, size+1)
+	default:
+		rows, err = s.db.Query(ctx, listScenarioAfter, types, enabled, f.ScenarioID, after.CreatedAt, after.ID, size+1)
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("list honeytokens: %w", err)
@@ -261,6 +283,64 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// SetScenario assigns the honeytoken id to the scenario scenarioID, or
+// detaches it from its scenario if scenarioID is empty. It returns the
+// honeytoken after the change and whether it changed: a honeytoken that is
+// already where it is to be stays as it is. It returns ErrNotFound if there is
+// no such honeytoken, ErrScenarioNotFound if there is no such scenario, and
+// ErrInOtherScenario if the honeytoken belongs to another scenario, which it
+// must leave first, so that nothing takes a honeytoken from a scenario by
+// mistake.
+//
+// SetScenario must run in a transaction. It locks the scenario before the
+// honeytoken, as the deletion of a scenario does, so that both cannot wait
+// for each other: the scenario with a lock that keeps it from being deleted
+// meanwhile, the honeytoken until the end of the transaction.
+func (s *Store) SetScenario(ctx context.Context, id, scenarioID string) (Honeytoken, bool, error) {
+	// A missing honeytoken is reported first, as for any other change of it.
+	// Reading it takes no lock, so the order of the locks below holds.
+	if _, err := s.Get(ctx, id); err != nil {
+		return Honeytoken{}, false, err
+	}
+	if scenarioID != "" {
+		var found bool
+		err := s.db.QueryRow(ctx, `SELECT true FROM scenarios WHERE id = $1 FOR KEY SHARE`, scenarioID).Scan(&found)
+		if db.NotFound(err) {
+			return Honeytoken{}, false, ErrScenarioNotFound
+		}
+		if err != nil {
+			return Honeytoken{}, false, fmt.Errorf("lock scenario %s: %w", scenarioID, err)
+		}
+	}
+	current, err := scan(s.db.QueryRow(ctx, `SELECT `+columns+` FROM honeytokens WHERE id = $1 FOR UPDATE`, id))
+	if db.NotFound(err) {
+		return Honeytoken{}, false, ErrNotFound
+	}
+	if err != nil {
+		return Honeytoken{}, false, fmt.Errorf("lock honeytoken %s: %w", id, err)
+	}
+	switch {
+	case scenarioID == "" && current.ScenarioID == nil,
+		current.ScenarioID != nil && *current.ScenarioID == scenarioID:
+		return current, false, nil
+	case scenarioID != "" && current.ScenarioID != nil:
+		return Honeytoken{}, false, ErrInOtherScenario
+	}
+
+	var target *string
+	if scenarioID != "" {
+		target = &scenarioID
+	}
+	h, err := scan(s.db.QueryRow(ctx, `
+UPDATE honeytokens SET scenario_id = $2, updated_at = clock_timestamp()
+WHERE id = $1
+RETURNING `+columns, id, target))
+	if err != nil {
+		return Honeytoken{}, false, fmt.Errorf("set scenario of honeytoken %s: %w", id, err)
+	}
+	return h, true, nil
+}
+
 // DB runs queries and starts transactions. A connection pool and a transaction
 // implement it; in a transaction, Begin starts a savepoint.
 type DB interface {
@@ -312,6 +392,28 @@ func Update(ctx context.Context, d DB, actor audit.Actor, id string, c Change) (
 	})
 	if err != nil {
 		return Honeytoken{}, fmt.Errorf("update honeytoken: %w", err)
+	}
+	return h, nil
+}
+
+// SetScenario assigns the honeytoken id to the scenario scenarioID, or
+// detaches it if scenarioID is empty, on behalf of actor, as Store.SetScenario
+// does, and records the change in the audit log. A change that changes
+// nothing is not recorded.
+func SetScenario(ctx context.Context, d DB, actor audit.Actor, id, scenarioID string) (Honeytoken, error) {
+	var h Honeytoken
+	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
+		var (
+			changed bool
+			err     error
+		)
+		if h, changed, err = NewStore(tx).SetScenario(ctx, id, scenarioID); err != nil || !changed {
+			return err
+		}
+		return record(ctx, tx, actor, audit.ActionHoneytokenUpdate, id, []string{FieldScenarioID})
+	})
+	if err != nil {
+		return Honeytoken{}, fmt.Errorf("set scenario of honeytoken: %w", err)
 	}
 	return h, nil
 }

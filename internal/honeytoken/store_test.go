@@ -486,3 +486,263 @@ func TestSchema_ChecksHoneytokens(t *testing.T) {
 		t.Errorf("created_at = updated_at: %v, %v; want true", equal, err)
 	}
 }
+
+// createScenario inserts a scenario as the owner; the scenario package
+// creates them through the console.
+func createScenario(t *testing.T, d testDB) string {
+	t.Helper()
+	var id string
+	if err := d.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name) VALUES ('s') RETURNING id`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func setScenario(ctx context.Context, d testDB, id, scenarioID string) (honeytoken.Honeytoken, bool, error) {
+	var (
+		h       honeytoken.Honeytoken
+		changed bool
+	)
+	err := pgx.BeginFunc(ctx, d.console, func(tx pgx.Tx) error {
+		var err error
+		h, changed, err = honeytoken.NewStore(tx).SetScenario(ctx, id, scenarioID)
+		return err
+	})
+	return h, changed, err
+}
+
+// A honeytoken joins a scenario, stays when it is assigned again, leaves it,
+// and joins another one only after it left the first.
+func TestStore_SetScenario(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	first, second := createScenario(t, d), createScenario(t, d)
+	h := create(t, d, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "a"})
+	if h.ScenarioID != nil {
+		t.Fatalf("Create() = %+v, want a honeytoken that stands alone", h)
+	}
+
+	got, changed, err := setScenario(t.Context(), d, h.ID, first)
+	if err != nil || !changed || got.ScenarioID == nil || *got.ScenarioID != first || !got.UpdatedAt.After(h.UpdatedAt) {
+		t.Fatalf("SetScenario(first) = %+v, %v, %v; want it in the first scenario", got, changed, err)
+	}
+	if again, changed, err := setScenario(t.Context(), d, h.ID, first); err != nil || changed || !again.UpdatedAt.Equal(got.UpdatedAt) {
+		t.Errorf("SetScenario(first again) = %+v, %v, %v; want no change", again, changed, err)
+	}
+	if _, _, err := setScenario(t.Context(), d, h.ID, second); !errors.Is(err, honeytoken.ErrInOtherScenario) {
+		t.Errorf("SetScenario(second) error = %v, want ErrInOtherScenario", err)
+	}
+	if got, err := honeytoken.NewStore(d.console).Get(t.Context(), h.ID); err != nil || got.ScenarioID == nil || *got.ScenarioID != first {
+		t.Errorf("Get() = %+v, %v; want it still in the first scenario", got, err)
+	}
+
+	got, changed, err = setScenario(t.Context(), d, h.ID, "")
+	if err != nil || !changed || got.ScenarioID != nil {
+		t.Errorf("SetScenario(detach) = %+v, %v, %v; want it alone", got, changed, err)
+	}
+	if _, changed, err := setScenario(t.Context(), d, h.ID, ""); err != nil || changed {
+		t.Errorf("SetScenario(detach again) = %v, %v; want no change", changed, err)
+	}
+	if got, changed, err := setScenario(t.Context(), d, h.ID, second); err != nil || !changed || *got.ScenarioID != second {
+		t.Errorf("SetScenario(second after leaving) = %+v, %v, %v", got, changed, err)
+	}
+
+	const missing = "00000000-0000-4000-8000-000000000000"
+	for _, tt := range []struct {
+		name, id, scenarioID string
+		err                  error
+	}{
+		{"unknown scenario", h.ID, missing, honeytoken.ErrScenarioNotFound},
+		{"malformed scenario", h.ID, "not-a-uuid", honeytoken.ErrScenarioNotFound},
+		{"unknown honeytoken", missing, first, honeytoken.ErrNotFound},
+		{"unknown honeytoken and scenario", missing, missing, honeytoken.ErrNotFound},
+		{"malformed honeytoken", "not-a-uuid", first, honeytoken.ErrNotFound},
+		{"unknown honeytoken detached", missing, "", honeytoken.ErrNotFound},
+	} {
+		if _, _, err := setScenario(t.Context(), d, tt.id, tt.scenarioID); !errors.Is(err, tt.err) {
+			t.Errorf("%s: SetScenario() error = %v, want %v", tt.name, err, tt.err)
+		}
+	}
+}
+
+// waitForLockWait returns once a session of the test database waits for a
+// lock.
+func waitForLockWait(t *testing.T, d testDB) {
+	t.Helper()
+	for {
+		var waiting bool
+		err := d.owner.QueryRow(t.Context(), `
+SELECT EXISTS (
+	SELECT FROM pg_stat_activity
+	WHERE datname = current_database() AND wait_event_type = 'Lock'
+)`).Scan(&waiting)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			return
+		}
+		if t.Context().Err() != nil {
+			t.Fatal("no session waits for a lock")
+		}
+	}
+}
+
+// The assignment locks the scenario before the honeytoken, as the deletion of
+// a scenario does: while the scenario is held, the honeytoken stays free.
+func TestStore_SetScenario_LocksTheScenarioFirst(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	sc := createScenario(t, d)
+	h := create(t, d, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "a"})
+
+	holder, err := d.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Rollback(context.WithoutCancel(t.Context())) }()
+	if _, err := holder.Exec(t.Context(), `SELECT FROM scenarios WHERE id = $1 FOR UPDATE`, sc); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := setScenario(t.Context(), d, h.ID, sc)
+		done <- err
+	}()
+	waitForLockWait(t, d)
+
+	if _, err := d.owner.Exec(t.Context(), `SELECT FROM honeytokens WHERE id = $1 FOR UPDATE NOWAIT`, h.ID); err != nil {
+		t.Errorf("probe of the honeytoken: error = %v, want it free while the scenario is held", err)
+	}
+	if err := holder.Rollback(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Errorf("SetScenario() error = %v", err)
+	}
+}
+
+// An assignment that waits for a scenario that is deleted meanwhile finds no
+// scenario, instead of joining one that is gone.
+func TestStore_SetScenario_ToAScenarioDeletedMeanwhile(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	sc := createScenario(t, d)
+	h := create(t, d, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "a"})
+
+	deleter, err := d.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = deleter.Rollback(context.WithoutCancel(t.Context())) }()
+	if _, err := deleter.Exec(t.Context(), `SELECT FROM scenarios WHERE id = $1 FOR UPDATE`, sc); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := setScenario(t.Context(), d, h.ID, sc)
+		done <- err
+	}()
+	waitForLockWait(t, d)
+	if _, err := deleter.Exec(t.Context(), `DELETE FROM scenarios WHERE id = $1`, sc); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleter.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, honeytoken.ErrScenarioNotFound) {
+		t.Errorf("SetScenario() error = %v, want ErrScenarioNotFound", err)
+	}
+	if got, err := honeytoken.NewStore(d.console).Get(t.Context(), h.ID); err != nil || got.ScenarioID != nil {
+		t.Errorf("Get() = %+v, %v; want it alone", got, err)
+	}
+}
+
+// The assignment is recorded as a change of the scenario of the honeytoken;
+// one that changes nothing is not, and a failed entry fails it.
+func TestSetScenario_RecordsTheChange(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	actor := createUser(t, d)
+	sc := createScenario(t, d)
+	h := create(t, d, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "a"})
+	ctx := t.Context()
+
+	ghost := audit.Actor{Kind: audit.ActorUser, Method: audit.AuthSession, UserID: "00000000-0000-4000-8000-000000000000"}
+	if _, err := honeytoken.SetScenario(ctx, d.console, ghost, h.ID, sc); err == nil {
+		t.Error("SetScenario() without audit entry succeeded")
+	}
+	if got, err := honeytoken.NewStore(d.console).Get(ctx, h.ID); err != nil || got.ScenarioID != nil {
+		t.Errorf("Get() = %+v, %v; want it alone after the failed assignment", got, err)
+	}
+
+	for _, scenarioID := range []string{sc, sc, "", ""} {
+		if _, err := honeytoken.SetScenario(ctx, d.console, actor, h.ID, scenarioID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []entry{
+		{"honeytoken.update", "honeytoken", h.ID, []string{"scenario_id"}, actor.UserID},
+		{"honeytoken.update", "honeytoken", h.ID, []string{"scenario_id"}, actor.UserID},
+	}
+	got := entries(t, d)
+	if !slices.EqualFunc(got, want, func(a, b entry) bool {
+		return a.Action == b.Action && a.ResourceType == b.ResourceType && a.ResourceID == b.ResourceID &&
+			slices.Equal(a.ChangedFields, b.ChangedFields) && a.ActorUserID == b.ActorUserID
+	}) {
+		t.Errorf("audit entries = %+v, want %+v", got, want)
+	}
+}
+
+// The list of a scenario holds its honeytokens and no others, a page at a
+// time, and the filters of type and state still apply.
+func TestStore_List_FiltersByScenario(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	s := honeytoken.NewStore(d.console)
+	sc, other := createScenario(t, d), createScenario(t, d)
+
+	var want []string
+	for i := range 5 {
+		h := create(t, d, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "h", Enabled: i%2 == 0})
+		target := sc
+		if i == 2 {
+			target = other
+		}
+		if _, _, err := setScenario(t.Context(), d, h.ID, target); err != nil {
+			t.Fatal(err)
+		}
+		if target == sc {
+			want = append([]string{h.ID}, want...)
+		}
+	}
+	create(t, d, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "alone"})
+
+	var (
+		got   []string
+		after *honeytoken.Cursor
+	)
+	for {
+		page, next, err := s.List(t.Context(), honeytoken.Filter{ScenarioID: sc}, 1, after)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, h := range page {
+			if h.ScenarioID == nil || *h.ScenarioID != sc {
+				t.Errorf("List() returned %+v of another scenario", h)
+			}
+			got = append(got, h.ID)
+		}
+		if next == nil {
+			break
+		}
+		after = next
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("List(scenario) = %v, want %v", got, want)
+	}
+	page, _, err := s.List(t.Context(), honeytoken.Filter{ScenarioID: sc, Enabled: ptr(false)}, honeytoken.MaxPageSize, nil)
+	if err != nil || len(page) != 2 || page[0].Enabled || page[1].Enabled {
+		t.Errorf("List(scenario, disabled) = %+v, %v; want the two disabled honeytokens", page, err)
+	}
+}
