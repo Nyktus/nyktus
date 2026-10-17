@@ -14,6 +14,7 @@ import (
 
 	"nyktus.org/nyktus/internal/alerting"
 	"nyktus.org/nyktus/internal/platform/db"
+	"nyktus.org/nyktus/internal/scenario"
 )
 
 // DB runs queries and starts transactions. A connection pool implements it.
@@ -39,8 +40,10 @@ func NewStore(d DB) *Store {
 
 // Processed describes the job of an event that was processed.
 type Processed struct {
-	EventID      string
-	IncidentID   string
+	EventID    string
+	IncidentID string
+	// ResourceType and ResourceID name what the incident correlates: the
+	// scenario of the event, or its resource if it stood alone.
 	ResourceType string
 	ResourceID   string
 	// Opened reports whether the event opened the incident, together with its
@@ -237,19 +240,28 @@ func (s *Store) postponeAfterBreak(ctx context.Context, eventID string, cause er
 // taken in the order job, incident, as everywhere.
 func (s *Store) assign(ctx context.Context, tx pgx.Tx, p *Processed) error {
 	var (
-		honeytokenType *string
-		techniques     []string
-		occurredAt     time.Time
+		resourceType, resourceID string
+		scenarioID               *string
+		honeytokenType           *string
+		techniques               []string
+		occurredAt               time.Time
 	)
 	err := tx.QueryRow(ctx, `
-SELECT resource_type, resource_id, honeytoken_type, techniques, occurred_at
-FROM public.events WHERE id = $1`, p.EventID).Scan(&p.ResourceType, &p.ResourceID, &honeytokenType, &techniques, &occurredAt)
+SELECT resource_type, resource_id, scenario_id, honeytoken_type, techniques, occurred_at
+FROM public.events WHERE id = $1`, p.EventID).Scan(&resourceType, &resourceID, &scenarioID, &honeytokenType, &techniques,
+		&occurredAt)
 	if err != nil {
 		return fmt.Errorf("load event: %w", err)
 	}
-	severity, err := eventSeverity(p.ResourceType, honeytokenType)
+	severity, err := eventSeverity(resourceType, honeytokenType)
 	if err != nil {
 		return err
+	}
+	// The events of a scenario share its incident; the scenario is the one
+	// that the event froze when it arrived.
+	p.ResourceType, p.ResourceID = resourceType, resourceID
+	if scenarioID != nil {
+		p.ResourceType, p.ResourceID = scenario.ResourceType, *scenarioID
 	}
 
 	if err := s.open(ctx, tx, p, severity, techniques, occurredAt); err != nil {
@@ -271,11 +283,11 @@ FROM public.events WHERE id = $1`, p.EventID).Scan(&p.ResourceType, &p.ResourceI
 	return nil
 }
 
-// open finds the open incident of the resource of p and adds the event to it,
-// or opens one with its alert. It sets the incident of p.
+// open finds the open incident of the scenario or resource of p and adds the
+// event to it, or opens one with its alert. It sets the incident of p.
 //
-// Two workers that process events of the same resource at the same time must
-// not open two incidents. The unique index over open incidents decides: an
+// Two workers that process events of the same scenario or resource at the
+// same time must not open two incidents. The unique index over open incidents decides: an
 // INSERT that conflicts with an incident that another transaction has just
 // opened waits for that transaction and then inserts nothing, and the next
 // round finds the incident. An incident that is closed while a round waits for

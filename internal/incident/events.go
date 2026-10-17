@@ -31,6 +31,9 @@ type Event struct {
 	ID           string
 	ResourceType string
 	ResourceID   string
+	// ScenarioID is the scenario that the resource belonged to when it was
+	// requested, or nil if it stood alone.
+	ScenarioID *string
 	// HoneytokenType and Techniques are those of the honeytoken when it was
 	// requested.
 	HoneytokenType string
@@ -50,7 +53,7 @@ type Event struct {
 	DNSZone, DNSPrefix, DNSQType, DNSTransport string
 }
 
-const eventColumns = `id, resource_type, resource_id, honeytoken_type, techniques, incident_id, occurred_at, recorded_at,
+const eventColumns = `id, resource_type, resource_id, scenario_id, honeytoken_type, techniques, incident_id, occurred_at, recorded_at,
 	channel, client_ip, coalesce(method, ''), user_agent, referer, accept_language, coalesce(dns_zone, ''),
 	coalesce(dns_prefix, ''), coalesce(dns_qtype, ''), coalesce(dns_transport, '')`
 
@@ -60,7 +63,7 @@ func scanEvent(row pgx.Row) (Event, error) {
 		honeytokenType *string
 		clientIP       *netip.Addr
 	)
-	err := row.Scan(&e.ID, &e.ResourceType, &e.ResourceID, &honeytokenType, &e.Techniques, &e.IncidentID,
+	err := row.Scan(&e.ID, &e.ResourceType, &e.ResourceID, &e.ScenarioID, &honeytokenType, &e.Techniques, &e.IncidentID,
 		&e.OccurredAt, &e.RecordedAt, &e.Channel, &clientIP, &e.Method, &e.UserAgent, &e.Referer, &e.AcceptLanguage,
 		&e.DNSZone, &e.DNSPrefix, &e.DNSQType, &e.DNSTransport)
 	if honeytokenType != nil {

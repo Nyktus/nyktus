@@ -133,12 +133,13 @@ A webhook receives JSON:
 
 - `version` changes only when a member changes its meaning or disappears; new members may appear within a version, so ignore members you do not know.
 - `severity` and `techniques` are those of the incident when it opened, as the alert keeps them.
-- The message names the honeytoken by its identifier only. It holds neither its name nor its notes, which belong to the inventory, nor anything of the events, such as client addresses, because messages often go to services of third parties. Fetch the details through the API, for example with an [API key](api-keys.md) with `incidents:read` and `events:read`: `GET /api/v1/incidents/{id}` and `GET /api/v1/events?incident_id={id}`.
+- `resource_type` is `scenario` for an incident of a [scenario](scenarios.md), whose `resource_id` is the scenario, and `honeytoken` for one of a honeytoken that stands alone. Further types may appear within a version; handle a value you do not know like any other resource.
+- The message names the scenario or honeytoken by its identifier only. It holds neither its name nor its notes, which belong to the inventory, nor anything of the events, such as client addresses, because messages often go to services of third parties. Fetch the details through the API, for example with an [API key](api-keys.md) with `incidents:read` and `events:read`: `GET /api/v1/incidents/{id}` and `GET /api/v1/events?incident_id={id}`.
 - A test sends `{"version": 1, "type": "test", "delivery_id": "…"}`.
 
 ### Messages to Slack and Teams
 
-Slack and Teams receive a message for people: the title "Nyktus: incident opened", the severity, the techniques, the honeytoken by its identifier, the time of the first event, the identifier of the delivery and a link to the incident in the console. As for webhooks, the message holds no inventory and no personal data. A test posts "Nyktus: test message".
+Slack and Teams receive a message for people: the title "Nyktus: incident opened", the severity, the techniques, the scenario or honeytoken by its identifier, the time of the first event, the identifier of the delivery and a link to the incident in the console. As for webhooks, the message holds no inventory and no personal data. A test posts "Nyktus: test message".
 
 - **Slack:** create an [incoming webhook](https://api.slack.com/messaging/webhooks) for the channel and use its URL, `https://hooks.slack.com/services/…`. The message uses blocks, with a text that notifications show.
 - **Teams:** in the channel, create a workflow from the template "Post to a channel when a webhook request is received" and use the URL that it shows. The message is an adaptive card (version 1.4) with a button that opens the incident.

@@ -2059,7 +2059,10 @@ paths:
             pattern: "^(open|acknowledged|closed)(,(open|acknowledged|closed))*$"
         - name: resource_id
           in: query
-          description: Lists only the incidents of this honeytoken.
+          description: |
+            Lists only the incidents of this scenario, or of this honeytoken
+            while it stood alone. The events of a honeytoken in a scenario
+            belong to the incidents of the scenario.
           schema:
             type: string
             format: uuid
@@ -2180,7 +2183,9 @@ paths:
         as `cursor`, with the same filter. The order follows `recorded_at`, not
         `occurred_at`: a DNS query can be recorded up to five minutes after it
         arrived, and is listed when it was recorded. The events of a honeytoken
-        are those of its incidents.
+        are among those of its incidents, or of the incidents of its scenario,
+        which also hold the events of the other honeytokens of the scenario;
+        `resource_id` names the honeytoken of each.
 
         Events contain personal data, such as the addresses of clients. Every
         read is recorded in the audit log as `events.read`, at most once per
@@ -3849,11 +3854,15 @@ components:
           format: uuid
         resource_type:
           type: string
-          enum: [honeytoken]
+          enum: [honeytoken, scenario]
+          description: |
+            `scenario` for an incident that correlates the events of every
+            honeytoken of a scenario, `honeytoken` for one of a honeytoken that
+            stood alone when its events arrived.
         resource_id:
           type: string
           format: uuid
-          description: The honeytoken of the incident. It may have been deleted since.
+          description: The scenario or honeytoken of the incident. It may have been deleted since.
         status:
           type: string
           enum: [open, acknowledged, closed]
@@ -3955,8 +3964,8 @@ components:
     Event:
       type: object
       additionalProperties: false
-      required: [id, resource_type, resource_id, honeytoken_type, techniques, incident_id, occurred_at, recorded_at,
-        channel, client_ip, http, dns]
+      required: [id, resource_type, resource_id, scenario_id, honeytoken_type, techniques, incident_id, occurred_at,
+        recorded_at, channel, client_ip, http, dns]
       properties:
         id:
           type: string
@@ -3968,6 +3977,13 @@ components:
           type: string
           format: uuid
           description: The honeytoken that was requested. It may have been deleted since.
+        scenario_id:
+          type: [string, "null"]
+          format: uuid
+          description: |
+            The scenario that the honeytoken belonged to when it was requested,
+            or null if it stood alone. The event belongs to the incidents of
+            this scenario, also if the honeytoken changed its scenario since.
         honeytoken_type:
           type: [string, "null"]
           enum: [web_url, web_image, dns, null]
