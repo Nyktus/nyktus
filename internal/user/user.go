@@ -14,6 +14,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
+
+	"nyktus.org/nyktus/internal/platform/text"
 )
 
 // Role determines what a user may do in the console.
@@ -195,14 +197,10 @@ func ParseEmail(s string) (string, error) {
 	return normalized, nil
 }
 
-// ParseDisplayName accepts a name of 1 to MaxDisplayNameLength printable
-// characters without surrounding whitespace and returns it unchanged.
-//
-// Format characters are rejected along with control characters, because
-// bidirectional overrides can make a name appear as a different one.
+// ParseDisplayName accepts a name of 1 to MaxDisplayNameLength characters, as
+// text.ValidName describes, and returns it unchanged.
 func ParseDisplayName(s string) (string, error) {
-	n := utf8.RuneCountInString(s)
-	if n < 1 || n > MaxDisplayNameLength || strings.TrimSpace(s) != s || !printable(s) {
+	if !text.ValidName(s, MaxDisplayNameLength) {
 		return "", ErrInvalidDisplayName
 	}
 	return s, nil

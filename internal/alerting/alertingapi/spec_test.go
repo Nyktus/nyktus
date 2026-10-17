@@ -5,7 +5,6 @@ package alertingapi
 
 import (
 	"encoding/json"
-	"fmt"
 	"maps"
 	"net/http"
 	"slices"
@@ -15,6 +14,7 @@ import (
 
 	"nyktus.org/nyktus/api"
 	"nyktus.org/nyktus/internal/alerting"
+	"nyktus.org/nyktus/internal/platform/apispec"
 	"nyktus.org/nyktus/internal/platform/smtp"
 )
 
@@ -149,55 +149,14 @@ func sameSet(a, b []string) bool {
 	return slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b)))
 }
 
-// The responses for every kind of channel hold exactly the members of the
-// schema, each of a type that the schema allows: target and recipients are
-// null where the type has none.
+// The responses for every kind of channel match the schema of a channel:
+// target and recipients are null where the type has none.
 func TestResponses_MatchTheSchemaOfAChannel(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-
-	var spec struct {
-		Components struct {
-			Schemas map[string]struct {
-				Required   []string `yaml:"required"`
-				Properties map[string]struct {
-					Type any `yaml:"type"`
-				} `yaml:"properties"`
-			} `yaml:"schemas"`
-		} `yaml:"components"`
-	}
-	if err := yaml.Unmarshal(api.OpenAPI(), &spec); err != nil {
+	schemas, err := apispec.ParseSchemas(api.OpenAPI())
+	if err != nil {
 		t.Fatal(err)
-	}
-	schema := spec.Components.Schemas["AlertChannel"]
-	allowed := func(name string) []string {
-		switch typ := schema.Properties[name].Type.(type) {
-		case string:
-			return []string{typ}
-		case []any:
-			var out []string
-			for _, v := range typ {
-				out = append(out, fmt.Sprint(v))
-			}
-			return out
-		}
-		return nil
-	}
-	jsonType := func(v any) string {
-		switch v.(type) {
-		case nil:
-			return "null"
-		case string:
-			return "string"
-		case bool:
-			return "boolean"
-		case []any:
-			return "array"
-		case map[string]any:
-			return "object"
-		default:
-			return "number"
-		}
 	}
 
 	bodies := map[string]string{
@@ -209,22 +168,12 @@ func TestResponses_MatchTheSchemaOfAChannel(t *testing.T) {
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("%s: status %d, body %s", typ, rec.Code, rec.Body)
 		}
+		for _, p := range schemas.Check("AlertChannel", rec.Body.Bytes()) {
+			t.Errorf("%s: %s", typ, p)
+		}
 		var got map[string]any
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatal(err)
-		}
-		if keys := slices.Collect(maps.Keys(got)); !sameSet(keys, slices.Collect(maps.Keys(schema.Properties))) {
-			t.Errorf("%s: members %v, want those of the schema", typ, keys)
-		}
-		for _, name := range schema.Required {
-			if _, ok := got[name]; !ok {
-				t.Errorf("%s: required member %s missing", typ, name)
-			}
-		}
-		for name, v := range got {
-			if !slices.Contains(allowed(name), jsonType(v)) {
-				t.Errorf("%s: %s is %s, want one of %v", typ, name, jsonType(v), allowed(name))
-			}
 		}
 		if (got["target"] == nil) != (typ == "email") || (got["recipients"] == nil) != (typ != "email") {
 			t.Errorf("%s: target %v, recipients %v", typ, got["target"], got["recipients"])
