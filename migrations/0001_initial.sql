@@ -927,6 +927,112 @@ CREATE FUNCTION public.attack_technique_ids_valid(ids text[]) RETURNS boolean
 		)
 		AND cardinality(ids) = (SELECT count(DISTINCT t.id) FROM unnest(ids) AS t (id));
 
+-- Identifiers of activities of MITRE Engage, such as EAC0005. The application
+-- checks them against the bundled list of the pinned Engage version; the
+-- database checks only their form, so that a newer version needs no migration.
+CREATE FUNCTION public.engage_activity_ids_valid(ids text[]) RETURNS boolean
+	LANGUAGE sql IMMUTABLE STRICT
+	SET search_path = ''
+	RETURN coalesce(array_ndims(ids), 1) = 1
+		AND NOT EXISTS (
+			SELECT FROM unnest(ids) AS a (id)
+			WHERE a.id IS NULL OR a.id !~ '^EAC[0-9]{4}$'
+		)
+		AND cardinality(ids) = (SELECT count(DISTINCT a.id) FROM unnest(ids) AS a (id));
+
+-- A scenario groups the decoys that tell one story, so that their events are
+-- correlated into one incident. A decoy belongs to at most one scenario or
+-- stands alone. Name and notes are inventory, like those of a honeytoken.
+CREATE TABLE public.scenarios (
+	id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	name              text NOT NULL,
+	-- The story of the scenario and where its decoys were placed, for the team
+	-- that cleans up or triages an incident.
+	notes             text NOT NULL DEFAULT '',
+	-- The activities of MITRE Engage that the scenario carries out.
+	engage_activities text[] NOT NULL DEFAULT '{}',
+	-- The deception of the catalog that the scenario was created from, or NULL
+	-- for a scenario put together by hand. The catalog is no table, so there
+	-- is no foreign key: a scenario is a snapshot and keeps the identifier when
+	-- the catalog changes or drops the deception.
+	deception_id      text,
+	created_at        timestamptz NOT NULL DEFAULT clock_timestamp(),
+	-- Set by the trigger below on insert, as for accounts.
+	updated_at        timestamptz NOT NULL,
+
+	CONSTRAINT scenarios_name_check CHECK (
+		char_length(name) BETWEEN 1 AND 100
+		AND name = btrim(name)
+		AND name !~ '[\x01-\x1f\x7f]'
+	),
+	-- Notes may span several lines.
+	CONSTRAINT scenarios_notes_check CHECK (
+		char_length(notes) <= 2000
+		AND notes !~ '[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]'
+	),
+	CONSTRAINT scenarios_engage_activities_check CHECK (
+		cardinality(engage_activities) <= 20 AND public.engage_activity_ids_valid(engage_activities)
+	),
+	CONSTRAINT scenarios_deception_id_check CHECK (
+		octet_length(deception_id) <= 64 AND deception_id ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
+	),
+	CONSTRAINT scenarios_updated_at_check CHECK (updated_at >= created_at)
+);
+
+-- The console lists scenarios from the newest to the oldest, a page at a time.
+CREATE INDEX scenarios_created_at_id_idx ON public.scenarios (created_at DESC, id DESC);
+
+CREATE TRIGGER scenarios_set_updated_at
+	BEFORE INSERT ON public.scenarios
+	FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- Default privileges set by an operator could grant more than this migration
+-- intends, so everything is revoked before the grants.
+REVOKE ALL ON public.scenarios FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.engage_activity_ids_valid(text[]) FROM PUBLIC, nyktus_console;
+
+-- The console evaluates the check of the activities when it writes. It
+-- creates, lists, changes and deletes scenarios; it cannot choose the
+-- deception of one, which only applying a deception sets, and identifiers and
+-- creation times come from the database.
+GRANT EXECUTE ON FUNCTION public.engage_activity_ids_valid(text[]) TO nyktus_console;
+GRANT SELECT, DELETE ON public.scenarios TO nyktus_console;
+GRANT INSERT (name, notes, engage_activities) ON public.scenarios TO nyktus_console;
+GRANT UPDATE (name, notes, engage_activities, updated_at) ON public.scenarios TO nyktus_console;
+
+-- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
+-- result is verified instead of assumed, in both directions.
+DO $$
+BEGIN
+	IF NOT has_table_privilege('nyktus_console', 'public.scenarios', 'SELECT')
+		OR NOT has_table_privilege('nyktus_console', 'public.scenarios', 'DELETE')
+		OR NOT has_function_privilege('nyktus_console', 'public.engage_activity_ids_valid(text[])', 'EXECUTE')
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['name', 'notes', 'engage_activities']) AS c (name)
+			WHERE NOT has_column_privilege('nyktus_console', 'public.scenarios', c.name, 'INSERT')
+		)
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['name', 'notes', 'engage_activities', 'updated_at']) AS c (name)
+			WHERE NOT has_column_privilege('nyktus_console', 'public.scenarios', c.name, 'UPDATE')
+		) THEN
+		RAISE EXCEPTION 'nyktus_console lacks privileges on public.scenarios; run migrations as the owner of the schema';
+	END IF;
+
+	IF has_table_privilege('nyktus_console', 'public.scenarios', 'INSERT, UPDATE, TRUNCATE, REFERENCES, TRIGGER')
+		OR has_any_column_privilege('nyktus_console', 'public.scenarios', 'REFERENCES')
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['id', 'deception_id', 'created_at', 'updated_at']) AS c (name)
+			WHERE has_column_privilege('nyktus_console', 'public.scenarios', c.name, 'INSERT')
+		)
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['id', 'deception_id', 'created_at']) AS c (name)
+			WHERE has_column_privilege('nyktus_console', 'public.scenarios', c.name, 'UPDATE')
+		) THEN
+		RAISE EXCEPTION 'nyktus_console has more privileges on public.scenarios than granted; check the default privileges of the owner';
+	END IF;
+END
+$$;
+
 -- A honeytoken raises an event when its trigger value is requested or resolved.
 -- The value is part of the URL or name that is placed in the monitored
 -- environment, so it is not
@@ -951,6 +1057,12 @@ CREATE TABLE public.honeytokens (
 	-- valid DNS label. A new value means a new honeytoken, because the old one
 	-- stays placed, so the value cannot be changed.
 	trigger_value text NOT NULL,
+	-- The scenario that the honeytoken belongs to, or NULL if it stands alone.
+	-- Only a dedicated operation changes it, because it decides how the events
+	-- of the honeytoken are correlated. A scenario is deleted only after its
+	-- honeytokens were deleted or detached, each with its audit entry, so the
+	-- key does not cascade.
+	scenario_id   uuid CONSTRAINT honeytokens_scenario_id_fkey REFERENCES public.scenarios (id),
 	created_at    timestamptz NOT NULL DEFAULT clock_timestamp(),
 	-- Set by the trigger below on insert, as for accounts.
 	updated_at    timestamptz NOT NULL,
@@ -986,6 +1098,10 @@ CREATE TABLE public.honeytokens (
 -- time, continuing after the last honeytoken of the previous page.
 CREATE INDEX honeytokens_created_at_id_idx ON public.honeytokens (created_at DESC, id DESC);
 
+-- The console lists the honeytokens of a scenario in the same order, and
+-- deletes or detaches them with the scenario.
+CREATE INDEX honeytokens_scenario_id_created_at_id_idx ON public.honeytokens (scenario_id, created_at DESC, id DESC);
+
 CREATE TRIGGER honeytokens_set_updated_at
 	BEFORE INSERT ON public.honeytokens
 	FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
@@ -996,13 +1112,14 @@ REVOKE ALL ON public.honeytokens FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.attack_technique_ids_valid(text[]) FROM PUBLIC, nyktus_console;
 
 -- The console evaluates the check of the techniques when it writes. It creates,
--- lists, changes and deletes honeytokens; it cannot change the type or the
--- trigger value of one, and identifiers and creation times come from the
--- database.
+-- lists, changes and deletes honeytokens and assigns them to scenarios; it
+-- cannot change the type or the trigger value of one, and identifiers and
+-- creation times come from the database. A honeytoken is created alone and
+-- joins a scenario through its own change.
 GRANT EXECUTE ON FUNCTION public.attack_technique_ids_valid(text[]) TO nyktus_console;
 GRANT SELECT, DELETE ON public.honeytokens TO nyktus_console;
 GRANT INSERT (type, name, notes, enabled, redirect_url, techniques, trigger_value) ON public.honeytokens TO nyktus_console;
-GRANT UPDATE (name, notes, enabled, redirect_url, techniques, updated_at) ON public.honeytokens TO nyktus_console;
+GRANT UPDATE (name, notes, enabled, redirect_url, techniques, scenario_id, updated_at) ON public.honeytokens TO nyktus_console;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
 -- result is verified instead of assumed, in both directions.
@@ -1017,7 +1134,7 @@ BEGIN
 			WHERE NOT has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'INSERT')
 		)
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['name', 'notes', 'enabled', 'redirect_url', 'techniques', 'updated_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['name', 'notes', 'enabled', 'redirect_url', 'techniques', 'scenario_id', 'updated_at']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'UPDATE')
 		) THEN
 		RAISE EXCEPTION 'nyktus_console lacks privileges on public.honeytokens; run migrations as the owner of the schema';
@@ -1026,7 +1143,7 @@ BEGIN
 	IF has_table_privilege('nyktus_console', 'public.honeytokens', 'INSERT, UPDATE, TRUNCATE, REFERENCES, TRIGGER')
 		OR has_any_column_privilege('nyktus_console', 'public.honeytokens', 'REFERENCES')
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['id', 'created_at', 'updated_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['id', 'scenario_id', 'created_at', 'updated_at']) AS c (name)
 			WHERE has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'INSERT')
 		)
 		OR EXISTS (

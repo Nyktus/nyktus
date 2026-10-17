@@ -29,6 +29,7 @@ import (
 	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/platform/secretbox"
 	"nyktus.org/nyktus/internal/platform/ssrf"
+	"nyktus.org/nyktus/internal/scenario/scenarioapi"
 )
 
 // Options configure the console.
@@ -98,6 +99,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
 	cat := catalogapi.NewHandler(deceptions)
 	t := honeytokenapi.NewHandler(o.Logger, o.DB, o.TriggerURL, o.DNSZones)
+	sc := scenarioapi.NewHandler(o.Logger, o.DB)
 	i := incidentapi.NewHandler(o.Logger, o.DB)
 	c := alertingapi.NewHandler(o.Logger, o.DB, o.Keys, sessions, o.Outbound)
 	return NewHandler(Deps{
@@ -145,6 +147,16 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Create: http.HandlerFunc(t.Create),
 			Update: http.HandlerFunc(t.Update),
 			Delete: http.HandlerFunc(t.Delete),
+
+			AssignScenario: http.HandlerFunc(t.AssignScenario),
+			DetachScenario: http.HandlerFunc(t.DetachScenario),
+		},
+		Scenarios: Scenarios{
+			List:   http.HandlerFunc(sc.List),
+			Get:    http.HandlerFunc(sc.Get),
+			Create: http.HandlerFunc(sc.Create),
+			Update: http.HandlerFunc(sc.Update),
+			Delete: http.HandlerFunc(sc.Delete),
 		},
 		Incidents: Incidents{
 			List:   http.HandlerFunc(i.ListIncidents),

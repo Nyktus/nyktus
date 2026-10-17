@@ -17,9 +17,18 @@ import (
 	"nyktus.org/nyktus/internal/platform/httpx"
 )
 
-// codeDNSNotConfigured answers the creation of a DNS honeytoken while the
-// console knows no zone of the DNS role.
-const codeDNSNotConfigured = "dns_not_configured"
+// Error codes of the honeytokens.
+const (
+	// codeDNSNotConfigured answers the creation of a DNS honeytoken while the
+	// console knows no zone of the DNS role.
+	codeDNSNotConfigured = "dns_not_configured"
+	// codeScenarioNotFound answers the assignment to a scenario that does not
+	// exist.
+	codeScenarioNotFound = "scenario_not_found"
+	// codeInScenario answers the assignment of a honeytoken that belongs to
+	// another scenario.
+	codeInScenario = "honeytoken_in_scenario"
+)
 
 // defaultPageSize is the page size if the request names none.
 const defaultPageSize = 50
@@ -30,8 +39,9 @@ const maxBodyBytes = 64 << 10
 
 // Filter parameters of the list.
 const (
-	filterType    = "type"
-	filterEnabled = "enabled"
+	filterType       = "type"
+	filterEnabled    = "enabled"
+	filterScenarioID = "scenario_id"
 )
 
 // Handler serves the honeytokens.
@@ -72,6 +82,7 @@ type response struct {
 	TriggerValue string          `json:"trigger_value"`
 	TriggerURL   *string         `json:"trigger_url"`
 	TriggerNames []string        `json:"trigger_names"`
+	ScenarioID   *string         `json:"scenario_id"`
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
 }
@@ -96,6 +107,7 @@ func (h *Handler) response(t honeytoken.Honeytoken) response {
 		TriggerValue: t.TriggerValue,
 		TriggerURL:   triggerURL,
 		TriggerNames: t.TriggerNames(h.dnsZones),
+		ScenarioID:   t.ScenarioID,
 		CreatedAt:    t.CreatedAt,
 		UpdatedAt:    t.UpdatedAt,
 	}
@@ -108,7 +120,7 @@ type listResponse struct {
 
 // List handles GET /api/v1/honeytokens.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	q, ok := httpx.DecodeListQuery(w, r, defaultPageSize, honeytoken.MaxPageSize, filterType, filterEnabled)
+	q, ok := httpx.DecodeListQuery(w, r, defaultPageSize, honeytoken.MaxPageSize, filterType, filterEnabled, filterScenarioID)
 	if !ok {
 		return
 	}
@@ -128,6 +140,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		enabled := s == "true"
 		f.Enabled = &enabled
+	}
+	if s, ok := q.Filters[filterScenarioID]; ok {
+		if !httpx.ValidID(s) {
+			invalid(w, r, "scenario_id must be a UUID in lower case")
+			return
+		}
+		f.ScenarioID = s
 	}
 	var after *honeytoken.Cursor
 	if q.After != nil {
@@ -263,6 +282,57 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// scenarioRequest is the request to assign a honeytoken to a scenario.
+type scenarioRequest struct {
+	ScenarioID string `json:"scenario_id"`
+}
+
+// AssignScenario handles PUT /api/v1/honeytokens/{id}/scenario. A honeytoken
+// that belongs to another scenario must leave it first, so that a script
+// cannot take honeytokens from a scenario by mistake.
+func (h *Handler) AssignScenario(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.principal(w, r)
+	if !ok {
+		return
+	}
+	var req scenarioRequest
+	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
+		return
+	}
+	if !httpx.ValidID(req.ScenarioID) {
+		invalid(w, r, "scenario_id must be a UUID in lower case")
+		return
+	}
+	h.setScenario(w, r, p, req.ScenarioID)
+}
+
+// DetachScenario handles DELETE /api/v1/honeytokens/{id}/scenario. The
+// honeytoken stays and stands alone.
+func (h *Handler) DetachScenario(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.principal(w, r)
+	if !ok {
+		return
+	}
+	h.setScenario(w, r, p, "")
+}
+
+func (h *Handler) setScenario(w http.ResponseWriter, r *http.Request, p access.Principal, scenarioID string) {
+	t, err := honeytoken.SetScenario(r.Context(), h.db, p.Actor(), r.PathValue("id"), scenarioID)
+	switch {
+	case errors.Is(err, honeytoken.ErrScenarioNotFound):
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, codeScenarioNotFound, "the scenario does not exist")
+		return
+	case errors.Is(err, honeytoken.ErrInOtherScenario):
+		httpx.WriteError(w, r, http.StatusConflict, codeInScenario,
+			"the honeytoken belongs to another scenario; remove it from that scenario first")
+		return
+	case err != nil:
+		h.writeError(w, r, "honeytoken: set scenario", err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, h.response(t))
 }
 
 // principal returns the principal that the authorizer attached to the request.

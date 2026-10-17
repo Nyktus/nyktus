@@ -55,6 +55,11 @@ func deps(db Pinger) Deps {
 		Honeytokens: Honeytokens{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
 			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(),
+			AssignScenario: http.NotFoundHandler(), DetachScenario: http.NotFoundHandler(),
+		},
+		Scenarios: Scenarios{
+			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
+			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(),
 		},
 		Incidents: Incidents{List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Update: http.NotFoundHandler()},
 		Events:    Events{List: http.NotFoundHandler(), Get: http.NotFoundHandler()},

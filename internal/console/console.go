@@ -52,6 +52,8 @@ type Deps struct {
 	Catalog Catalog
 	// Honeytokens manages the honeytokens of the team.
 	Honeytokens Honeytokens
+	// Scenarios manages the scenarios of the team.
+	Scenarios Scenarios
 	// Incidents lists and triages the incidents of the team.
 	Incidents Incidents
 	// Events lists the events of the honeytokens.
@@ -95,9 +97,21 @@ func (c Catalog) complete() bool {
 // Honeytokens are the handlers of the management of the honeytokens.
 type Honeytokens struct {
 	List, Get, Create, Update, Delete http.Handler
+	// AssignScenario and DetachScenario change the scenario of a honeytoken.
+	AssignScenario, DetachScenario http.Handler
 }
 
 func (h Honeytokens) complete() bool {
+	return h.List != nil && h.Get != nil && h.Create != nil && h.Update != nil && h.Delete != nil &&
+		h.AssignScenario != nil && h.DetachScenario != nil
+}
+
+// Scenarios are the handlers of the management of the scenarios.
+type Scenarios struct {
+	List, Get, Create, Update, Delete http.Handler
+}
+
+func (h Scenarios) complete() bool {
 	return h.List != nil && h.Get != nil && h.Create != nil && h.Update != nil && h.Delete != nil
 }
 
@@ -160,8 +174,8 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
-		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, catalog, honeytoken, incident, event and alert channel handlers")
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Scenarios.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
+		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, catalog, honeytoken, scenario, incident, event and alert channel handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	// The session itself and how the account signs in are managed only with a
@@ -209,6 +223,17 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/api/v1/honeytokens/{id}", httpx.Require("honeytokens:read"), d.Honeytokens.Get)
 	rt.Handle(http.MethodPatch, "/api/v1/honeytokens/{id}", httpx.Require("honeytokens:write"), d.Honeytokens.Update)
 	rt.Handle(http.MethodDelete, "/api/v1/honeytokens/{id}", httpx.Require("honeytokens:write"), d.Honeytokens.Delete)
+	// The scenario of a honeytoken is a change of the honeytoken, which
+	// decides how its events are correlated; the scenario stays as it is.
+	rt.Handle(http.MethodPut, "/api/v1/honeytokens/{id}/scenario", httpx.Require("honeytokens:write"),
+		d.Honeytokens.AssignScenario)
+	rt.Handle(http.MethodDelete, "/api/v1/honeytokens/{id}/scenario", httpx.Require("honeytokens:write"),
+		d.Honeytokens.DetachScenario)
+	rt.Handle(http.MethodGet, "/api/v1/scenarios", httpx.Require("scenarios:read"), d.Scenarios.List)
+	rt.Handle(http.MethodPost, "/api/v1/scenarios", httpx.Require("scenarios:write"), d.Scenarios.Create)
+	rt.Handle(http.MethodGet, "/api/v1/scenarios/{id}", httpx.Require("scenarios:read"), d.Scenarios.Get)
+	rt.Handle(http.MethodPatch, "/api/v1/scenarios/{id}", httpx.Require("scenarios:write"), d.Scenarios.Update)
+	rt.Handle(http.MethodDelete, "/api/v1/scenarios/{id}", httpx.Require("scenarios:write"), d.Scenarios.Delete)
 	rt.Handle(http.MethodGet, "/api/v1/incidents", httpx.Require("incidents:read"), d.Incidents.List)
 	rt.Handle(http.MethodGet, "/api/v1/incidents/{id}", httpx.Require("incidents:read"), d.Incidents.Get)
 	rt.Handle(http.MethodPatch, "/api/v1/incidents/{id}", httpx.Require("incidents:write"), d.Incidents.Update)

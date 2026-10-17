@@ -71,6 +71,7 @@ const (
 	FieldEnabled     = "enabled"
 	FieldRedirectURL = "redirect_url"
 	FieldTechniques  = "techniques"
+	FieldScenarioID  = "scenario_id"
 )
 
 // Validation errors.
@@ -101,8 +102,11 @@ type Honeytoken struct {
 	// TriggerValue is the value that triggers the honeytoken, as part of its
 	// URL.
 	TriggerValue string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// ScenarioID is the scenario that the honeytoken belongs to, or nil if it
+	// stands alone.
+	ScenarioID *string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // TriggerPath returns the path of the URL of the honeytoken, or "" for a type

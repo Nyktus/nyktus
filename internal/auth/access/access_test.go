@@ -194,6 +194,38 @@ func TestHoneytokens_ReadByEveryRoleWrittenByAdminsAndUsers(t *testing.T) {
 	}
 }
 
+// Every role reads the scenarios; only viewers cannot change them. A key with
+// only the scope to read them cannot change them, and one that changes them
+// must also read them.
+func TestScenarios_ReadByEveryRoleWrittenByAdminsAndUsers(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		role        user.Role
+		read, write bool
+	}{
+		{user.RoleAdmin, true, true},
+		{user.RoleUser, true, true},
+		{user.RoleViewer, true, false},
+		{"", false, false},
+	} {
+		if got := Allowed(tt.role, "scenarios:read"); got != tt.read {
+			t.Errorf("Allowed(%q, scenarios:read) = %v, want %v", tt.role, got, tt.read)
+		}
+		if got := Allowed(tt.role, "scenarios:write"); got != tt.write {
+			t.Errorf("Allowed(%q, scenarios:write) = %v, want %v", tt.role, got, tt.write)
+		}
+	}
+
+	key := Principal{Method: audit.AuthAPIKey, APIKeyID: "k1", Scopes: []httpx.Permission{"scenarios:read"}}
+	if !key.Allowed("scenarios:read") || key.Allowed("scenarios:write") || key.Allowed("honeytokens:read") {
+		t.Error("a key with scenarios:read must read scenarios and nothing else")
+	}
+	if got, ok := KeyScopeRequires("scenarios:write"); !ok || got != "scenarios:read" {
+		t.Errorf("KeyScopeRequires(scenarios:write) = %s, %v", got, ok)
+	}
+}
+
 // The catalog holds no inventory, so every role and every key with the scope
 // reads it; nobody changes it, because it ships with the server.
 func TestCatalog_ReadByEveryRoleAndKeysWithTheScope(t *testing.T) {
