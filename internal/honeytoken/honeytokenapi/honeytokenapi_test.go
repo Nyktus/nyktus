@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -16,8 +15,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"nyktus.org/nyktus/api"
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/platform/apispec"
 	"nyktus.org/nyktus/internal/platform/schematest"
 	"nyktus.org/nyktus/internal/user"
 )
@@ -305,17 +306,135 @@ func TestDelete(t *testing.T) {
 	}
 }
 
-// The representation carries exactly the members that the specification
-// documents, so that a member added to one place only fails.
-func TestResponse_HasTheDocumentedMembers(t *testing.T) {
+// createScenario inserts a scenario as the owner.
+func (f fixture) createScenario(t *testing.T) string {
+	t.Helper()
+	var id string
+	if err := f.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name) VALUES ('s') RETURNING id`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// Every kind of response matches the schema of the specification: alone and
+// in a scenario, of every type, in a list and after a change of its scenario.
+func TestResponses_MatchTheSpecification(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
+	schemas, err := apispec.ParseSchemas(api.OpenAPI())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := f.createScenario(t)
 
-	rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeytokens", "", `{"type": "web_url", "name": "a"}`)
-	got := slices.Sorted(maps.Keys(decode[map[string]any](t, rec)))
-	want := slices.Sorted(maps.Keys(specSchemas(t)["Honeytoken"].Properties))
-	if !slices.Equal(got, want) {
-		t.Errorf("members %v, documented %v", got, want)
+	var bodies []struct {
+		schema string
+		rec    *httptest.ResponseRecorder
+	}
+	add := func(schema string, rec *httptest.ResponseRecorder) {
+		bodies = append(bodies, struct {
+			schema string
+			rec    *httptest.ResponseRecorder
+		}{schema, rec})
+	}
+	for _, body := range []string{
+		`{"type": "web_url", "name": "a", "redirect_url": "https://example.com", "techniques": ["T1078"]}`,
+		`{"type": "web_image", "name": "b"}`,
+		`{"type": "dns", "name": "c"}`,
+	} {
+		add("Honeytoken", f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeytokens", "", body))
+	}
+	h := f.create(t, `{"type": "web_url", "name": "d"}`)
+	add("Honeytoken", f.serve(t, f.h.AssignScenario, http.MethodPut, "/", h.ID, `{"scenario_id": "`+sc+`"}`))
+	add("Honeytoken", f.serve(t, f.h.Get, http.MethodGet, "/", h.ID, ""))
+	add("HoneytokenPage", f.serve(t, f.h.List, http.MethodGet, "/api/v1/honeytokens?limit=2", "", ""))
+	add("HoneytokenPage", f.serve(t, f.h.List, http.MethodGet, "/api/v1/honeytokens?scenario_id="+sc, "", ""))
+	add("Honeytoken", f.serve(t, f.h.DetachScenario, http.MethodDelete, "/", h.ID, ""))
+
+	for _, b := range bodies {
+		if b.rec.Code >= 300 {
+			t.Fatalf("%s: status %d %s", b.schema, b.rec.Code, b.rec.Body)
+		}
+		for _, p := range schemas.Check(b.schema, b.rec.Body.Bytes()) {
+			t.Error(p)
+		}
+	}
+}
+
+// A honeytoken joins a scenario through its own operation, which answers with
+// the honeytoken, and leaves it through another one; the list of a scenario
+// holds its honeytokens.
+func TestScenario_AssignAndDetach(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	sc, other := f.createScenario(t), f.createScenario(t)
+	h := f.create(t, `{"type": "web_url", "name": "a"}`)
+	f.create(t, `{"type": "web_url", "name": "alone"}`)
+	if h.ScenarioID != nil {
+		t.Fatalf("POST scenario_id = %v, want null", *h.ScenarioID)
+	}
+
+	rec := f.serve(t, f.h.AssignScenario, http.MethodPut, "/", h.ID, `{"scenario_id": "`+sc+`"}`)
+	if got := decode[response](t, rec); rec.Code != http.StatusOK || got.ScenarioID == nil || *got.ScenarioID != sc {
+		t.Fatalf("PUT = %d %s, want the honeytoken in the scenario", rec.Code, rec.Body)
+	}
+	if rec := f.serve(t, f.h.AssignScenario, http.MethodPut, "/", h.ID, `{"scenario_id": "`+sc+`"}`); rec.Code != http.StatusOK {
+		t.Errorf("PUT again = %d %s, want 200", rec.Code, rec.Body)
+	}
+	page := decode[listResponse](t, f.serve(t, f.h.List, http.MethodGet, "/api/v1/honeytokens?scenario_id="+sc, "", ""))
+	if len(page.Honeytokens) != 1 || page.Honeytokens[0].ID != h.ID {
+		t.Errorf("GET ?scenario_id = %+v, want only the honeytoken of the scenario", page.Honeytokens)
+	}
+
+	rec = f.serve(t, f.h.AssignScenario, http.MethodPut, "/", h.ID, `{"scenario_id": "`+other+`"}`)
+	if rec.Code != http.StatusConflict || errorCode(t, rec) != codeInScenario {
+		t.Errorf("PUT other scenario = %d %s, want 409 %s", rec.Code, rec.Body, codeInScenario)
+	}
+
+	rec = f.serve(t, f.h.DetachScenario, http.MethodDelete, "/", h.ID, "")
+	if got := decode[response](t, rec); rec.Code != http.StatusOK || got.ScenarioID != nil {
+		t.Errorf("DELETE = %d %s, want the honeytoken alone", rec.Code, rec.Body)
+	}
+	if rec := f.serve(t, f.h.DetachScenario, http.MethodDelete, "/", h.ID, ""); rec.Code != http.StatusOK {
+		t.Errorf("DELETE again = %d %s, want 200", rec.Code, rec.Body)
+	}
+	if rec := f.serve(t, f.h.AssignScenario, http.MethodPut, "/", h.ID, `{"scenario_id": "`+other+`"}`); rec.Code != http.StatusOK {
+		t.Errorf("PUT other scenario after leaving = %d %s, want 200", rec.Code, rec.Body)
+	}
+}
+
+func TestScenario_RejectsInvalidRequests(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	sc := f.createScenario(t)
+	h := f.create(t, `{"type": "web_url", "name": "a"}`)
+	const missing = "00000000-0000-4000-8000-000000000000"
+
+	for _, tt := range []struct {
+		name, id, body string
+		status         int
+		code           string
+	}{
+		{"unknown scenario", h.ID, `{"scenario_id": "` + missing + `"}`, http.StatusUnprocessableEntity, codeScenarioNotFound},
+		{"scenario in upper case", h.ID, `{"scenario_id": "` + strings.ToUpper(sc) + `"}`, http.StatusBadRequest, "invalid_request"},
+		{"no scenario", h.ID, `{}`, http.StatusBadRequest, "invalid_request"},
+		{"null scenario", h.ID, `{"scenario_id": null}`, http.StatusBadRequest, "invalid_request"},
+		{"unknown member", h.ID, `{"scenario_id": "` + sc + `", "name": "x"}`, http.StatusBadRequest, "invalid_request"},
+		{"unknown honeytoken", missing, `{"scenario_id": "` + sc + `"}`, http.StatusNotFound, "not_found"},
+		{"malformed honeytoken", "not-a-uuid", `{"scenario_id": "` + sc + `"}`, http.StatusNotFound, "not_found"},
+	} {
+		rec := f.serve(t, f.h.AssignScenario, http.MethodPut, "/", tt.id, tt.body)
+		if rec.Code != tt.status || errorCode(t, rec) != tt.code {
+			t.Errorf("%s: PUT = %d %s, want %d %s", tt.name, rec.Code, rec.Body, tt.status, tt.code)
+		}
+	}
+	for _, id := range []string{missing, "not-a-uuid"} {
+		if rec := f.serve(t, f.h.DetachScenario, http.MethodDelete, "/", id, ""); rec.Code != http.StatusNotFound {
+			t.Errorf("DELETE %s = %d, want 404", id, rec.Code)
+		}
+	}
+	if rec := f.serve(t, f.h.List, http.MethodGet, "/api/v1/honeytokens?scenario_id=x", "", ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("GET ?scenario_id=x = %d, want 400", rec.Code)
 	}
 }
 

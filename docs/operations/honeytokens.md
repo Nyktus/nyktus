@@ -75,12 +75,16 @@ The answer is the new honeytoken with status `201`:
 
 ## Listing, changing and deleting
 
-- `GET /api/v1/honeytokens` lists honeytokens from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `type=web_url`, `type=web_image` or `type=dns` and `enabled=true` or `enabled=false` narrow the list.
+- `GET /api/v1/honeytokens` lists honeytokens from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `type=web_url`, `type=web_image` or `type=dns`, `enabled=true` or `enabled=false` and `scenario_id=<scenario>` narrow the list.
 - `GET /api/v1/honeytokens/<id>` returns one honeytoken.
 - `PATCH /api/v1/honeytokens/<id>` changes `name`, `notes`, `enabled`, `redirect_url` or `techniques`. Members that you leave out stay unchanged; `"redirect_url": null` removes the redirect, and `"techniques": []` removes the techniques. Disable a honeytoken instead of deleting it while you are unsure whether its URL is still placed somewhere: a disabled honeytoken records no events, but still answers as before.
 - `DELETE /api/v1/honeytokens/<id>` deletes a honeytoken. Its events remain. Remove its URL from where you placed it as well: once the honeytoken is deleted, a request of the URL is answered like any unknown URL and no longer recorded.
 
 Every role reads honeytokens; viewers cannot change them.
+
+## Scenarios
+
+A honeytoken can belong to a [scenario](scenarios.md), which groups the decoys that tell one story, so that their events are correlated into one incident. Its `scenario_id` names the scenario, or is `null` for a honeytoken that stands alone. A new honeytoken stands alone; `PUT /api/v1/honeytokens/<id>/scenario` with `{"scenario_id": "<scenario>"}` adds it to a scenario, and `DELETE /api/v1/honeytokens/<id>/scenario` removes it. See [Adding honeytokens](scenarios.md#adding-honeytokens).
 
 ## What the trigger answers
 
@@ -144,4 +148,4 @@ Honeytokens and their notes are the most sensitive data of an installation: whoe
 
 ## Audit
 
-The [audit log](audit-log.md) records every creation as `honeytoken.create`, every change as `honeytoken.update` with the names of the changed fields, and every deletion as `honeytoken.delete`. It names the honeytoken by its identifier only, never by its name, notes or URL. A change that changes no value is not recorded. Reads are not recorded.
+The [audit log](audit-log.md) records every creation as `honeytoken.create`, every change as `honeytoken.update` with the names of the changed fields, including `scenario_id` when it joins or leaves a [scenario](scenarios.md), and every deletion as `honeytoken.delete`, also one with its scenario. It names the honeytoken by its identifier only, never by its name, notes or URL. A change that changes no value is not recorded. Reads are not recorded.

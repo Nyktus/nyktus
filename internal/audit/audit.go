@@ -93,6 +93,14 @@ const (
 	ActionHoneytokenUpdate Action = "honeytoken.update"
 	// ActionHoneytokenDelete records the deletion of a honeytoken.
 	ActionHoneytokenDelete Action = "honeytoken.delete"
+	// ActionScenarioCreate records the creation of a scenario.
+	ActionScenarioCreate Action = "scenario.create"
+	// ActionScenarioUpdate records a change of a scenario, with the names of
+	// the changed fields.
+	ActionScenarioUpdate Action = "scenario.update"
+	// ActionScenarioDelete records the deletion of a scenario. Each honeytoken
+	// that it deletes or detaches has an entry of its own.
+	ActionScenarioDelete Action = "scenario.delete"
 	// ActionAlertChannelCreate records the creation of an alert channel, and an
 	// attempt whose confirmation with a password failed.
 	ActionAlertChannelCreate Action = "alert_channel.create"

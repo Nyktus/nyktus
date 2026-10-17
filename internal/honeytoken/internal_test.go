@@ -38,13 +38,14 @@ func TestMapWriteError_MapsTheChecksOfTheSchema(t *testing.T) {
 // A page after a cursor must seek into the index instead of reading every newer
 // honeytoken, also with the generic plan that PostgreSQL may choose for a
 // prepared statement after a few executions, and also with the filters, which
-// are always part of the statement.
+// are always part of the statement. The list of a scenario seeks into the
+// index of its scenario with the cursor.
 func TestList_CursorIsAnIndexConditionInTheGenericPlan(t *testing.T) {
 	t.Parallel()
 
 	ownerURL, _ := schematest.Console(t)
 	// A connection of its own, closed afterwards: the settings and the prepared
-	// statement below must not reach a connection that other queries reuse.
+	// statements below must not reach a connection that other queries reuse.
 	conn, err := pgx.Connect(t.Context(), ownerURL)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
@@ -56,22 +57,36 @@ func TestList_CursorIsAnIndexConditionInTheGenericPlan(t *testing.T) {
 		// The test table is tiny; without this, a sequential scan would win.
 		"SET enable_seqscan = off",
 		"PREPARE list_after AS " + listAfter,
+		"PREPARE list_scenario_after AS " + listScenarioAfter,
 	} {
 		if _, err := conn.Exec(t.Context(), statement); err != nil {
 			t.Fatalf("%s: %v", statement, err)
 		}
 	}
-	var plan []string
-	rows, err := conn.Query(t.Context(), `EXPLAIN EXECUTE list_after('{web_url}', '{true}', '2026-10-10T12:00:00Z', '00000000-0000-4000-8000-000000000000', 51)`)
-	if err != nil {
-		t.Fatalf("explain: %v", err)
-	}
-	plan, err = pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		t.Fatalf("read plan: %v", err)
-	}
-	text := strings.Join(plan, "\n")
-	if !strings.Contains(text, "honeytokens_created_at_id_idx") || !strings.Contains(text, "Index Cond: (ROW(created_at, id) < ROW(") {
-		t.Errorf("generic plan does not seek into the index with the cursor:\n%s", text)
+	const cursor = `'2026-10-10T12:00:00Z', '00000000-0000-4000-8000-000000000000'`
+	for _, tt := range []struct {
+		explain, index, cond string
+	}{
+		{
+			"EXPLAIN EXECUTE list_after('{web_url}', '{true}', " + cursor + ", 51)",
+			"honeytokens_created_at_id_idx", "Index Cond: (ROW(created_at, id) < ROW(",
+		},
+		{
+			"EXPLAIN EXECUTE list_scenario_after('{web_url}', '{true}', '00000000-0000-4000-8000-000000000001', " + cursor + ", 51)",
+			"honeytokens_scenario_id_created_at_id_idx", "Index Cond: ((scenario_id = $3) AND (ROW(created_at, id) < ROW(",
+		},
+	} {
+		rows, err := conn.Query(t.Context(), tt.explain)
+		if err != nil {
+			t.Fatalf("explain: %v", err)
+		}
+		plan, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatalf("read plan: %v", err)
+		}
+		text := strings.Join(plan, "\n")
+		if !strings.Contains(text, tt.index) || !strings.Contains(text, tt.cond) {
+			t.Errorf("generic plan does not seek into %s with %q:\n%s", tt.index, tt.cond, text)
+		}
 	}
 }

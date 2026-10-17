@@ -56,6 +56,8 @@ linters:
           deny:
             - pkg: nyktus.org/nyktus/internal/honeytoken
               desc: the trigger never reads the inventory; it resolves single trigger values through a database function
+            - pkg: nyktus.org/nyktus/internal/scenario
+              desc: the trigger never reads the inventory; it resolves single trigger values through a database function
             - pkg: nyktus.org/nyktus/internal/alerting
               desc: the trigger records events and their jobs; the worker processes them and sends alerts
             - pkg: nyktus.org/nyktus/internal/incident
@@ -72,6 +74,8 @@ linters:
             - "**/internal/dns/**"
           deny:
             - pkg: nyktus.org/nyktus/internal/honeytoken
+              desc: the DNS role never reads the inventory; it resolves single trigger values through a database function
+            - pkg: nyktus.org/nyktus/internal/scenario
               desc: the DNS role never reads the inventory; it resolves single trigger values through a database function
             - pkg: nyktus.org/nyktus/internal/alerting
               desc: the DNS role records events and their jobs; the worker processes them and sends alerts
@@ -128,6 +132,8 @@ linters:
             - pkg: nyktus.org/nyktus/internal/platform/httpx
               desc: the alerting runs in the worker, which answers no requests; handlers live in alertingapi
             - pkg: nyktus.org/nyktus/internal/honeytoken
+              desc: alerts carry no inventory; the incident holds what an alert reports
+            - pkg: nyktus.org/nyktus/internal/scenario
               desc: alerts carry no inventory; the incident holds what an alert reports
         # Test-only dependencies must never reach the binaries.
         test-only:

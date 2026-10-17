@@ -72,7 +72,7 @@ func TestSpecification_MatchesCode(t *testing.T) {
 			t.Errorf("limit: specification maximum %d, default %d; code %d, %d", p.Schema.Maximum, p.Schema.Default, honeytoken.MaxPageSize, defaultPageSize)
 		}
 	}
-	if got := slices.Sorted(maps.Keys(params)); !slices.Equal(got, []string{"cursor", filterEnabled, "limit", filterType}) {
+	if got := slices.Sorted(maps.Keys(params)); !slices.Equal(got, []string{"cursor", filterEnabled, "limit", filterScenarioID, filterType}) {
 		t.Errorf("parameters of the list = %v", got)
 	}
 	if !sameSet(params[filterType], types) || !sameSet(params[filterEnabled], []string{"true", "false"}) {

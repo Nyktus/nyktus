@@ -66,8 +66,10 @@ tags:
     description: The deceptions of the catalog, blueprints of scenarios that ship with Nyktus.
   - name: honeytokens
     description: Honeytokens of the team, which raise an event when their URL is requested.
+  - name: scenarios
+    description: Scenarios of the team, which group decoys that tell one story.
   - name: incidents
-    description: Incidents, which correlate the events of a honeytoken, and their triage.
+    description: Incidents, which correlate the events of a scenario or of a honeytoken that stands alone, and their triage.
   - name: events
     description: Recorded requests and queries of honeytokens.
   - name: alerting
@@ -1521,6 +1523,12 @@ paths:
           schema:
             type: string
             enum: ["true", "false"]
+        - name: scenario_id
+          in: query
+          description: Lists only the honeytokens of this scenario.
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: A page of honeytokens.
@@ -1686,6 +1694,322 @@ paths:
       responses:
         "204":
           description: The honeytoken has been deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/honeytokens/{id}/scenario:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      operationId: assignHoneytokenScenario
+      summary: Assign a honeytoken to a scenario
+      description: |
+        Assigns a honeytoken that stands alone to a scenario. From then on,
+        its events are correlated into the open incident of the scenario. An
+        open incident of the honeytoken itself stays open until it is
+        triaged or closes after its inactivity. Assigning a honeytoken to its
+        own scenario again changes nothing.
+
+        A honeytoken that belongs to another scenario receives `409` with the
+        code `honeytoken_in_scenario`: remove it from that scenario first, so
+        that nothing takes a honeytoken from a scenario by mistake. A scenario
+        that does not exist receives `422` with the code `scenario_not_found`.
+
+        The audit log records the change as `honeytoken.update` with the field
+        `scenario_id`. A request that changes nothing is not recorded.
+      tags: [honeytokens]
+      x-access: honeytokens:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignScenarioRequest"
+      responses:
+        "200":
+          description: The honeytoken after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Honeytoken"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The honeytoken belongs to another scenario (`honeytoken_in_scenario`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: The scenario does not exist (`scenario_not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: detachHoneytokenScenario
+      summary: Remove a honeytoken from its scenario
+      description: |
+        Removes a honeytoken from its scenario. The honeytoken stays and
+        stands alone: its next events open an incident of their own. A
+        honeytoken that stands alone stays as it is.
+
+        The audit log records the change as `honeytoken.update` with the field
+        `scenario_id`. A request that changes nothing is not recorded.
+      tags: [honeytokens]
+      x-access: honeytokens:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The honeytoken after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Honeytoken"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/scenarios:
+    get:
+      operationId: listScenarios
+      summary: List scenarios
+      description: |
+        Returns scenarios from the newest to the oldest, a page at a time. To
+        read the next page, pass the `next_cursor` of a response as `cursor`.
+        The honeytokens of a scenario are listed by
+        `GET /api/v1/honeytokens?scenario_id=`.
+
+        Scenarios are part of the inventory: their names and notes tell where
+        decoys are placed. Give integrations that do not manage them keys
+        without the scope `scenarios:read`.
+      tags: [scenarios]
+      x-access: scenarios:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      parameters:
+        - name: limit
+          in: query
+          description: Number of scenarios per page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A page of scenarios.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScenarioPage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createScenario
+      summary: Create a scenario
+      description: |
+        Creates a scenario without resources. Honeytokens join it through
+        `PUT /api/v1/honeytokens/{id}/scenario`.
+
+        The audit log records the creation as `scenario.create`.
+      tags: [scenarios]
+      x-access: scenarios:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScenarioRequest"
+      responses:
+        "201":
+          description: The scenario has been created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scenario"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/scenarios/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getScenario
+      summary: Get a scenario
+      tags: [scenarios]
+      x-access: scenarios:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The scenario.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scenario"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateScenario
+      summary: Change a scenario
+      description: |
+        Changes the name, the notes or the Engage activities of a scenario.
+        Members that are left out stay unchanged; `engage_activities: []`
+        removes the activities. The deception that a scenario was created from
+        cannot be changed, and resources join and leave a scenario through
+        operations of their own.
+
+        The audit log records the names of the changed fields as
+        `scenario.update`, not their values. A request that changes no value
+        is not recorded.
+      tags: [scenarios]
+      x-access: scenarios:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateScenarioRequest"
+      responses:
+        "200":
+          description: The scenario after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scenario"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteScenario
+      summary: Delete a scenario
+      description: |
+        Deletes a scenario. The parameter `honeytokens` chooses what happens
+        to its honeytokens: `keep` removes them from the scenario, and they
+        stand alone; `delete` deletes them with it. Events and incidents
+        remain either way.
+
+        The audit log records the deletion as `scenario.delete`, and each
+        honeytoken as `honeytoken.update` with the field `scenario_id` or as
+        `honeytoken.delete`, all in one transaction.
+      tags: [scenarios]
+      x-access: scenarios:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      parameters:
+        - name: honeytokens
+          in: query
+          description: |
+            What happens to the honeytokens of the scenario: `keep` (the
+            default) leaves them alone, `delete` deletes them.
+          schema:
+            type: string
+            enum: [keep, delete]
+      responses:
+        "204":
+          description: The scenario has been deleted.
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -2807,12 +3131,12 @@ components:
           maxItems: 16
           uniqueItems: true
           description: |
-            The permissions of the key. `honeytokens:write` requires `honeytokens:read`, and
-            `incidents:write` requires `incidents:read`, because a key that changes a resource receives it
-            in the responses.
+            The permissions of the key. `honeytokens:write` requires `honeytokens:read`,
+            `incidents:write` requires `incidents:read`, and `scenarios:write` requires `scenarios:read`,
+            because a key that changes a resource receives it in the responses.
           items:
             type: string
-            enum: [audit:read, catalog:read, events:read, honeytokens:read, honeytokens:write, incidents:read, incidents:write, metrics:read]
+            enum: [audit:read, catalog:read, events:read, honeytokens:read, honeytokens:write, incidents:read, incidents:write, metrics:read, scenarios:read, scenarios:write]
         expires_at:
           type: string
           format: date-time
@@ -3276,7 +3600,7 @@ components:
     Honeytoken:
       type: object
       additionalProperties: false
-      required: [id, type, name, notes, enabled, redirect_url, techniques, trigger_value, trigger_url, trigger_names, created_at, updated_at]
+      required: [id, type, name, notes, enabled, redirect_url, techniques, trigger_value, trigger_url, trigger_names, scenario_id, created_at, updated_at]
       properties:
         id:
           type: string
@@ -3326,6 +3650,10 @@ components:
             Empty for every other type.
           items:
             type: string
+        scenario_id:
+          type: [string, "null"]
+          format: uuid
+          description: The scenario that the honeytoken belongs to, or null if it stands alone.
         created_at:
           type: string
           format: date-time
@@ -3345,6 +3673,103 @@ components:
         next_cursor:
           type: string
           description: Cursor of the next page. Absent on the last page.
+
+    AssignScenarioRequest:
+      type: object
+      additionalProperties: false
+      required: [scenario_id]
+      properties:
+        scenario_id:
+          type: string
+          format: uuid
+
+    Scenario:
+      type: object
+      additionalProperties: false
+      required: [id, name, notes, engage_activities, deception_id, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        notes:
+          type: string
+          description: The story of the scenario and where its decoys are placed. Empty if there are none.
+        engage_activities:
+          type: array
+          description: Identifiers of the engagement activities of MITRE Engage that the scenario carries out.
+          items:
+            type: string
+            pattern: "^EAC[0-9]{4}$"
+        deception_id:
+          type: [string, "null"]
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+          description: The deception of the catalog that the scenario was created from, or null for a scenario put together by hand.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ScenarioPage:
+      type: object
+      additionalProperties: false
+      required: [scenarios]
+      properties:
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/Scenario"
+        next_cursor:
+          type: string
+          description: Cursor of the next page. Absent on the last page.
+
+    CreateScenarioRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Printable characters without leading or trailing spaces.
+        notes:
+          type: string
+          maxLength: 2000
+          default: ""
+          description: The story of the scenario and where its decoys are placed. Line breaks and tabs are allowed.
+        engage_activities:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          default: []
+          description: Identifiers of engagement activities of the Engage version that the server bundles, such as `EAC0005`.
+          items:
+            type: string
+            pattern: "^EAC[0-9]{4}$"
+
+    UpdateScenarioRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        notes:
+          type: string
+          maxLength: 2000
+        engage_activities:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^EAC[0-9]{4}$"
 
     CreateHoneytokenRequest:
       type: object
