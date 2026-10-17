@@ -16,6 +16,7 @@ import (
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 type testDB struct {
@@ -120,15 +121,37 @@ func TestStore_Create_ValidatesBeforeWriting(t *testing.T) {
 	}
 }
 
-// Every type that the code knows must pass the check of the schema. The test
-// writes what the code produces, so that a type added to one place only fails.
-func TestStore_Create_StoresEveryType(t *testing.T) {
+// Every type that the code knows must pass the check of the schema, with
+// its default severity, and so must every severity that the code accepts. The
+// test writes what the code produces, so that a value added to one place
+// only fails.
+func TestStore_Create_StoresEveryTypeAndSeverity(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
 
 	for _, typ := range honeytoken.Types {
-		if h := create(t, d, honeytoken.Spec{Type: typ, Name: string(typ)}); h.Type != typ {
-			t.Errorf("Create(%s) type = %s", typ, h.Type)
+		h := create(t, d, honeytoken.Spec{Type: typ, Name: string(typ)})
+		if h.Type != typ || h.Severity != typ.DefaultSeverity() {
+			t.Errorf("Create(%s) = type %s, severity %s; want the default severity %s", typ, h.Type, h.Severity, typ.DefaultSeverity())
+		}
+	}
+	for _, l := range severity.Suggested {
+		if h := create(t, d, honeytoken.Spec{Type: honeytoken.TypeWebImage, Name: string(l), Severity: &l}); h.Severity != l {
+			t.Errorf("Create(severity %s) severity = %s", l, h.Severity)
+		}
+	}
+	// The events of a honeytoken keep its severity, so the schema of events
+	// takes every level as well, and info as little as that of honeytokens.
+	for _, l := range severity.Levels {
+		_, err := d.owner.Exec(t.Context(), `
+INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method)
+VALUES ('honeytoken', gen_random_uuid(), 'web_url', $1, now(), now(), 'http', 'GET')`, l)
+		var pgErr *pgconn.PgError
+		switch {
+		case l == severity.Info && (!errors.As(err, &pgErr) || pgErr.ConstraintName != "events_severity_check"):
+			t.Errorf("event of severity info: error = %v, want a violation of events_severity_check", err)
+		case l != severity.Info && err != nil:
+			t.Errorf("event of severity %s: %v", l, err)
 		}
 	}
 }
@@ -227,11 +250,15 @@ func TestStore_Update(t *testing.T) {
 
 	got, changed, err := update(t.Context(), d, h.ID, honeytoken.Change{
 		Name: ptr("b"), Notes: ptr("n"), Enabled: ptr(false), RedirectURL: ptr("https://example.com"),
-		Techniques: []string{"T1078", "T1003.001"}, SetTechniques: true,
+		Techniques: []string{"T1078", "T1003.001"}, SetTechniques: true, Severity: ptr(severity.Critical),
 	})
-	want := []string{honeytoken.FieldName, honeytoken.FieldNotes, honeytoken.FieldEnabled, honeytoken.FieldRedirectURL, honeytoken.FieldTechniques}
+	want := []string{
+		honeytoken.FieldName, honeytoken.FieldNotes, honeytoken.FieldEnabled, honeytoken.FieldRedirectURL,
+		honeytoken.FieldTechniques, honeytoken.FieldSeverity,
+	}
 	if err != nil || !slices.Equal(changed, want) || got.Name != "b" || got.Notes != "n" || got.Enabled ||
-		got.RedirectURL == nil || *got.RedirectURL != "https://example.com" || !slices.Equal(got.Techniques, []string{"T1078", "T1003.001"}) {
+		got.RedirectURL == nil || *got.RedirectURL != "https://example.com" || !slices.Equal(got.Techniques, []string{"T1078", "T1003.001"}) ||
+		got.Severity != severity.Critical {
 		t.Fatalf("Update() = %+v, %v, %v; want every field changed", got, changed, err)
 	}
 	if !got.UpdatedAt.After(got.CreatedAt) || got.TriggerValue != h.TriggerValue || got.Type != h.Type {
@@ -241,7 +268,7 @@ func TestStore_Update(t *testing.T) {
 	// The same values change nothing and leave the time of the last change.
 	again, changed, err := update(t.Context(), d, h.ID, honeytoken.Change{
 		Name: ptr("b"), Enabled: ptr(false), RedirectURL: ptr("https://example.com"),
-		Techniques: []string{"T1078", "T1003.001"}, SetTechniques: true,
+		Techniques: []string{"T1078", "T1003.001"}, SetTechniques: true, Severity: ptr(severity.Critical),
 	})
 	if err != nil || len(changed) != 0 || !again.UpdatedAt.Equal(got.UpdatedAt) {
 		t.Errorf("Update(same values) = %v, %v, updated %v; want no change", changed, err, again.UpdatedAt)
@@ -270,6 +297,7 @@ func TestStore_Update(t *testing.T) {
 		{Notes: ptr("\x00")},
 		{RedirectURL: ptr("javascript:alert(1)")},
 		{Techniques: []string{"T9999"}, SetTechniques: true},
+		{Severity: ptr(severity.Info)},
 	} {
 		if _, _, err := update(t.Context(), d, h.ID, c); err == nil {
 			t.Errorf("Update(%+v) error = nil, want a validation error", c)
@@ -425,8 +453,8 @@ func TestSchema_ChecksHoneytokens(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
 
-	const insert = `INSERT INTO honeytokens (type, name, notes, redirect_url, techniques, trigger_value) VALUES ($1, $2, $3, $4, $5, $6)`
-	valid := []any{"web_url", "a", "", nil, []string{}, "aaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	const insert = `INSERT INTO honeytokens (type, name, notes, redirect_url, techniques, trigger_value, severity) VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	valid := []any{"web_url", "a", "", nil, []string{}, "aaaaaaaaaaaaaaaaaaaaaaaaaa", "medium"}
 	with := func(i int, v any) []any {
 		args := slices.Clone(valid)
 		args[i] = v
@@ -459,6 +487,8 @@ func TestSchema_ChecksHoneytokens(t *testing.T) {
 		{"short trigger value", with(5, "aaaa"), "honeytokens_trigger_value_check"},
 		{"trigger value in upper case", with(5, "AAAAAAAAAAAAAAAAAAAAAAAAAA"), "honeytokens_trigger_value_check"},
 		{"trigger value with 0", with(5, "aaaaaaaaaaaaaaaaaaaaaaaaa0"), "honeytokens_trigger_value_check"},
+		{"severity info", with(6, "info"), "honeytokens_severity_check"},
+		{"unknown severity", with(6, "urgent"), "honeytokens_severity_check"},
 	} {
 		_, err := d.owner.Exec(t.Context(), insert, tt.args...)
 		var pgErr *pgconn.PgError

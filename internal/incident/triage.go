@@ -16,6 +16,7 @@ import (
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/platform/text"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 // Errors of the triage and of the lists.
@@ -56,11 +57,11 @@ type Incident struct {
 	Status       Status
 	// EventSeverity and EventTechniques are what the events suggest: the
 	// highest severity and every technique of them.
-	EventSeverity   Severity
+	EventSeverity   severity.Level
 	EventTechniques []string
 	// SeverityOverride and TechniquesOverride are the judgment of an analyst,
 	// or nil if there is none.
-	SeverityOverride   *Severity
+	SeverityOverride   *severity.Level
 	TechniquesOverride []string
 	Notes              string
 	EventCount         int
@@ -73,7 +74,7 @@ type Incident struct {
 
 // Severity returns the severity of the incident: the override of an analyst,
 // or what the events suggest.
-func (i Incident) Severity() Severity {
+func (i Incident) Severity() severity.Level {
 	if i.SeverityOverride != nil {
 		return *i.SeverityOverride
 	}
@@ -95,7 +96,7 @@ type Change struct {
 	Notes  *string
 	// SeverityOverride sets the override of the severity if SetSeverityOverride
 	// is true; nil removes it.
-	SeverityOverride    *Severity
+	SeverityOverride    *severity.Level
 	SetSeverityOverride bool
 	// TechniquesOverride sets the override of the techniques if
 	// SetTechniquesOverride is true; nil removes it, and an empty list states
@@ -118,7 +119,7 @@ func (c Change) validate() error {
 			return err
 		}
 	}
-	if c.SetSeverityOverride && c.SeverityOverride != nil && !slices.Contains(Severities, *c.SeverityOverride) {
+	if c.SetSeverityOverride && c.SeverityOverride != nil && !c.SeverityOverride.Valid() {
 		return ErrInvalidSeverity
 	}
 	if c.SetTechniquesOverride && c.TechniquesOverride != nil {

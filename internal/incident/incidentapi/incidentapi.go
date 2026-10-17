@@ -25,6 +25,7 @@ import (
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/incident"
 	"nyktus.org/nyktus/internal/platform/httpx"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 // codeInvalidState answers a change that would move the status of an incident
@@ -60,23 +61,23 @@ func NewHandler(logger *slog.Logger, d incident.DB) *Handler {
 }
 
 type incidentResponse struct {
-	ID                 string             `json:"id"`
-	ResourceType       string             `json:"resource_type"`
-	ResourceID         string             `json:"resource_id"`
-	Status             incident.Status    `json:"status"`
-	Severity           incident.Severity  `json:"severity"`
-	EventSeverity      incident.Severity  `json:"event_severity"`
-	SeverityOverride   *incident.Severity `json:"severity_override"`
-	Techniques         []string           `json:"techniques"`
-	EventTechniques    []string           `json:"event_techniques"`
-	TechniquesOverride []string           `json:"techniques_override"`
-	Notes              string             `json:"notes"`
-	EventCount         int                `json:"event_count"`
-	FirstEventAt       time.Time          `json:"first_event_at"`
-	LastEventAt        time.Time          `json:"last_event_at"`
-	OpenedAt           time.Time          `json:"opened_at"`
-	AcknowledgedAt     *time.Time         `json:"acknowledged_at"`
-	ClosedAt           *time.Time         `json:"closed_at"`
+	ID                 string          `json:"id"`
+	ResourceType       string          `json:"resource_type"`
+	ResourceID         string          `json:"resource_id"`
+	Status             incident.Status `json:"status"`
+	Severity           severity.Level  `json:"severity"`
+	EventSeverity      severity.Level  `json:"event_severity"`
+	SeverityOverride   *severity.Level `json:"severity_override"`
+	Techniques         []string        `json:"techniques"`
+	EventTechniques    []string        `json:"event_techniques"`
+	TechniquesOverride []string        `json:"techniques_override"`
+	Notes              string          `json:"notes"`
+	EventCount         int             `json:"event_count"`
+	FirstEventAt       time.Time       `json:"first_event_at"`
+	LastEventAt        time.Time       `json:"last_event_at"`
+	OpenedAt           time.Time       `json:"opened_at"`
+	AcknowledgedAt     *time.Time      `json:"acknowledged_at"`
+	ClosedAt           *time.Time      `json:"closed_at"`
 }
 
 func newIncidentResponse(i incident.Incident) incidentResponse {
@@ -174,10 +175,10 @@ func (h *Handler) GetIncident(w http.ResponseWriter, r *http.Request) {
 // updateRequest lists every field of the triage. What the events suggest is
 // not among them: the analyst overrides it instead.
 type updateRequest struct {
-	Status             httpx.Optional[incident.Status]   `json:"status"`
-	Notes              httpx.Optional[string]            `json:"notes"`
-	SeverityOverride   httpx.Nullable[incident.Severity] `json:"severity_override"`
-	TechniquesOverride httpx.Nullable[[]string]          `json:"techniques_override"`
+	Status             httpx.Optional[incident.Status] `json:"status"`
+	Notes              httpx.Optional[string]          `json:"notes"`
+	SeverityOverride   httpx.Nullable[severity.Level]  `json:"severity_override"`
+	TechniquesOverride httpx.Nullable[[]string]        `json:"techniques_override"`
 }
 
 // UpdateIncident handles PATCH /api/v1/incidents/{id}.
@@ -232,19 +233,20 @@ type dnsResponse struct {
 }
 
 type eventResponse struct {
-	ID             string        `json:"id"`
-	ResourceType   string        `json:"resource_type"`
-	ResourceID     string        `json:"resource_id"`
-	ScenarioID     *string       `json:"scenario_id"`
-	HoneytokenType *string       `json:"honeytoken_type"`
-	Techniques     []string      `json:"techniques"`
-	IncidentID     *string       `json:"incident_id"`
-	OccurredAt     time.Time     `json:"occurred_at"`
-	RecordedAt     time.Time     `json:"recorded_at"`
-	Channel        string        `json:"channel"`
-	ClientIP       *string       `json:"client_ip"`
-	HTTP           *httpResponse `json:"http"`
-	DNS            *dnsResponse  `json:"dns"`
+	ID             string         `json:"id"`
+	ResourceType   string         `json:"resource_type"`
+	ResourceID     string         `json:"resource_id"`
+	ScenarioID     *string        `json:"scenario_id"`
+	HoneytokenType *string        `json:"honeytoken_type"`
+	Techniques     []string       `json:"techniques"`
+	Severity       severity.Level `json:"severity"`
+	IncidentID     *string        `json:"incident_id"`
+	OccurredAt     time.Time      `json:"occurred_at"`
+	RecordedAt     time.Time      `json:"recorded_at"`
+	Channel        string         `json:"channel"`
+	ClientIP       *string        `json:"client_ip"`
+	HTTP           *httpResponse  `json:"http"`
+	DNS            *dnsResponse   `json:"dns"`
 }
 
 func newEventResponse(e incident.Event) eventResponse {
@@ -254,6 +256,7 @@ func newEventResponse(e incident.Event) eventResponse {
 		ResourceID:   e.ResourceID,
 		ScenarioID:   e.ScenarioID,
 		Techniques:   e.Techniques,
+		Severity:     e.Severity,
 		IncidentID:   e.IncidentID,
 		OccurredAt:   e.OccurredAt.UTC(),
 		RecordedAt:   e.RecordedAt.UTC(),

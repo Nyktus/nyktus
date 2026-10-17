@@ -124,14 +124,17 @@ func TestCreate_ReturnsTheHoneytokenWithItsTriggerURL(t *testing.T) {
 	rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeytokens", "", `{"type": "web_image", "name": "Pixel"}`)
 	raw := decode[map[string]any](t, rec)
 	if rec.Code != http.StatusCreated || raw["enabled"] != true || raw["notes"] != "" || raw["redirect_url"] != nil ||
-		raw["techniques"] == nil || len(raw["techniques"].([]any)) != 0 {
+		raw["techniques"] == nil || len(raw["techniques"].([]any)) != 0 || raw["severity"] != "low" {
 		t.Errorf("POST minimal = %d %s", rec.Code, rec.Body)
 	}
 	if want := triggerURL + "/" + raw["trigger_value"].(string) + ".gif"; raw["trigger_url"] != want {
 		t.Errorf("trigger_url of an image = %v, want %q", raw["trigger_url"], want)
 	}
-	if got := f.create(t, `{"type": "web_url", "name": "Off", "enabled": false}`); got.Enabled {
-		t.Error("POST with enabled false created an enabled honeytoken")
+	if got := f.create(t, `{"type": "web_url", "name": "Off", "enabled": false}`); got.Enabled || got.Severity != "medium" {
+		t.Errorf("POST with enabled false = %+v, want a disabled honeytoken with the default severity medium", got)
+	}
+	if got := f.create(t, `{"type": "web_image", "name": "Severe", "severity": "critical"}`); got.Severity != "critical" {
+		t.Errorf("POST with severity critical = %+v", got)
 	}
 }
 
@@ -158,10 +161,23 @@ func TestCreate_RejectsInvalidRequests(t *testing.T) {
 		`{"type": "web_url", "name": "a", "notes": null}`,
 		`{"type": "web_url", "name": "a", "redirect_url": null}`,
 		`{"type": "web_url", "name": "a", "techniques": null}`,
+		`{"type": "web_url", "name": "a", "severity": null}`,
 	} {
 		rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeytokens", "", body)
 		if rec.Code != http.StatusBadRequest || errorCode(t, rec) != "invalid_request" {
 			t.Errorf("POST %s: %d %s, want 400 invalid_request", body, rec.Code, rec.Body)
+		}
+	}
+	// An empty severity is not the default of the type, and info is only an
+	// analyst's judgment of an incident.
+	for _, body := range []string{
+		`{"type": "web_url", "name": "a", "severity": ""}`,
+		`{"type": "web_url", "name": "a", "severity": "info"}`,
+		`{"type": "web_url", "name": "a", "severity": "urgent"}`,
+	} {
+		rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeytokens", "", body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "severity must be") {
+			t.Errorf("POST %s: %d %s, want 400 naming the rule of the severity", body, rec.Code, rec.Body)
 		}
 	}
 	var n int
@@ -260,6 +276,14 @@ func TestUpdate(t *testing.T) {
 	if rec := patch(`{"redirect_url": "https://other.example.com"}`); rec.Code != http.StatusOK {
 		t.Errorf("PATCH redirect_url = %d %s", rec.Code, rec.Body)
 	}
+	if rec := patch(`{"severity": "high"}`); rec.Code != http.StatusOK || decode[response](t, rec).Severity != "high" {
+		t.Errorf("PATCH severity = %d %s, want severity high", rec.Code, rec.Body)
+	}
+	for _, body := range []string{`{"severity": ""}`, `{"severity": "info"}`} {
+		if rec := patch(body); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "severity must be") {
+			t.Errorf("PATCH %s = %d %s, want 400 naming the rule of the severity", body, rec.Code, rec.Body)
+		}
+	}
 
 	for _, body := range []string{
 		`{}`,
@@ -267,6 +291,7 @@ func TestUpdate(t *testing.T) {
 		`{"enabled": null}`,
 		`{"techniques": null}`,
 		`{"notes": null}`,
+		`{"severity": null}`,
 		`{"redirect_url": ""}`,
 		`{"redirect_url": "https://10.0.0.1"}`,
 		`{"type": "web_image"}`,

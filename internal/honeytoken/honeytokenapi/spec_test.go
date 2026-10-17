@@ -12,6 +12,7 @@ import (
 
 	"nyktus.org/nyktus/api"
 	"nyktus.org/nyktus/internal/honeytoken"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 type schemaProperty struct {
@@ -95,7 +96,19 @@ func TestSpecification_MatchesCode(t *testing.T) {
 	if got := schemas["CreateHoneytokenRequest"].Required; !sameSet(got, []string{"type", "name"}) {
 		t.Errorf("CreateHoneytokenRequest.required = %v", got)
 	}
-	fields := []string{honeytoken.FieldName, honeytoken.FieldNotes, honeytoken.FieldEnabled, honeytoken.FieldRedirectURL, honeytoken.FieldTechniques}
+	levels := make([]string, 0, len(severity.Suggested))
+	for _, l := range severity.Suggested {
+		levels = append(levels, string(l))
+	}
+	for _, s := range []string{"Honeytoken", "CreateHoneytokenRequest", "UpdateHoneytokenRequest"} {
+		if got := schemas[s].Properties["severity"].Enum; !sameSet(got, levels) {
+			t.Errorf("%s.severity = %v, want %v", s, got, levels)
+		}
+	}
+	fields := []string{
+		honeytoken.FieldName, honeytoken.FieldNotes, honeytoken.FieldEnabled, honeytoken.FieldRedirectURL,
+		honeytoken.FieldTechniques, honeytoken.FieldSeverity,
+	}
 	if got := slices.Collect(maps.Keys(schemas["UpdateHoneytokenRequest"].Properties)); !sameSet(got, fields) {
 		t.Errorf("UpdateHoneytokenRequest properties = %v, want the fields of a change %v", got, fields)
 	}

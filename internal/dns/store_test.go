@@ -42,8 +42,8 @@ func (f fixture) honeytoken(t *testing.T, typ string, enabled bool, techniques [
 		techniques = []string{}
 	}
 	err := f.owner.QueryRow(t.Context(), `
-INSERT INTO honeytokens (type, name, enabled, techniques, trigger_value)
-VALUES ($1, 'h', $2, $3, translate(left(replace(gen_random_uuid()::text, '-', ''), 26), '0189', 'wxyz'))
+INSERT INTO honeytokens (type, name, enabled, techniques, severity, trigger_value)
+VALUES ($1, 'h', $2, $3, 'medium', translate(left(replace(gen_random_uuid()::text, '-', ''), 26), '0189', 'wxyz'))
 RETURNING id, trigger_value`, typ, enabled, techniques).Scan(&id, &value)
 	if err != nil {
 		t.Fatalf("create honeytoken: %v", err)

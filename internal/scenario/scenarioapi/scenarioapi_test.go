@@ -99,8 +99,8 @@ func (f fixture) createHoneytoken(t *testing.T, scenarioID string) string {
 	t.Helper()
 	var id string
 	err := f.owner.QueryRow(t.Context(), `
-INSERT INTO honeytokens (type, name, trigger_value, scenario_id)
-VALUES ('web_url', 'h', translate(substr(md5(random()::text), 1, 26), '0189', 'wxyz'), $1)
+INSERT INTO honeytokens (type, name, severity, trigger_value, scenario_id)
+VALUES ('web_url', 'h', 'medium', translate(substr(md5(random()::text), 1, 26), '0189', 'wxyz'), $1)
 RETURNING id`, scenarioID).Scan(&id)
 	if err != nil {
 		t.Fatal(err)

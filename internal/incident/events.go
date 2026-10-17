@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"nyktus.org/nyktus/internal/platform/db"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 // ErrEventNotFound means that no event has the identifier.
@@ -38,6 +39,8 @@ type Event struct {
 	// requested.
 	HoneytokenType string
 	Techniques     []string
+	// Severity is the severity of the resource when it was requested.
+	Severity severity.Level
 	// IncidentID is the incident of the event, or nil until the worker has
 	// processed it.
 	IncidentID *string
@@ -53,8 +56,8 @@ type Event struct {
 	DNSZone, DNSPrefix, DNSQType, DNSTransport string
 }
 
-const eventColumns = `id, resource_type, resource_id, scenario_id, honeytoken_type, techniques, incident_id, occurred_at, recorded_at,
-	channel, client_ip, coalesce(method, ''), user_agent, referer, accept_language, coalesce(dns_zone, ''),
+const eventColumns = `id, resource_type, resource_id, scenario_id, honeytoken_type, techniques, severity, incident_id,
+	occurred_at, recorded_at, channel, client_ip, coalesce(method, ''), user_agent, referer, accept_language, coalesce(dns_zone, ''),
 	coalesce(dns_prefix, ''), coalesce(dns_qtype, ''), coalesce(dns_transport, '')`
 
 func scanEvent(row pgx.Row) (Event, error) {
@@ -63,7 +66,7 @@ func scanEvent(row pgx.Row) (Event, error) {
 		honeytokenType *string
 		clientIP       *netip.Addr
 	)
-	err := row.Scan(&e.ID, &e.ResourceType, &e.ResourceID, &e.ScenarioID, &honeytokenType, &e.Techniques, &e.IncidentID,
+	err := row.Scan(&e.ID, &e.ResourceType, &e.ResourceID, &e.ScenarioID, &honeytokenType, &e.Techniques, &e.Severity, &e.IncidentID,
 		&e.OccurredAt, &e.RecordedAt, &e.Channel, &clientIP, &e.Method, &e.UserAgent, &e.Referer, &e.AcceptLanguage,
 		&e.DNSZone, &e.DNSPrefix, &e.DNSQType, &e.DNSTransport)
 	if honeytokenType != nil {

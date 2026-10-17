@@ -1636,8 +1636,8 @@ paths:
       operationId: updateHoneytoken
       summary: Change a honeytoken
       description: |
-        Changes the name, the notes, the state, the redirect or the techniques
-        of a honeytoken. Members that are left out stay unchanged. The type and
+        Changes the name, the notes, the state, the redirect, the techniques or
+        the severity of a honeytoken. Members that are left out stay unchanged. The type and
         the trigger value cannot be changed. `redirect_url: null` removes the
         redirect.
 
@@ -3605,7 +3605,7 @@ components:
     Honeytoken:
       type: object
       additionalProperties: false
-      required: [id, type, name, notes, enabled, redirect_url, techniques, trigger_value, trigger_url, trigger_names, scenario_id, created_at, updated_at]
+      required: [id, type, name, notes, enabled, redirect_url, techniques, severity, trigger_value, trigger_url, trigger_names, scenario_id, created_at, updated_at]
       properties:
         id:
           type: string
@@ -3636,6 +3636,10 @@ components:
           items:
             type: string
             pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          description: The severity that the events of the honeytoken receive.
         trigger_value:
           type: string
           pattern: "^[a-z2-7]{26}$"
@@ -3813,6 +3817,10 @@ components:
           items:
             type: string
             pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          description: The severity that the events of the honeytoken receive. Without it, the default of the type.
 
     UpdateHoneytokenRequest:
       type: object
@@ -3841,6 +3849,10 @@ components:
           items:
             type: string
             pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          description: Changes the severity of later events. Recorded events keep theirs.
 
     Incident:
       type: object
@@ -3964,8 +3976,8 @@ components:
     Event:
       type: object
       additionalProperties: false
-      required: [id, resource_type, resource_id, scenario_id, honeytoken_type, techniques, incident_id, occurred_at,
-        recorded_at, channel, client_ip, http, dns]
+      required: [id, resource_type, resource_id, scenario_id, honeytoken_type, techniques, severity, incident_id,
+        occurred_at, recorded_at, channel, client_ip, http, dns]
       properties:
         id:
           type: string
@@ -3994,6 +4006,10 @@ components:
           items:
             type: string
             pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          description: The severity that the honeytoken had when it was requested.
         incident_id:
           type: [string, "null"]
           format: uuid
