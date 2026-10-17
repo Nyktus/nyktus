@@ -31,7 +31,7 @@ Each of these properties needs its own test, named after the property:
 - The database role of every server role passes that check after all migrations and has no privileges beyond its grants.
 - Migrations leave PUBLIC without privileges on the schema, and fail when they cannot achieve that.
 - An event is never stored without its processing job, and its job stays until the event is assigned to an incident, also when processing fails.
-- An event belongs to exactly one incident. A resource has at most one open incident, also when several workers process its events at once, a closed incident is never opened again, and every incident has exactly one alert.
+- An event belongs to exactly one incident. A scenario, and a resource that stands alone, has at most one open incident, also when several workers process events of different resources of one scenario at once, a closed incident is never opened again, and every incident has exactly one alert. An event keeps the scenario of its resource at the time it was recorded.
 - Login and password reset return identical status codes and bodies for existing and unknown accounts, and for accounts rejected by the local login policy.
 - Health checks never record an event, open an incident or raise an alert.
 - The setup endpoint accepts only the current setup token and returns `404` once an administrator exists, including after a restart.

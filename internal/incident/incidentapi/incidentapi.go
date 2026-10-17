@@ -235,6 +235,7 @@ type eventResponse struct {
 	ID             string        `json:"id"`
 	ResourceType   string        `json:"resource_type"`
 	ResourceID     string        `json:"resource_id"`
+	ScenarioID     *string       `json:"scenario_id"`
 	HoneytokenType *string       `json:"honeytoken_type"`
 	Techniques     []string      `json:"techniques"`
 	IncidentID     *string       `json:"incident_id"`
@@ -251,6 +252,7 @@ func newEventResponse(e incident.Event) eventResponse {
 		ID:           e.ID,
 		ResourceType: e.ResourceType,
 		ResourceID:   e.ResourceID,
+		ScenarioID:   e.ScenarioID,
 		Techniques:   e.Techniques,
 		IncidentID:   e.IncidentID,
 		OccurredAt:   e.OccurredAt.UTC(),

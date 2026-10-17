@@ -1,6 +1,6 @@
 # Incidents
 
-An incident collects the events of one honeytoken: the first event opens it, and every further event joins it until it is closed. Triage happens on incidents, not on single events, so that an intruder who opens a URL ten times raises one incident instead of ten. When an incident opens, Nyktus raises its alert, the single notification about the incident.
+An incident collects the events of one [scenario](scenarios.md), or of one honeytoken that stands alone: the first event opens it, and every further event joins it until it is closed. Triage happens on incidents, not on single events, so that an intruder who opens a URL ten times raises one incident instead of ten. When an incident opens, Nyktus raises its alert, the single notification about the incident.
 
 > The web console does not show incidents yet; read and triage them through the API.
 
@@ -8,20 +8,23 @@ An incident collects the events of one honeytoken: the first event opens it, and
 
 The [worker](configuration.md#role-worker) processes every event that the trigger or the DNS role records:
 
-- If the honeytoken has an open incident, the event joins it.
-- Otherwise the event opens a new incident and raises its alert.
+- If the honeytoken belonged to a scenario when the event was recorded, the event joins the open incident of the scenario. The events of every honeytoken of a scenario share one incident with one alert: an intruder who follows the story of a scenario raises one alert, not one per decoy.
+- Otherwise the event joins the open incident of its honeytoken.
+- If there is none, the event opens a new incident and raises its alert.
 
-A honeytoken has at most one open incident at a time, also when several workers process its events at the same moment.
+A scenario, and a honeytoken that stands alone, has at most one open incident at a time, also when several workers process its events at the same moment.
 
-An incident is `open` until someone looks into it, `acknowledged` while someone does, and `closed` when the triage is finished. An acknowledged incident is still open: it keeps collecting the events of its honeytoken. A closed incident is never opened again. The next event of its honeytoken opens a new incident with a new alert.
+Each event keeps the scenario its honeytoken belonged to when it was recorded, shown as `scenario_id`. When a honeytoken joins or leaves a scenario, its events from then on go to the incident of the scenario or of the honeytoken; its earlier events stay where they belong, and an open incident of the honeytoken stays open until it is triaged or [closes after its inactivity](#closing-inactive-incidents). An incident of a scenario outlives the scenario, like events outlive their honeytoken: events recorded before a scenario was deleted still join its incident.
 
-Close an incident once its triage is finished. As long as it stays open, new events of its honeytoken join it without an alert, even if they come from someone else weeks later.
+An incident is `open` until someone looks into it, `acknowledged` while someone does, and `closed` when the triage is finished. An acknowledged incident is still open: it keeps collecting events. A closed incident is never opened again. The next event of its scenario or honeytoken opens a new incident with a new alert.
+
+Close an incident once its triage is finished. As long as it stays open, new events of its scenario or honeytoken join it without an alert, even if they come from someone else weeks later.
 
 ### Closing inactive incidents
 
 The [worker](database.md#periodic-tasks) closes incidents, open or acknowledged, whose last event was more than `NYKTUS_INCIDENT_AUTO_CLOSE_DAYS` ago, 14 by default, every 15 minutes, so that a forgotten incident does not swallow the alerts of later intrusions. A triage does not count as activity: what keeps an incident open is a new event. Set the variable to `0` to leave every incident open until it is triaged; otherwise it is between 1 and 365 days. The [audit log](audit-log.md) records each closing as `incident.update` of the field `status` by the system, and the log of the worker as `incident: closed`. An event that arrives while its incident closes opens a new incident with a new alert.
 
-An event is processed once and belongs to exactly one incident. Events outlive their honeytoken, and so do incidents: deleting a honeytoken keeps both.
+An event is processed once and belongs to exactly one incident. Events outlive their honeytoken, and so do incidents: deleting a honeytoken or a scenario keeps both.
 
 ## Severity
 
@@ -47,9 +50,9 @@ The alert of an incident reports the severity and the techniques that the incide
 
 Every role reads incidents and events, with a session or with an [API key](api-keys.md) that carries the scope `incidents:read` or `events:read`:
 
-- `GET /api/v1/incidents` lists incidents from the most recently opened to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `status` narrows the list to one or more statuses, separated by commas, such as `status=open,acknowledged` for every incident that is not closed; `resource_id` to the incidents of one honeytoken.
+- `GET /api/v1/incidents` lists incidents from the most recently opened to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `status` narrows the list to one or more statuses, separated by commas, such as `status=open,acknowledged` for every incident that is not closed; `resource_id` to the incidents of one scenario or one honeytoken. `resource_type` of an incident says which: `scenario` or `honeytoken`. The events of a honeytoken in a scenario belong to the incidents of the scenario.
 - `GET /api/v1/incidents/<id>` returns one incident.
-- `GET /api/v1/events` lists events from the most recently recorded to the oldest, paged in the same way. `incident_id` narrows the list to the events of an incident. To read the events of a honeytoken, list its incidents and then their events.
+- `GET /api/v1/events` lists events from the most recently recorded to the oldest, paged in the same way. `incident_id` narrows the list to the events of an incident. To read the events of a honeytoken, list its incidents, and those of its scenario, and then their events; `resource_id` of an event names its honeytoken, `scenario_id` the scenario it belonged to.
 - `GET /api/v1/events/<id>` returns one event, with the request (`http`) or the query (`dns`) that it recorded.
 
 Events are listed by the time they were recorded (`recorded_at`), not the time the request or query arrived (`occurred_at`): the DNS role records a query up to five minutes after it arrived. Events recorded meanwhile do not shift the following pages. If you collect events regularly, for example into a SIEM, read again from a few seconds before the newest event you have and skip the identifiers you already know, because an event is listed by the time it was written, which can precede the commit of a slow transaction.
@@ -86,7 +89,7 @@ When the worker stops, it takes no further events and gives those in progress up
 
 ## Personal data
 
-Events contain personal data: the address of the client, or for DNS the address of the resolver, and the `User-Agent`, `Referer` and `Accept-Language` headers that the client sent. Incidents and alerts contain none of it; they name the honeytoken, the times, the severity and the techniques.
+Events contain personal data: the address of the client, or for DNS the address of the resolver, and the `User-Agent`, `Referer` and `Accept-Language` headers that the client sent. Incidents and alerts contain none of it; they name the scenario or honeytoken, the times, the severity and the techniques.
 
 Every read of events is recorded in the [audit log](audit-log.md) as `events.read`, at most once per user or API key and minute. A read that cannot be recorded returns no events. Integrations that only follow incidents, such as a ticket system, need keys without the scope `events:read`.
 

@@ -1158,13 +1158,19 @@ $$;
 -- An event is a recorded request of a honeytoken, over HTTP or DNS. It is
 -- evidence and outlives the honeytoken: it names it by type and identifier
 -- without a foreign key, as the audit log names resources, and keeps a copy of
--- the type and the techniques that the honeytoken had when it was requested.
+-- the type, the techniques and the scenario that the honeytoken had when it
+-- was requested.
 -- Name and notes are not copied, so that events do not become a second copy of
 -- the inventory, and neither is the trigger value.
 CREATE TABLE public.events (
 	id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 	resource_type   text NOT NULL,
 	resource_id     uuid NOT NULL,
+	-- The scenario that the resource belonged to when the request arrived, or
+	-- NULL if it stood alone. The worker correlates the event by it, so a
+	-- resource that changes its scenario afterwards does not move the events
+	-- it already raised. Without a foreign key, like the resource.
+	scenario_id     uuid,
 	honeytoken_type text,
 	techniques      text[] NOT NULL DEFAULT '{}',
 	-- When the request arrived. The trigger records at once; the DNS role
@@ -1327,7 +1333,7 @@ DECLARE
 	new_event_id uuid;
 	now_at timestamptz := clock_timestamp();
 BEGIN
-	SELECT t.id, t.type, t.enabled, t.techniques, t.redirect_url INTO h
+	SELECT t.id, t.type, t.enabled, t.techniques, t.scenario_id, t.redirect_url INTO h
 	FROM public.honeytokens AS t
 	WHERE t.trigger_value = requested_value;
 	IF NOT FOUND THEN
@@ -1346,9 +1352,9 @@ BEGIN
 		RETURN;
 	END IF;
 
-	INSERT INTO public.events (resource_type, resource_id, honeytoken_type, techniques, occurred_at, recorded_at,
-		channel, client_ip, method, user_agent, referer, accept_language)
-	VALUES ('honeytoken', h.id, h.type, h.techniques, now_at, now_at,
+	INSERT INTO public.events (resource_type, resource_id, scenario_id, honeytoken_type, techniques, occurred_at,
+		recorded_at, channel, client_ip, method, user_agent, referer, accept_language)
+	VALUES ('honeytoken', h.id, h.scenario_id, h.type, h.techniques, now_at, now_at,
 		'http', request_client_ip, request_method, request_user_agent, request_referer, request_accept_language)
 	RETURNING id INTO new_event_id;
 	INSERT INTO public.event_jobs (event_id) VALUES (new_event_id);
@@ -1387,7 +1393,7 @@ DECLARE
 	new_event_id uuid;
 	now_at timestamptz := clock_timestamp();
 BEGIN
-	SELECT t.id, t.type, t.enabled, t.techniques INTO h
+	SELECT t.id, t.type, t.enabled, t.techniques, t.scenario_id INTO h
 	FROM public.honeytokens AS t
 	WHERE t.trigger_value = requested_value;
 	IF NOT FOUND THEN
@@ -1405,9 +1411,9 @@ BEGIN
 		RETURN;
 	END IF;
 
-	INSERT INTO public.events (resource_type, resource_id, honeytoken_type, techniques, occurred_at, recorded_at,
-		channel, client_ip, dns_zone, dns_prefix, dns_qtype, dns_transport)
-	VALUES ('honeytoken', h.id, h.type, h.techniques,
+	INSERT INTO public.events (resource_type, resource_id, scenario_id, honeytoken_type, techniques, occurred_at,
+		recorded_at, channel, client_ip, dns_zone, dns_prefix, dns_qtype, dns_transport)
+	VALUES ('honeytoken', h.id, h.scenario_id, h.type, h.techniques,
 		now_at - least(greatest(coalesce(query_delay, interval '0'), interval '0'), interval '5 minutes'), now_at,
 		'dns', query_resolver_ip, query_zone, query_prefix, query_type, query_transport)
 	RETURNING id INTO new_event_id;
@@ -1416,10 +1422,11 @@ BEGIN
 END
 $$;
 
--- An incident correlates the events of one resource: the worker assigns every
--- event to the open incident of its resource, or opens one. Triage happens on
--- incidents. Like events, an incident names its resource without a foreign key,
--- so that it outlives the resource.
+-- An incident correlates the events of one scenario, or of one resource that
+-- stood alone when the event arrived: the worker assigns every event to the
+-- open incident of its scenario or resource, or opens one. Triage happens on
+-- incidents. Like events, an incident names its scenario or resource without a
+-- foreign key, so that it outlives it.
 --
 -- The worker maintains the severity, the techniques, the count and the times of
 -- the events; the analyst's judgment is kept beside them in the override
@@ -1447,7 +1454,7 @@ CREATE TABLE public.incidents (
 	acknowledged_at     timestamptz,
 	closed_at           timestamptz,
 
-	CONSTRAINT incidents_resource_type_check CHECK (resource_type IN ('honeytoken')),
+	CONSTRAINT incidents_resource_type_check CHECK (resource_type IN ('honeytoken', 'scenario')),
 	CONSTRAINT incidents_status_check CHECK (status IN ('open', 'acknowledged', 'closed')),
 	-- An incident can be closed without having been acknowledged.
 	CONSTRAINT incidents_status_times_check CHECK (
@@ -1477,8 +1484,10 @@ CREATE TABLE public.incidents (
 	CONSTRAINT incidents_event_times_check CHECK (first_event_at <= last_event_at)
 );
 
--- At most one incident per resource is open. The worker relies on this index to
--- open an incident only once when two events of a resource arrive together.
+-- At most one incident per scenario or resource is open. The worker relies on
+-- this index to open an incident only once when two events of a scenario or
+-- resource arrive together, also events of different honeytokens of one
+-- scenario.
 CREATE UNIQUE INDEX incidents_open_resource_key ON public.incidents (resource_type, resource_id)
 	WHERE status <> 'closed';
 
