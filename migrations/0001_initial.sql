@@ -1310,6 +1310,18 @@ BEGIN
 END
 $$;
 
+-- Text that whoever reaches a decoy chooses, such as the headers of a request,
+-- is untrusted. The code that records it shortens it and replaces every
+-- character that is not printable; this check refuses control characters, line
+-- separators and the format characters that reorder or hide text, in case a
+-- compromised recording role skips that. A CHECK constraint cannot share a
+-- pattern, so the rule lives in this function.
+CREATE FUNCTION public.untrusted_text_valid(value text, max_bytes integer) RETURNS boolean
+	LANGUAGE sql IMMUTABLE STRICT
+	SET search_path = ''
+	RETURN octet_length(value) <= max_bytes
+		AND value !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\U000e0000-\U000e007f]';
+
 -- An event is a recorded request of a honeytoken, over HTTP or DNS. It is
 -- evidence and outlives the honeytoken: it names it by type and identifier
 -- without a foreign key, as the audit log names resources, and keeps a copy of
@@ -1398,15 +1410,9 @@ CREATE TABLE public.events (
 	),
 	-- Only requests that read a honeytoken are recorded.
 	CONSTRAINT events_method_check CHECK (method IN ('GET', 'HEAD')),
-	CONSTRAINT events_user_agent_check CHECK (
-		octet_length(user_agent) <= 512 AND user_agent !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\U000e0000-\U000e007f]'
-	),
-	CONSTRAINT events_referer_check CHECK (
-		octet_length(referer) <= 1024 AND referer !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\U000e0000-\U000e007f]'
-	),
-	CONSTRAINT events_accept_language_check CHECK (
-		octet_length(accept_language) <= 128 AND accept_language !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\U000e0000-\U000e007f]'
-	),
+	CONSTRAINT events_user_agent_check CHECK (public.untrusted_text_valid(user_agent, 512)),
+	CONSTRAINT events_referer_check CHECK (public.untrusted_text_valid(referer, 1024)),
+	CONSTRAINT events_accept_language_check CHECK (public.untrusted_text_valid(accept_language, 128)),
 	CONSTRAINT events_dns_zone_check CHECK (
 		octet_length(dns_zone) <= 200 AND dns_zone ~ '^[a-z0-9-]+(\.[a-z0-9-]+)+$'
 	),
@@ -1441,14 +1447,16 @@ WITH (autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0
 -- statement_timestamp(), so that the index can be used.
 CREATE INDEX event_jobs_not_before_idx ON public.event_jobs (not_before);
 
--- At most 10 events per honeytoken and minute are recorded, over HTTP and DNS
+-- At most 10 events per resource and minute are recorded, over HTTP and DNS
 -- together, so that a flood of requests for one known value cannot fill the
 -- database; the outcome "limited" lets the trigger and the DNS role count the
 -- rest. Concurrent requests can exceed the limit slightly, which is accepted.
+-- Identifiers are random UUIDs, so the identifier alone names the resource,
+-- whatever its type.
 -- The window starts at statement_timestamp(), so that the index can be used.
 -- Only the recording functions below call this function, with the rights of
 -- the owner.
-CREATE FUNCTION public.honeytoken_event_limit_reached(honeytoken_id uuid) RETURNS boolean
+CREATE FUNCTION public.event_limit_reached(resource uuid) RETURNS boolean
 	LANGUAGE plpgsql
 	STABLE
 	SET search_path = ''
@@ -1457,8 +1465,7 @@ BEGIN
 	RETURN (
 		SELECT count(*) FROM (
 			SELECT FROM public.events AS e
-			WHERE e.resource_id = honeytoken_id
-				AND e.resource_type = 'honeytoken'
+			WHERE e.resource_id = resource
 				AND e.recorded_at >= statement_timestamp() - interval '1 minute'
 			LIMIT 10
 		) AS recent
@@ -1509,7 +1516,7 @@ BEGIN
 		outcome := 'disabled';
 		RETURN;
 	END IF;
-	IF public.honeytoken_event_limit_reached(h.id) THEN
+	IF public.event_limit_reached(h.id) THEN
 		outcome := 'limited';
 		RETURN;
 	END IF;
@@ -1568,7 +1575,7 @@ BEGIN
 		outcome := 'disabled';
 		RETURN;
 	END IF;
-	IF public.honeytoken_event_limit_reached(h.id) THEN
+	IF public.event_limit_reached(h.id) THEN
 		outcome := 'limited';
 		RETURN;
 	END IF;
@@ -1732,7 +1739,8 @@ CREATE TABLE public.alerts (
 -- alerts only the worker, apart from the triage of the console.
 REVOKE ALL ON public.events, public.event_jobs, public.incidents, public.alerts FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.incidents_change_status() FROM PUBLIC, nyktus_console;
-REVOKE ALL ON FUNCTION public.honeytoken_event_limit_reached(uuid) FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.untrusted_text_valid(text, integer) FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.event_limit_reached(uuid) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text)
 	FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_dns_query(text, text, text, text, text, inet, interval) FROM PUBLIC, nyktus_console;
@@ -1790,7 +1798,8 @@ BEGIN
 		SELECT f.signature, 'EXECUTE', has_function_privilege('nyktus_console', f.signature, 'EXECUTE'), false
 		FROM unnest(ARRAY[
 			'public.incidents_change_status()',
-			'public.honeytoken_event_limit_reached(uuid)',
+			'public.untrusted_text_valid(text, integer)',
+			'public.event_limit_reached(uuid)',
 			'public.record_honeytoken_request(text, text, inet, text, text, text)',
 			'public.record_dns_query(text, text, text, text, text, inet, interval)'
 		]) AS f (signature)
@@ -2454,16 +2463,19 @@ GRANT EXECUTE ON FUNCTION public.record_dns_query(text, text, text, text, text, 
 DO $$
 DECLARE
 	role_name text;
+	function_names text[];
 	function_name text;
 BEGIN
-	FOR role_name, function_name IN VALUES
-		('nyktus_trigger', 'public.record_honeytoken_request(text, text, inet, text, text, text)'),
-		('nyktus_dns', 'public.record_dns_query(text, text, text, text, text, inet, interval)')
+	FOR role_name, function_names IN VALUES
+		('nyktus_trigger', ARRAY['public.record_honeytoken_request(text, text, inet, text, text, text)']),
+		('nyktus_dns', ARRAY['public.record_dns_query(text, text, text, text, text, inet, interval)'])
 	LOOP
-		IF NOT has_schema_privilege(role_name, 'public', 'USAGE')
-			OR NOT has_function_privilege(role_name, function_name, 'EXECUTE') THEN
-			RAISE EXCEPTION '% lacks privileges on %; run migrations as the owner of the schema', role_name, function_name;
-		END IF;
+		FOREACH function_name IN ARRAY function_names LOOP
+			IF NOT has_schema_privilege(role_name, 'public', 'USAGE')
+				OR NOT has_function_privilege(role_name, function_name, 'EXECUTE') THEN
+				RAISE EXCEPTION '% lacks privileges on %; run migrations as the owner of the schema', role_name, function_name;
+			END IF;
+		END LOOP;
 
 		IF has_schema_privilege(role_name, 'public', 'CREATE')
 			OR EXISTS (
@@ -2479,7 +2491,7 @@ BEGIN
 			OR EXISTS (
 				SELECT FROM pg_catalog.pg_proc AS p
 				WHERE p.pronamespace = 'public'::regnamespace
-					AND p.oid <> function_name::regprocedure
+					AND p.oid <> ALL (function_names::regprocedure[])
 					AND has_function_privilege(role_name, p.oid, 'EXECUTE')
 			) THEN
 			RAISE EXCEPTION '% has more privileges than granted; check the default privileges of the owner', role_name;
@@ -2490,11 +2502,13 @@ $$;
 
 -- The worker processes the jobs of events: it reads the event, opens or updates
 -- the incident of its resource with its alert, assigns the event to it and
--- deletes the job. It evaluates the checks of the techniques when it writes. It
+-- deletes the job. It evaluates the checks of the techniques and of untrusted
+-- text when it writes. It
 -- reads no honeytoken: the event holds what the incident needs. It cannot
 -- choose the identifier, the status or the opening time of an incident, change
 -- an event other than by assigning it, or change an alert once written.
 GRANT EXECUTE ON FUNCTION public.attack_technique_ids_valid(text[]) TO nyktus_worker;
+GRANT EXECUTE ON FUNCTION public.untrusted_text_valid(text, integer) TO nyktus_worker;
 GRANT SELECT, DELETE ON public.event_jobs TO nyktus_worker;
 GRANT UPDATE (attempts, not_before) ON public.event_jobs TO nyktus_worker;
 GRANT SELECT ON public.events TO nyktus_worker;
@@ -2566,7 +2580,8 @@ BEGIN
 			('periodic_tasks', 'last_rows', 'UPDATE')
 	),
 	functions (signature) AS (
-		VALUES ('public.attack_technique_ids_valid(text[])'), ('public.delete_expired_sign_in_data(integer)'),
+		VALUES ('public.attack_technique_ids_valid(text[])'), ('public.untrusted_text_valid(text, integer)'),
+			('public.delete_expired_sign_in_data(integer)'),
 			('public.delete_expired_audit_entries(integer, integer)'), ('public.delete_expired_incident_data(integer, integer)'),
 			('public.close_inactive_incidents(integer, integer)')
 	),

@@ -21,9 +21,11 @@ var scope = db.Scope{
 		"periodic_tasks",
 	},
 	Functions: []string{
-		// The checks of the techniques run with the privileges of the role
-		// that writes.
+		// The checks of the techniques and of untrusted text run with the
+		// privileges of the role that writes, also when it changes another
+		// column of the row.
 		"public.attack_technique_ids_valid(text[])",
+		"public.untrusted_text_valid(text, integer)",
 		"public.delete_expired_sign_in_data(integer)",
 		"public.delete_expired_audit_entries(integer, integer)",
 		"public.delete_expired_incident_data(integer, integer)",
