@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"nyktus.org/nyktus/api"
@@ -52,13 +53,19 @@ type reference struct {
 	Name string `json:"name"`
 }
 
+// The notices of MITRE, as NOTICE states them.
+const (
+	attackNotice = "(c) 2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. ATT&CK(R) is a registered trademark of The MITRE Corporation. Terms of use: https://attack.mitre.org/resources/legal-and-branding/terms-of-use/"
+	engageNotice = "(c) 2021 The MITRE Corporation. Approved for Public Release; Distribution Unlimited. Public Release Case Number PR_21-01759-28. Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0 MITRE Engage(TM) is a trademark of The MITRE Corporation."
+)
+
 // notice travels with the file, which is passed on alone, such as into a
 // chat. Unlike an artifact, it is not placed as a decoy, so it credits its
 // sources.
 var notice = []string{
 	"The deceptions of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License: https://creativecommons.org/licenses/by-sa/4.0/",
-	"Names of techniques from MITRE ATT&CK(R) Enterprise: (c) 2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. ATT&CK(R) is a registered trademark of The MITRE Corporation. Terms of use: https://attack.mitre.org/resources/legal-and-branding/terms-of-use/",
-	"Names of activities from MITRE Engage(TM): (c) 2021 The MITRE Corporation. Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0. MITRE Engage(TM) is a trademark of The MITRE Corporation.",
+	"Identifiers and names of techniques from MITRE ATT&CK(R) Enterprise: " + attackNotice,
+	"Identifiers and names of activities from MITRE Engage(TM): " + engageNotice,
 }
 
 // publish returns the published catalog of c. It asks the handler that
@@ -80,7 +87,13 @@ func publish(t *testing.T, c *catalog.Catalog) []byte {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("%s?lang=%s: status %d, body %s", d.ID, lang, rec.Code, rec.Body)
 			}
-			p.Deceptions[lang] = append(p.Deceptions[lang], rec.Body.Bytes())
+			// The API escapes &, < and > as \u0026, \u003c and \u003e;
+			// the file holds the same values without the escapes.
+			var resp detail
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			p.Deceptions[lang] = append(p.Deceptions[lang], encode(t, resp, ""))
 		}
 		techniques := slices.Clone(d.Techniques)
 		for _, ht := range d.Honeytokens {
@@ -101,12 +114,18 @@ func publish(t *testing.T, c *catalog.Catalog) []byte {
 			p.EngageActivities[id] = reference{Name: activity.Name}
 		}
 	}
+	return encode(t, p, "  ")
+}
+
+// encode returns v as JSON without escaping &, < and >, because people read
+// the file as well.
+func encode(t *testing.T, v any, indent string) []byte {
+	t.Helper()
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
-	// The file is read by people as well; "ATT&CK" stays readable.
 	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(p); err != nil {
+	enc.SetIndent("", indent)
+	if err := enc.Encode(v); err != nil {
 		t.Fatal(err)
 	}
 	return b.Bytes()
@@ -168,6 +187,11 @@ func TestPublishedCatalog_MatchesTheSpecification(t *testing.T) {
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		t.Fatalf("%s: unexpected data after the catalog", publishedPath)
 	}
+	for _, escape := range []string{`\u0026`, `\u003c`, `\u003e`} {
+		if bytes.Contains(b, []byte(escape)) {
+			t.Errorf("%s contains %s, which people read badly", publishedPath, escape)
+		}
+	}
 	if p.SchemaVersion != publishedVersion {
 		t.Errorf("schema_version = %d, want %d", p.SchemaVersion, publishedVersion)
 	}
@@ -222,6 +246,29 @@ func TestPublishedCatalog_MatchesTheSpecification(t *testing.T) {
 			if r.Name == "" {
 				t.Errorf("%s: %s has no name", name, id)
 			}
+		}
+	}
+}
+
+// The notice of the file credits MITRE as NOTICE does, and NOTICE names the
+// versions that the file holds, so that a new version of ATT&CK or Engage
+// updates both.
+func TestPublishedCatalog_NoticeMatchesNOTICE(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile("../../../NOTICE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// NOTICE wraps its lines.
+	text := strings.Join(strings.Fields(string(b)), " ")
+	for _, want := range []string{
+		"MITRE ATT&CK(R) Enterprise, version " + attack.Version() + ":",
+		"MITRE Engage(TM), version " + engage.Version() + ":",
+		attackNotice,
+		engageNotice,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("NOTICE does not contain %q", want)
 		}
 	}
 }

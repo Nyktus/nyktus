@@ -2,7 +2,7 @@
 
 This directory holds the deceptions of Nyktus: blueprints of scenarios, each with the honeytokens it creates, the artifacts it renders and a guide that tells the administrator how to place them. Nyktus embeds the directory when it is built and validates every deception when the server starts; a deception that does not validate keeps the server from starting. `go test ./internal/catalog/...` runs the same validation and compares every rendered artifact and guide with its golden file under `internal/catalog/testdata/golden/`, and the published catalog `docs/public/deception-catalog.json` with what the API returns. After a change, regenerate them with `go test ./internal/catalog/... -update` and review the diff.
 
-The deceptions are licensed under CC BY-SA 4.0, with an additional permission for the files generated from them; see [LICENSE](LICENSE).
+The deceptions are licensed under CC BY-SA 4.0, with an additional permission for the files that Nyktus renders from them when it applies them, such as artifacts and guides; see [LICENSE](LICENSE). The permission does not cover other files made from the deceptions, such as the published catalog.
 
 ## Layout
 
