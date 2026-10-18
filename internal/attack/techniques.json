@@ -1,5 +1,5 @@
 {
-"version": "19.2",
+"version": "20.0",
 "techniques": [
 {"id":"T1001","name":"Data Obfuscation","tactics":["Command and Control"]},
 {"id":"T1001.001","name":"Data Obfuscation: Junk Data","tactics":["Command and Control"]},
@@ -640,6 +640,7 @@
 {"id":"T1608.004","name":"Stage Capabilities: Drive-by Target","tactics":["Resource Development"]},
 {"id":"T1608.005","name":"Stage Capabilities: Link Target","tactics":["Resource Development"]},
 {"id":"T1608.006","name":"Stage Capabilities: SEO Poisoning","tactics":["Resource Development"]},
+{"id":"T1608.007","name":"Stage Capabilities: AI Result Poisoning","tactics":["Resource Development"]},
 {"id":"T1609","name":"Container Administration Command","tactics":["Execution"]},
 {"id":"T1610","name":"Deploy Container","tactics":["Execution"]},
 {"id":"T1611","name":"Escape to Host","tactics":["Privilege Escalation"]},
@@ -690,6 +691,7 @@
 {"id":"T1685.004","name":"Disable or Modify Tools: Disable or Modify Linux Audit System Log","tactics":["Defense Impairment"]},
 {"id":"T1685.005","name":"Disable or Modify Tools: Clear Windows Event Logs","tactics":["Defense Impairment"]},
 {"id":"T1685.006","name":"Disable or Modify Tools: Clear Linux or Mac System Logs","tactics":["Defense Impairment"]},
+{"id":"T1685.007","name":"Disable or Modify Tools: Impair Autonomous Defenses","tactics":["Defense Impairment"]},
 {"id":"T1686","name":"Disable or Modify System Firewall","tactics":["Defense Impairment"]},
 {"id":"T1686.001","name":"Disable or Modify System Firewall: Cloud Firewall","tactics":["Defense Impairment"]},
 {"id":"T1686.002","name":"Disable or Modify System Firewall: Network Device Firewall","tactics":["Defense Impairment"]},
@@ -697,6 +699,13 @@
 {"id":"T1687","name":"Exploitation for Defense Impairment","tactics":["Defense Impairment"]},
 {"id":"T1688","name":"Safe Mode Boot","tactics":["Defense Impairment"]},
 {"id":"T1689","name":"Downgrade Attack","tactics":["Defense Impairment"]},
-{"id":"T1690","name":"Prevent Command History Logging","tactics":["Defense Impairment"]}
+{"id":"T1690","name":"Prevent Command History Logging","tactics":["Defense Impairment"]},
+{"id":"T1696","name":"Anti-Automation Evasion","tactics":["Stealth"]},
+{"id":"T1696.001","name":"Anti-Automation Evasion: Automate CAPTCHA Completion","tactics":["Stealth"]},
+{"id":"T1696.002","name":"Anti-Automation Evasion: Avoid CAPTCHA","tactics":["Stealth"]},
+{"id":"T1697","name":"Steal Application Specific Passwords","tactics":["Credential Access"]},
+{"id":"T1698","name":"Indirect Prompt Injection","tactics":["Execution"]},
+{"id":"T1699","name":"Direct Prompt Injection","tactics":["Execution"]},
+{"id":"T1700","name":"AI-Enabled Exfiltration","tactics":["Exfiltration"]}
 ]
 }
