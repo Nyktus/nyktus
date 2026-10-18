@@ -69,7 +69,8 @@ func TestDNSRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"INSERT INTO event_jobs (event_id) VALUES (gen_random_uuid())",
 		"UPDATE honeytokens SET enabled = true",
 		recordRequest,
-		"SELECT public.honeytoken_event_limit_reached(gen_random_uuid())",
+		"SELECT public.event_limit_reached(gen_random_uuid())",
+		"SELECT public.untrusted_text_valid('a', 1)",
 		"SELECT public.attack_technique_ids_valid('{T1078}')",
 	} {
 		expectDenied(t, pool, statement)
@@ -78,13 +79,13 @@ func TestDNSRole_HasOnlyGrantedPrivileges(t *testing.T) {
 	_, triggerURL := dbtest.Role(t, ownerURL, "trigger", "IN ROLE "+pgx.Identifier{schematest.TriggerRole}.Sanitize())
 	triggerPool := schematest.Open(t, triggerURL)
 	expectDenied(t, triggerPool, recordQuery)
-	expectDenied(t, triggerPool, "SELECT public.honeytoken_event_limit_reached(gen_random_uuid())")
+	expectDenied(t, triggerPool, "SELECT public.event_limit_reached(gen_random_uuid())")
 }
 
 func TestDNSRole_HasNoPrivilegesBeyondItsFunction(t *testing.T) {
 	t.Parallel()
 
-	if held := rolePrivileges(t, schematest.New(t), schematest.DNSRole, dnsFunction); len(held) > 0 {
+	if held := rolePrivileges(t, schematest.New(t), schematest.DNSRole, dnsFunctions...); len(held) > 0 {
 		t.Errorf("nyktus_dns holds %v, want nothing beyond EXECUTE on record_dns_query", held)
 	}
 }
@@ -105,7 +106,7 @@ func TestApply_IgnoresDefaultPrivilegesOfTheDNSRole(t *testing.T) {
 	if err := apply(t, dbURL, load(t)); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	if held := rolePrivileges(t, dbURL, schematest.DNSRole, dnsFunction); len(held) > 0 {
+	if held := rolePrivileges(t, dbURL, schematest.DNSRole, dnsFunctions...); len(held) > 0 {
 		t.Errorf("nyktus_dns holds %v, want nothing beyond EXECUTE on record_dns_query", held)
 	}
 }

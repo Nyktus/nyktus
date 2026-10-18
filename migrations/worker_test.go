@@ -73,6 +73,7 @@ var workerGrants = []string{
 	"periodic_tasks.next_run_at: UPDATE",
 	"periodic_tasks: SELECT",
 	"schema public: USAGE",
+	"untrusted_text_valid(text,integer): EXECUTE",
 }
 
 // heldPrivileges reports every privilege of a group role on the schema and its
@@ -162,6 +163,7 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"INSERT INTO alerts (incident_id, severity, techniques) SELECT id, severity, techniques FROM incidents",
 		"SELECT count(*) FROM alerts",
 		"SELECT public.attack_technique_ids_valid('{T1078}')",
+		"SELECT public.untrusted_text_valid('a', 1)",
 		"SELECT count(*) FROM alert_channels",
 		"SELECT url, header_value FROM alert_channel_secrets",
 		"UPDATE alert_channel_secrets SET url = url, header_value = header_value",
@@ -225,7 +227,7 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT public.retry_alert_delivery(gen_random_uuid())",
 		"SELECT * FROM public.record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')",
 		"SELECT * FROM public.record_dns_query(repeat('a', 26), 'd.example.com', '', 'A', 'udp', NULL, interval '0')",
-		"SELECT public.honeytoken_event_limit_reached(gen_random_uuid())",
+		"SELECT public.event_limit_reached(gen_random_uuid())",
 		"SELECT public.audit_field_names_valid('{name}')",
 		"SELECT public.set_updated_at()",
 		"SELECT public.incidents_change_status()",

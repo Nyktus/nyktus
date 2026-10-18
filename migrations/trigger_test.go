@@ -5,6 +5,7 @@ package migrations_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -69,6 +70,8 @@ func TestTriggerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"UPDATE honeytokens SET enabled = true",
 		"INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repeat('b', 26))",
 		"SELECT public.attack_technique_ids_valid('{T1078}')",
+		"SELECT public.event_limit_reached(gen_random_uuid())",
+		"SELECT public.untrusted_text_valid('a', 1)",
 		"SELECT public.audit_field_names_valid('{name}')",
 		"SELECT public.api_key_scopes_valid('{audit:read}')",
 		"SELECT public.set_updated_at()",
@@ -105,15 +108,15 @@ func expectDenied(t *testing.T, pool *pgxpool.Pool, statement string) {
 	}
 }
 
-// Functions that the internet-facing roles may execute, one each.
-const (
-	triggerFunction = "public.record_honeytoken_request(text, text, inet, text, text, text)"
-	dnsFunction     = "public.record_dns_query(text, text, text, text, text, inet, interval)"
+// Functions that the internet-facing roles may execute.
+var (
+	triggerFunctions = []string{"public.record_honeytoken_request(text, text, inet, text, text, text)"}
+	dnsFunctions     = []string{"public.record_dns_query(text, text, text, text, text, inet, interval)"}
 )
 
 // rolePrivileges reports every privilege of a group role on the objects of the
-// schema, except EXECUTE on function, the one it is granted.
-func rolePrivileges(t *testing.T, dbURL, role, function string) []string {
+// schema, except EXECUTE on functions, the ones it is granted.
+func rolePrivileges(t *testing.T, dbURL, role string, functions ...string) []string {
 	t.Helper()
 	rows, err := schematest.Open(t, dbURL).Query(t.Context(), `
 SELECT c.relname || ': ' || p.privilege
@@ -126,10 +129,10 @@ UNION ALL
 SELECT f.oid::regprocedure::text || ': EXECUTE'
 FROM pg_proc AS f
 WHERE f.pronamespace = 'public'::regnamespace
-	AND f.oid <> $2::regprocedure
+	AND f.oid <> ALL (coalesce($2::regprocedure[], '{}'))
 	AND has_function_privilege($1, f.oid, 'EXECUTE')
 UNION ALL
-SELECT 'schema public: CREATE' WHERE has_schema_privilege($1, 'public', 'CREATE')`, role, function)
+SELECT 'schema public: CREATE' WHERE has_schema_privilege($1, 'public', 'CREATE')`, role, functions)
 	if err != nil {
 		t.Fatalf("query privileges: %v", err)
 	}
@@ -143,8 +146,14 @@ SELECT 'schema public: CREATE' WHERE has_schema_privilege($1, 'public', 'CREATE'
 func TestTriggerRole_HasNoPrivilegesBeyondItsFunction(t *testing.T) {
 	t.Parallel()
 
-	if held := rolePrivileges(t, schematest.New(t), schematest.TriggerRole, triggerFunction); len(held) > 0 {
+	dbURL := schematest.New(t)
+	if held := rolePrivileges(t, dbURL, schematest.TriggerRole, triggerFunctions...); len(held) > 0 {
 		t.Errorf("nyktus_trigger holds %v, want nothing beyond EXECUTE on record_honeytoken_request", held)
+	}
+	// Without exceptions, the query must find the granted functions, so that
+	// an empty list never hides every function.
+	if held := rolePrivileges(t, dbURL, schematest.TriggerRole); len(held) != len(triggerFunctions) {
+		t.Errorf("nyktus_trigger holds %v without exceptions, want EXECUTE on %v", held, triggerFunctions)
 	}
 }
 
@@ -163,10 +172,13 @@ func TestSchema_ChecksHeadersOfEvents(t *testing.T) {
 		args[i] = v
 		return args
 	}
-	columns := []struct{ name, constraint string }{
-		{"user agent", "events_user_agent_check"},
-		{"referer", "events_referer_check"},
-		{"accept language", "events_accept_language_check"},
+	columns := []struct {
+		name, constraint string
+		maxBytes         int
+	}{
+		{"user agent", "events_user_agent_check", 512},
+		{"referer", "events_referer_check", 1024},
+		{"accept language", "events_accept_language_check", 128},
 	}
 	refused := []struct {
 		name string
@@ -191,6 +203,16 @@ func TestSchema_ChecksHeadersOfEvents(t *testing.T) {
 		{"tag character", 0xe0041},
 	}
 	for i, col := range columns {
+		// The limit counts bytes, so a character of two bytes at the end
+		// crosses it where a letter would not.
+		if _, err := pool.Exec(t.Context(), insert, headers(i, strings.Repeat("a", col.maxBytes))...); err != nil {
+			t.Errorf("%s of %d bytes: %v", col.name, col.maxBytes, err)
+		}
+		_, err := pool.Exec(t.Context(), insert, headers(i, strings.Repeat("a", col.maxBytes-1)+string(rune(0xe9)))...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23514" || pgErr.ConstraintName != col.constraint {
+			t.Errorf("%s of %d bytes: error = %v, want a violation of %s", col.name, col.maxBytes+1, err, col.constraint)
+		}
 		for _, r := range refused {
 			_, err := pool.Exec(t.Context(), insert, headers(i, "a"+string(r.cp)+"b")...)
 			var pgErr *pgconn.PgError
@@ -224,7 +246,7 @@ func TestApply_IgnoresDefaultPrivilegesOfTheTrigger(t *testing.T) {
 	if err := apply(t, dbURL, load(t)); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	if held := rolePrivileges(t, dbURL, schematest.TriggerRole, triggerFunction); len(held) > 0 {
+	if held := rolePrivileges(t, dbURL, schematest.TriggerRole, triggerFunctions...); len(held) > 0 {
 		t.Errorf("nyktus_trigger holds %v, want nothing beyond EXECUTE on record_honeytoken_request", held)
 	}
 }
