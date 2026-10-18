@@ -64,3 +64,9 @@ func Lookup(id string) (Technique, bool) {
 	t.Tactics = slices.Clone(t.Tactics)
 	return t, ok
 }
+
+// Version returns the version of ATT&CK Enterprise that the list comes from,
+// such as "19.2".
+func Version() string {
+	return version
+}

@@ -64,3 +64,9 @@ func Lookup(id string) (Activity, bool) {
 	a.Approaches = slices.Clone(a.Approaches)
 	return a, ok
 }
+
+// Version returns the version of Engage that the list comes from, such as
+// "1.0".
+func Version() string {
+	return version
+}
