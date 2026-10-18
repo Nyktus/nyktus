@@ -23,7 +23,7 @@ func TestEmbeddedList_IsConsistent(t *testing.T) {
 		t.Fatalf("parse embedded list: %v", err)
 	}
 	if !regexp.MustCompile(`^[0-9]+\.[0-9]+$`).MatchString(l.Version) || l.Version != Version() {
-		t.Errorf("version = %q, want a version such as 19.2", l.Version)
+		t.Errorf("version = %q, want a version such as 20.0", l.Version)
 	}
 	// ATT&CK Enterprise has had several hundred techniques for years. A short
 	// list means that the generator dropped some.

@@ -154,7 +154,7 @@ See [Configuration](configuration.md).
 
 ## Techniques
 
-Techniques describe what an attacker is probably doing when they request the URL, for example `T1083` (File and Directory Discovery) for a link in a document on a file share. Nyktus checks the identifiers against MITRE ATT&CK Enterprise in version 19.2, which it ships with; techniques that MITRE revoked or deprecated are rejected. Look up identifiers at [attack.mitre.org](https://attack.mitre.org).
+Techniques describe what an attacker is probably doing when they request the URL, for example `T1083` (File and Directory Discovery) for a link in a document on a file share. Nyktus checks the identifiers against MITRE ATT&CK Enterprise in version 20.0, which it ships with; techniques that MITRE revoked or deprecated are rejected. Look up identifiers at [attack.mitre.org](https://attack.mitre.org).
 
 ## Who can read honeytokens
 

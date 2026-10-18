@@ -33,13 +33,13 @@ import (
 
 // The pinned release of ATT&CK Enterprise.
 const (
-	version   = "19.2"
+	version   = "20.0"
 	bundleURL = "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/v" + version +
 		"/enterprise-attack/enterprise-attack-" + version + ".json"
-	bundleSHA256 = "dc1639caa5501d720e280cf1cbd8fbe009884a0c9b3e6e9ed9d0c25166c3d8f4"
+	bundleSHA256 = "81113ba98afa2928f3dcff62022539f7ce30c315c32e14422f11ff95ce534352"
 )
 
-// maxBundleBytes bounds the download. The bundle of version 19.2 has 54 MB.
+// maxBundleBytes bounds the download. The bundle of version 20.0 has 55 MB.
 const maxBundleBytes = 256 << 20
 
 func main() {
