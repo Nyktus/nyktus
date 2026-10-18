@@ -132,8 +132,11 @@ type Template struct {
 	// static is the text of the template outside its actions, in every
 	// branch: everything that the output can contain apart from values.
 	static string
-	text   *texttemplate.Template
-	html   *htmltemplate.Template
+	// bound is the most bytes that the template can render: its static text
+	// and every value at its longest, escaped at the highest cost.
+	bound int
+	text  *texttemplate.Template
+	html  *htmltemplate.Template
 }
 
 // Compile compiles the template src of format f, which may reference the
@@ -161,7 +164,10 @@ func Compile(name string, f Format, src string, fields Fields) (*Template, error
 		return nil, fmt.Errorf("%w: %s: only one template per file is allowed", ErrInvalidTemplate, name)
 	}
 	used := Fields{}
-	var static strings.Builder
+	var (
+		static strings.Builder
+		values int
+	)
 	if err := walk(tt.Tree, tt.Root, &static, func(n parse.Node, path string) error {
 		kind, ok := fields[path]
 		switch {
@@ -170,13 +176,16 @@ func Compile(name string, f Format, src string, fields Fields) (*Template, error
 		case kind == KindText && !f.inert():
 			return nodeError(tt.Tree, n, fmt.Sprintf("free text .%s in a file that a tool interprets", path))
 		}
+		if _, ok := n.(*parse.ActionNode); ok {
+			values += maxValueBytes[kind] * maxEscapeFactor
+		}
 		used[path] = kind
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 
-	t := &Template{format: f, fields: used, static: static.String()}
+	t := &Template{format: f, fields: used, static: static.String(), bound: static.Len() + values}
 	if f == FormatHTML {
 		if t.html, err = htmltemplate.New(name).Option("missingkey=error").Parse(src); err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrInvalidTemplate, err)
@@ -445,6 +454,21 @@ func sampleValues(fields Fields) map[string]string {
 	}
 	return values
 }
+
+// maxValueBytes is the longest value of each kind in bytes, as validValue
+// accepts it: free text counts four bytes per character.
+var maxValueBytes = map[Kind]int{
+	KindHost:   253,
+	KindURL:    maxURLLength,
+	KindName:   64,
+	KindSecret: 128,
+	KindText:   MaxTextLength * utf8.UTFMax,
+}
+
+// maxEscapeFactor is the most bytes that escaping turns one byte of a value
+// into, such as "&" into "&amp;" in HTML or a byte of a multi-byte character
+// into "%E2" in a URL.
+const maxEscapeFactor = 6
 
 // limitedBuffer collects output up to max bytes and fails the write that
 // would exceed it, which stops the execution of the template.

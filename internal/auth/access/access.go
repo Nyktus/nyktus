@@ -55,10 +55,13 @@ var keyScopes = []httpx.Permission{
 // another one. A key that changes honeytokens, scenarios or incidents
 // receives them in every response, also to a change that changes nothing, so
 // it reads them anyway; requiring the scope to read them keeps the scopes of a
-// key honest about what it can see.
+// key honest about what it can see. For the same reason, reading scenarios
+// requires reading honeytokens: the guide of a scenario and the answer to
+// applying a deception name the URLs and host names of its honeytokens.
 var keyScopeRequires = map[httpx.Permission]httpx.Permission{
 	"honeytokens:write": "honeytokens:read",
 	"incidents:write":   "incidents:read",
+	"scenarios:read":    "honeytokens:read",
 	"scenarios:write":   "scenarios:read",
 }
 

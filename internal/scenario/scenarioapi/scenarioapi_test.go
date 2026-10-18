@@ -16,12 +16,28 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"nyktus.org/nyktus/api"
+	embedded "nyktus.org/nyktus/catalog"
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/catalog"
 	"nyktus.org/nyktus/internal/platform/apispec"
 	"nyktus.org/nyktus/internal/platform/schematest"
 	"nyktus.org/nyktus/internal/user"
 )
+
+const (
+	triggerURL = "https://t.example.net"
+	dnsZone    = "d.example.net"
+)
+
+func testCatalog(t *testing.T) *catalog.Catalog {
+	t.Helper()
+	c, err := catalog.Load(embedded.Deceptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
 
 type fixture struct {
 	h         *Handler
@@ -42,7 +58,7 @@ RETURNING id`).Scan(&id)
 		t.Fatal(err)
 	}
 	return fixture{
-		h:         NewHandler(slog.New(slog.DiscardHandler), schematest.Open(t, consoleURL)),
+		h:         NewHandler(slog.New(slog.DiscardHandler), schematest.Open(t, consoleURL), testCatalog(t), triggerURL, []string{dnsZone, "d.example.org"}),
 		owner:     owner,
 		principal: access.Principal{UserID: id, Role: user.RoleUser, Method: audit.AuthSession, SessionID: "s1"},
 	}
@@ -241,7 +257,7 @@ func TestDelete_RejectsInvalidRequests(t *testing.T) {
 	sc := f.create(t, `{"name": "s"}`)
 	h := f.createHoneytoken(t, sc.ID)
 
-	for _, query := range []string{"?honeytokens=cascade", "?honeytokens=", "?honeytokens=keep&honeytokens=delete", "?artifacts=keep"} {
+	for _, query := range []string{"?honeytokens=cascade", "?honeytokens=", "?honeytokens=keep&honeytokens=delete", "?honeypots=keep"} {
 		rec := f.serve(t, f.h.Delete, http.MethodDelete, "/api/v1/scenarios/"+sc.ID+query, sc.ID, "")
 		if rec.Code != http.StatusBadRequest || errorCode(t, rec) != "invalid_request" {
 			t.Errorf("DELETE %s = %d %s, want 400 invalid_request", query, rec.Code, rec.Body)
@@ -270,7 +286,7 @@ func TestResponses_MatchTheSpecification(t *testing.T) {
 
 	created := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/scenarios", "", `{"name": "a", "engage_activities": ["EAC0005"]}`)
 	sc := decode[response](t, created)
-	if _, err := f.owner.Exec(t.Context(), `INSERT INTO scenarios (name, deception_id) VALUES ('d', 'ssh-config')`); err != nil {
+	if _, err := f.owner.Exec(t.Context(), `INSERT INTO scenarios (name, deception_id, language, persona, guide) VALUES ('d', 'ssh-config', 'en', '{"Domain": "corp.example.com"}', 'g')`); err != nil {
 		t.Fatal(err)
 	}
 	for _, b := range []struct {

@@ -17,7 +17,8 @@
       "key": "Host",
       "type": "dns",
       "label": {"en": "Host", "de": "Host"},
-      "techniques": ["T1552.001", "T1078"]
+      "techniques": ["T1552.001", "T1078"],
+      "severity": "high"
     }
   ],
   "persona": [

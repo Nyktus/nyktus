@@ -43,7 +43,8 @@ func TestScenarios_FollowRolesAndKeyScopes(t *testing.T) {
 		return bearer(key)
 	}
 	user, viewer := sessionOf("uma@example.com"), sessionOf("vic@example.com")
-	reader, writer := keyWith("scenarios:read"), keyWith("scenarios:write", "scenarios:read")
+	reader := keyWith("scenarios:read", "honeytokens:read")
+	writer := keyWith("scenarios:write", "scenarios:read", "honeytokens:read")
 	tokens := keyWith("honeytokens:write", "honeytokens:read")
 
 	created := send(t, srv, http.MethodPost, "/api/v1/scenarios", `{"name": "a"}`, user, nil)
@@ -78,7 +79,7 @@ func TestScenarios_FollowRolesAndKeyScopes(t *testing.T) {
 		{"reading key lists", nil, reader, http.MethodGet, "/api/v1/scenarios", "", http.StatusOK},
 		{"reading key creates", nil, reader, http.MethodPost, "/api/v1/scenarios", `{"name": "r"}`, http.StatusForbidden},
 		{"reading key changes an unknown one", nil, reader, http.MethodPatch, unknown, `{"name": "r"}`, http.StatusForbidden},
-		{"reading key lists honeytokens", nil, reader, http.MethodGet, "/api/v1/honeytokens", "", http.StatusForbidden},
+		{"reading key creates honeytokens", nil, reader, http.MethodPost, "/api/v1/honeytokens", `{"type": "web_url", "name": "r"}`, http.StatusForbidden},
 		{"writing key creates", nil, writer, http.MethodPost, "/api/v1/scenarios", `{"name": "w"}`, http.StatusCreated},
 		{"writing key changes", nil, writer, http.MethodPatch, "/api/v1/scenarios/" + id, `{"name": "w"}`, http.StatusOK},
 		{"writing key assigns", nil, writer, http.MethodPut, "/api/v1/honeytokens/" + h + "/scenario", assign, http.StatusForbidden},
@@ -102,6 +103,15 @@ func TestScenarios_FollowRolesAndKeyScopes(t *testing.T) {
 	})
 	if r := send(t, srv, http.MethodPost, "/api/v1/api-keys", writeOnly, admin, nil); r.status != http.StatusBadRequest {
 		t.Errorf("key with scenarios:write alone: %d %v, want 400", r.status, r.body)
+	}
+	// A key cannot read scenarios without reading honeytokens, because the
+	// guide of a scenario names its honeytokens.
+	readOnly := mustJSON(t, map[string]any{
+		"name": "r", "scopes": []string{"scenarios:read"}, "password": testPassword,
+		"expires_at": time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+	})
+	if r := send(t, srv, http.MethodPost, "/api/v1/api-keys", readOnly, admin, nil); r.status != http.StatusBadRequest {
+		t.Errorf("key with scenarios:read alone: %d %v, want 400", r.status, r.body)
 	}
 	if n := d.count(t, `SELECT count(*) FROM audit_entries WHERE action = 'scenarios.write' AND outcome = 'denied'`); n == 0 {
 		t.Error("no denied write is recorded in the audit log")

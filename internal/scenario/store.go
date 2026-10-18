@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"nyktus.org/nyktus/internal/artifact"
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/db"
@@ -20,6 +21,9 @@ import (
 // Errors of the store.
 var (
 	ErrNotFound = errors.New("scenario not found")
+	// ErrNoGuide means that a scenario was put together by hand and has no
+	// guide.
+	ErrNoGuide = errors.New("scenario has no guide")
 	// ErrInvalidPageSize is returned for a page size outside [1, MaxPageSize].
 	ErrInvalidPageSize = errors.New("invalid page size")
 )
@@ -56,11 +60,14 @@ func NewStore(q db.Querier) *Store {
 	return &Store{db: q}
 }
 
-const columns = `id, name, notes, engage_activities, deception_id, created_at, updated_at`
+// columns are the columns of a scenario without its guide, which only a read
+// of the guide needs.
+const columns = `id, name, notes, engage_activities, deception_id, language, persona, created_at, updated_at`
 
 func scan(row pgx.Row) (Scenario, error) {
 	var s Scenario
-	err := row.Scan(&s.ID, &s.Name, &s.Notes, &s.EngageActivities, &s.DeceptionID, &s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.Name, &s.Notes, &s.EngageActivities, &s.DeceptionID, &s.Language, &s.Persona,
+		&s.CreatedAt, &s.UpdatedAt)
 	return s, err
 }
 
@@ -83,6 +90,40 @@ RETURNING `+columns, spec.Name, spec.Notes, activities))
 		return Scenario{}, fmt.Errorf("create scenario: %w", mapWriteError(err))
 	}
 	return sc, nil
+}
+
+// createFromDeception stores a new scenario that applying the deception
+// deceptionID creates, with what the application keeps. The caller validated
+// every value.
+func (s *Store) createFromDeception(ctx context.Context, spec Spec, deceptionID, lang string,
+	persona map[string]string, guide []byte,
+) (Scenario, error) {
+	sc, err := scan(s.db.QueryRow(ctx, `
+INSERT INTO scenarios (name, notes, engage_activities, deception_id, language, persona, guide)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING `+columns, spec.Name, spec.Notes, spec.EngageActivities, deceptionID, lang, persona, string(guide)))
+	if err != nil {
+		return Scenario{}, fmt.Errorf("create scenario of %s: %w", deceptionID, mapWriteError(err))
+	}
+	return sc, nil
+}
+
+// Guide returns the guide of the scenario id in the language it was applied
+// in. It returns ErrNotFound if there is no such scenario and ErrNoGuide if
+// the scenario was put together by hand.
+func (s *Store) Guide(ctx context.Context, id string) (lang, guide string, err error) {
+	var l, g *string
+	err = s.db.QueryRow(ctx, `SELECT language, guide FROM scenarios WHERE id = $1`, id).Scan(&l, &g)
+	if db.NotFound(err) {
+		return "", "", ErrNotFound
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("get guide of scenario %s: %w", id, err)
+	}
+	if l == nil || g == nil {
+		return "", "", ErrNoGuide
+	}
+	return *l, *g, nil
 }
 
 // Get returns the scenario id. It returns ErrNotFound if there is none.
@@ -198,16 +239,18 @@ RETURNING `+columns, id, updated.Name, updated.Notes, updated.EngageActivities))
 	return sc, changed, nil
 }
 
-// Delete deletes the scenario id, and its honeytokens if honeytokens is
-// RemovalDelete; with RemovalKeep, they stay and stand alone. It returns what
-// happened to the honeytokens, and ErrNotFound if there is no such scenario.
+// Delete deletes the scenario id. Each kind of its resources is deleted with
+// it if removals says RemovalDelete, or stays and stands alone with
+// RemovalKeep. It returns what happened to the resources, and ErrNotFound if
+// there is no such scenario.
 //
 // Delete must run in a transaction. It locks the scenario before its
-// honeytokens, as the assignment of a honeytoken does, so that a honeytoken
+// resources, as the assignment of a honeytoken does, so that a honeytoken
 // that joins the scenario meanwhile either waits and then finds no scenario,
-// or joined before and is removed with the others.
-func (s *Store) Delete(ctx context.Context, id string, honeytokens Removal) (Removed, error) {
-	if !honeytokens.Valid() {
+// or joined before and is removed with the others. Honeytokens are removed
+// before artifacts, everywhere.
+func (s *Store) Delete(ctx context.Context, id string, removals ResourceRemovals) (Removed, error) {
+	if !removals.Honeytokens.Valid() || !removals.Artifacts.Valid() {
 		return Removed{}, ErrInvalidRemoval
 	}
 	var found bool
@@ -219,35 +262,59 @@ func (s *Store) Delete(ctx context.Context, id string, honeytokens Removal) (Rem
 		return Removed{}, fmt.Errorf("lock scenario %s: %w", id, err)
 	}
 
-	var (
-		removed Removed
-		rows    pgx.Rows
-	)
-	if honeytokens == RemovalDelete {
-		rows, err = s.db.Query(ctx, `DELETE FROM honeytokens WHERE scenario_id = $1 RETURNING id`, id)
-	} else {
-		rows, err = s.db.Query(ctx, `
-UPDATE honeytokens SET scenario_id = NULL, updated_at = clock_timestamp()
-WHERE scenario_id = $1
-RETURNING id`, id)
-	}
+	var removed Removed
+	ids, err := s.remove(ctx, "honeytokens", id, removals.Honeytokens)
 	if err != nil {
-		return Removed{}, fmt.Errorf("remove honeytokens of scenario %s: %w", id, err)
+		return Removed{}, err
 	}
-	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return Removed{}, fmt.Errorf("remove honeytokens of scenario %s: %w", id, err)
-	}
-	if honeytokens == RemovalDelete {
+	if removals.Honeytokens == RemovalDelete {
 		removed.DeletedHoneytokens = ids
 	} else {
 		removed.DetachedHoneytokens = ids
+	}
+	if ids, err = s.remove(ctx, "artifacts", id, removals.Artifacts); err != nil {
+		return Removed{}, err
+	}
+	if removals.Artifacts == RemovalDelete {
+		removed.DeletedArtifacts = ids
+	} else {
+		removed.DetachedArtifacts = ids
 	}
 
 	if _, err := s.db.Exec(ctx, `DELETE FROM scenarios WHERE id = $1`, id); err != nil {
 		return Removed{}, fmt.Errorf("delete scenario %s: %w", id, err)
 	}
 	return removed, nil
+}
+
+// removeStatements delete or detach the resources of a scenario, by table.
+var removeStatements = map[string]map[Removal]string{
+	"honeytokens": {
+		RemovalDelete: `DELETE FROM honeytokens WHERE scenario_id = $1 RETURNING id`,
+		RemovalKeep: `UPDATE honeytokens SET scenario_id = NULL, updated_at = clock_timestamp()
+WHERE scenario_id = $1
+RETURNING id`,
+	},
+	"artifacts": {
+		RemovalDelete: `DELETE FROM artifacts WHERE scenario_id = $1 RETURNING id`,
+		RemovalKeep: `UPDATE artifacts SET scenario_id = NULL, updated_at = clock_timestamp()
+WHERE scenario_id = $1
+RETURNING id`,
+	},
+}
+
+// remove deletes or detaches the resources in table of the scenario id and
+// returns their identifiers.
+func (s *Store) remove(ctx context.Context, table, id string, r Removal) ([]string, error) {
+	rows, err := s.db.Query(ctx, removeStatements[table][r], id)
+	if err != nil {
+		return nil, fmt.Errorf("remove %s of scenario %s: %w", table, id, err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("remove %s of scenario %s: %w", table, id, err)
+	}
+	return ids, nil
 }
 
 // DB runs queries and starts transactions. A connection pool and a transaction
@@ -310,25 +377,30 @@ func Update(ctx context.Context, d DB, actor audit.Actor, id string, c Change) (
 }
 
 // Delete deletes the scenario id on behalf of actor, as Store.Delete does, and
-// records it in the audit log together with every honeytoken that it deleted
-// or detached, all in one transaction.
-func Delete(ctx context.Context, d DB, actor audit.Actor, id string, honeytokens Removal) (Removed, error) {
+// records it in the audit log together with every honeytoken and artifact
+// that it deleted or detached, all in one transaction.
+func Delete(ctx context.Context, d DB, actor audit.Actor, id string, removals ResourceRemovals) (Removed, error) {
 	var removed Removed
 	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
 		var err error
-		if removed, err = NewStore(tx).Delete(ctx, id, honeytokens); err != nil {
+		if removed, err = NewStore(tx).Delete(ctx, id, removals); err != nil {
 			return err
 		}
-		for _, h := range removed.DeletedHoneytokens {
-			r := audit.Resource{Type: honeytoken.ResourceType, ID: h}
-			if err := record(ctx, tx, actor, audit.ActionHoneytokenDelete, r, nil); err != nil {
-				return err
-			}
-		}
-		for _, h := range removed.DetachedHoneytokens {
-			r := audit.Resource{Type: honeytoken.ResourceType, ID: h}
-			if err := record(ctx, tx, actor, audit.ActionHoneytokenUpdate, r, []string{honeytoken.FieldScenarioID}); err != nil {
-				return err
+		for _, e := range []struct {
+			ids     []string
+			typ     string
+			action  audit.Action
+			changed []string
+		}{
+			{removed.DeletedHoneytokens, honeytoken.ResourceType, audit.ActionHoneytokenDelete, nil},
+			{removed.DetachedHoneytokens, honeytoken.ResourceType, audit.ActionHoneytokenUpdate, []string{honeytoken.FieldScenarioID}},
+			{removed.DeletedArtifacts, artifact.ResourceType, audit.ActionArtifactDelete, nil},
+			{removed.DetachedArtifacts, artifact.ResourceType, audit.ActionArtifactUpdate, []string{artifact.FieldScenarioID}},
+		} {
+			for _, rid := range e.ids {
+				if err := record(ctx, tx, actor, e.action, audit.Resource{Type: e.typ, ID: rid}, e.changed); err != nil {
+					return err
+				}
 			}
 		}
 		return record(ctx, tx, actor, audit.ActionScenarioDelete, resource(id), nil)

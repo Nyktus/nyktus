@@ -86,7 +86,7 @@ Every role reads honeytokens; viewers cannot change them.
 
 ## Severity
 
-Every event of a honeytoken receives the severity of the honeytoken, and an [incident](incidents.md#severity) takes the highest severity of its events. Unless you choose one, a honeytoken has the default of its type:
+Every event of a honeytoken receives the severity of the honeytoken, and an [incident](incidents.md#severity) takes the highest severity of its events. Unless you choose one, or a deception of the [catalog](catalog.md) does, a honeytoken has the default of its type:
 
 | Type | Severity | Reason |
 |---|---|---|

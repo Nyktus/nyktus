@@ -59,7 +59,8 @@ func deps(db Pinger) Deps {
 		},
 		Scenarios: Scenarios{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
-			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(),
+			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(), Apply: http.NotFoundHandler(),
+			Guide: http.NotFoundHandler(),
 		},
 		Incidents: Incidents{List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Update: http.NotFoundHandler()},
 		Events:    Events{List: http.NotFoundHandler(), Get: http.NotFoundHandler()},
