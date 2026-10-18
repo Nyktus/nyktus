@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"nyktus.org/nyktus/internal/platform/httpx"
@@ -256,13 +257,21 @@ func isTriggerValue(s string) bool {
 	return true
 }
 
-// untrusted prepares a header value for the database: invalid UTF-8 and
-// control characters are replaced, so that a value cannot break the lines of a
-// log or a report, and the value is cut to at most maxBytes without splitting a
-// character.
+// untrusted prepares a header value for the database: invalid UTF-8 and every
+// character that is not printable are replaced, so that a value cannot break
+// the lines of a log or a report, and the value is cut to at most maxBytes
+// without splitting a character. Beside control characters this covers line
+// separators and format characters, which can reorder or hide text: an
+// override of the writing direction makes a Referer read as another address.
+// Spaces other than U+0020 are replaced as well, because a run of wide spaces
+// can push the rest of a value out of sight. The checks of the events table
+// refuse the control characters, separators and common format characters, in
+// case a compromised trigger skips this; only this function replaces the
+// rest, such as other spaces, rare format characters and code points that
+// Go does not know.
 func untrusted(s string, maxBytes int) string {
 	s = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if !unicode.IsPrint(r) {
 			return utf8.RuneError
 		}
 		return r

@@ -4528,8 +4528,10 @@ components:
       additionalProperties: false
       required: [method, user_agent, referer, accept_language]
       description: |
-        The headers were chosen by the client. They are shortened, and control and invalid characters are
-        replaced; treat them as claims, not facts.
+        The headers were chosen by the client. They are shortened, and invalid and non-printable characters
+        (control characters, line separators, characters that change the writing direction, spaces other
+        than the ordinary space) are replaced;
+        treat them as claims, not facts.
       properties:
         method:
           type: string
