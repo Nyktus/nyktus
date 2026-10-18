@@ -1352,7 +1352,7 @@ CREATE TABLE public.events (
 	method          text,
 	-- Headers of the request. Whoever sends a request chooses them, so they are
 	-- untrusted: they describe what the client claimed, not what it is. The
-	-- trigger shortens them and replaces every character that is not graphic.
+	-- trigger shortens them and replaces every character that is not printable.
 	-- The checks below refuse control characters, line separators and the
 	-- format characters that reorder or hide text, in case a compromised
 	-- trigger skips that.

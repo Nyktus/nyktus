@@ -258,16 +258,20 @@ func isTriggerValue(s string) bool {
 }
 
 // untrusted prepares a header value for the database: invalid UTF-8 and every
-// character that is not graphic are replaced, so that a value cannot break the
-// lines of a log or a report, and the value is cut to at most maxBytes without
-// splitting a character. Beside control characters this covers line
+// character that is not printable are replaced, so that a value cannot break
+// the lines of a log or a report, and the value is cut to at most maxBytes
+// without splitting a character. Beside control characters this covers line
 // separators and format characters, which can reorder or hide text: an
 // override of the writing direction makes a Referer read as another address.
-// The checks of the events table refuse the same characters, except the rarely
-// used ones, which only this function replaces.
+// Spaces other than U+0020 are replaced as well, because a run of wide spaces
+// can push the rest of a value out of sight. The checks of the events table
+// refuse the control characters, separators and common format characters, in
+// case a compromised trigger skips this; only this function replaces the
+// rest, such as other spaces, rare format characters and code points that
+// Go does not know.
 func untrusted(s string, maxBytes int) string {
 	s = strings.Map(func(r rune) rune {
-		if !unicode.IsGraphic(r) {
+		if !unicode.IsPrint(r) {
 			return utf8.RuneError
 		}
 		return r
