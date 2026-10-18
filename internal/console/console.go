@@ -54,6 +54,8 @@ type Deps struct {
 	Honeytokens Honeytokens
 	// Scenarios manages the scenarios of the team.
 	Scenarios Scenarios
+	// Artifacts serves the artifacts of the scenarios.
+	Artifacts Artifacts
 	// Incidents lists and triages the incidents of the team.
 	Incidents Incidents
 	// Events lists the events of the honeytokens.
@@ -119,6 +121,16 @@ func (h Scenarios) complete() bool {
 		h.Apply != nil && h.Guide != nil
 }
 
+// Artifacts are the handlers of the artifacts: their metadata, the download
+// of their content, their placement notes and their deletion.
+type Artifacts struct {
+	List, Get, Download, Update, Delete http.Handler
+}
+
+func (h Artifacts) complete() bool {
+	return h.List != nil && h.Get != nil && h.Download != nil && h.Update != nil && h.Delete != nil
+}
+
 // Incidents are the handlers of the incidents and their triage.
 type Incidents struct {
 	List, Get, Update http.Handler
@@ -178,8 +190,8 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Scenarios.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
-		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, catalog, honeytoken, scenario, incident, event and alert channel handlers")
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Scenarios.complete() || !d.Artifacts.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
+		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, catalog, honeytoken, scenario, artifact, incident, event and alert channel handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	// The session itself and how the account signs in are managed only with a
@@ -242,6 +254,11 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/api/v1/scenarios/{id}/guide", httpx.Require("scenarios:read"), d.Scenarios.Guide)
 	rt.Handle(http.MethodPatch, "/api/v1/scenarios/{id}", httpx.Require("scenarios:write"), d.Scenarios.Update)
 	rt.Handle(http.MethodDelete, "/api/v1/scenarios/{id}", httpx.Require("scenarios:write"), d.Scenarios.Delete)
+	rt.Handle(http.MethodGet, "/api/v1/artifacts", httpx.Require("artifacts:read"), d.Artifacts.List)
+	rt.Handle(http.MethodGet, "/api/v1/artifacts/{id}", httpx.Require("artifacts:read"), d.Artifacts.Get)
+	rt.Handle(http.MethodGet, "/api/v1/artifacts/{id}/content", httpx.Require("artifacts:read"), d.Artifacts.Download)
+	rt.Handle(http.MethodPatch, "/api/v1/artifacts/{id}", httpx.Require("artifacts:write"), d.Artifacts.Update)
+	rt.Handle(http.MethodDelete, "/api/v1/artifacts/{id}", httpx.Require("artifacts:write"), d.Artifacts.Delete)
 	rt.Handle(http.MethodGet, "/api/v1/incidents", httpx.Require("incidents:read"), d.Incidents.List)
 	rt.Handle(http.MethodGet, "/api/v1/incidents/{id}", httpx.Require("incidents:read"), d.Incidents.Get)
 	rt.Handle(http.MethodPatch, "/api/v1/incidents/{id}", httpx.Require("incidents:write"), d.Incidents.Update)

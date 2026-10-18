@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"nyktus.org/nyktus/internal/alerting/alertingapi"
+	"nyktus.org/nyktus/internal/artifact/artifactapi"
 	"nyktus.org/nyktus/internal/audit/auditapi"
 	"nyktus.org/nyktus/internal/auth/account"
 	"nyktus.org/nyktus/internal/auth/apikey/apikeyapi"
@@ -100,6 +101,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 	cat := catalogapi.NewHandler(deceptions)
 	t := honeytokenapi.NewHandler(o.Logger, o.DB, o.TriggerURL, o.DNSZones)
 	sc := scenarioapi.NewHandler(o.Logger, o.DB, deceptions, o.TriggerURL, o.DNSZones)
+	art := artifactapi.NewHandler(o.Logger, o.DB)
 	i := incidentapi.NewHandler(o.Logger, o.DB)
 	c := alertingapi.NewHandler(o.Logger, o.DB, o.Keys, sessions, o.Outbound)
 	return NewHandler(Deps{
@@ -159,6 +161,13 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Delete: http.HandlerFunc(sc.Delete),
 			Apply:  http.HandlerFunc(sc.Apply),
 			Guide:  http.HandlerFunc(sc.Guide),
+		},
+		Artifacts: Artifacts{
+			List:     http.HandlerFunc(art.List),
+			Get:      http.HandlerFunc(art.Get),
+			Download: http.HandlerFunc(art.Download),
+			Update:   http.HandlerFunc(art.Update),
+			Delete:   http.HandlerFunc(art.Delete),
 		},
 		Incidents: Incidents{
 			List:   http.HandlerFunc(i.ListIncidents),

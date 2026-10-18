@@ -23,7 +23,7 @@ The answer contains the scenario with its `id` and `deception_id`, which is `nul
 
 ## Scenarios of a deception
 
-[Applying a deception](catalog.md#applying-a-deception) of the catalog creates a scenario with its honeytokens, its artifacts and its guide. Its `deception_id` names the deception, `language` the language of the guide and of the names of its honeytokens, and `persona` the values that it was applied with. They cannot be changed. `GET /api/v1/scenarios/<id>/guide` returns the guide in Markdown, rendered for this scenario; a scenario put together by hand has none and answers `404`.
+[Applying a deception](catalog.md#applying-a-deception) of the catalog creates a scenario with its honeytokens, its [artifacts](artifacts.md) and its guide. `GET /api/v1/artifacts?scenario_id=<scenario>` lists its artifacts. Its `deception_id` names the deception, `language` the language of the guide and of the names of its honeytokens, and `persona` the values that it was applied with. They cannot be changed. `GET /api/v1/scenarios/<id>/guide` returns the guide in Markdown, rendered for this scenario; a scenario put together by hand has none and answers `404`.
 
 The scenario is a snapshot: a later change of the catalog changes neither its artifacts nor its guide.
 
@@ -57,7 +57,7 @@ An event belongs to the scenario its honeytoken belonged to when the event was r
 - `GET /api/v1/scenarios/<id>` returns one scenario.
 - `PATCH /api/v1/scenarios/<id>` changes `name`, `notes` or `engage_activities`. Members that you leave out stay unchanged; `"engage_activities": []` removes the activities.
 - `DELETE /api/v1/scenarios/<id>` deletes a scenario. The parameters `honeytokens` and `artifacts` choose what happens to its honeytokens and artifacts:
-  - `keep`, the default, removes them from the scenario. They stay and stand alone; the next events of the honeytokens open incidents of their own, and the artifacts keep what was placed, for example to find it again.
+  - `keep`, the default, removes them from the scenario. They stay and stand alone; the next events of the honeytokens open incidents of their own, and the [artifacts](artifacts.md) can still be downloaded, for example to find what was placed.
   - `delete` deletes them with the scenario. Remove their URLs, names and files from where you placed them as well: a deleted honeytoken records nothing.
 
   ```sh

@@ -109,6 +109,10 @@ const (
 	ActionArtifactUpdate Action = "artifact.update"
 	// ActionArtifactDelete records the deletion of an artifact.
 	ActionArtifactDelete Action = "artifact.delete"
+	// ActionArtifactsRead records a download of artifacts, which leave the
+	// console with it to be placed. A request denied for lacking the
+	// permission artifacts:read has the same action.
+	ActionArtifactsRead Action = "artifacts.read"
 	// ActionAlertChannelCreate records the creation of an alert channel, and an
 	// attempt whose confirmation with a password failed.
 	ActionAlertChannelCreate Action = "alert_channel.create"

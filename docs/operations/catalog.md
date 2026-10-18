@@ -70,7 +70,7 @@ curl --fail-with-body https://nyktus.example.com/api/v1/catalog/deceptions/ssh-c
 The answer, with status `201`, contains the `scenario`, its `honeytokens` and its `artifacts`:
 
 - The honeytokens belong to the scenario, are enabled, and have the techniques and the severity of the deception. Change them like any other [honeytoken](honeytokens.md).
-- The artifacts are rendered with the URLs of the honeytokens, under the address of the trigger, and the names of DNS honeytokens under the first zone of `NYKTUS_DNS_ZONES`. Secrets, such as passwords, are generated once and exist only in the artifacts. The answer lists the artifacts without their content.
+- The [artifacts](artifacts.md) are rendered with the URLs of the honeytokens, under the address of the trigger, and the names of DNS honeytokens under the first zone of `NYKTUS_DNS_ZONES`. Secrets, such as passwords, are generated once and exist only in the artifacts. The answer lists the artifacts without their content; download each with `GET /api/v1/artifacts/<id>/content` and record where you placed it in its placement notes.
 - `GET /api/v1/scenarios/<id>/guide` returns the guide, rendered for this scenario: where to place the artifacts and how to test them.
 
 Everything is created together or not at all. The scenario is a snapshot: a later release of Nyktus with a changed catalog does not change its artifacts or its guide.
