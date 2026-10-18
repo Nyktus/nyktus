@@ -9,57 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"nyktus.org/nyktus/internal/honeytoken"
+	"nyktus.org/nyktus/internal/severity"
 )
-
-// Every type of honeytoken has a severity, so that no event waits for a
-// decision that was never made.
-func TestEventSeverity_CoversEveryHoneytokenType(t *testing.T) {
-	t.Parallel()
-
-	for _, typ := range honeytoken.Types {
-		s := string(typ)
-		got, err := eventSeverity(honeytoken.ResourceType, &s)
-		if err != nil || !slices.Contains(Severities, got) || got == SeverityInfo {
-			t.Errorf("eventSeverity(%s) = %q, %v; want a severity above info", typ, got, err)
-		}
-	}
-	if len(honeytokenSeverity) != len(honeytoken.Types) {
-		t.Errorf("severities for %d types, want %d", len(honeytokenSeverity), len(honeytoken.Types))
-	}
-}
-
-func TestEventSeverity_RejectsUnknownEvents(t *testing.T) {
-	t.Parallel()
-
-	unknown := "qr_code"
-	if _, err := eventSeverity(honeytoken.ResourceType, &unknown); err == nil {
-		t.Error("eventSeverity() accepted an unknown honeytoken type")
-	}
-	if _, err := eventSeverity(honeytoken.ResourceType, nil); err == nil {
-		t.Error("eventSeverity() accepted a honeytoken event without type")
-	}
-	webURL := string(honeytoken.TypeWebURL)
-	if _, err := eventSeverity("honeypot", &webURL); err == nil {
-		t.Error("eventSeverity() accepted an unknown resource type")
-	}
-}
-
-func TestHigher(t *testing.T) {
-	t.Parallel()
-
-	for i, a := range Severities {
-		for j, b := range Severities {
-			want := a
-			if j > i {
-				want = b
-			}
-			if got := higher(a, b); got != want {
-				t.Errorf("higher(%s, %s) = %s, want %s", a, b, got, want)
-			}
-		}
-	}
-}
 
 func TestUnion(t *testing.T) {
 	t.Parallel()
@@ -78,7 +29,7 @@ func TestChange_Validate(t *testing.T) {
 	t.Parallel()
 
 	status := func(s Status) *Status { return &s }
-	severity := func(s Severity) *Severity { return &s }
+	level := func(s severity.Level) *severity.Level { return &s }
 	text := func(s string) *string { return &s }
 	for _, tt := range []struct {
 		name   string
@@ -93,8 +44,8 @@ func TestChange_Validate(t *testing.T) {
 		{"control character in notes", Change{Notes: text("a\x07")}, ErrInvalidNotes},
 		{"format character in notes", Change{Notes: text("a\u202eb")}, ErrInvalidNotes},
 		{"invalid UTF-8 in notes", Change{Notes: text("a\xff")}, ErrInvalidNotes},
-		{"info as override", Change{SetSeverityOverride: true, SeverityOverride: severity(SeverityInfo)}, nil},
-		{"unknown override", Change{SetSeverityOverride: true, SeverityOverride: severity("urgent")}, ErrInvalidSeverity},
+		{"info as override", Change{SetSeverityOverride: true, SeverityOverride: level(severity.Info)}, nil},
+		{"unknown override", Change{SetSeverityOverride: true, SeverityOverride: level("urgent")}, ErrInvalidSeverity},
 		{"removed override", Change{SetSeverityOverride: true}, nil},
 		{"techniques", Change{SetTechniquesOverride: true, TechniquesOverride: []string{"T1078", "T1003.001"}}, nil},
 		{"no techniques", Change{SetTechniquesOverride: true, TechniquesOverride: []string{}}, nil},
@@ -113,8 +64,8 @@ func TestApply(t *testing.T) {
 	t.Parallel()
 
 	status := func(s Status) *Status { return &s }
-	severity := func(s Severity) *Severity { return &s }
-	base := Incident{Status: StatusAcknowledged, Notes: "n", SeverityOverride: severity(SeverityHigh), TechniquesOverride: []string{"T1078"}}
+	level := func(s severity.Level) *severity.Level { return &s }
+	base := Incident{Status: StatusAcknowledged, Notes: "n", SeverityOverride: level(severity.High), TechniquesOverride: []string{"T1078"}}
 	for _, tt := range []struct {
 		name    string
 		change  Change
@@ -125,7 +76,7 @@ func TestApply(t *testing.T) {
 		{"forward", Change{Status: status(StatusClosed)}, []string{FieldStatus}, nil},
 		{"back", Change{Status: status(StatusOpen)}, nil, ErrStatusBackward},
 		{"same notes", Change{Notes: new("n")}, nil, nil},
-		{"same override", Change{SetSeverityOverride: true, SeverityOverride: severity(SeverityHigh)}, nil, nil},
+		{"same override", Change{SetSeverityOverride: true, SeverityOverride: level(severity.High)}, nil, nil},
 		{"removed override", Change{SetSeverityOverride: true}, []string{FieldSeverityOverride}, nil},
 		{"same techniques", Change{SetTechniquesOverride: true, TechniquesOverride: []string{"T1078"}}, nil, nil},
 		{"other techniques", Change{SetTechniquesOverride: true, TechniquesOverride: []string{"T1003"}}, []string{FieldTechniquesOverride}, nil},

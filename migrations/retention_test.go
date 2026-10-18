@@ -119,8 +119,9 @@ func (d incidentData) event(resource string, age time.Duration, incident string,
 	d.t.Helper()
 	var id string
 	err := d.owner.QueryRow(d.t.Context(), `
-INSERT INTO events (resource_type, resource_id, honeytoken_type, occurred_at, recorded_at, channel, method, client_ip, incident_id)
-VALUES ('honeytoken', $1, 'web_url', clock_timestamp() - $2::interval, clock_timestamp() - $2::interval, 'http', 'GET',
+INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method, client_ip,
+	incident_id)
+VALUES ('honeytoken', $1, 'web_url', 'medium', clock_timestamp() - $2::interval, clock_timestamp() - $2::interval, 'http', 'GET',
 	'192.0.2.1', nullif($3, '')::uuid)
 RETURNING id`, resource, age, incident).Scan(&id)
 	if err != nil {
@@ -326,8 +327,8 @@ FROM generate_series(0, $2::int) AS i`, beyond, kept); err != nil {
 		t.Fatalf("insert audit entries: %v", err)
 	}
 	if _, err := owner.Exec(t.Context(), `
-INSERT INTO events (resource_type, resource_id, honeytoken_type, occurred_at, recorded_at, channel, method)
-SELECT 'honeytoken', gen_random_uuid(), 'web_url', t, t, 'http', 'GET'
+INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method)
+SELECT 'honeytoken', gen_random_uuid(), 'web_url', 'medium', t, t, 'http', 'GET'
 FROM generate_series(0, $2::int) AS i, LATERAL (SELECT clock_timestamp() - CASE WHEN i = 0 THEN $1::interval ELSE interval '0' END) AS c (t)`,
 		beyond, kept); err != nil {
 		t.Fatalf("insert events: %v", err)

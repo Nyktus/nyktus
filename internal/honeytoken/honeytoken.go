@@ -23,6 +23,7 @@ import (
 
 	"nyktus.org/nyktus/internal/attack"
 	"nyktus.org/nyktus/internal/platform/text"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 // Type is the kind of a honeytoken, which decides how it is triggered and what
@@ -56,6 +57,26 @@ func (t Type) Valid() bool {
 	return slices.Contains(Types, t)
 }
 
+// defaultSeverity is the severity of a honeytoken of each type unless another
+// one is chosen. Without knowing what the honeytoken pretends to be, it only
+// reflects how much harmless traffic triggers it.
+var defaultSeverity = map[Type]severity.Level{
+	// Opening a URL is deliberate, but whatever it pretends to lead to is
+	// unknown.
+	TypeWebURL: severity.Medium,
+	// Mail gateways, previews and scanners load images without a human
+	// opening anything.
+	TypeWebImage: severity.Low,
+	// Resolving a name is deliberate, as for a URL.
+	TypeDNS: severity.Medium,
+}
+
+// DefaultSeverity returns the severity of a honeytoken of type t unless
+// another one is chosen, or "" for an unknown type.
+func (t Type) DefaultSeverity() severity.Level {
+	return defaultSeverity[t]
+}
+
 // Limits of the fields of a honeytoken, as the database enforces them.
 const (
 	MaxNameLength        = 100
@@ -71,6 +92,7 @@ const (
 	FieldEnabled     = "enabled"
 	FieldRedirectURL = "redirect_url"
 	FieldTechniques  = "techniques"
+	FieldSeverity    = "severity"
 	FieldScenarioID  = "scenario_id"
 )
 
@@ -84,6 +106,9 @@ var (
 	// clicked, so it never redirects.
 	ErrRedirectNotAllowed = errors.New("only a honeytoken of the type web_url redirects")
 	ErrInvalidTechniques  = errors.New("invalid ATT&CK techniques")
+	// ErrInvalidSeverity means that a severity is unknown or info, which only
+	// an analyst gives an incident.
+	ErrInvalidSeverity = errors.New("invalid honeytoken severity")
 )
 
 // Honeytoken is a stored honeytoken.
@@ -99,6 +124,8 @@ type Honeytoken struct {
 	// Techniques are the identifiers of the ATT&CK techniques that a trigger
 	// suggests.
 	Techniques []string
+	// Severity is the severity that its events receive.
+	Severity severity.Level
 	// TriggerValue is the value that triggers the honeytoken, as part of its
 	// URL.
 	TriggerValue string
@@ -153,6 +180,9 @@ type Spec struct {
 	Enabled     bool
 	RedirectURL *string
 	Techniques  []string
+	// Severity is the severity of the honeytoken, or nil for the default of
+	// its type.
+	Severity *severity.Level
 }
 
 func (s Spec) validate() error {
@@ -173,6 +203,9 @@ func (s Spec) validate() error {
 			return err
 		}
 	}
+	if s.Severity != nil && !s.Severity.IsSuggested() {
+		return ErrInvalidSeverity
+	}
 	return ValidateTechniques(s.Techniques)
 }
 
@@ -189,11 +222,14 @@ type Change struct {
 	// SetTechniques reports whether Techniques is part of the change, so that
 	// an empty list can remove every technique.
 	SetTechniques bool
+	// Severity replaces the severity, which applies to later events only.
+	Severity *severity.Level
 }
 
 // IsEmpty reports whether c changes nothing.
 func (c Change) IsEmpty() bool {
-	return c.Name == nil && c.Notes == nil && c.Enabled == nil && c.RedirectURL == nil && !c.SetTechniques
+	return c.Name == nil && c.Notes == nil && c.Enabled == nil && c.RedirectURL == nil && !c.SetTechniques &&
+		c.Severity == nil
 }
 
 func (c Change) validate() error {
@@ -211,6 +247,9 @@ func (c Change) validate() error {
 		if err := ValidateRedirectURL(*c.RedirectURL); err != nil {
 			return err
 		}
+	}
+	if c.Severity != nil && !c.Severity.IsSuggested() {
+		return ErrInvalidSeverity
 	}
 	if c.SetTechniques {
 		return ValidateTechniques(c.Techniques)

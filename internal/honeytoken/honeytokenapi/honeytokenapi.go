@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/httpx"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 // Error codes of the honeytokens.
@@ -79,6 +81,7 @@ type response struct {
 	Enabled      bool            `json:"enabled"`
 	RedirectURL  *string         `json:"redirect_url"`
 	Techniques   []string        `json:"techniques"`
+	Severity     severity.Level  `json:"severity"`
 	TriggerValue string          `json:"trigger_value"`
 	TriggerURL   *string         `json:"trigger_url"`
 	TriggerNames []string        `json:"trigger_names"`
@@ -104,6 +107,7 @@ func (h *Handler) response(t honeytoken.Honeytoken) response {
 		Enabled:      t.Enabled,
 		RedirectURL:  t.RedirectURL,
 		Techniques:   techniques,
+		Severity:     t.Severity,
 		TriggerValue: t.TriggerValue,
 		TriggerURL:   triggerURL,
 		TriggerNames: t.TriggerNames(h.dnsZones),
@@ -186,6 +190,9 @@ type createRequest struct {
 	Enabled     httpx.Optional[bool]     `json:"enabled"`
 	RedirectURL httpx.Optional[string]   `json:"redirect_url"`
 	Techniques  httpx.Optional[[]string] `json:"techniques"`
+	// Severity is the severity of the honeytoken; without it, the default of
+	// its type.
+	Severity httpx.Optional[severity.Level] `json:"severity"`
 }
 
 // Create handles POST /api/v1/honeytokens.
@@ -211,6 +218,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Enabled:     !req.Enabled.Set || req.Enabled.Value,
 		RedirectURL: req.RedirectURL.Ptr(),
 		Techniques:  req.Techniques.Value,
+		Severity:    req.Severity.Ptr(),
 	}
 	t, err := honeytoken.Create(r.Context(), h.db, p.Actor(), spec)
 	if err != nil {
@@ -224,11 +232,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 // updateRequest lists every field that a change may contain. The type and the
 // trigger value are not among them: both are placed and cannot change.
 type updateRequest struct {
-	Name        httpx.Optional[string]   `json:"name"`
-	Notes       httpx.Optional[string]   `json:"notes"`
-	Enabled     httpx.Optional[bool]     `json:"enabled"`
-	RedirectURL httpx.Nullable[string]   `json:"redirect_url"`
-	Techniques  httpx.Optional[[]string] `json:"techniques"`
+	Name        httpx.Optional[string]         `json:"name"`
+	Notes       httpx.Optional[string]         `json:"notes"`
+	Enabled     httpx.Optional[bool]           `json:"enabled"`
+	RedirectURL httpx.Nullable[string]         `json:"redirect_url"`
+	Techniques  httpx.Optional[[]string]       `json:"techniques"`
+	Severity    httpx.Optional[severity.Level] `json:"severity"`
 }
 
 // Update handles PATCH /api/v1/honeytokens/{id}.
@@ -247,6 +256,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		Enabled:       req.Enabled.Ptr(),
 		Techniques:    req.Techniques.Value,
 		SetTechniques: req.Techniques.Set,
+		Severity:      req.Severity.Ptr(),
 	}
 	switch {
 	case req.RedirectURL.Null:
@@ -259,7 +269,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		c.RedirectURL = &req.RedirectURL.Value
 	}
 	if c.IsEmpty() {
-		invalid(w, r, "request must change name, notes, enabled, redirect_url or techniques")
+		invalid(w, r, "request must change name, notes, enabled, redirect_url, techniques or severity")
 		return
 	}
 	t, err := honeytoken.Update(r.Context(), h.db, p.Actor(), r.PathValue("id"), c)
@@ -352,6 +362,7 @@ var (
 	nameRule        = fmt.Sprintf("name must have 1 to %d printable characters without leading or trailing spaces", honeytoken.MaxNameLength)
 	notesRule       = fmt.Sprintf("notes must have at most %d characters; line breaks and tabs are the only control characters allowed", honeytoken.MaxNotesLength)
 	redirectURLRule = fmt.Sprintf("redirect_url must be an http or https URL of at most %d characters with a host name, not an IP address, and without user information", honeytoken.MaxRedirectURLLength)
+	severityRule    = "severity must be one of " + levels()
 	techniquesRule  = fmt.Sprintf("techniques must list at most %d distinct ATT&CK technique identifiers, such as T1078 or T1003.001", honeytoken.MaxTechniques)
 )
 
@@ -371,6 +382,8 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, 
 		invalid(w, r, "redirect_url is only allowed for a honeytoken of the type web_url")
 	case errors.Is(err, honeytoken.ErrInvalidTechniques):
 		invalid(w, r, techniquesRule)
+	case errors.Is(err, honeytoken.ErrInvalidSeverity):
+		invalid(w, r, severityRule)
 	default:
 		httpx.ServerError(w, r, h.logger, op, err)
 	}
@@ -378,4 +391,13 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, 
 
 func invalid(w http.ResponseWriter, r *http.Request, message string) {
 	httpx.WriteError(w, r, http.StatusBadRequest, httpx.CodeInvalidRequest, message)
+}
+
+// levels lists the severities of a honeytoken for the rule of the field.
+func levels() string {
+	names := make([]string, len(severity.Suggested))
+	for i, l := range severity.Suggested {
+		names[i] = string(l)
+	}
+	return strings.Join(names, ", ")
 }

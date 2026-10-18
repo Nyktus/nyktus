@@ -53,6 +53,7 @@ with `honeytoken.json`:
 | `enabled` | Optional, `true` by default. |
 | `redirect_url` | Optional, only for `web_url`. An `http` or `https` URL of up to 2048 characters with a lowercase scheme, in printable ASCII: write international host names in their `xn--` form and encode other characters with `%`. The host must be a name, not an IP address, and the URL must not contain user information such as `user@`. Without it, the trigger uses its default target. Whoever opens the URL sees the target, usually outside your network: choose a public page that fits the placement, not an intranet address, which would reveal internal host names. |
 | `techniques` | Optional. Up to 20 distinct identifiers of [MITRE ATT&CK](#techniques) techniques or sub-techniques that a request of the URL suggests, such as `T1039` or `T1003.001`. |
+| `severity` | Optional. How urgently an event of the honeytoken should be looked at: `low`, `medium`, `high` or `critical`. Without it, the default of the type; see [Severity](#severity). |
 
 The answer is the new honeytoken with status `201`:
 
@@ -65,6 +66,7 @@ The answer is the new honeytoken with status `201`:
   "enabled": true,
   "redirect_url": "https://www.example.com/investors",
   "techniques": ["T1039", "T1083"],
+  "severity": "medium",
   "trigger_value": "q3xwz7a2kfm4ub6tyc5nre2lpa",
   "trigger_url": "https://t.example.net/q3xwz7a2kfm4ub6tyc5nre2lpa",
   "trigger_names": [],
@@ -77,10 +79,22 @@ The answer is the new honeytoken with status `201`:
 
 - `GET /api/v1/honeytokens` lists honeytokens from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `type=web_url`, `type=web_image` or `type=dns`, `enabled=true` or `enabled=false` and `scenario_id=<scenario>` narrow the list.
 - `GET /api/v1/honeytokens/<id>` returns one honeytoken.
-- `PATCH /api/v1/honeytokens/<id>` changes `name`, `notes`, `enabled`, `redirect_url` or `techniques`. Members that you leave out stay unchanged; `"redirect_url": null` removes the redirect, and `"techniques": []` removes the techniques. Disable a honeytoken instead of deleting it while you are unsure whether its URL is still placed somewhere: a disabled honeytoken records no events, but still answers as before.
+- `PATCH /api/v1/honeytokens/<id>` changes `name`, `notes`, `enabled`, `redirect_url`, `techniques` or `severity`. Members that you leave out stay unchanged; `"redirect_url": null` removes the redirect, and `"techniques": []` removes the techniques. Disable a honeytoken instead of deleting it while you are unsure whether its URL is still placed somewhere: a disabled honeytoken records no events, but still answers as before.
 - `DELETE /api/v1/honeytokens/<id>` deletes a honeytoken. Its events remain. Remove its URL from where you placed it as well: once the honeytoken is deleted, a request of the URL is answered like any unknown URL and no longer recorded.
 
 Every role reads honeytokens; viewers cannot change them.
+
+## Severity
+
+Every event of a honeytoken receives the severity of the honeytoken, and an [incident](incidents.md#severity) takes the highest severity of its events. Unless you choose one, a honeytoken has the default of its type:
+
+| Type | Severity | Reason |
+|---|---|---|
+| `web_url` | `medium` | Opening a URL is deliberate, but what it pretends to lead to is unknown. |
+| `web_image` | `low` | Mail gateways, previews and scanners load images without anyone opening them. |
+| `dns` | `medium` | Resolving a name is deliberate, as for a URL. |
+
+Choose a higher severity for a honeytoken that nobody has a reason to touch, such as credentials in a file that only an intruder reads, and a lower one for a place where harmless access is likely. An event keeps the severity that the honeytoken had when it was recorded, so a change applies to later events only. `info` is not a severity of a honeytoken: only an analyst judges an incident irrelevant.
 
 ## Scenarios
 
@@ -105,7 +119,7 @@ An event of the trigger holds:
 
 | Field | Content |
 |---|---|
-| Honeytoken | Its identifier and type, and the [techniques](#techniques) and the [scenario](#scenarios) it had when it was requested. The event keeps them when you change or delete the honeytoken. |
+| Honeytoken | Its identifier and type, and the [techniques](#techniques), the [severity](#severity) and the [scenario](#scenarios) it had when it was requested. The event keeps them when you change or delete the honeytoken. |
 | Time | When the trigger recorded the request. |
 | Client address | The address of the client, as described in [Client addresses](configuration.md#client-addresses). |
 | Method | `GET` or `HEAD`. |

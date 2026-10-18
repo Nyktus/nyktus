@@ -117,8 +117,8 @@ func TestSchema_ChecksEventsOfChannels(t *testing.T) {
 	t.Parallel()
 
 	pool := schematest.Open(t, schematest.New(t))
-	const insert = `INSERT INTO events (resource_type, resource_id, honeytoken_type, occurred_at, recorded_at, channel, method, user_agent,
-	dns_zone, dns_prefix, dns_qtype, dns_transport) VALUES ('honeytoken', gen_random_uuid(), 'dns', now() - $8::interval, now(), $1, $2, $3, $4, $5, $6, $7)`
+	const insert = `INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method,
+	user_agent, dns_zone, dns_prefix, dns_qtype, dns_transport) VALUES ('honeytoken', gen_random_uuid(), 'dns', 'medium', now() - $8::interval, now(), $1, $2, $3, $4, $5, $6, $7)`
 	httpRow := []any{"http", "GET", "", nil, nil, nil, nil, "0s"}
 	dnsRow := []any{"dns", nil, "", "d.example.com", "vpn", "A", "udp", "5m"}
 	with := func(row []any, i int, v any) []any {

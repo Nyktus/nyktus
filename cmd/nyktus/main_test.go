@@ -313,7 +313,7 @@ func TestRun_WorkerProcessesRecordedEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := owner.Exec(t.Context(), `
-INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repeat('a', 26))`); err != nil {
+INSERT INTO honeytokens (type, name, severity, trigger_value) VALUES ('web_url', 'h', 'medium', repeat('a', 26))`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := owner.Exec(t.Context(), "SELECT * FROM record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')"); err != nil {

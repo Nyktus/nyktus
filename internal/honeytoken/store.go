@@ -40,6 +40,7 @@ var constraintErrors = map[string]error{
 	"honeytokens_notes_check":        ErrInvalidNotes,
 	"honeytokens_redirect_url_check": ErrInvalidRedirectURL,
 	"honeytokens_techniques_check":   ErrInvalidTechniques,
+	"honeytokens_severity_check":     ErrInvalidSeverity,
 }
 
 func mapWriteError(err error) error {
@@ -63,13 +64,13 @@ func NewStore(q db.Querier) *Store {
 	return &Store{db: q}
 }
 
-const columns = `id, type, name, notes, enabled, redirect_url, techniques, trigger_value, scenario_id, created_at,
-updated_at`
+const columns = `id, type, name, notes, enabled, redirect_url, techniques, severity, trigger_value, scenario_id,
+created_at, updated_at`
 
 func scan(row pgx.Row) (Honeytoken, error) {
 	var h Honeytoken
-	err := row.Scan(&h.ID, &h.Type, &h.Name, &h.Notes, &h.Enabled, &h.RedirectURL, &h.Techniques, &h.TriggerValue,
-		&h.ScenarioID, &h.CreatedAt, &h.UpdatedAt)
+	err := row.Scan(&h.ID, &h.Type, &h.Name, &h.Notes, &h.Enabled, &h.RedirectURL, &h.Techniques, &h.Severity,
+		&h.TriggerValue, &h.ScenarioID, &h.CreatedAt, &h.UpdatedAt)
 	return h, err
 }
 
@@ -85,10 +86,15 @@ func (s *Store) Create(ctx context.Context, spec Spec) (Honeytoken, error) {
 	if techniques == nil {
 		techniques = []string{}
 	}
+	level := spec.Type.DefaultSeverity()
+	if spec.Severity != nil {
+		level = *spec.Severity
+	}
 	h, err := scan(s.db.QueryRow(ctx, `
-INSERT INTO honeytokens (type, name, notes, enabled, redirect_url, techniques, trigger_value)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING `+columns, spec.Type, spec.Name, spec.Notes, spec.Enabled, spec.RedirectURL, techniques, newTriggerValue()))
+INSERT INTO honeytokens (type, name, notes, enabled, redirect_url, techniques, severity, trigger_value)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING `+columns, spec.Type, spec.Name, spec.Notes, spec.Enabled, spec.RedirectURL, techniques, level,
+		newTriggerValue()))
 	if err != nil {
 		return Honeytoken{}, fmt.Errorf("create honeytoken: %w", mapWriteError(err))
 	}
@@ -248,6 +254,10 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (Honeytoken, []
 			changed = append(changed, FieldTechniques)
 		}
 	}
+	if c.Severity != nil && *c.Severity != current.Severity {
+		updated.Severity = *c.Severity
+		changed = append(changed, FieldSeverity)
+	}
 	if len(changed) == 0 {
 		return current, nil, nil
 	}
@@ -259,9 +269,11 @@ UPDATE honeytokens SET
 	enabled = $4,
 	redirect_url = $5,
 	techniques = $6,
+	severity = $7,
 	updated_at = clock_timestamp()
 WHERE id = $1
-RETURNING `+columns, id, updated.Name, updated.Notes, updated.Enabled, updated.RedirectURL, updated.Techniques))
+RETURNING `+columns, id, updated.Name, updated.Notes, updated.Enabled, updated.RedirectURL, updated.Techniques,
+		updated.Severity))
 	if err != nil {
 		return Honeytoken{}, nil, fmt.Errorf("update honeytoken %s: %w", id, mapWriteError(err))
 	}

@@ -293,8 +293,8 @@ VALUES (clock_timestamp() - interval '101 days', 'user.create', 'success', 'syst
 		t.Fatalf("insert audit entries: %v", err)
 	}
 	if _, err := owner.Exec(t.Context(), `
-INSERT INTO events (resource_type, resource_id, honeytoken_type, occurred_at, recorded_at, channel, method)
-SELECT 'honeytoken', gen_random_uuid(), 'web_url', t, t, 'http', 'GET'
+INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method)
+SELECT 'honeytoken', gen_random_uuid(), 'web_url', 'medium', t, t, 'http', 'GET'
 FROM unnest(ARRAY[clock_timestamp() - interval '41 days', clock_timestamp() - interval '39 days']) AS t`); err != nil {
 		t.Fatalf("insert events: %v", err)
 	}

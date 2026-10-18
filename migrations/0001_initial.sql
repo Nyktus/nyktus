@@ -1053,6 +1053,11 @@ CREATE TABLE public.honeytokens (
 	redirect_url  text,
 	-- The ATT&CK techniques that a trigger of the honeytoken suggests.
 	techniques    text[] NOT NULL DEFAULT '{}',
+	-- How urgently a trigger should be looked at. The console sets it on
+	-- insert, to the default of the type unless another one is chosen, so
+	-- that the honeytoken shows what its events receive. Only an analyst
+	-- judges an incident 'info'.
+	severity      text NOT NULL,
 	-- 128 bits from crypto/rand in lowercase base32 without padding, which is a
 	-- valid DNS label. A new value means a new honeytoken, because the old one
 	-- stays placed, so the value cannot be changed.
@@ -1089,6 +1094,7 @@ CREATE TABLE public.honeytokens (
 	CONSTRAINT honeytokens_techniques_check CHECK (
 		cardinality(techniques) <= 20 AND public.attack_technique_ids_valid(techniques)
 	),
+	CONSTRAINT honeytokens_severity_check CHECK (severity IN ('low', 'medium', 'high', 'critical')),
 	CONSTRAINT honeytokens_trigger_value_key UNIQUE (trigger_value),
 	CONSTRAINT honeytokens_trigger_value_check CHECK (trigger_value ~ '^[a-z2-7]{26}$'),
 	CONSTRAINT honeytokens_updated_at_check CHECK (updated_at >= created_at)
@@ -1118,8 +1124,8 @@ REVOKE ALL ON FUNCTION public.attack_technique_ids_valid(text[]) FROM PUBLIC, ny
 -- joins a scenario through its own change.
 GRANT EXECUTE ON FUNCTION public.attack_technique_ids_valid(text[]) TO nyktus_console;
 GRANT SELECT, DELETE ON public.honeytokens TO nyktus_console;
-GRANT INSERT (type, name, notes, enabled, redirect_url, techniques, trigger_value) ON public.honeytokens TO nyktus_console;
-GRANT UPDATE (name, notes, enabled, redirect_url, techniques, scenario_id, updated_at) ON public.honeytokens TO nyktus_console;
+GRANT INSERT (type, name, notes, enabled, redirect_url, techniques, severity, trigger_value) ON public.honeytokens TO nyktus_console;
+GRANT UPDATE (name, notes, enabled, redirect_url, techniques, severity, scenario_id, updated_at) ON public.honeytokens TO nyktus_console;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
 -- result is verified instead of assumed, in both directions.
@@ -1129,12 +1135,13 @@ BEGIN
 		OR NOT has_table_privilege('nyktus_console', 'public.honeytokens', 'DELETE')
 		OR NOT has_function_privilege('nyktus_console', 'public.attack_technique_ids_valid(text[])', 'EXECUTE')
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['type', 'name', 'notes', 'enabled', 'redirect_url', 'techniques',
+			SELECT FROM unnest(ARRAY['type', 'name', 'notes', 'enabled', 'redirect_url', 'techniques', 'severity',
 				'trigger_value']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'INSERT')
 		)
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['name', 'notes', 'enabled', 'redirect_url', 'techniques', 'scenario_id', 'updated_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['name', 'notes', 'enabled', 'redirect_url', 'techniques', 'severity', 'scenario_id',
+				'updated_at']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'UPDATE')
 		) THEN
 		RAISE EXCEPTION 'nyktus_console lacks privileges on public.honeytokens; run migrations as the owner of the schema';
@@ -1158,8 +1165,8 @@ $$;
 -- An event is a recorded request of a honeytoken, over HTTP or DNS. It is
 -- evidence and outlives the honeytoken: it names it by type and identifier
 -- without a foreign key, as the audit log names resources, and keeps a copy of
--- the type, the techniques and the scenario that the honeytoken had when it
--- was requested.
+-- the type, the techniques, the severity and the scenario that the honeytoken
+-- had when it was requested.
 -- Name and notes are not copied, so that events do not become a second copy of
 -- the inventory, and neither is the trigger value.
 CREATE TABLE public.events (
@@ -1173,6 +1180,9 @@ CREATE TABLE public.events (
 	scenario_id     uuid,
 	honeytoken_type text,
 	techniques      text[] NOT NULL DEFAULT '{}',
+	-- The severity of the resource when the request arrived, which the worker
+	-- gives the incident. A later change of the resource does not change it.
+	severity        text NOT NULL,
 	-- When the request arrived. The trigger records at once; the DNS role
 	-- answers first and passes how long the query waited, which the recording
 	-- function keeps within the window below. Both times are set by
@@ -1218,6 +1228,7 @@ CREATE TABLE public.events (
 	CONSTRAINT events_techniques_check CHECK (
 		cardinality(techniques) <= 20 AND public.attack_technique_ids_valid(techniques)
 	),
+	CONSTRAINT events_severity_check CHECK (severity IN ('low', 'medium', 'high', 'critical')),
 	CONSTRAINT events_channel_check CHECK (channel IN ('http', 'dns')),
 	-- A query waits at most five minutes to be recorded.
 	CONSTRAINT events_occurred_at_check CHECK (
@@ -1333,7 +1344,7 @@ DECLARE
 	new_event_id uuid;
 	now_at timestamptz := clock_timestamp();
 BEGIN
-	SELECT t.id, t.type, t.enabled, t.techniques, t.scenario_id, t.redirect_url INTO h
+	SELECT t.id, t.type, t.enabled, t.techniques, t.severity, t.scenario_id, t.redirect_url INTO h
 	FROM public.honeytokens AS t
 	WHERE t.trigger_value = requested_value;
 	IF NOT FOUND THEN
@@ -1352,9 +1363,9 @@ BEGIN
 		RETURN;
 	END IF;
 
-	INSERT INTO public.events (resource_type, resource_id, scenario_id, honeytoken_type, techniques, occurred_at,
-		recorded_at, channel, client_ip, method, user_agent, referer, accept_language)
-	VALUES ('honeytoken', h.id, h.scenario_id, h.type, h.techniques, now_at, now_at,
+	INSERT INTO public.events (resource_type, resource_id, scenario_id, honeytoken_type, techniques, severity,
+		occurred_at, recorded_at, channel, client_ip, method, user_agent, referer, accept_language)
+	VALUES ('honeytoken', h.id, h.scenario_id, h.type, h.techniques, h.severity, now_at, now_at,
 		'http', request_client_ip, request_method, request_user_agent, request_referer, request_accept_language)
 	RETURNING id INTO new_event_id;
 	INSERT INTO public.event_jobs (event_id) VALUES (new_event_id);
@@ -1393,7 +1404,7 @@ DECLARE
 	new_event_id uuid;
 	now_at timestamptz := clock_timestamp();
 BEGIN
-	SELECT t.id, t.type, t.enabled, t.techniques, t.scenario_id INTO h
+	SELECT t.id, t.type, t.enabled, t.techniques, t.severity, t.scenario_id INTO h
 	FROM public.honeytokens AS t
 	WHERE t.trigger_value = requested_value;
 	IF NOT FOUND THEN
@@ -1411,9 +1422,9 @@ BEGIN
 		RETURN;
 	END IF;
 
-	INSERT INTO public.events (resource_type, resource_id, scenario_id, honeytoken_type, techniques, occurred_at,
-		recorded_at, channel, client_ip, dns_zone, dns_prefix, dns_qtype, dns_transport)
-	VALUES ('honeytoken', h.id, h.scenario_id, h.type, h.techniques,
+	INSERT INTO public.events (resource_type, resource_id, scenario_id, honeytoken_type, techniques, severity,
+		occurred_at, recorded_at, channel, client_ip, dns_zone, dns_prefix, dns_qtype, dns_transport)
+	VALUES ('honeytoken', h.id, h.scenario_id, h.type, h.techniques, h.severity,
 		now_at - least(greatest(coalesce(query_delay, interval '0'), interval '0'), interval '5 minutes'), now_at,
 		'dns', query_resolver_ip, query_zone, query_prefix, query_type, query_transport)
 	RETURNING id INTO new_event_id;
