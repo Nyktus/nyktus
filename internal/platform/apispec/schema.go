@@ -22,7 +22,7 @@ type Schema struct {
 	Type                 any                `yaml:"type"`
 	Required             []string           `yaml:"required"`
 	Properties           map[string]*Schema `yaml:"properties"`
-	AdditionalProperties *bool              `yaml:"additionalProperties"`
+	AdditionalProperties *Members           `yaml:"additionalProperties"`
 	Items                *Schema            `yaml:"items"`
 	OneOf                []*Schema          `yaml:"oneOf"`
 	Enum                 []any              `yaml:"enum"`
@@ -30,6 +30,23 @@ type Schema struct {
 	Format               string             `yaml:"format"`
 	Minimum              *float64           `yaml:"minimum"`
 	Maximum              *float64           `yaml:"maximum"`
+}
+
+// Members is the additionalProperties of a schema of an object: false, true,
+// or the schema of every member of a map whose names are not documented,
+// such as values by key.
+type Members struct {
+	Allowed bool
+	Schema  *Schema
+}
+
+// UnmarshalYAML reads a boolean or a schema.
+func (m *Members) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.ScalarNode {
+		return n.Decode(&m.Allowed)
+	}
+	m.Allowed, m.Schema = true, &Schema{}
+	return n.Decode(m.Schema)
 }
 
 // Types returns the types that s allows.
@@ -131,15 +148,22 @@ func (s Schemas) check(schema *Schema, v any, at string) []string {
 				problems = append(problems, at+"."+name+": missing")
 			}
 		}
+		members := schema.AdditionalProperties
 		for name, value := range v {
 			prop, ok := schema.Properties[name]
-			if !ok {
+			switch {
+			case ok:
+			case members != nil && members.Schema != nil:
+				prop = members.Schema
+			default:
 				problems = append(problems, at+"."+name+": not documented")
 				continue
 			}
 			problems = append(problems, s.check(prop, value, at+"."+name)...)
 		}
-		if schema.AdditionalProperties == nil || *schema.AdditionalProperties {
+		// A map whose members have a schema documents them; any other
+		// object must forbid undocumented members.
+		if members == nil || (members.Allowed && members.Schema == nil) {
 			problems = append(problems, at+": the schema allows undocumented members")
 		}
 	case []any:

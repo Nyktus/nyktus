@@ -272,7 +272,8 @@ Honeytokens, scenarios and artifacts produce files and snippets that operators p
 - Built-in templates are parsed and test-rendered at startup. A template that does not render prevents the server from starting.
 - **Executable and interpreted formats** (scripts, shortcuts, configuration files) receive only server-generated values, such as trigger values and random credentials from `crypto/rand`, or values that match an allowlist pattern for that format.
 - **Inert formats** (plain text, documents) may contain free text from users or generators, escaped for the target format.
-- **No markers.** Generated artifacts never contain anything that identifies Nyktus or the catalog: no product names, attribution notices, comments, metadata fields or recognizable formatting conventions.
+- **No markers.** Generated artifacts never contain anything that identifies Nyktus or the catalog: no product names, attribution notices, comments, metadata fields or recognizable formatting conventions. The catalog checks the text of its templates when it loads; applying a deception checks every rendered artifact again, because values from outside the catalog reach it, such as the persona, the address of the trigger and the zone of the DNS role.
+- **Snapshots.** Applying a deception stores its artifacts and its guide as rendered, with secrets generated once, and never renders them again: what was placed must stay what the console shows.
 - **No hack-back.** A decoy may only cause a passive callback, such as a DNS lookup or an HTTP request. It must never execute code that harms, persists on, or collects data from the system that opens it beyond what the callback itself transmits.
 
 ## Output encoding

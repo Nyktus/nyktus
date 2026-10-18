@@ -109,10 +109,14 @@ func (h Honeytokens) complete() bool {
 // Scenarios are the handlers of the management of the scenarios.
 type Scenarios struct {
 	List, Get, Create, Update, Delete http.Handler
+	// Apply creates a scenario from a deception of the catalog, and Guide
+	// reads the guide that applying it rendered.
+	Apply, Guide http.Handler
 }
 
 func (h Scenarios) complete() bool {
-	return h.List != nil && h.Get != nil && h.Create != nil && h.Update != nil && h.Delete != nil
+	return h.List != nil && h.Get != nil && h.Create != nil && h.Update != nil && h.Delete != nil &&
+		h.Apply != nil && h.Guide != nil
 }
 
 // Incidents are the handlers of the incidents and their triage.
@@ -218,6 +222,9 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPost, "/api/v1/password-reset", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.ResetPassword))
 	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions", httpx.Require("catalog:read"), d.Catalog.List)
 	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions/{id}", httpx.Require("catalog:read"), d.Catalog.Get)
+	// Applying a deception creates a scenario with its honeytokens and
+	// artifacts; the catalog stays as it is.
+	rt.Handle(http.MethodPost, "/api/v1/catalog/deceptions/{id}/apply", httpx.Require("scenarios:write"), d.Scenarios.Apply)
 	rt.Handle(http.MethodGet, "/api/v1/honeytokens", httpx.Require("honeytokens:read"), d.Honeytokens.List)
 	rt.Handle(http.MethodPost, "/api/v1/honeytokens", httpx.Require("honeytokens:write"), d.Honeytokens.Create)
 	rt.Handle(http.MethodGet, "/api/v1/honeytokens/{id}", httpx.Require("honeytokens:read"), d.Honeytokens.Get)
@@ -232,6 +239,7 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/api/v1/scenarios", httpx.Require("scenarios:read"), d.Scenarios.List)
 	rt.Handle(http.MethodPost, "/api/v1/scenarios", httpx.Require("scenarios:write"), d.Scenarios.Create)
 	rt.Handle(http.MethodGet, "/api/v1/scenarios/{id}", httpx.Require("scenarios:read"), d.Scenarios.Get)
+	rt.Handle(http.MethodGet, "/api/v1/scenarios/{id}/guide", httpx.Require("scenarios:read"), d.Scenarios.Guide)
 	rt.Handle(http.MethodPatch, "/api/v1/scenarios/{id}", httpx.Require("scenarios:write"), d.Scenarios.Update)
 	rt.Handle(http.MethodDelete, "/api/v1/scenarios/{id}", httpx.Require("scenarios:write"), d.Scenarios.Delete)
 	rt.Handle(http.MethodGet, "/api/v1/incidents", httpx.Require("incidents:read"), d.Incidents.List)

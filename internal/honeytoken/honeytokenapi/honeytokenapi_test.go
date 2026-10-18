@@ -93,13 +93,13 @@ func errorCode(t *testing.T, rec *httptest.ResponseRecorder) string {
 	}](t, rec).Error.Code
 }
 
-func (f fixture) create(t *testing.T, body string) response {
+func (f fixture) create(t *testing.T, body string) Response {
 	t.Helper()
 	rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeytokens", "", body)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("POST %s: %d %s", body, rec.Code, rec.Body)
 	}
-	return decode[response](t, rec)
+	return decode[Response](t, rec)
 }
 
 func TestCreate_ReturnsTheHoneytokenWithItsTriggerURL(t *testing.T) {
@@ -192,7 +192,7 @@ func TestGet(t *testing.T) {
 	created := f.create(t, `{"type": "web_url", "name": "a"}`)
 
 	rec := f.serve(t, f.h.Get, http.MethodGet, "/api/v1/honeytokens/"+created.ID, created.ID, "")
-	if got := decode[response](t, rec); rec.Code != http.StatusOK || got.ID != created.ID || *got.TriggerURL != *created.TriggerURL {
+	if got := decode[Response](t, rec); rec.Code != http.StatusOK || got.ID != created.ID || *got.TriggerURL != *created.TriggerURL {
 		t.Errorf("GET = %d %s", rec.Code, rec.Body)
 	}
 	for _, id := range []string{"00000000-0000-4000-8000-000000000000", "not-a-uuid"} {
@@ -264,19 +264,19 @@ func TestUpdate(t *testing.T) {
 	}
 
 	rec := patch(`{"name": "b", "notes": "n", "enabled": false, "techniques": []}`)
-	got := decode[response](t, rec)
+	got := decode[Response](t, rec)
 	if rec.Code != http.StatusOK || got.Name != "b" || got.Notes != "n" || got.Enabled || len(got.Techniques) != 0 ||
 		got.RedirectURL == nil || got.TriggerValue != h.TriggerValue {
 		t.Errorf("PATCH = %d %s", rec.Code, rec.Body)
 	}
 	// null removes the redirect.
-	if rec := patch(`{"redirect_url": null}`); rec.Code != http.StatusOK || decode[response](t, rec).RedirectURL != nil {
+	if rec := patch(`{"redirect_url": null}`); rec.Code != http.StatusOK || decode[Response](t, rec).RedirectURL != nil {
 		t.Errorf("PATCH redirect_url null = %d %s, want the redirect removed", rec.Code, rec.Body)
 	}
 	if rec := patch(`{"redirect_url": "https://other.example.com"}`); rec.Code != http.StatusOK {
 		t.Errorf("PATCH redirect_url = %d %s", rec.Code, rec.Body)
 	}
-	if rec := patch(`{"severity": "high"}`); rec.Code != http.StatusOK || decode[response](t, rec).Severity != "high" {
+	if rec := patch(`{"severity": "high"}`); rec.Code != http.StatusOK || decode[Response](t, rec).Severity != "high" {
 		t.Errorf("PATCH severity = %d %s, want severity high", rec.Code, rec.Body)
 	}
 	for _, body := range []string{`{"severity": ""}`, `{"severity": "info"}`} {
@@ -400,7 +400,7 @@ func TestScenario_AssignAndDetach(t *testing.T) {
 	}
 
 	rec := f.serve(t, f.h.AssignScenario, http.MethodPut, "/", h.ID, `{"scenario_id": "`+sc+`"}`)
-	if got := decode[response](t, rec); rec.Code != http.StatusOK || got.ScenarioID == nil || *got.ScenarioID != sc {
+	if got := decode[Response](t, rec); rec.Code != http.StatusOK || got.ScenarioID == nil || *got.ScenarioID != sc {
 		t.Fatalf("PUT = %d %s, want the honeytoken in the scenario", rec.Code, rec.Body)
 	}
 	if rec := f.serve(t, f.h.AssignScenario, http.MethodPut, "/", h.ID, `{"scenario_id": "`+sc+`"}`); rec.Code != http.StatusOK {
@@ -417,7 +417,7 @@ func TestScenario_AssignAndDetach(t *testing.T) {
 	}
 
 	rec = f.serve(t, f.h.DetachScenario, http.MethodDelete, "/", h.ID, "")
-	if got := decode[response](t, rec); rec.Code != http.StatusOK || got.ScenarioID != nil {
+	if got := decode[Response](t, rec); rec.Code != http.StatusOK || got.ScenarioID != nil {
 		t.Errorf("DELETE = %d %s, want the honeytoken alone", rec.Code, rec.Body)
 	}
 	if rec := f.serve(t, f.h.DetachScenario, http.MethodDelete, "/", h.ID, ""); rec.Code != http.StatusOK {

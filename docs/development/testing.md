@@ -35,7 +35,8 @@ Each of these properties needs its own test, named after the property:
 - Login and password reset return identical status codes and bodies for existing and unknown accounts, and for accounts rejected by the local login policy.
 - Health checks never record an event, open an incident or raise an alert.
 - The setup endpoint accepts only the current setup token and returns `404` once an administrator exists, including after a restart.
-- Generated artifacts contain no product name, attribution or metadata that identifies Nyktus.
+- Generated artifacts contain no product name, attribution or metadata that identifies Nyktus, for every deception and language, also when applied with values from outside the catalog.
+- Applying a deception creates its scenario, honeytokens, artifacts and audit entries together or not at all: a failure while rendering, storing a resource or writing an audit entry leaves nothing behind.
 - Every registered route declares its authentication and permission. The test enumerates the router, so a new route without a declaration fails the build.
 - Denied requests are rejected before the resource is loaded.
 - The console can add and read audit entries but never change or delete them.

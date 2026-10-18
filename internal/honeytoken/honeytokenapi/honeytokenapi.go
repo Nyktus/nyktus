@@ -70,10 +70,10 @@ func NewHandler(logger *slog.Logger, d honeytoken.DB, triggerURL string, dnsZone
 	return &Handler{logger: logger, db: d, triggerURL: triggerURL, dnsZones: dnsZones}
 }
 
-// response is the representation of a honeytoken. The trigger value is not a
+// Response is the representation of a honeytoken. The trigger value is not a
 // secret towards the readers of the inventory: it is part of the URL or name
 // that they place, and they need it again for every placement.
-type response struct {
+type Response struct {
 	ID           string          `json:"id"`
 	Type         honeytoken.Type `json:"type"`
 	Name         string          `json:"name"`
@@ -90,16 +90,23 @@ type response struct {
 	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
-func (h *Handler) response(t honeytoken.Honeytoken) response {
+func (h *Handler) response(t honeytoken.Honeytoken) Response {
+	return NewResponse(t, h.triggerURL, h.dnsZones)
+}
+
+// NewResponse returns the representation of t, whose URL starts with
+// triggerURL, the public address of the trigger, and which has a name under
+// each of dnsZones if it is a DNS honeytoken.
+func NewResponse(t honeytoken.Honeytoken, triggerURL string, dnsZones []string) Response {
 	techniques := t.Techniques
 	if techniques == nil {
 		techniques = []string{}
 	}
-	var triggerURL *string
+	var url *string
 	if path := t.TriggerPath(); path != "" {
-		triggerURL = new(h.triggerURL + path)
+		url = new(triggerURL + path)
 	}
-	return response{
+	return Response{
 		ID:           t.ID,
 		Type:         t.Type,
 		Name:         t.Name,
@@ -109,8 +116,8 @@ func (h *Handler) response(t honeytoken.Honeytoken) response {
 		Techniques:   techniques,
 		Severity:     t.Severity,
 		TriggerValue: t.TriggerValue,
-		TriggerURL:   triggerURL,
-		TriggerNames: t.TriggerNames(h.dnsZones),
+		TriggerURL:   url,
+		TriggerNames: t.TriggerNames(dnsZones),
 		ScenarioID:   t.ScenarioID,
 		CreatedAt:    t.CreatedAt,
 		UpdatedAt:    t.UpdatedAt,
@@ -118,7 +125,7 @@ func (h *Handler) response(t honeytoken.Honeytoken) response {
 }
 
 type listResponse struct {
-	Honeytokens []response `json:"honeytokens"`
+	Honeytokens []Response `json:"honeytokens"`
 	NextCursor  string     `json:"next_cursor,omitempty"`
 }
 
@@ -161,7 +168,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, r, h.logger, "honeytoken: list", err)
 		return
 	}
-	resp := listResponse{Honeytokens: make([]response, 0, len(list))}
+	resp := listResponse{Honeytokens: make([]Response, 0, len(list))}
 	for _, t := range list {
 		resp.Honeytokens = append(resp.Honeytokens, h.response(t))
 	}

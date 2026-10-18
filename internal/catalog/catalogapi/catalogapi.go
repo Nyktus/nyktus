@@ -13,6 +13,7 @@ import (
 	"nyktus.org/nyktus/internal/catalog"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/httpx"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 // paramLang selects the language of the texts. Without it, they are English.
@@ -59,6 +60,7 @@ type (
 		Type       honeytoken.Type `json:"type"`
 		Label      string          `json:"label"`
 		Techniques []string        `json:"techniques"`
+		Severity   severity.Level  `json:"severity"`
 	}
 	personaResponse struct {
 		Key     string       `json:"key"`
@@ -94,7 +96,7 @@ func toDetail(d catalog.Deception, lang string) detail {
 	}
 	for _, h := range d.Honeytokens {
 		resp.Honeytokens = append(resp.Honeytokens, honeytokenResponse{
-			Key: h.Key, Type: h.Type, Label: h.Label[lang], Techniques: nonNil(h.Techniques),
+			Key: h.Key, Type: h.Type, Label: h.Label[lang], Techniques: nonNil(h.Techniques), Severity: h.Severity,
 		})
 	}
 	for _, p := range d.Persona {
