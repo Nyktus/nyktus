@@ -279,7 +279,7 @@ func TestStore_AcceptsWhatTheHandlerProduces(t *testing.T) {
 
 	_, value := f.honeytoken(t, "web_url", true, nil, nil)
 	// The characters that the schema refuses by name, one of each group.
-	refused := string([]rune{0x85, 0xad, 0x61c, 0x180e, 0x200b, 0x2028, 0x202e, 0x2066, 0xfeff, 0xfff9})
+	refused := string([]rune{0x85, 0xad, 0x61c, 0x180e, 0x200b, 0x2028, 0x202e, 0x2066, 0xfeff, 0xfff9, 0xe0041})
 	worst := strings.Repeat("\x01\xff\u00e4\U0001F600a"+refused, 1000)
 	res, err := f.store.Record(t.Context(), Request{
 		Value: value, Method: http.MethodHead,

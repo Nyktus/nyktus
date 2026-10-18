@@ -188,6 +188,7 @@ func TestSchema_ChecksHeadersOfEvents(t *testing.T) {
 		{"deprecated format character", 0x206f},
 		{"byte order mark", 0xfeff},
 		{"interlinear annotation", 0xfff9},
+		{"tag character", 0xe0041},
 	}
 	for i, col := range columns {
 		for _, r := range refused {
@@ -199,7 +200,7 @@ func TestSchema_ChecksHeadersOfEvents(t *testing.T) {
 		}
 		// What people write in other scripts and emoji must pass, as must the
 		// characters next to the refused ranges.
-		for _, ok := range []string{"Mozilla/5.0", string([]rune{0x4e2d, 0x6587, 0x1f600}), string([]rune{0xa0, 0xae, 0x2027, 0x202f, 0x2070, 0xfffc})} {
+		for _, ok := range []string{"Mozilla/5.0", string([]rune{0x4e2d, 0x6587, 0x1f600}), string([]rune{0x7e, 0xa0, 0xae, 0x61b, 0x61d, 0x180d, 0x180f, 0x200a, 0x2027, 0x202f, 0x205f, 0x2070, 0xfefc, 0xfffc, 0xfffd, 0xe0100})} {
 			if _, err := pool.Exec(t.Context(), insert, headers(i, ok)...); err != nil {
 				t.Errorf("%s %q: %v", col.name, ok, err)
 			}

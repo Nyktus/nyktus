@@ -1399,13 +1399,13 @@ CREATE TABLE public.events (
 	-- Only requests that read a honeytoken are recorded.
 	CONSTRAINT events_method_check CHECK (method IN ('GET', 'HEAD')),
 	CONSTRAINT events_user_agent_check CHECK (
-		octet_length(user_agent) <= 512 AND user_agent !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]'
+		octet_length(user_agent) <= 512 AND user_agent !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\U000e0000-\U000e007f]'
 	),
 	CONSTRAINT events_referer_check CHECK (
-		octet_length(referer) <= 1024 AND referer !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]'
+		octet_length(referer) <= 1024 AND referer !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\U000e0000-\U000e007f]'
 	),
 	CONSTRAINT events_accept_language_check CHECK (
-		octet_length(accept_language) <= 128 AND accept_language !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]'
+		octet_length(accept_language) <= 128 AND accept_language !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\U000e0000-\U000e007f]'
 	),
 	CONSTRAINT events_dns_zone_check CHECK (
 		octet_length(dns_zone) <= 200 AND dns_zone ~ '^[a-z0-9-]+(\.[a-z0-9-]+)+$'
