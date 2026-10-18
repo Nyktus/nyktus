@@ -124,15 +124,15 @@ func (f fixture) event(t *testing.T, resource, incident, channel string, occurre
 	switch channel {
 	case "http":
 		err = f.owner.QueryRow(t.Context(), `
-INSERT INTO events (resource_type, resource_id, honeytoken_type, techniques, occurred_at, recorded_at, channel, client_ip,
-	method, user_agent, referer, accept_language, incident_id)
-VALUES ('honeytoken', $1, 'web_url', '{T1213}', $2, $2, 'http', '192.0.2.7', 'GET', 'curl/8.0', 'https://a.example.com/', 'de', $3)
+INSERT INTO events (resource_type, resource_id, honeytoken_type, techniques, severity, occurred_at, recorded_at, channel,
+	client_ip, method, user_agent, referer, accept_language, incident_id)
+VALUES ('honeytoken', $1, 'web_url', '{T1213}', 'high', $2, $2, 'http', '192.0.2.7', 'GET', 'curl/8.0', 'https://a.example.com/', 'de', $3)
 RETURNING id`, resource, occurredAt, incidentID).Scan(&id)
 	default:
 		err = f.owner.QueryRow(t.Context(), `
-INSERT INTO events (resource_type, resource_id, honeytoken_type, occurred_at, recorded_at, channel, client_ip,
+INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, client_ip,
 	dns_zone, dns_prefix, dns_qtype, dns_transport, incident_id)
-VALUES ('honeytoken', $1, 'dns', $2, $2, 'dns', NULL, 'd.example.com', 'vpn', 'AAAA', 'udp', $3)
+VALUES ('honeytoken', $1, 'dns', 'medium', $2, $2, 'dns', NULL, 'd.example.com', 'vpn', 'AAAA', 'udp', $3)
 RETURNING id`, resource, occurredAt, incidentID).Scan(&id)
 	}
 	if err != nil {
@@ -382,13 +382,13 @@ func TestGetEvent_ShowsTheRequestOrTheQuery(t *testing.T) {
 	got := decode[eventResponse](t, rec)
 	if rec.Code != http.StatusOK || got.Channel != "http" || got.DNS != nil || got.HTTP == nil || got.HTTP.Method != http.MethodGet ||
 		got.HTTP.UserAgent != "curl/8.0" || got.ClientIP == nil || *got.ClientIP != "192.0.2.7" || got.IncidentID != nil ||
-		got.HoneytokenType == nil || *got.HoneytokenType != "web_url" {
+		got.HoneytokenType == nil || *got.HoneytokenType != "web_url" || got.Severity != "high" {
 		t.Errorf("GET request = %d %s", rec.Code, rec.Body)
 	}
 	rec = f.serve(t, f.h.GetEvent, http.MethodGet, "/", query, "")
 	got = decode[eventResponse](t, rec)
 	if rec.Code != http.StatusOK || got.Channel != "dns" || got.HTTP != nil || got.DNS == nil || got.DNS.QType != "AAAA" ||
-		got.DNS.Prefix != "vpn" || got.ClientIP != nil || got.Techniques == nil {
+		got.DNS.Prefix != "vpn" || got.ClientIP != nil || got.Techniques == nil || got.Severity != "medium" {
 		t.Errorf("GET query = %d %s", rec.Code, rec.Body)
 	}
 	for _, unknown := range []string{"00000000-0000-4000-8000-000000000000", "not-a-uuid"} {
@@ -440,8 +440,9 @@ VALUES ('scenario', $1, 'low', now(), now()) RETURNING id`, resourceB).Scan(&sce
 		t.Fatal(err)
 	}
 	if err := f.owner.QueryRow(t.Context(), `
-INSERT INTO events (resource_type, resource_id, scenario_id, honeytoken_type, occurred_at, recorded_at, channel, method, incident_id)
-VALUES ('honeytoken', $1, $2, 'web_image', now(), now(), 'http', 'HEAD', $3) RETURNING id`, resourceA, resourceB, scenarioIncident).Scan(&scenarioEvent); err != nil {
+INSERT INTO events (resource_type, resource_id, scenario_id, honeytoken_type, severity, occurred_at, recorded_at, channel,
+	method, incident_id)
+VALUES ('honeytoken', $1, $2, 'web_image', 'low', now(), now(), 'http', 'HEAD', $3) RETURNING id`, resourceA, resourceB, scenarioIncident).Scan(&scenarioEvent); err != nil {
 		t.Fatal(err)
 	}
 

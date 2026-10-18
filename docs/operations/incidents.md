@@ -28,13 +28,7 @@ An event is processed once and belongs to exactly one incident. Events outlive t
 
 ## Severity
 
-The severity says how urgently someone should look at an incident: `low`, `medium`, `high` or `critical`. Every event suggests a severity by the type of its honeytoken, and the incident takes the highest severity of its events:
-
-| Type | Severity | Reason |
-|---|---|---|
-| `web_url` | `medium` | Opening a URL is deliberate, but what it pretends to lead to is unknown. |
-| `web_image` | `low` | Mail gateways, previews and scanners load images without anyone opening them. |
-| `dns` | `medium` | Resolving a name is deliberate, as for a URL. |
+The severity says how urgently someone should look at an incident: `low`, `medium`, `high` or `critical`. Every event keeps the [severity of its honeytoken](honeytokens.md#severity) at the time it was recorded, and the incident takes the highest severity of its events. A later change of the honeytoken does not change recorded events or their incidents.
 
 An analyst can [override](#triage) the severity, including with `info` for an incident that turned out to be irrelevant. The incident then has the severity of the override; `event_severity` keeps what the events suggest.
 
@@ -53,7 +47,7 @@ Every role reads incidents and events, with a session or with an [API key](api-k
 - `GET /api/v1/incidents` lists incidents from the most recently opened to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `status` narrows the list to one or more statuses, separated by commas, such as `status=open,acknowledged` for every incident that is not closed; `resource_id` to the incidents of one scenario or one honeytoken. `resource_type` of an incident says which: `scenario` or `honeytoken`. The events of a honeytoken in a scenario belong to the incidents of the scenario.
 - `GET /api/v1/incidents/<id>` returns one incident.
 - `GET /api/v1/events` lists events from the most recently recorded to the oldest, paged in the same way. `incident_id` narrows the list to the events of an incident. To read the events of a honeytoken, list its incidents, and those of its scenario, and then their events; `resource_id` of an event names its honeytoken, `scenario_id` the scenario it belonged to.
-- `GET /api/v1/events/<id>` returns one event, with the request (`http`) or the query (`dns`) that it recorded.
+- `GET /api/v1/events/<id>` returns one event, with the request (`http`) or the query (`dns`) that it recorded. `techniques` and `severity` of an event are those its honeytoken had when it was recorded.
 
 Events are listed by the time they were recorded (`recorded_at`), not the time the request or query arrived (`occurred_at`): the DNS role records a query up to five minutes after it arrived. Events recorded meanwhile do not shift the following pages. If you collect events regularly, for example into a SIEM, read again from a few seconds before the newest event you have and skip the identifiers you already know, because an event is listed by the time it was written, which can precede the commit of a slow transaction.
 

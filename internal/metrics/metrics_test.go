@@ -36,7 +36,7 @@ const (
 func placeState(t *testing.T, owner *pgxpool.Pool) {
 	t.Helper()
 	for _, statement := range []string{
-		"INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', '" + honeytokenName + "', repeat('a', 26))",
+		"INSERT INTO honeytokens (type, name, severity, trigger_value) VALUES ('web_url', '" + honeytokenName + "', 'medium', repeat('a', 26))",
 		"SELECT * FROM record_honeytoken_request(repeat('a', 26), 'GET', '" + clientIP + "', '" + userAgent + "', '', '')",
 		`INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, notes)
 SELECT 'honeytoken', id, 'high', now(), now(), '` + notes + `' FROM honeytokens`,

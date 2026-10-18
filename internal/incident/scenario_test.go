@@ -11,6 +11,7 @@ import (
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/schematest"
 	"nyktus.org/nyktus/internal/scenario"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 // scenario creates a scenario and returns its identifier.
@@ -50,11 +51,11 @@ func TestStore_EventsOfAScenarioShareOneIncident(t *testing.T) {
 	}
 
 	first := f.process(t)
-	if !first.Opened || first.ResourceType != scenario.ResourceType || first.ResourceID != sc || first.Severity != SeverityLow {
+	if !first.Opened || first.ResourceType != scenario.ResourceType || first.ResourceID != sc || first.Severity != severity.Low {
 		t.Fatalf("first event = %+v, want an opened incident of the scenario with severity low", first)
 	}
 	second := f.process(t)
-	if second.Opened || second.IncidentID != first.IncidentID || second.Severity != SeverityMedium {
+	if second.Opened || second.IncidentID != first.IncidentID || second.Severity != severity.Medium {
 		t.Errorf("event of another honeytoken of the scenario = %+v, want it in %s with severity medium", second, first.IncidentID)
 	}
 	own := f.process(t)
@@ -66,7 +67,7 @@ func TestStore_EventsOfAScenarioShareOneIncident(t *testing.T) {
 	}
 
 	got := f.incident(t, first.IncidentID)
-	if got.status != StatusOpen || got.severity != SeverityMedium || got.count != 3 || len(got.techniques) != 2 {
+	if got.status != StatusOpen || got.severity != severity.Medium || got.count != 3 || len(got.techniques) != 2 {
 		t.Errorf("incident of the scenario = %+v, want open, medium, 3 events, 2 techniques", got)
 	}
 	if n := f.count(t, "SELECT count(*) FROM alerts"); n != 2 {
@@ -179,8 +180,9 @@ VALUES ('scenario', $1, 'medium', now(), now()) RETURNING id`, sc).Scan(&opened)
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(t.Context(), `
-INSERT INTO events (resource_type, resource_id, scenario_id, honeytoken_type, occurred_at, recorded_at, channel, method, incident_id)
-VALUES ('honeytoken', $1, $2, 'web_url', now(), now(), 'http', 'GET', $3)`, other, sc, opened); err != nil {
+INSERT INTO events (resource_type, resource_id, scenario_id, honeytoken_type, severity, occurred_at, recorded_at, channel,
+	method, incident_id)
+VALUES ('honeytoken', $1, $2, 'web_url', 'medium', now(), now(), 'http', 'GET', $3)`, other, sc, opened); err != nil {
 		t.Fatal(err)
 	}
 

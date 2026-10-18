@@ -15,10 +15,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 // fixture holds a migrated database, a pool of the owner to set up and inspect
@@ -38,16 +40,17 @@ func newFixture(t *testing.T) fixture {
 	}
 }
 
-// honeytoken creates a honeytoken and returns its identifier and trigger value.
+// honeytoken creates a honeytoken with the default severity of its type and
+// returns its identifier and trigger value.
 func (f fixture) honeytoken(t *testing.T, typ string, techniques []string) (id, value string) {
 	t.Helper()
 	if techniques == nil {
 		techniques = []string{}
 	}
 	err := f.owner.QueryRow(t.Context(), `
-INSERT INTO honeytokens (type, name, techniques, trigger_value)
-VALUES ($1, 'h', $2, translate(left(replace(gen_random_uuid()::text, '-', ''), 26), '0189', 'wxyz'))
-RETURNING id, trigger_value`, typ, techniques).Scan(&id, &value)
+INSERT INTO honeytokens (type, name, techniques, severity, trigger_value)
+VALUES ($1, 'h', $2, $3, translate(left(replace(gen_random_uuid()::text, '-', ''), 26), '0189', 'wxyz'))
+RETURNING id, trigger_value`, typ, techniques, honeytoken.Type(typ).DefaultSeverity()).Scan(&id, &value)
 	if err != nil {
 		t.Fatalf("create honeytoken: %v", err)
 	}
@@ -55,7 +58,8 @@ RETURNING id, trigger_value`, typ, techniques).Scan(&id, &value)
 }
 
 // event writes an event of the honeytoken resource with its job, as the
-// recording functions do, at occurredAt, and returns its identifier.
+// recording functions do, at occurredAt, with the default severity of the
+// type, and returns its identifier.
 func (f fixture) event(t *testing.T, resource, typ string, techniques []string, occurredAt time.Time) string {
 	t.Helper()
 	if techniques == nil {
@@ -64,11 +68,13 @@ func (f fixture) event(t *testing.T, resource, typ string, techniques []string, 
 	var id string
 	err := f.owner.QueryRow(t.Context(), `
 WITH e AS (
-	INSERT INTO events (resource_type, resource_id, honeytoken_type, techniques, occurred_at, recorded_at, channel, method)
-	VALUES ('honeytoken', $1, $2, $3, $4, $4, 'http', 'GET')
+	INSERT INTO events (resource_type, resource_id, honeytoken_type, techniques, severity, occurred_at, recorded_at,
+		channel, method)
+	VALUES ('honeytoken', $1, $2, $3, $5, $4, $4, 'http', 'GET')
 	RETURNING id
 )
-INSERT INTO event_jobs (event_id) SELECT id FROM e RETURNING event_id`, resource, typ, techniques, occurredAt).Scan(&id)
+INSERT INTO event_jobs (event_id) SELECT id FROM e RETURNING event_id`, resource, typ, techniques, occurredAt,
+		honeytoken.Type(typ).DefaultSeverity()).Scan(&id)
 	if err != nil {
 		t.Fatalf("write event: %v", err)
 	}
@@ -88,7 +94,7 @@ func (f fixture) process(t *testing.T) Processed {
 
 type incidentRow struct {
 	status     Status
-	severity   Severity
+	severity   severity.Level
 	techniques []string
 	count      int
 	first      time.Time
@@ -146,11 +152,11 @@ func TestStore_OpensAnIncidentWithItsAlert(t *testing.T) {
 	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')", value)
 
 	p := f.process(t)
-	if !p.Opened || p.ResourceType != honeytoken.ResourceType || p.ResourceID != id || p.Severity != SeverityMedium || p.IncidentID == "" {
+	if !p.Opened || p.ResourceType != honeytoken.ResourceType || p.ResourceID != id || p.Severity != severity.Medium || p.IncidentID == "" {
 		t.Errorf("ProcessNext() = %+v, want an opened incident of the honeytoken with severity medium", p)
 	}
 	got := f.incident(t, p.IncidentID)
-	if got.status != StatusOpen || got.severity != SeverityMedium || !slices.Equal(got.techniques, []string{"T1213"}) ||
+	if got.status != StatusOpen || got.severity != severity.Medium || !slices.Equal(got.techniques, []string{"T1213"}) ||
 		got.count != 1 || !got.first.Equal(got.last) {
 		t.Errorf("incident = %+v, want open, medium, T1213, one event", got)
 	}
@@ -168,16 +174,31 @@ func TestStore_OpensAnIncidentWithItsAlert(t *testing.T) {
 	}
 }
 
-// Severity follows the type of the honeytoken.
-func TestStore_SeverityFollowsTheTypeOfTheHoneytoken(t *testing.T) {
+// An event keeps the severity that its honeytoken had when it was requested,
+// over HTTP and DNS, and the worker gives the incident that severity: a
+// change of the honeytoken afterwards changes neither.
+func TestStore_SeverityIsFrozenOnTheEvent(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
-	for typ, want := range map[string]Severity{"web_url": SeverityMedium, "web_image": SeverityLow, "dns": SeverityMedium} {
-		id, _ := f.honeytoken(t, typ, nil)
-		f.event(t, id, typ, nil, time.Now())
-		if p := f.process(t); p.Severity != want {
-			t.Errorf("%s: severity %s, want %s", typ, p.Severity, want)
+	for _, record := range []string{
+		"SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')",
+		"SELECT * FROM record_dns_query($1, 'd.example.com', '', 'A', 'udp', NULL, NULL)",
+	} {
+		id, value := f.honeytoken(t, "dns", nil)
+		f.exec(t, "UPDATE honeytokens SET severity = 'critical' WHERE id = $1", id)
+		f.exec(t, record, value)
+		f.exec(t, "UPDATE honeytokens SET severity = 'low' WHERE id = $1", id)
+
+		p := f.process(t)
+		if !p.Opened || p.Severity != severity.Critical {
+			t.Errorf("%s: processed %+v, want an incident with the severity critical of the event", record, p)
+		}
+		if got := f.incident(t, p.IncidentID); got.severity != severity.Critical {
+			t.Errorf("%s: incident severity %s, want critical", record, got.severity)
+		}
+		if n := f.count(t, "SELECT count(*) FROM events WHERE id = $1 AND severity = 'critical'", p.EventID); n != 1 {
+			t.Errorf("%s: the event did not keep the severity critical", record)
 		}
 	}
 }
@@ -205,7 +226,7 @@ func TestStore_AddsEventsToTheOpenIncident(t *testing.T) {
 		t.Fatalf("processed %+v, %+v; want both in the incident %s", second, third, first.IncidentID)
 	}
 	got := f.incident(t, first.IncidentID)
-	if got.severity != SeverityMedium || !slices.Equal(got.techniques, []string{"T1213", "T1083"}) || got.count != 3 ||
+	if got.severity != severity.Medium || !slices.Equal(got.techniques, []string{"T1213", "T1083"}) || got.count != 3 ||
 		!got.first.Equal(start.Add(-time.Minute)) || !got.last.Equal(start.Add(time.Minute)) {
 		t.Errorf("incident = %+v, want medium, T1213 and T1083, three events from %v to %v", got, start.Add(-time.Minute), start.Add(time.Minute))
 	}
@@ -213,7 +234,7 @@ func TestStore_AddsEventsToTheOpenIncident(t *testing.T) {
 	// A higher severity is kept.
 	f.exec(t, "UPDATE incidents SET severity = 'critical'")
 	f.event(t, id, "web_url", nil, start)
-	if p := f.process(t); p.Severity != SeverityCritical {
+	if p := f.process(t); p.Severity != severity.Critical {
 		t.Errorf("severity after a lower event = %s, want critical", p.Severity)
 	}
 	if n := f.count(t, "SELECT count(*) FROM alerts"); n != 1 {
@@ -811,28 +832,35 @@ INSERT INTO incidents (resource_type, resource_id, status, severity, severity_ov
 VALUES ($1, gen_random_uuid(), $2, $3, $4, now(), now(),
 	CASE WHEN $2 <> 'open' THEN clock_timestamp() END, CASE WHEN $2 = 'closed' THEN clock_timestamp() END)`
 	for _, status := range Statuses {
-		if _, err := f.owner.Exec(t.Context(), insert, honeytoken.ResourceType, status, SeverityLow, nil); err != nil {
+		if _, err := f.owner.Exec(t.Context(), insert, honeytoken.ResourceType, status, severity.Low, nil); err != nil {
 			t.Errorf("status %s: %v", status, err)
 		}
 	}
-	for _, severity := range Severities {
-		if _, err := f.owner.Exec(t.Context(), insert, honeytoken.ResourceType, StatusOpen, SeverityLow, severity); err != nil {
-			t.Errorf("override %s: %v", severity, err)
+	for _, level := range severity.Levels {
+		if _, err := f.owner.Exec(t.Context(), insert, honeytoken.ResourceType, StatusOpen, severity.Low, level); err != nil {
+			t.Errorf("override %s: %v", level, err)
 		}
 		f.exec(t, "DELETE FROM incidents WHERE status = 'open'")
-		_, err := f.owner.Exec(t.Context(), insert, honeytoken.ResourceType, StatusOpen, severity, nil)
-		if severity == SeverityInfo {
-			if err == nil {
-				t.Error("an incident took info as its severity")
+		_, err := f.owner.Exec(t.Context(), insert, honeytoken.ResourceType, StatusOpen, level, nil)
+		var pgErr *pgconn.PgError
+		if level == severity.Info {
+			if !errors.As(err, &pgErr) || pgErr.ConstraintName != "incidents_severity_check" {
+				t.Errorf("incident of severity info: error = %v, want a violation of incidents_severity_check", err)
 			}
 		} else if err != nil {
-			t.Errorf("severity %s: %v", severity, err)
+			t.Errorf("severity %s: %v", level, err)
 		}
 		f.exec(t, "DELETE FROM incidents WHERE status = 'open'")
 	}
-	for _, severity := range honeytokenSeverity {
-		if _, err := f.owner.Exec(t.Context(), "INSERT INTO alerts (incident_id, severity) SELECT id, $1 FROM incidents WHERE status = 'closed'", severity); err != nil {
-			t.Errorf("alert of severity %s: %v", severity, err)
+	for _, level := range severity.Levels {
+		_, err := f.owner.Exec(t.Context(), "INSERT INTO alerts (incident_id, severity) SELECT id, $1 FROM incidents WHERE status = 'closed'", level)
+		var pgErr *pgconn.PgError
+		if level == severity.Info {
+			if !errors.As(err, &pgErr) || pgErr.ConstraintName != "alerts_severity_check" {
+				t.Errorf("alert of severity info: error = %v, want a violation of alerts_severity_check", err)
+			}
+		} else if err != nil {
+			t.Errorf("alert of severity %s: %v", level, err)
 		}
 		f.exec(t, "DELETE FROM alerts")
 	}

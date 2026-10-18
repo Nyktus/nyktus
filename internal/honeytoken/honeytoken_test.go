@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"nyktus.org/nyktus/internal/severity"
 )
 
 func TestValidateName(t *testing.T) {
@@ -148,6 +150,56 @@ func TestSpec_RedirectOnlyForURLs(t *testing.T) {
 		if err := (Spec{Type: typ, Name: "a"}).validate(); !errors.Is(err, ErrInvalidType) {
 			t.Errorf("type %q: %v, want ErrInvalidType", typ, err)
 		}
+	}
+}
+
+// Every type has a default severity that a decoy can suggest, so that no
+// honeytoken is created without one.
+func TestType_DefaultSeverity(t *testing.T) {
+	t.Parallel()
+
+	for _, typ := range Types {
+		if l := typ.DefaultSeverity(); !l.IsSuggested() {
+			t.Errorf("%s.DefaultSeverity() = %q, want a level above info", typ, l)
+		}
+	}
+	if l := Type("qr_code").DefaultSeverity(); l != "" {
+		t.Errorf("DefaultSeverity of an unknown type = %q, want none", l)
+	}
+}
+
+// A honeytoken takes every level that a decoy can suggest, or none for the
+// default of its type, but not info, which only an analyst gives an incident.
+// The validation runs without a database, because the store maps the check of
+// the schema to the same error.
+func TestSpecAndChange_ValidateTheSeverity(t *testing.T) {
+	t.Parallel()
+
+	if err := (Spec{Type: TypeWebURL, Name: "a"}).validate(); err != nil {
+		t.Errorf("Spec without severity: %v", err)
+	}
+	for _, l := range severity.Suggested {
+		if err := (Spec{Type: TypeWebURL, Name: "a", Severity: &l}).validate(); err != nil {
+			t.Errorf("Spec with severity %q: %v", l, err)
+		}
+	}
+	for _, l := range severity.Suggested {
+		if err := (Change{Severity: &l}).validate(); err != nil {
+			t.Errorf("Change to severity %q: %v", l, err)
+		}
+	}
+	for _, l := range []severity.Level{"", severity.Info, "urgent", "LOW"} {
+		if err := (Spec{Type: TypeWebURL, Name: "a", Severity: &l}).validate(); !errors.Is(err, ErrInvalidSeverity) {
+			t.Errorf("Spec with severity %q: %v, want ErrInvalidSeverity", l, err)
+		}
+	}
+	for _, l := range []severity.Level{"", severity.Info, "urgent"} {
+		if err := (Change{Severity: &l}).validate(); !errors.Is(err, ErrInvalidSeverity) {
+			t.Errorf("Change to severity %q: %v, want ErrInvalidSeverity", l, err)
+		}
+	}
+	if (Change{Severity: new(severity.Level)}).IsEmpty() {
+		t.Error("a change of the severity is empty")
 	}
 }
 

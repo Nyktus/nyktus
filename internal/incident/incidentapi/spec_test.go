@@ -14,6 +14,7 @@ import (
 	"nyktus.org/nyktus/api"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/incident"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 type schemaProperty struct {
@@ -108,8 +109,8 @@ func TestSpecification_MatchesCode(t *testing.T) {
 
 	schemas := specSchemas(t)
 	statuses := names(incident.Statuses)
-	severities := names(incident.Severities)
-	eventSeverities := names(incident.Severities, incident.SeverityInfo)
+	severities := names(severity.Levels)
+	eventSeverities := names(severity.Suggested)
 	for _, check := range []struct {
 		schema, property string
 		want             []string
@@ -120,6 +121,7 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		{"Incident", "severity_override", severities},
 		{"TriageIncidentRequest", "severity_override", severities},
 		{"Incident", "event_severity", eventSeverities},
+		{"Event", "severity", eventSeverities},
 		{"Event", "channel", []string{incident.ChannelDNS, incident.ChannelHTTP}},
 		{"Incident", "resource_type", slices.Sorted(slices.Values(incident.ResourceTypes))},
 		{"Event", "resource_type", []string{honeytoken.ResourceType}},

@@ -146,7 +146,7 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 
 	ownerURL, workerURL := schematest.Worker(t)
 	dbtest.Exec(t, ownerURL,
-		"INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repeat('a', 26))",
+		"INSERT INTO honeytokens (type, name, severity, trigger_value) VALUES ('web_url', 'h', 'medium', repeat('a', 26))",
 		"SELECT * FROM record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')",
 	)
 	pool := schematest.Open(t, workerURL)
@@ -309,7 +309,7 @@ func incidentSchema(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ownerURL := schematest.New(t)
 	dbtest.Exec(t, ownerURL,
-		"INSERT INTO honeytokens (type, name, trigger_value) VALUES ('web_url', 'h', repeat('a', 26))",
+		"INSERT INTO honeytokens (type, name, severity, trigger_value) VALUES ('web_url', 'h', 'medium', repeat('a', 26))",
 		"SELECT * FROM record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')",
 	)
 	return schematest.Open(t, ownerURL)

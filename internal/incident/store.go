@@ -15,6 +15,7 @@ import (
 	"nyktus.org/nyktus/internal/alerting"
 	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/scenario"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 // DB runs queries and starts transactions. A connection pool implements it.
@@ -53,7 +54,7 @@ type Processed struct {
 	// alert channel, if the event opened the incident.
 	Deliveries int
 	// Severity is the severity of the incident after the event.
-	Severity Severity
+	Severity severity.Level
 }
 
 // LogValue implements slog.LogValuer.
@@ -242,20 +243,18 @@ func (s *Store) assign(ctx context.Context, tx pgx.Tx, p *Processed) error {
 	var (
 		resourceType, resourceID string
 		scenarioID               *string
-		honeytokenType           *string
+		level                    severity.Level
 		techniques               []string
 		occurredAt               time.Time
 	)
+	// The event keeps the severity that its resource had when it arrived, as
+	// it keeps the techniques.
 	err := tx.QueryRow(ctx, `
-SELECT resource_type, resource_id, scenario_id, honeytoken_type, techniques, occurred_at
-FROM public.events WHERE id = $1`, p.EventID).Scan(&resourceType, &resourceID, &scenarioID, &honeytokenType, &techniques,
+SELECT resource_type, resource_id, scenario_id, severity, techniques, occurred_at
+FROM public.events WHERE id = $1`, p.EventID).Scan(&resourceType, &resourceID, &scenarioID, &level, &techniques,
 		&occurredAt)
 	if err != nil {
 		return fmt.Errorf("load event: %w", err)
-	}
-	severity, err := eventSeverity(resourceType, honeytokenType)
-	if err != nil {
-		return err
 	}
 	// The events of a scenario share its incident; the scenario is the one
 	// that the event froze when it arrived.
@@ -264,7 +263,7 @@ FROM public.events WHERE id = $1`, p.EventID).Scan(&resourceType, &resourceID, &
 		p.ResourceType, p.ResourceID = scenario.ResourceType, *scenarioID
 	}
 
-	if err := s.open(ctx, tx, p, severity, techniques, occurredAt); err != nil {
+	if err := s.open(ctx, tx, p, level, techniques, occurredAt); err != nil {
 		return err
 	}
 
@@ -292,10 +291,10 @@ FROM public.events WHERE id = $1`, p.EventID).Scan(&resourceType, &resourceID, &
 // opened waits for that transaction and then inserts nothing, and the next
 // round finds the incident. An incident that is closed while a round waits for
 // its lock no longer matches, and the round opens a new one.
-func (s *Store) open(ctx context.Context, tx pgx.Tx, p *Processed, severity Severity, techniques []string, occurredAt time.Time) error {
+func (s *Store) open(ctx context.Context, tx pgx.Tx, p *Processed, level severity.Level, techniques []string, occurredAt time.Time) error {
 	for range openRounds {
 		var (
-			current           Severity
+			current           severity.Level
 			currentTechniques []string
 		)
 		err := tx.QueryRow(ctx, `
@@ -304,7 +303,7 @@ WHERE resource_type = $1 AND resource_id = $2 AND status <> 'closed'
 FOR NO KEY UPDATE`, p.ResourceType, p.ResourceID).Scan(&p.IncidentID, &current, &currentTechniques)
 		switch {
 		case err == nil:
-			p.Severity = higher(current, severity)
+			p.Severity = severity.Higher(current, level)
 			_, err := tx.Exec(ctx, `
 UPDATE public.incidents
 SET severity = $2, techniques = $3, event_count = event_count + 1,
@@ -322,7 +321,7 @@ WHERE id = $1`, p.IncidentID, p.Severity, union(currentTechniques, techniques), 
 INSERT INTO public.incidents (resource_type, resource_id, severity, techniques, first_event_at, last_event_at)
 VALUES ($1, $2, $3, $4, $5, $5)
 ON CONFLICT (resource_type, resource_id) WHERE status <> 'closed' DO NOTHING
-RETURNING id`, p.ResourceType, p.ResourceID, severity, techniques, occurredAt).Scan(&p.IncidentID)
+RETURNING id`, p.ResourceType, p.ResourceID, level, techniques, occurredAt).Scan(&p.IncidentID)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			continue
@@ -330,7 +329,7 @@ RETURNING id`, p.ResourceType, p.ResourceID, severity, techniques, occurredAt).S
 			return fmt.Errorf("open incident: %w", err)
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO public.alerts (incident_id, severity, techniques) VALUES ($1, $2, $3)`,
-			p.IncidentID, severity, techniques); err != nil {
+			p.IncidentID, level, techniques); err != nil {
 			return fmt.Errorf("raise alert: %w", err)
 		}
 		// The alert and its deliveries are written together, so that an
@@ -338,7 +337,7 @@ RETURNING id`, p.ResourceType, p.ResourceID, severity, techniques, occurredAt).S
 		if p.Deliveries, err = alerting.Enqueue(ctx, tx, p.IncidentID); err != nil {
 			return err
 		}
-		p.Opened, p.Severity = true, severity
+		p.Opened, p.Severity = true, level
 		return nil
 	}
 	return fmt.Errorf("open incident: no open incident after %d rounds", openRounds)
