@@ -18,7 +18,7 @@ Deleting a [scenario](scenarios.md#audit) records `scenario.delete` and an entry
 
 Creating and changing an [alert channel](alerting.md#audit) is confirmed with the password, like creating an API key; a failed confirmation is recorded as a failure of `alert_channel.create` or `alert_channel.update`. A test of a channel is recorded as `alert_channel.test`, and the retry of a dead delivery as `alert_delivery.retry`.
 
-Reads of the audit log and of [events](incidents.md#personal-data), which contain personal data, and requests denied for a missing permission are recorded at most once per user or [API key](api-keys.md), action and minute, so that a signed-in user or a key cannot fill the audit log by repeating them. The access log records every one of them.
+Reads of the audit log and of [events](incidents.md#personal-data), which contain personal data, downloads of [artifacts](artifacts.md#audit), and requests denied for a missing permission are recorded at most once per user or [API key](api-keys.md), action and minute, so that a signed-in user or a key cannot fill the audit log by repeating them. The access log records every one of them.
 
 ## Reading the audit log
 

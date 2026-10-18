@@ -68,6 +68,8 @@ tags:
     description: Honeytokens of the team, which raise an event when their URL is requested.
   - name: scenarios
     description: Scenarios of the team, which group decoys that tell one story.
+  - name: artifacts
+    description: Files that applying a deception rendered, to be placed with its scenario.
   - name: incidents
     description: Incidents, which correlate the events of a scenario or of a honeytoken that stands alone, and their triage.
   - name: events
@@ -802,7 +804,7 @@ paths:
         created it, and stays valid when that account is changed or deleted.
         The scopes must be distinct permissions that API keys may carry, a
         scope to write requires the scope to read the same resource, and
-        `scenarios:read` requires `honeytokens:read`.
+        `scenarios:read` and `artifacts:read` require `honeytokens:read`.
         `expires_at` is required and at most three
         years away. The team has at most 50 keys that have not expired (`409`,
         code `too_many_api_keys`).
@@ -2145,6 +2147,224 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/artifacts:
+    get:
+      operationId: listArtifacts
+      summary: List artifacts
+      description: |
+        Returns artifacts from the newest to the oldest, a page at a time,
+        without their content. To read the next page, pass the `next_cursor`
+        of a response as `cursor`, with the same filter.
+
+        Artifacts are part of the inventory: their content names the URLs and
+        host names of honeytokens. Give integrations that do not place decoys
+        keys without the scope `artifacts:read`.
+      tags: [artifacts]
+      x-access: artifacts:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      parameters:
+        - name: limit
+          in: query
+          description: Number of artifacts per page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+        - name: scenario_id
+          in: query
+          description: Only the artifacts of this scenario.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: A page of artifacts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactPage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/artifacts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getArtifact
+      summary: Get an artifact
+      description: Returns an artifact without its content.
+      tags: [artifacts]
+      x-access: artifacts:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The artifact.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Artifact"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateArtifact
+      summary: Change the placement notes of an artifact
+      description: |
+        Sets where the artifact was placed. Nothing else of an artifact can be
+        changed: its content, name and format are what applying the deception
+        rendered, and it leaves its scenario only when the scenario is deleted.
+
+        The audit log records the change as `artifact.update` with the field
+        `placement_notes`, not its value. A request that changes nothing is not
+        recorded.
+      tags: [artifacts]
+      x-access: artifacts:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateArtifactRequest"
+      responses:
+        "200":
+          description: The artifact after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Artifact"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteArtifact
+      summary: Delete an artifact
+      description: |
+        Deletes an artifact. Remove the file from where it was placed as well.
+        The audit log records the deletion as `artifact.delete`.
+      tags: [artifacts]
+      x-access: artifacts:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "204":
+          description: The artifact has been deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/artifacts/{id}/content:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: downloadArtifact
+      summary: Download an artifact
+      description: |
+        Returns the content of an artifact as a file to save
+        (`Content-Disposition: attachment` with its `file_name`), with the
+        media type of its format, `X-Content-Type-Options: nosniff`,
+        `Content-Security-Policy: default-src 'none'; sandbox` and
+        `Cache-Control: no-store`, so that a browser never renders an artifact
+        in the origin of the console.
+
+        The audit log records downloads as `artifacts.read`, at most once per
+        user or API key and minute, without naming the artifact.
+      tags: [artifacts]
+      x-access: artifacts:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The content of the artifact.
+          headers:
+            Content-Disposition:
+              description: '`attachment` with the `file_name` of the artifact.'
+              schema:
+                type: string
+          content:
+            text/plain:
+              schema:
+                type: string
+            text/markdown:
+              schema:
+                type: string
+            text/html:
+              schema:
+                type: string
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
   /api/v1/incidents:
     get:
       operationId: listIncidents
@@ -3260,12 +3480,13 @@ components:
           maxItems: 16
           uniqueItems: true
           description: |
-            The permissions of the key. `honeytokens:write` requires `honeytokens:read`,
-            `incidents:write` requires `incidents:read`, and `scenarios:write` requires `scenarios:read`,
-            because a key that changes a resource receives it in the responses.
+            The permissions of the key. A scope to write requires the scope to read the same resource,
+            because a key that changes a resource receives it in the responses. `scenarios:read` and
+            `artifacts:read` require `honeytokens:read`, because the guide of a scenario and the content of
+            an artifact name the URLs and host names of honeytokens.
           items:
             type: string
-            enum: [audit:read, catalog:read, events:read, honeytokens:read, honeytokens:write, incidents:read, incidents:write, metrics:read, scenarios:read, scenarios:write]
+            enum: [artifacts:read, artifacts:write, audit:read, catalog:read, events:read, honeytokens:read, honeytokens:write, incidents:read, incidents:write, metrics:read, scenarios:read, scenarios:write]
         expires_at:
           type: string
           format: date-time
@@ -3959,6 +4180,29 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    ArtifactPage:
+      type: object
+      additionalProperties: false
+      required: [artifacts]
+      properties:
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Artifact"
+        next_cursor:
+          type: string
+          description: Cursor of the next page. Absent on the last page.
+
+    UpdateArtifactRequest:
+      type: object
+      additionalProperties: false
+      required: [placement_notes]
+      properties:
+        placement_notes:
+          type: string
+          maxLength: 2000
+          description: Where the artifact was placed. Line breaks and tabs are allowed; an empty string removes the notes.
 
     ScenarioPage:
       type: object
