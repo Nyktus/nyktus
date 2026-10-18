@@ -13,6 +13,7 @@ import (
 	"testing/fstest"
 
 	"nyktus.org/nyktus/internal/catalog"
+	"nyktus.org/nyktus/internal/honeytoken"
 )
 
 const definition = `{
@@ -192,8 +193,9 @@ func TestGet_ReturnsEmptyListsAsArrays(t *testing.T) {
 		}
 	}
 	honeytokens, _ := got["honeytokens"].([]any)
-	if first, _ := honeytokens[0].(map[string]any); first == nil || fmt.Sprint(first["techniques"]) != "[]" {
-		t.Errorf("honeytoken techniques = %#v, want []", first)
+	if first, _ := honeytokens[0].(map[string]any); first == nil || fmt.Sprint(first["techniques"]) != "[]" ||
+		first["severity"] != string(honeytoken.Type(fmt.Sprint(first["type"])).DefaultSeverity()) {
+		t.Errorf("honeytoken = %#v, want no techniques and the default severity of its type", first)
 	}
 }
 

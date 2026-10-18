@@ -99,7 +99,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
 	cat := catalogapi.NewHandler(deceptions)
 	t := honeytokenapi.NewHandler(o.Logger, o.DB, o.TriggerURL, o.DNSZones)
-	sc := scenarioapi.NewHandler(o.Logger, o.DB)
+	sc := scenarioapi.NewHandler(o.Logger, o.DB, deceptions, o.TriggerURL, o.DNSZones)
 	i := incidentapi.NewHandler(o.Logger, o.DB)
 	c := alertingapi.NewHandler(o.Logger, o.DB, o.Keys, sessions, o.Outbound)
 	return NewHandler(Deps{
@@ -157,6 +157,8 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Create: http.HandlerFunc(sc.Create),
 			Update: http.HandlerFunc(sc.Update),
 			Delete: http.HandlerFunc(sc.Delete),
+			Apply:  http.HandlerFunc(sc.Apply),
+			Guide:  http.HandlerFunc(sc.Guide),
 		},
 		Incidents: Incidents{
 			List:   http.HandlerFunc(i.ListIncidents),

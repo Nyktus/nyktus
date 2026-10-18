@@ -956,6 +956,15 @@ CREATE TABLE public.scenarios (
 	-- is no foreign key: a scenario is a snapshot and keeps the identifier when
 	-- the catalog changes or drops the deception.
 	deception_id      text,
+	-- What applying the deception kept of the application: the language of
+	-- the guide and of the names of the honeytokens, the values of the
+	-- persona by key, and the guide, rendered with the values of this
+	-- scenario. A snapshot like the rest, so that a change of the catalog
+	-- does not change the guide to a placed scenario. All NULL for a scenario
+	-- put together by hand.
+	language          text,
+	persona           jsonb,
+	guide             text,
 	created_at        timestamptz NOT NULL DEFAULT clock_timestamp(),
 	-- Set by the trigger below on insert, as for accounts.
 	updated_at        timestamptz NOT NULL,
@@ -976,6 +985,21 @@ CREATE TABLE public.scenarios (
 	CONSTRAINT scenarios_deception_id_check CHECK (
 		octet_length(deception_id) <= 64 AND deception_id ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
 	),
+	-- A scenario of a deception has all of them, one put together by hand
+	-- none.
+	CONSTRAINT scenarios_application_check CHECK (
+		(deception_id IS NULL) = (language IS NULL)
+		AND (deception_id IS NULL) = (persona IS NULL)
+		AND (deception_id IS NULL) = (guide IS NULL)
+	),
+	CONSTRAINT scenarios_language_check CHECK (language IN ('en', 'de')),
+	-- An object of strings, as many and as long as a deception asks for.
+	CONSTRAINT scenarios_persona_check CHECK (
+		jsonb_typeof(persona) = 'object'
+		AND NOT jsonb_path_exists(persona, '$.* ? (@.type() != "string")')
+		AND octet_length(persona::text) <= 16384
+	),
+	CONSTRAINT scenarios_guide_check CHECK (octet_length(guide) <= 1048576),
 	CONSTRAINT scenarios_updated_at_check CHECK (updated_at >= created_at)
 );
 
@@ -992,12 +1016,12 @@ REVOKE ALL ON public.scenarios FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.engage_activity_ids_valid(text[]) FROM PUBLIC, nyktus_console;
 
 -- The console evaluates the check of the activities when it writes. It
--- creates, lists, changes and deletes scenarios; it cannot choose the
--- deception of one, which only applying a deception sets, and identifiers and
--- creation times come from the database.
+-- creates, lists, changes and deletes scenarios, and creates them from a
+-- deception; it cannot change the deception of one or what applying it kept,
+-- and identifiers and creation times come from the database.
 GRANT EXECUTE ON FUNCTION public.engage_activity_ids_valid(text[]) TO nyktus_console;
 GRANT SELECT, DELETE ON public.scenarios TO nyktus_console;
-GRANT INSERT (name, notes, engage_activities) ON public.scenarios TO nyktus_console;
+GRANT INSERT (name, notes, engage_activities, deception_id, language, persona, guide) ON public.scenarios TO nyktus_console;
 GRANT UPDATE (name, notes, engage_activities, updated_at) ON public.scenarios TO nyktus_console;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
@@ -1008,7 +1032,8 @@ BEGIN
 		OR NOT has_table_privilege('nyktus_console', 'public.scenarios', 'DELETE')
 		OR NOT has_function_privilege('nyktus_console', 'public.engage_activity_ids_valid(text[])', 'EXECUTE')
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['name', 'notes', 'engage_activities']) AS c (name)
+			SELECT FROM unnest(ARRAY['name', 'notes', 'engage_activities', 'deception_id', 'language', 'persona',
+				'guide']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.scenarios', c.name, 'INSERT')
 		)
 		OR EXISTS (
@@ -1021,11 +1046,11 @@ BEGIN
 	IF has_table_privilege('nyktus_console', 'public.scenarios', 'INSERT, UPDATE, TRUNCATE, REFERENCES, TRIGGER')
 		OR has_any_column_privilege('nyktus_console', 'public.scenarios', 'REFERENCES')
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['id', 'deception_id', 'created_at', 'updated_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['id', 'created_at', 'updated_at']) AS c (name)
 			WHERE has_column_privilege('nyktus_console', 'public.scenarios', c.name, 'INSERT')
 		)
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['id', 'deception_id', 'created_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['id', 'deception_id', 'language', 'persona', 'guide', 'created_at']) AS c (name)
 			WHERE has_column_privilege('nyktus_console', 'public.scenarios', c.name, 'UPDATE')
 		) THEN
 		RAISE EXCEPTION 'nyktus_console has more privileges on public.scenarios than granted; check the default privileges of the owner';
@@ -1158,6 +1183,129 @@ BEGIN
 			WHERE has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'UPDATE')
 		) THEN
 		RAISE EXCEPTION 'nyktus_console has more privileges on public.honeytokens than granted; check the default privileges of the owner';
+	END IF;
+END
+$$;
+
+-- An artifact is a file that applying a deception rendered, such as an SSH
+-- configuration that names a DNS honeytoken. It raises no event itself; it
+-- makes the story of its scenario believable. Its content is stored, so that
+-- it can be downloaded again and found when the scenario is cleaned up; it
+-- holds the names and URLs of honeytokens and is inventory like them.
+CREATE TABLE public.artifacts (
+	id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	-- The scenario that applying the deception created, or NULL once the
+	-- scenario was deleted and the artifact kept. An artifact never joins a
+	-- scenario afterwards; the trigger below enforces it. As for honeytokens,
+	-- the key does not cascade: deleting a scenario decides about each
+	-- artifact with its audit entry.
+	scenario_id        uuid CONSTRAINT artifacts_scenario_id_fkey REFERENCES public.scenarios (id),
+	-- The key of the artifact in its deception, such as 'config'.
+	deception_artifact text NOT NULL,
+	-- The name under which the artifact is downloaded.
+	file_name          text NOT NULL,
+	-- The format of the template, which decides the media type of the
+	-- download.
+	format             text NOT NULL,
+	content            bytea NOT NULL,
+	-- Where the artifact was placed, for the team that cleans up.
+	placement_notes    text NOT NULL DEFAULT '',
+	created_at         timestamptz NOT NULL DEFAULT clock_timestamp(),
+	-- Set by the trigger below on insert, as for accounts.
+	updated_at         timestamptz NOT NULL,
+
+	CONSTRAINT artifacts_deception_artifact_check CHECK (
+		octet_length(deception_artifact) <= 64 AND deception_artifact ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
+	),
+	-- A name that every operating system accepts, as the catalog checks it,
+	-- so that it can go into the header of the download unchanged.
+	CONSTRAINT artifacts_file_name_check CHECK (file_name ~ '^[A-Za-z0-9]([A-Za-z0-9 ._-]{0,98}[A-Za-z0-9_-])?$'),
+	CONSTRAINT artifacts_format_check CHECK (format IN ('text', 'markdown', 'html', 'config')),
+	CONSTRAINT artifacts_content_check CHECK (octet_length(content) <= 1048576),
+	-- Notes may span several lines.
+	CONSTRAINT artifacts_placement_notes_check CHECK (
+		char_length(placement_notes) <= 2000
+		AND placement_notes !~ '[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]'
+	),
+	CONSTRAINT artifacts_updated_at_check CHECK (updated_at >= created_at)
+);
+
+-- The console lists artifacts from the newest to the oldest, a page at a time,
+-- and those of a scenario in the same order, which also serves deleting or
+-- keeping them with the scenario.
+CREATE INDEX artifacts_created_at_id_idx ON public.artifacts (created_at DESC, id DESC);
+CREATE INDEX artifacts_scenario_id_created_at_id_idx ON public.artifacts (scenario_id, created_at DESC, id DESC);
+
+CREATE TRIGGER artifacts_set_updated_at
+	BEFORE INSERT ON public.artifacts
+	FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- An artifact is created in its scenario and can only leave it, when the
+-- scenario is deleted and the artifact kept. It never joins another one: its
+-- content tells the story of the scenario it was rendered for. The error
+-- names the constraint artifacts_scenario_id_check, which does not exist as a
+-- table constraint, so that it can be recognized like one.
+CREATE FUNCTION public.artifacts_keep_scenario() RETURNS trigger
+	LANGUAGE plpgsql
+	SET search_path = ''
+AS $$
+BEGIN
+	IF (TG_OP = 'INSERT' AND NEW.scenario_id IS NULL)
+		OR (TG_OP = 'UPDATE' AND NEW.scenario_id IS NOT NULL AND NEW.scenario_id IS DISTINCT FROM OLD.scenario_id) THEN
+		RAISE EXCEPTION 'an artifact is created in a scenario and can only leave it'
+			USING ERRCODE = 'check_violation', CONSTRAINT = 'artifacts_scenario_id_check',
+				TABLE = 'artifacts', SCHEMA = 'public';
+	END IF;
+	RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER artifacts_keep_scenario
+	BEFORE INSERT OR UPDATE OF scenario_id ON public.artifacts
+	FOR EACH ROW EXECUTE FUNCTION public.artifacts_keep_scenario();
+
+-- Default privileges set by an operator could grant more than this migration
+-- intends, so everything is revoked before the grants.
+REVOKE ALL ON public.artifacts FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.artifacts_keep_scenario() FROM PUBLIC, nyktus_console;
+
+-- The console creates artifacts when it applies a deception, lists and deletes
+-- them, keeps their placement notes, and detaches them from a deleted
+-- scenario. It cannot change what an artifact contains or is called, and
+-- identifiers and creation times come from the database.
+GRANT SELECT, DELETE ON public.artifacts TO nyktus_console;
+GRANT INSERT (scenario_id, deception_artifact, file_name, format, content) ON public.artifacts TO nyktus_console;
+GRANT UPDATE (placement_notes, scenario_id, updated_at) ON public.artifacts TO nyktus_console;
+
+-- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
+-- result is verified instead of assumed, in both directions.
+DO $$
+BEGIN
+	IF NOT has_table_privilege('nyktus_console', 'public.artifacts', 'SELECT')
+		OR NOT has_table_privilege('nyktus_console', 'public.artifacts', 'DELETE')
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['scenario_id', 'deception_artifact', 'file_name', 'format', 'content']) AS c (name)
+			WHERE NOT has_column_privilege('nyktus_console', 'public.artifacts', c.name, 'INSERT')
+		)
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['placement_notes', 'scenario_id', 'updated_at']) AS c (name)
+			WHERE NOT has_column_privilege('nyktus_console', 'public.artifacts', c.name, 'UPDATE')
+		) THEN
+		RAISE EXCEPTION 'nyktus_console lacks privileges on public.artifacts; run migrations as the owner of the schema';
+	END IF;
+
+	IF has_table_privilege('nyktus_console', 'public.artifacts', 'INSERT, UPDATE, TRUNCATE, REFERENCES, TRIGGER')
+		OR has_any_column_privilege('nyktus_console', 'public.artifacts', 'REFERENCES')
+		OR has_function_privilege('nyktus_console', 'public.artifacts_keep_scenario()', 'EXECUTE')
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['id', 'placement_notes', 'created_at', 'updated_at']) AS c (name)
+			WHERE has_column_privilege('nyktus_console', 'public.artifacts', c.name, 'INSERT')
+		)
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['id', 'deception_artifact', 'file_name', 'format', 'content', 'created_at']) AS c (name)
+			WHERE has_column_privilege('nyktus_console', 'public.artifacts', c.name, 'UPDATE')
+		) THEN
+		RAISE EXCEPTION 'nyktus_console has more privileges on public.artifacts than granted; check the default privileges of the owner';
 	END IF;
 END
 $$;

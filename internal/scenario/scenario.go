@@ -44,6 +44,7 @@ var (
 	ErrInvalidNotes            = errors.New("invalid scenario notes")
 	ErrInvalidEngageActivities = errors.New("invalid Engage activities")
 	ErrInvalidRemoval          = errors.New("invalid removal of the resources of a scenario")
+	ErrInvalidLanguage         = errors.New("invalid language")
 )
 
 // Scenario is a stored scenario.
@@ -57,8 +58,14 @@ type Scenario struct {
 	// DeceptionID is the deception of the catalog that the scenario was
 	// created from, or nil for a scenario put together by hand.
 	DeceptionID *string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// Language is the language of the guide and of the names of the
+	// honeytokens that applying the deception created, and Persona the
+	// values that it was applied with, by key; nil for a scenario put
+	// together by hand.
+	Language  *string
+	Persona   map[string]string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // LogValue names the scenario by its identifier. Its name and notes are
@@ -170,10 +177,20 @@ func (r Removal) Valid() bool {
 	return slices.Contains(Removals, r)
 }
 
+// ResourceRemovals says what happens to each kind of resource of a scenario
+// that is deleted.
+type ResourceRemovals struct {
+	Honeytokens Removal
+	Artifacts   Removal
+}
+
 // Removed lists the resources of a deleted scenario by what happened to them.
 type Removed struct {
 	// DeletedHoneytokens and DetachedHoneytokens are the identifiers of the
 	// honeytokens that were deleted or detached.
 	DeletedHoneytokens  []string
 	DetachedHoneytokens []string
+	// DeletedArtifacts and DetachedArtifacts are those of the artifacts.
+	DeletedArtifacts  []string
+	DetachedArtifacts []string
 }

@@ -99,8 +99,16 @@ const (
 	// the changed fields.
 	ActionScenarioUpdate Action = "scenario.update"
 	// ActionScenarioDelete records the deletion of a scenario. Each honeytoken
-	// that it deletes or detaches has an entry of its own.
+	// and artifact that it deletes or detaches has an entry of its own.
 	ActionScenarioDelete Action = "scenario.delete"
+	// ActionArtifactCreate records an artifact that applying a deception
+	// rendered.
+	ActionArtifactCreate Action = "artifact.create"
+	// ActionArtifactUpdate records a change of an artifact, with the names of
+	// the changed fields.
+	ActionArtifactUpdate Action = "artifact.update"
+	// ActionArtifactDelete records the deletion of an artifact.
+	ActionArtifactDelete Action = "artifact.delete"
 	// ActionAlertChannelCreate records the creation of an alert channel, and an
 	// attempt whose confirmation with a password failed.
 	ActionAlertChannelCreate Action = "alert_channel.create"

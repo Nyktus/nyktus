@@ -40,6 +40,12 @@ components:
       type: object
       properties:
         n: {type: integer}
+    Map:
+      type: object
+      additionalProperties: {type: string}
+    Allowed:
+      type: object
+      additionalProperties: true
     Overlap:
       oneOf:
         - {type: integer}
@@ -78,6 +84,9 @@ func TestSchemas_Check(t *testing.T) {
 		{"null where not allowed", "Thing", `{` + thingID + `,"kind":"a","code":null}`, "Thing.code: null"},
 		{"fraction for an integer", "Thing", `{` + thingID + `,"kind":"a","count":1.5}`, "Thing.count: number"},
 		{"not in enum", "Thing", `{` + thingID + `,"kind":"c"}`, "Thing.kind: c not in"},
+		{"map of members", "Map", `{"a":"x","b":"y"}`, ""},
+		{"member of a map of the wrong type", "Map", `{"a":1}`, "Map.a: integer"},
+		{"object that allows any member", "Allowed", `{}`, "allows undocumented members"},
 		{"pattern", "Thing", `{` + thingID + `,"kind":"a","code":"de"}`, "does not match"},
 		{"uuid", "Thing", `{"id":"0B0C3A60-6C55-4B4B-8A2C-2D0C1E7F9A10","kind":"a"}`, "is not a uuid"},
 		{"date-time", "Thing", `{` + thingID + `,"kind":"a","at":"2026-10-17"}`, "is not a date-time"},

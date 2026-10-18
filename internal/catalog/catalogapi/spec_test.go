@@ -14,6 +14,7 @@ import (
 	"nyktus.org/nyktus/internal/catalog"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/apispec"
+	"nyktus.org/nyktus/internal/severity"
 )
 
 type specDocument struct {
@@ -90,6 +91,10 @@ func TestSpecification_MatchesCode(t *testing.T) {
 			for _, v := range vs {
 				out = append(out, string(v))
 			}
+		case []severity.Level:
+			for _, v := range vs {
+				out = append(out, string(v))
+			}
 		case []string:
 			out = vs
 		}
@@ -104,6 +109,7 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		"artifact format": {detailProps["artifacts"].Items.Properties["format"].EnumStrings(), names(catalog.Formats)},
 		"honeytoken type": {detailProps["honeytokens"].Items.Properties["type"].EnumStrings(), names(honeytoken.Types)},
 		"persona kinds":   {detailProps["persona"].Items.Properties["kind"].EnumStrings(), []string{"host", "name", "text"}},
+		"severity":        {detailProps["honeytokens"].Items.Properties["severity"].EnumStrings(), names(severity.Suggested)},
 	} {
 		if !slices.Equal(sorted(tt.spec), tt.code) {
 			t.Errorf("%s: specification %v, code %v", name, tt.spec, tt.code)

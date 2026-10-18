@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"nyktus.org/nyktus/api"
+	"nyktus.org/nyktus/internal/catalog"
 	"nyktus.org/nyktus/internal/scenario"
 )
 
@@ -84,11 +85,63 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		removals = append(removals, string(r))
 	}
 	params = spec.Paths["/api/v1/scenarios/{id}"].Delete.Parameters
-	// Other specification tests read every default of a query parameter as a
-	// number, so the default removal is part of the description.
-	if len(params) != 1 || params[0].Name != paramHoneytokens ||
-		!slices.Equal(slices.Sorted(slices.Values(params[0].Schema.Enum)), slices.Sorted(slices.Values(removals))) ||
-		!strings.Contains(params[0].Description, "`"+string(scenario.RemovalKeep)+"` (the\ndefault)") {
-		t.Errorf("parameters of the deletion = %+v, want only %s with %v, keep by default", params, paramHoneytokens, removals)
+	if len(params) != 2 {
+		t.Fatalf("parameters of the deletion = %+v, want %s and %s", params, paramHoneytokens, paramArtifacts)
+	}
+	for i, name := range []string{paramHoneytokens, paramArtifacts} {
+		// Other specification tests read every default of a query parameter
+		// as a number, so the default removal is part of the description.
+		if p := params[i]; p.Name != name ||
+			!slices.Equal(slices.Sorted(slices.Values(p.Schema.Enum)), slices.Sorted(slices.Values(removals))) ||
+			!strings.Contains(p.Description, "`"+string(scenario.RemovalKeep)+"` (the\ndefault)") {
+			t.Errorf("parameter %d of the deletion = %+v, want %s with %v, keep by default", i, p, name, removals)
+		}
+	}
+
+	var apply struct {
+		Required   []string `yaml:"required"`
+		Properties map[string]struct {
+			Enum      []string `yaml:"enum"`
+			MaxLength int      `yaml:"maxLength"`
+		} `yaml:"properties"`
+	}
+	var doc struct {
+		Components struct {
+			Schemas map[string]yaml.Node `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(api.OpenAPI(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	node := doc.Components.Schemas["ApplyDeceptionRequest"]
+	if err := node.Decode(&apply); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(apply.Required, []string{"name"}) ||
+		!slices.Equal(slices.Sorted(maps.Keys(apply.Properties)), []string{"language", "name", "notes", "persona"}) ||
+		apply.Properties["name"].MaxLength != scenario.MaxNameLength || apply.Properties["notes"].MaxLength != scenario.MaxNotesLength ||
+		!slices.Equal(slices.Sorted(slices.Values(apply.Properties["language"].Enum)), slices.Sorted(slices.Values(catalog.Languages))) ||
+		defaultLanguage != "en" {
+		t.Errorf("ApplyDeceptionRequest = %+v, want name, notes, language of %v, English by default, and persona", apply, catalog.Languages)
+	}
+	for _, name := range []string{"Scenario", "ScenarioGuide"} {
+		var schema struct {
+			Properties map[string]struct {
+				Enum []*string `yaml:"enum"`
+			} `yaml:"properties"`
+		}
+		node := doc.Components.Schemas[name]
+		if err := node.Decode(&schema); err != nil {
+			t.Fatal(err)
+		}
+		var langs []string
+		for _, l := range schema.Properties["language"].Enum {
+			if l != nil {
+				langs = append(langs, *l)
+			}
+		}
+		if !slices.Equal(slices.Sorted(slices.Values(langs)), slices.Sorted(slices.Values(catalog.Languages))) {
+			t.Errorf("%s.language = %v, want %v", name, langs, catalog.Languages)
+		}
 	}
 }
