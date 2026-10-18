@@ -12,10 +12,12 @@
 package artifact
 
 import (
+	"errors"
 	"log/slog"
 	"time"
 
 	"nyktus.org/nyktus/internal/catalog"
+	"nyktus.org/nyktus/internal/platform/text"
 )
 
 // ResourceType names artifacts where other records refer to them, such as
@@ -27,6 +29,23 @@ const (
 	FieldPlacementNotes = "placement_notes"
 	FieldScenarioID     = "scenario_id"
 )
+
+// MaxPlacementNotesLength is the length of the placement notes, as the
+// database enforces it.
+const MaxPlacementNotesLength = 2000
+
+// ErrInvalidPlacementNotes means that placement notes are too long or contain
+// control characters other than line breaks and tabs.
+var ErrInvalidPlacementNotes = errors.New("invalid placement notes")
+
+// ValidatePlacementNotes accepts notes of up to MaxPlacementNotesLength
+// characters, as text.ValidNotes describes.
+func ValidatePlacementNotes(s string) error {
+	if !text.ValidNotes(s, MaxPlacementNotesLength) {
+		return ErrInvalidPlacementNotes
+	}
+	return nil
+}
 
 // MaxContentBytes is the largest content of an artifact, as the template
 // engine renders it and the database enforces it.

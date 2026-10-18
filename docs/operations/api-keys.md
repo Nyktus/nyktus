@@ -29,6 +29,7 @@ with `api-key.json`:
 
   | Scope | Allows |
   |---|---|
+  | `artifacts:read`, `artifacts:write` | reading and downloading [artifacts](artifacts.md), and keeping their placement notes or deleting them |
   | `audit:read` | reading the [audit log](audit-log.md) |
   | `catalog:read` | reading the [deception catalog](catalog.md), which holds no inventory |
   | `incidents:read`, `incidents:write` | reading and triaging [incidents](incidents.md), for example from a ticket system |
@@ -37,7 +38,7 @@ with `api-key.json`:
   | `metrics:read` | reading the [metrics](metrics.md), for a monitoring system |
   | `scenarios:read`, `scenarios:write` | reading and managing [scenarios](scenarios.md); adding a honeytoken to a scenario needs `honeytokens:write` |
 
-  A scope to write requires the scope to read the same resource, because a key that changes a resource receives it in the responses. `scenarios:read` requires `honeytokens:read`, because the [guide](scenarios.md#scenarios-of-a-deception) of a scenario and the answer to [applying a deception](catalog.md#applying-a-deception) name the URLs and host names of its honeytokens. Honeytokens and scenarios are part of the inventory: give integrations that only follow incidents or read the audit log, such as a SIEM, keys without the honeytoken and scenario scopes, and integrations that do not need client addresses keys without `events:read`. Keys never manage accounts, keys or [alert channels](alerting.md), not even by reading them: a key with access to the channels could redirect or stop the alerts.
+  A scope to write requires the scope to read the same resource, because a key that changes a resource receives it in the responses. `scenarios:read` and `artifacts:read` require `honeytokens:read`, because the [guide](scenarios.md#scenarios-of-a-deception) of a scenario, the answer to [applying a deception](catalog.md#applying-a-deception) and the content of an [artifact](artifacts.md) name the URLs and host names of honeytokens. Honeytokens, scenarios and artifacts are part of the inventory: give integrations that only follow incidents or read the audit log, such as a SIEM, keys without the honeytoken, scenario and artifact scopes, and integrations that do not need client addresses keys without `events:read`. Keys never manage accounts, keys or [alert channels](alerting.md), not even by reading them: a key with access to the channels could redirect or stop the alerts.
 - **Expiry.** Every key expires, at the latest three years after it is created. There is no default; choose a period that suits the integration and your rotation policy. Nyktus does not yet remind anyone before a key expires.
 - **Limit.** The team has at most 50 keys that have not expired. Creating a key deletes the expired keys, and the [worker](database.md#periodic-tasks) deletes them within five minutes after they expire.
 - **Password.** A wrong password counts as a failed sign-in, as with a change of password.

@@ -35,6 +35,7 @@ var Actions = []Action{
 	ActionArtifactCreate,
 	ActionArtifactUpdate,
 	ActionArtifactDelete,
+	ActionArtifactsRead,
 	ActionAlertChannelCreate,
 	ActionAlertChannelUpdate,
 	ActionAlertChannelDelete,
