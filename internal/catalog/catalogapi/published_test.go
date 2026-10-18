@@ -26,9 +26,8 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the published catalog from the embedded catalog")
 
-// publishedPath is the published catalog. The documentation serves it, and
-// readers without access to the API, such as an AI assistant in a chat, read
-// it in place of the API.
+// publishedPath is the published catalog, for readers without access to the
+// API, such as the documentation or an AI assistant in a chat.
 const publishedPath = "../../../docs/public/deception-catalog.json"
 
 // publishedVersion is the version of the format of the published catalog.
@@ -57,9 +56,9 @@ type reference struct {
 // chat. Unlike an artifact, it is not placed as a decoy, so it credits its
 // sources.
 var notice = []string{
-	"The deceptions of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License; see catalog/LICENSE in the repository of Nyktus.",
-	"Names of techniques from MITRE ATT&CK(R) Enterprise: (c) 2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. ATT&CK(R) is a registered trademark of The MITRE Corporation.",
-	"Names of activities from MITRE Engage(TM): (c) 2021 The MITRE Corporation. Licensed under the Apache License, Version 2.0. MITRE Engage(TM) is a trademark of The MITRE Corporation.",
+	"The deceptions of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License: https://creativecommons.org/licenses/by-sa/4.0/",
+	"Names of techniques from MITRE ATT&CK(R) Enterprise: (c) 2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. ATT&CK(R) is a registered trademark of The MITRE Corporation. Terms of use: https://attack.mitre.org/resources/legal-and-branding/terms-of-use/",
+	"Names of activities from MITRE Engage(TM): (c) 2021 The MITRE Corporation. Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0. MITRE Engage(TM) is a trademark of The MITRE Corporation.",
 }
 
 // publish returns the published catalog of c. It asks the handler that
@@ -117,8 +116,10 @@ func publish(t *testing.T, c *catalog.Catalog) []byte {
 // the embedded catalog, so that it cannot differ from the API. A changed,
 // added or removed deception changes it. Regenerate it with
 // go test ./internal/catalog/... -update and review the diff.
+//
+// The test does not run in parallel, so that it has rewritten the file
+// before the parallel tests read it.
 func TestPublishedCatalog_MatchesTheEmbeddedCatalog(t *testing.T) {
-	t.Parallel()
 	c, err := catalog.Load(embedded.Deceptions())
 	if err != nil {
 		t.Fatal(err)

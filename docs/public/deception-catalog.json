@@ -2,9 +2,9 @@
   "schema_version": 1,
   "license": "CC-BY-SA-4.0",
   "notice": [
-    "The deceptions of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License; see catalog/LICENSE in the repository of Nyktus.",
-    "Names of techniques from MITRE ATT&CK(R) Enterprise: (c) 2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. ATT&CK(R) is a registered trademark of The MITRE Corporation.",
-    "Names of activities from MITRE Engage(TM): (c) 2021 The MITRE Corporation. Licensed under the Apache License, Version 2.0. MITRE Engage(TM) is a trademark of The MITRE Corporation."
+    "The deceptions of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License: https://creativecommons.org/licenses/by-sa/4.0/",
+    "Names of techniques from MITRE ATT&CK(R) Enterprise: (c) 2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. ATT&CK(R) is a registered trademark of The MITRE Corporation. Terms of use: https://attack.mitre.org/resources/legal-and-branding/terms-of-use/",
+    "Names of activities from MITRE Engage(TM): (c) 2021 The MITRE Corporation. Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0. MITRE Engage(TM) is a trademark of The MITRE Corporation."
   ],
   "attack_version": "19.2",
   "engage_version": "1.0",

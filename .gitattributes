@@ -14,3 +14,4 @@ internal/catalog/testdata/golden/** -text
 go.sum            linguist-generated
 package-lock.json linguist-generated
 internal/attack/techniques.json linguist-generated
+docs/public/deception-catalog.json linguist-generated

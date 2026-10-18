@@ -57,7 +57,7 @@ The repository holds the catalog of every release as a file as well, `docs/publi
 | Member | Content |
 |---|---|
 | `schema_version` | `1`, the version of the format of the file. |
-| `license`, `notice` | The license of the catalog, CC BY-SA 4.0, and the notices of MITRE ATT&CK and MITRE Engage. Keep them when you pass the file on. |
+| `license`, `notice` | The license of the deceptions, CC BY-SA 4.0, and the notices and licenses of the deceptions and of the names from MITRE ATT&CK and MITRE Engage. Keep them when you pass the file on. |
 | `attack_version`, `engage_version` | The versions of ATT&CK and Engage that the identifiers come from. |
 | `techniques`, `engage_activities` | The name of every technique and activity that the deceptions use, by identifier, such as `{"T1021.004": {"name": "Remote Services: SSH"}}`. |
 | `deceptions` | By language, `en` and `de`, every deception as `GET /api/v1/catalog/deceptions/<id>?lang=<language>` returns it, ordered by identifier. |
