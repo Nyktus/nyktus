@@ -1,0 +1,647 @@
+{
+  "schema_version": 1,
+  "license": "CC-BY-SA-4.0",
+  "notice": [
+    "The deceptions of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License; see catalog/LICENSE in the repository of Nyktus.",
+    "Names of techniques from MITRE ATT&CK(R) Enterprise: (c) 2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. ATT&CK(R) is a registered trademark of The MITRE Corporation.",
+    "Names of activities from MITRE Engage(TM): (c) 2021 The MITRE Corporation. Licensed under the Apache License, Version 2.0. MITRE Engage(TM) is a trademark of The MITRE Corporation."
+  ],
+  "attack_version": "19.2",
+  "engage_version": "1.0",
+  "techniques": {
+    "T1005": {
+      "name": "Data from Local System"
+    },
+    "T1021.001": {
+      "name": "Remote Services: Remote Desktop Protocol"
+    },
+    "T1021.004": {
+      "name": "Remote Services: SSH"
+    },
+    "T1039": {
+      "name": "Data from Network Shared Drive"
+    },
+    "T1078": {
+      "name": "Valid Accounts"
+    },
+    "T1083": {
+      "name": "File and Directory Discovery"
+    },
+    "T1217": {
+      "name": "Browser Information Discovery"
+    },
+    "T1552.001": {
+      "name": "Unsecured Credentials: Credentials In Files"
+    }
+  },
+  "engage_activities": {
+    "EAC0005": {
+      "name": "Lures"
+    },
+    "EAC0011": {
+      "name": "Pocket Litter"
+    }
+  },
+  "deceptions": {
+    "de": [
+      {
+        "id": "browser-bookmarks",
+        "category": "data",
+        "title": "Browser-Lesezeichen",
+        "summary": "Ein Export von Browser-Lesezeichen mit einem Link auf ein internes Portal. Wer dem Link folgt, ruft die URL eines Honeytokens auf.",
+        "techniques": [
+          "T1217"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Portal",
+            "type": "web_url",
+            "label": "Portal",
+            "techniques": [
+              "T1217"
+            ],
+            "severity": "medium"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name der Organisation",
+            "example": "Example Ltd"
+          },
+          {
+            "key": "PortalName",
+            "kind": "text",
+            "label": "Name des Portals",
+            "example": "VPN self-service"
+          }
+        ],
+        "secrets": [],
+        "artifacts": [
+          {
+            "key": "bookmarks",
+            "file_name": "bookmarks.html",
+            "format": "html"
+          }
+        ]
+      },
+      {
+        "id": "config-file",
+        "category": "application",
+        "title": "Konfigurationsdatei mit Datenbank-Zugangsdaten",
+        "summary": "Die INI-Datei einer Anwendung mit Host-Name, Konto und Passwort ihrer Datenbank. Wer sich damit verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "techniques": [
+          "T1552.001"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Database",
+            "type": "dns",
+            "label": "Datenbank-Host",
+            "techniques": [
+              "T1552.001",
+              "T1078"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name der Datenbank",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Datenbankkonto",
+            "example": "billing_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "config",
+            "file_name": "config.ini",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "netrc",
+        "category": "identity",
+        "title": "Zugangsdaten in einer .netrc-Datei",
+        "summary": "Eine .netrc-Datei mit Konto und Passwort für einen Host, wie curl, Git und FTP-Clients sie lesen. Wer die Zugangsdaten nutzt, löst den Namen eines DNS-Honeytokens auf.",
+        "techniques": [
+          "T1552.001"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Host",
+            "type": "dns",
+            "label": "Host",
+            "techniques": [
+              "T1552.001",
+              "T1078"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "deploy"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "netrc",
+            "file_name": "netrc",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "rdp-connection",
+        "category": "network",
+        "title": "Remotedesktopverbindung",
+        "summary": "Eine gespeicherte Remotedesktopverbindung zu einem Server, mit dem Konto für die Anmeldung. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "techniques": [
+          "T1021.001"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Server",
+            "type": "dns",
+            "label": "Server",
+            "techniques": [
+              "T1021.001"
+            ],
+            "severity": "medium"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Domain des Kontos",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "adm.jdoe"
+          }
+        ],
+        "secrets": [],
+        "artifacts": [
+          {
+            "key": "connection",
+            "file_name": "Server.rdp",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "ssh-config",
+        "category": "network",
+        "title": "SSH-Konfiguration mit Jump-Host",
+        "summary": "Eine SSH-Client-Konfiguration, die die Hosts einer Domain über einen Jump-Host erreicht. Jede Verbindung zu einem von ihnen löst den Namen des Jump-Hosts auf.",
+        "techniques": [
+          "T1021.004"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "JumpHost",
+            "type": "dns",
+            "label": "Jump-Host",
+            "techniques": [
+              "T1021.004"
+            ],
+            "severity": "medium"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Interne Domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "j.doe"
+          }
+        ],
+        "secrets": [],
+        "artifacts": [
+          {
+            "key": "config",
+            "file_name": "config",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "windows-shortcut",
+        "category": "endpoint",
+        "title": "Internetverknüpfung",
+        "summary": "Eine Windows-Verknüpfung zu einer Webseite. Wer sie öffnet, ruft die URL eines Honeytokens auf, die den Browser auf eine Seite Ihrer Wahl weiterleitet.",
+        "techniques": [
+          "T1083"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Link",
+            "type": "web_url",
+            "label": "Link",
+            "techniques": [
+              "T1083"
+            ],
+            "severity": "medium"
+          }
+        ],
+        "persona": [],
+        "secrets": [],
+        "artifacts": [
+          {
+            "key": "shortcut",
+            "file_name": "Portal.url",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "word-image",
+        "category": "data",
+        "title": "Verknüpftes Bild in einem Word-Dokument",
+        "summary": "Ein eigenes Dokument, das ein unsichtbares Bild verknüpft. Word lädt das Bild, wenn jemand das Dokument öffnet und die Bearbeitung aktiviert, auch auf dem Rechner eines Eindringlings, der es kopiert hat.",
+        "techniques": [
+          "T1005",
+          "T1039"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Image",
+            "type": "web_image",
+            "label": "Bild",
+            "techniques": [
+              "T1005",
+              "T1039"
+            ],
+            "severity": "low"
+          }
+        ],
+        "persona": [],
+        "secrets": [],
+        "artifacts": []
+      }
+    ],
+    "en": [
+      {
+        "id": "browser-bookmarks",
+        "category": "data",
+        "title": "Browser bookmarks",
+        "summary": "An export of browser bookmarks with a link to an internal portal. Following the link requests the URL of a honeytoken.",
+        "techniques": [
+          "T1217"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Portal",
+            "type": "web_url",
+            "label": "Portal",
+            "techniques": [
+              "T1217"
+            ],
+            "severity": "medium"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name of the organization",
+            "example": "Example Ltd"
+          },
+          {
+            "key": "PortalName",
+            "kind": "text",
+            "label": "Name of the portal",
+            "example": "VPN self-service"
+          }
+        ],
+        "secrets": [],
+        "artifacts": [
+          {
+            "key": "bookmarks",
+            "file_name": "bookmarks.html",
+            "format": "html"
+          }
+        ]
+      },
+      {
+        "id": "config-file",
+        "category": "application",
+        "title": "Configuration file with database credentials",
+        "summary": "The INI file of an application with the host name, account and password of its database. Connecting with them resolves the name of a DNS honeytoken.",
+        "techniques": [
+          "T1552.001"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Database",
+            "type": "dns",
+            "label": "Database host",
+            "techniques": [
+              "T1552.001",
+              "T1078"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name of the database",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Database account",
+            "example": "billing_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "config",
+            "file_name": "config.ini",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "netrc",
+        "category": "identity",
+        "title": "Credentials in a .netrc file",
+        "summary": "A .netrc file with an account and password for a host, as curl, Git and FTP clients read it. Using the credentials resolves the name of a DNS honeytoken.",
+        "techniques": [
+          "T1552.001"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Host",
+            "type": "dns",
+            "label": "Host",
+            "techniques": [
+              "T1552.001",
+              "T1078"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "deploy"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "netrc",
+            "file_name": "netrc",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "rdp-connection",
+        "category": "network",
+        "title": "Remote Desktop connection",
+        "summary": "A saved Remote Desktop connection to a server, with the account to sign in with. Connecting resolves the name of a DNS honeytoken.",
+        "techniques": [
+          "T1021.001"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Server",
+            "type": "dns",
+            "label": "Server",
+            "techniques": [
+              "T1021.001"
+            ],
+            "severity": "medium"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Domain of the account",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "adm.jdoe"
+          }
+        ],
+        "secrets": [],
+        "artifacts": [
+          {
+            "key": "connection",
+            "file_name": "Server.rdp",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "ssh-config",
+        "category": "network",
+        "title": "SSH configuration with a jump host",
+        "summary": "An SSH client configuration that reaches the hosts of a domain through a jump host. Every connection to one of them resolves the name of the jump host.",
+        "techniques": [
+          "T1021.004"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "JumpHost",
+            "type": "dns",
+            "label": "Jump host",
+            "techniques": [
+              "T1021.004"
+            ],
+            "severity": "medium"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Internal domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "j.doe"
+          }
+        ],
+        "secrets": [],
+        "artifacts": [
+          {
+            "key": "config",
+            "file_name": "config",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "windows-shortcut",
+        "category": "endpoint",
+        "title": "Internet shortcut",
+        "summary": "A Windows shortcut to a web page. Opening it requests the URL of a honeytoken, which redirects the browser to a page of your choice.",
+        "techniques": [
+          "T1083"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Link",
+            "type": "web_url",
+            "label": "Link",
+            "techniques": [
+              "T1083"
+            ],
+            "severity": "medium"
+          }
+        ],
+        "persona": [],
+        "secrets": [],
+        "artifacts": [
+          {
+            "key": "shortcut",
+            "file_name": "Portal.url",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "word-image",
+        "category": "data",
+        "title": "Linked image in a Word document",
+        "summary": "A document of your own that links an invisible image. Word loads the image when someone opens the document and enables editing, also on the computer of an intruder who copied it.",
+        "techniques": [
+          "T1005",
+          "T1039"
+        ],
+        "engage_activities": [
+          "EAC0005",
+          "EAC0011"
+        ],
+        "honeytokens": [
+          {
+            "key": "Image",
+            "type": "web_image",
+            "label": "Image",
+            "techniques": [
+              "T1005",
+              "T1039"
+            ],
+            "severity": "low"
+          }
+        ],
+        "persona": [],
+        "secrets": [],
+        "artifacts": []
+      }
+    ]
+  }
+}
