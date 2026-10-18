@@ -54,7 +54,7 @@ Trigger endpoints receive requests for honeytokens. Their responses must not tel
 - **Recording outlives the client.** The database call runs with its own deadline, detached from the request, so a client that closes the connection right away cannot keep its request from being recorded.
 - **Startup check.** Outside development, the trigger refuses to start unless its login can execute the recording function and nothing else: no table, no other function, no `CREATE` on the schema, and no membership in another role, counted with `MEMBER` because a member that does not inherit can still `SET ROLE`. A login of the console, set up by mistake, never reaches the internet-facing host.
 - **One process, all roles.** A process that runs several roles issues the setup token only after every role has started, so that a role that fails to start leaves no valid token behind.
-- **Bounded recording.** At most a fixed number of events per honeytoken and minute is stored; further requests are counted in memory and logged. Header values are cut to fixed lengths and stripped of control characters before they are stored, and the path, which holds the value, never reaches the log.
+- **Bounded recording.** At most a fixed number of events per honeytoken and minute is stored; further requests are counted in memory and logged. Header values are cut to fixed lengths and stripped of characters that are not graphic (control characters, line separators, characters that reorder or hide text) before they are stored, and the path, which holds the value, never reaches the log.
 
 ### DNS
 

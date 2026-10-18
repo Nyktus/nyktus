@@ -1352,7 +1352,10 @@ CREATE TABLE public.events (
 	method          text,
 	-- Headers of the request. Whoever sends a request chooses them, so they are
 	-- untrusted: they describe what the client claimed, not what it is. The
-	-- trigger shortens them and replaces control characters.
+	-- trigger shortens them and replaces every character that is not graphic.
+	-- The checks below refuse control characters, line separators and the
+	-- format characters that reorder or hide text, in case a compromised
+	-- trigger skips that.
 	user_agent      text NOT NULL DEFAULT '',
 	referer         text NOT NULL DEFAULT '',
 	accept_language text NOT NULL DEFAULT '',
@@ -1396,13 +1399,13 @@ CREATE TABLE public.events (
 	-- Only requests that read a honeytoken are recorded.
 	CONSTRAINT events_method_check CHECK (method IN ('GET', 'HEAD')),
 	CONSTRAINT events_user_agent_check CHECK (
-		octet_length(user_agent) <= 512 AND user_agent !~ '[\x01-\x1f\x7f]'
+		octet_length(user_agent) <= 512 AND user_agent !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]'
 	),
 	CONSTRAINT events_referer_check CHECK (
-		octet_length(referer) <= 1024 AND referer !~ '[\x01-\x1f\x7f]'
+		octet_length(referer) <= 1024 AND referer !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]'
 	),
 	CONSTRAINT events_accept_language_check CHECK (
-		octet_length(accept_language) <= 128 AND accept_language !~ '[\x01-\x1f\x7f]'
+		octet_length(accept_language) <= 128 AND accept_language !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]'
 	),
 	CONSTRAINT events_dns_zone_check CHECK (
 		octet_length(dns_zone) <= 200 AND dns_zone ~ '^[a-z0-9-]+(\.[a-z0-9-]+)+$'

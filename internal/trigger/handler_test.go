@@ -368,6 +368,10 @@ func TestTrigger_RecordingOutlivesTheClient(t *testing.T) {
 func TestUntrusted(t *testing.T) {
 	t.Parallel()
 
+	// Written as code points, so that no invisible character sits in the source.
+	ch := func(cps ...rune) string { return string(cps) }
+	bad := string(utf8.RuneError)
+
 	tests := []struct {
 		name, in string
 		maxBytes int
@@ -375,6 +379,12 @@ func TestUntrusted(t *testing.T) {
 	}{
 		{name: "plain", in: "Mozilla/5.0", maxBytes: 512, want: "Mozilla/5.0"},
 		{name: "control characters", in: "a\x00b\tc\nd\x7fe", maxBytes: 512, want: "a\uFFFDb\uFFFDc\uFFFDd\uFFFDe"},
+		{name: "C1 control character", in: "a" + ch(0x85) + "b", maxBytes: 512, want: "a" + bad + "b"},
+		{name: "line and paragraph separators", in: "a" + ch(0x2028, 0x2029) + "b", maxBytes: 512, want: "a" + bad + bad + "b"},
+		{name: "override of the writing direction", in: "https://" + ch(0x202e) + "moc.elpmaxe", maxBytes: 512, want: "https://" + bad + "moc.elpmaxe"},
+		{name: "isolates of the writing direction", in: ch(0x2066, 0x2069), maxBytes: 512, want: bad + bad},
+		{name: "invisible characters", in: "a" + ch(0xad, 0x200b, 0xfeff) + "b", maxBytes: 512, want: "a" + bad + bad + bad + "b"},
+		{name: "printable text of other scripts stays", in: "Mozilla " + ch(0xa0) + ch(0x4e2d, 0x6587) + " " + ch(0x1f600), maxBytes: 512, want: "Mozilla " + ch(0xa0) + ch(0x4e2d, 0x6587) + " " + ch(0x1f600)},
 		{name: "invalid UTF-8", in: "a\xff\xfeb", maxBytes: 512, want: "a\uFFFDb"},
 		{name: "cut", in: strings.Repeat("a", 600), maxBytes: 512, want: strings.Repeat("a", 512)},
 		{name: "cut before a character", in: "a\u00e4", maxBytes: 2, want: "a"},

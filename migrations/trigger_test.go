@@ -148,6 +148,65 @@ func TestTriggerRole_HasNoPrivilegesBeyondItsFunction(t *testing.T) {
 	}
 }
 
+// The schema is the last line of defense for the headers of an event: a
+// compromised trigger cannot store what hides or reorders text, even though
+// the trigger replaces it. Code points are built at run time, so that no
+// invisible character sits in the source.
+func TestSchema_ChecksHeadersOfEvents(t *testing.T) {
+	t.Parallel()
+
+	pool := schematest.Open(t, schematest.New(t))
+	const insert = `INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method,
+	user_agent, referer, accept_language) VALUES ('honeytoken', gen_random_uuid(), 'web_url', 'medium', now(), now(), 'http', 'GET', $1, $2, $3)`
+	headers := func(i int, v string) []any {
+		args := []any{"", "", ""}
+		args[i] = v
+		return args
+	}
+	columns := []struct{ name, constraint string }{
+		{"user agent", "events_user_agent_check"},
+		{"referer", "events_referer_check"},
+		{"accept language", "events_accept_language_check"},
+	}
+	refused := []struct {
+		name string
+		cp   rune
+	}{
+		{"control character", 0x01},
+		{"delete", 0x7f},
+		{"C1 control character", 0x85},
+		{"soft hyphen", 0xad},
+		{"arabic letter mark", 0x61c},
+		{"mongolian vowel separator", 0x180e},
+		{"zero width space", 0x200b},
+		{"right-to-left mark", 0x200f},
+		{"line separator", 0x2028},
+		{"paragraph separator", 0x2029},
+		{"right-to-left override", 0x202e},
+		{"word joiner", 0x2060},
+		{"isolate", 0x2066},
+		{"deprecated format character", 0x206f},
+		{"byte order mark", 0xfeff},
+		{"interlinear annotation", 0xfff9},
+	}
+	for i, col := range columns {
+		for _, r := range refused {
+			_, err := pool.Exec(t.Context(), insert, headers(i, "a"+string(r.cp)+"b")...)
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != "23514" || pgErr.ConstraintName != col.constraint {
+				t.Errorf("%s with %s: error = %v, want a violation of %s", col.name, r.name, err, col.constraint)
+			}
+		}
+		// What people write in other scripts and emoji must pass, as must the
+		// characters next to the refused ranges.
+		for _, ok := range []string{"Mozilla/5.0", string([]rune{0x4e2d, 0x6587, 0x1f600}), string([]rune{0xa0, 0xae, 0x2027, 0x202f, 0x2070, 0xfffc})} {
+			if _, err := pool.Exec(t.Context(), insert, headers(i, ok)...); err != nil {
+				t.Errorf("%s %q: %v", col.name, ok, err)
+			}
+		}
+	}
+}
+
 // Default privileges that an operator set for the owner also apply when they
 // name the trigger's group role. The migration must remove them, including on the
 // table of the migration runner, which exists before the migration runs.
