@@ -22,7 +22,7 @@ func TestEmbeddedList_IsConsistent(t *testing.T) {
 	if err := json.Unmarshal(data, &l); err != nil {
 		t.Fatalf("parse embedded list: %v", err)
 	}
-	if !regexp.MustCompile(`^[0-9]+\.[0-9]+$`).MatchString(l.Version) || l.Version != version {
+	if !regexp.MustCompile(`^[0-9]+\.[0-9]+$`).MatchString(l.Version) || l.Version != Version() {
 		t.Errorf("version = %q, want a version such as 19.2", l.Version)
 	}
 	// ATT&CK Enterprise has had several hundred techniques for years. A short

@@ -25,7 +25,7 @@ func TestEmbeddedList_IsConsistent(t *testing.T) {
 	if err := json.Unmarshal(data, &l); err != nil {
 		t.Fatalf("parse embedded list: %v", err)
 	}
-	if !regexp.MustCompile(`^[0-9]+\.[0-9]+$`).MatchString(l.Version) || l.Version != version {
+	if !regexp.MustCompile(`^[0-9]+\.[0-9]+$`).MatchString(l.Version) || l.Version != Version() {
 		t.Errorf("version = %q, want a version such as 1.0", l.Version)
 	}
 	// Engage 1.0 has 23 engagement activities. A shorter list means that the

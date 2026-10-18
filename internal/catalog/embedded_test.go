@@ -53,7 +53,7 @@ func goldenValues(d catalog.Deception) map[string]string {
 
 // Every artifact and guide of the embedded catalog is compared with its
 // golden file, so that a change of a template shows as a diff of what
-// operators receive. Regenerate them with go test ./internal/catalog -update.
+// operators receive. Regenerate them with go test ./internal/catalog/... -update.
 func TestEmbeddedCatalog_RendersTheGoldenFiles(t *testing.T) {
 	t.Parallel()
 
@@ -110,11 +110,11 @@ func TestEmbeddedCatalog_RendersTheGoldenFiles(t *testing.T) {
 			}
 			golden, err := os.ReadFile(path) //nolint:gosec // A golden file of this test.
 			if err != nil {
-				t.Errorf("%s: %v; run go test ./internal/catalog -update", path, err)
+				t.Errorf("%s: %v; run go test ./internal/catalog/... -update", path, err)
 				continue
 			}
 			if !bytes.Equal(got, golden) {
-				t.Errorf("%s differs from the rendered file; run go test ./internal/catalog -update and review the diff\ngot:\n%s", path, got)
+				t.Errorf("%s differs from the rendered file; run go test ./internal/catalog/... -update and review the diff\ngot:\n%s", path, got)
 			}
 		}
 	}

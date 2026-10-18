@@ -50,6 +50,18 @@ curl --fail-with-body 'https://nyktus.example.com/api/v1/catalog/deceptions/ssh-
 | `secrets` | Random values, such as passwords, that Nyktus generates when you apply the deception. |
 | `artifacts` | The files that the deception renders. A deception without artifacts consists of its guide, for example because you write the document yourself. |
 
+### The catalog as a file
+
+The repository holds the catalog of every release as a file as well, `docs/public/deception-catalog.json`, for readers that do not reach the API of an installation, such as the documentation or an AI assistant in a chat that helps you plan scenarios. It is generated from the catalog that the release embeds, and a test keeps it equal to what the console of that release returns. Like the API, it says what deceptions exist, nothing about the ones you use.
+
+| Member | Content |
+|---|---|
+| `schema_version` | `1`, the version of the format of the file. |
+| `license`, `notice` | The license of the deceptions, CC BY-SA 4.0, and the notices and licenses of the deceptions and of the names from MITRE ATT&CK and MITRE Engage. Keep them when you pass the file on. |
+| `attack_version`, `engage_version` | The versions of ATT&CK and Engage that the identifiers come from. |
+| `techniques`, `engage_activities` | The name of every technique and activity that the deceptions use, by identifier, such as `{"T1021.004": {"name": "Remote Services: SSH"}}`. |
+| `deceptions` | By language, `en` and `de`, every deception as `GET /api/v1/catalog/deceptions/<id>?lang=<language>` returns it, ordered by identifier. |
+
 ## Applying a deception
 
 Applying a deception creates a [scenario](scenarios.md) with its honeytokens and its files, the artifacts, and renders its guide. Administrators and users with the role `user` apply deceptions, with a session or with an [API key](api-keys.md) that carries the scope `scenarios:write`; the permission covers the honeytokens and artifacts that applying creates.
