@@ -123,7 +123,7 @@ An event of the trigger holds:
 | Time | When the trigger recorded the request. |
 | Client address | The address of the client, as described in [Client addresses](configuration.md#client-addresses). |
 | Method | `GET` or `HEAD`. |
-| `User-Agent`, `Referer`, `Accept-Language` | The headers of the request, up to 512, 1024 and 128 bytes. Control characters and invalid characters are replaced. The client chooses these headers, so treat them as claims, not facts. The `Referer` often shows where an image was embedded. |
+| `User-Agent`, `Referer`, `Accept-Language` | The headers of the request, up to 512, 1024 and 128 bytes. Invalid characters and characters that are not printable, such as control characters, line separators, characters that change the writing direction and spaces other than the ordinary space, are replaced. The client chooses these headers, so treat them as claims, not facts. The `Referer` often shows where an image was embedded. |
 
 Nothing else is recorded: no body, no cookies, no other headers.
 
