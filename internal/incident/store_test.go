@@ -545,7 +545,13 @@ func TestStore_WaitBetweenAttemptsIsBounded(t *testing.T) {
 	if !errors.As(err, &jobErr) {
 		t.Fatalf("ProcessNext() error = %v, want a JobError", err)
 	}
-	if wait := time.Until(jobErr.Retry); wait > time.Hour || wait < 59*time.Minute {
+	// The database set the time with its own clock, which may run ahead of
+	// the clock of the test.
+	var seconds float64
+	if err := f.owner.QueryRow(t.Context(), `SELECT extract(epoch FROM $1::timestamptz - clock_timestamp())`, jobErr.Retry).Scan(&seconds); err != nil {
+		t.Fatal(err)
+	}
+	if wait := time.Duration(seconds * float64(time.Second)); wait > time.Hour || wait < 59*time.Minute {
 		t.Errorf("job due again in %v, want an hour", wait)
 	}
 }
