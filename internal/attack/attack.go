@@ -42,7 +42,7 @@ type list struct {
 
 // The list is parsed once when the program starts. Tests check the embedded
 // data, so a failure here is a build mistake. version is the version of ATT&CK
-// Enterprise that the list comes from, such as "19.2".
+// Enterprise that the list comes from, such as "20.0".
 var version, techniques = mustLoad(data)
 
 func mustLoad(b []byte) (string, map[string]Technique) {
@@ -66,7 +66,7 @@ func Lookup(id string) (Technique, bool) {
 }
 
 // Version returns the version of ATT&CK Enterprise that the list comes from,
-// such as "19.2".
+// such as "20.0".
 func Version() string {
 	return version
 }
