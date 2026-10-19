@@ -74,7 +74,7 @@ An event belongs to the scenario its honeytoken belonged to when the event was r
 
 ## Who can read scenarios
 
-Every role reads scenarios; `admin` and `user` create, change and delete them. [API keys](api-keys.md) carry the scopes `scenarios:read` and `scenarios:write`; the second requires the first. Deleting a scenario with its honeypots needs `scenarios:write` only, as it does with its honeytokens.
+Every role reads scenarios; `admin` and `user` create, change and delete them. [API keys](api-keys.md) carry the scopes `scenarios:read` and `scenarios:write`; the second requires the first. Deleting a scenario with `honeypots=delete` also needs `honeypots:write`, because honeypots join a scenario only through that permission; without it, the request receives `403`. `honeypots=keep` needs `scenarios:write` only.
 
 Names, notes, persona and guides of scenarios are part of the inventory: they tell where decoys are placed and what they are called. Give integrations that do not manage scenarios keys without these scopes.
 

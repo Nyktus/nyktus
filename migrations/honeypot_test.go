@@ -37,6 +37,11 @@ func TestApply_VerifiesThePrivilegesOfTheConsoleOnHoneypots(t *testing.T) {
 			want:        "nyktus_console has more privileges on public.honeypots than granted",
 		},
 		{
+			name:        "trigger function executable by the console",
+			replacement: grant + " GRANT EXECUTE ON FUNCTION public.honeypots_clear_report() TO nyktus_console;",
+			want:        "nyktus_console has more privileges on public.honeypots than granted",
+		},
+		{
 			name:        "report written by the console",
 			replacement: grant + " GRANT UPDATE (last_seen_at) ON public.honeypots TO nyktus_console;",
 			want:        "nyktus_console has more privileges on public.honeypots than granted",

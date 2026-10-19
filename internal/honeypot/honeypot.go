@@ -78,8 +78,9 @@ const (
 var Statuses = []Status{StatusNever, StatusOnline, StatusOffline}
 
 // OfflineAfter is how long after its last report a honeypot counts as
-// offline: three missed heartbeats of a sensor, which reports every five
-// minutes. The store evaluates it in SQL against the clock of the database.
+// offline: three intervals of the heartbeat of a sensor, which reports every
+// five minutes, so that a single lost or late heartbeat never makes it
+// offline. The store evaluates it in SQL against the clock of the database.
 const OfflineAfter = 15 * time.Minute
 
 // Limits of the fields of a honeypot, as the database enforces them.

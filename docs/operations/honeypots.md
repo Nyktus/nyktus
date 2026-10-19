@@ -112,7 +112,7 @@ A honeypot can belong to a [scenario](scenarios.md), like a honeytoken. Its `sce
 - A honeypot that belongs to another scenario receives `409` with the code `honeypot_in_scenario`. Remove it from that scenario first, so that nothing takes a honeypot from a scenario by mistake.
 - A scenario that does not exist receives `422` with the code `scenario_not_found`.
 
-Changing the scenario of a honeypot needs the permission `honeypots:write` only. Deleting a scenario keeps its honeypots unless you ask to delete them; see [Listing, changing and deleting](scenarios.md#listing-changing-and-deleting) of scenarios.
+Changing the scenario of a honeypot needs the permission `honeypots:write` only. Deleting a scenario keeps its honeypots unless you ask to delete them, which needs `honeypots:write` as well; see [Listing, changing and deleting](scenarios.md#listing-changing-and-deleting) of scenarios.
 
 ## Who can read honeypots
 

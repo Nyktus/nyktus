@@ -69,11 +69,12 @@ func NewStore(q db.Querier) *Store {
 // no caller needs, and with its status, which the database derives from its
 // last report with its own clock, so that every console process agrees and
 // tests move the stored time instead of a clock. A honeypot is offline after
-// OfflineAfter.
+// OfflineAfter, measured from the start of the statement, so that every
+// honeypot of a page is judged at the same time.
 var columns = `id, service, name, notes, enabled, techniques, severity, scenario_id, last_seen_at, sensor_version,
 CASE
 	WHEN last_seen_at IS NULL THEN 'never'
-	WHEN last_seen_at > clock_timestamp() - interval '` + strconv.Itoa(int(OfflineAfter/time.Second)) + ` seconds' THEN 'online'
+	WHEN last_seen_at > statement_timestamp() - interval '` + strconv.Itoa(int(OfflineAfter/time.Second)) + ` seconds' THEN 'online'
 	ELSE 'offline'
 END,
 created_at, updated_at`

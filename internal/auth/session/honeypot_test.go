@@ -112,3 +112,65 @@ SELECT count(*) FROM audit_entries WHERE action = 'honeypot.create' AND outcome 
 		t.Errorf("%d creations by the key recorded, want 1", n)
 	}
 }
+
+// Deleting a scenario with its honeypots needs honeypots:write as well, because
+// only that permission puts a honeypot into a scenario. A key that manages
+// scenarios but not honeypots can still delete the scenario and keep its
+// honeypots. The denial comes before the scenario is looked up and is recorded.
+func TestScenarioDeletion_DeletesHoneypotsOnlyWithTheirPermission(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDB(t)
+	createUser(t, d, "ada@example.com", "admin", "active", testPassword)
+	srv := startConsole(t, d)
+	admin := mustSignIn(t, srv)
+	body := mustJSON(t, map[string]any{
+		"name": "scenarios", "scopes": []string{"scenarios:write", "scenarios:read", "honeytokens:read"},
+		"password": testPassword, "expires_at": time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+	})
+	r := send(t, srv, http.MethodPost, "/api/v1/api-keys", body, admin, nil)
+	key, _ := r.body["key"].(string)
+	if r.status != http.StatusCreated || key == "" {
+		t.Fatalf("create key: %d %v", r.status, r.body)
+	}
+	scenarios := bearer(key)
+
+	scenarioWithHoneypot := func() (string, string) {
+		t.Helper()
+		sc := send(t, srv, http.MethodPost, "/api/v1/scenarios", `{"name": "s"}`, admin, nil)
+		hp := send(t, srv, http.MethodPost, "/api/v1/honeypots", `{"service": "ssh", "name": "p"}`, admin, nil)
+		scID, _ := sc.body["id"].(string)
+		hpID, _ := hp.body["id"].(string)
+		if put := send(t, srv, http.MethodPut, "/api/v1/honeypots/"+hpID+"/scenario", `{"scenario_id": "`+scID+`"}`, admin, nil); put.status != http.StatusOK {
+			t.Fatalf("assign: %d %v", put.status, put.body)
+		}
+		return scID, hpID
+	}
+
+	sc, hp := scenarioWithHoneypot()
+	for _, path := range []string{"/api/v1/scenarios/" + sc, "/api/v1/scenarios/00000000-0000-4000-8000-000000000000"} {
+		if r := send(t, srv, http.MethodDelete, path+"?honeypots=delete", "", nil, scenarios); r.status != http.StatusForbidden {
+			t.Errorf("DELETE %s?honeypots=delete with scenarios:write only = %d %v, want 403", path, r.status, r.body)
+		}
+	}
+	if n := d.count(t, `SELECT count(*) FROM honeypots WHERE id = $1 AND scenario_id = $2`, hp, sc); n != 1 {
+		t.Error("a denied deletion changed the honeypot")
+	}
+	if n := d.count(t, `SELECT count(*) FROM audit_entries WHERE action = 'honeypots.write' AND outcome = 'denied' AND actor_kind = 'api_key'`); n == 0 {
+		t.Error("the denied deletion is not recorded in the audit log")
+	}
+	if r := send(t, srv, http.MethodDelete, "/api/v1/scenarios/"+sc+"?honeypots=keep", "", nil, scenarios); r.status != http.StatusNoContent {
+		t.Errorf("DELETE ?honeypots=keep with scenarios:write = %d %v, want 204", r.status, r.body)
+	}
+	if n := d.count(t, `SELECT count(*) FROM honeypots WHERE id = $1 AND scenario_id IS NULL`, hp); n != 1 {
+		t.Error("the kept honeypot does not stand alone")
+	}
+
+	sc, hp = scenarioWithHoneypot()
+	if r := send(t, srv, http.MethodDelete, "/api/v1/scenarios/"+sc+"?honeypots=delete", "", admin, nil); r.status != http.StatusNoContent {
+		t.Errorf("DELETE ?honeypots=delete as admin = %d %v, want 204", r.status, r.body)
+	}
+	if n := d.count(t, `SELECT count(*) FROM honeypots WHERE id = $1`, hp); n != 0 {
+		t.Error("the honeypot was not deleted with its scenario")
+	}
+}

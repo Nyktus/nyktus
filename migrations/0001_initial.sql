@@ -1314,6 +1314,7 @@ BEGIN
 
 	IF has_table_privilege('nyktus_console', 'public.honeypots', 'INSERT, UPDATE, TRUNCATE, REFERENCES, TRIGGER')
 		OR has_any_column_privilege('nyktus_console', 'public.honeypots', 'REFERENCES')
+		OR has_function_privilege('nyktus_console', 'public.honeypots_clear_report()', 'EXECUTE')
 		OR EXISTS (
 			SELECT FROM unnest(ARRAY['id', 'scenario_id', 'last_seen_at', 'sensor_version', 'created_at',
 				'updated_at']) AS c (name)

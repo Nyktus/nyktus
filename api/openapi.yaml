@@ -2427,7 +2427,9 @@ paths:
         `artifacts` choose what happens to its honeytokens, honeypots and
         artifacts: `keep` removes them from the scenario, and they stand
         alone; `delete` deletes them with it. Events and incidents remain
-        either way.
+        either way. `honeypots=delete` also requires the permission
+        `honeypots:write`, because only that permission puts a honeypot into
+        a scenario; without it, the request receives `403`.
 
         The audit log records the deletion as `scenario.delete`, and each
         honeytoken, honeypot and artifact as `honeytoken.update`,
