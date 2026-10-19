@@ -1187,6 +1187,148 @@ BEGIN
 END
 $$;
 
+-- A honeypot is one network service that a sensor emulates in the monitored
+-- environment. The sensor authenticates with the secret of the honeypot, which
+-- the database keeps only as its SHA-256 hash. A sensor process may run several
+-- honeypots, each with its own secret, so that a captured secret reveals only
+-- its own honeypot.
+CREATE TABLE public.honeypots (
+	id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	-- A honeypot keeps its service: the sensor is configured for it.
+	service        text NOT NULL,
+	name           text NOT NULL,
+	-- Where and why the honeypot runs, for the team that cleans up or triages
+	-- an incident.
+	notes          text NOT NULL DEFAULT '',
+	enabled        boolean NOT NULL DEFAULT true,
+	-- The ATT&CK techniques that an event of the honeypot suggests, in
+	-- addition to those of the kind of event.
+	techniques     text[] NOT NULL DEFAULT '{}',
+	-- How urgently an event should be looked at, whatever the kind of event.
+	-- The console sets it on insert, to the default of the service unless
+	-- another one is chosen. Only an analyst judges an incident 'info'.
+	severity       text NOT NULL,
+	-- The SHA-256 hash of the secret of 256 random bits that the sensor
+	-- presents. A fast hash is enough for a value that cannot be guessed. A new
+	-- secret replaces the hash, so that the old one stops working at once.
+	secret_hash    bytea NOT NULL,
+	-- The scenario that the honeypot belongs to, or NULL if it stands alone.
+	-- Only a dedicated operation changes it, as for honeytokens, and the key
+	-- does not cascade for the same reason.
+	scenario_id    uuid CONSTRAINT honeypots_scenario_id_fkey REFERENCES public.scenarios (id),
+	-- When a sensor last reported for the honeypot, and the version it named.
+	-- The trigger below clears both when the secret is replaced, so that the
+	-- honeypot shows whether a sensor with the new secret has reported yet.
+	last_seen_at   timestamptz,
+	sensor_version text,
+	created_at     timestamptz NOT NULL DEFAULT clock_timestamp(),
+	-- Set by the trigger below on insert, as for accounts.
+	updated_at     timestamptz NOT NULL,
+
+	CONSTRAINT honeypots_service_check CHECK (service IN ('ssh', 'telnet', 'postgres', 'ldap')),
+	CONSTRAINT honeypots_name_check CHECK (
+		char_length(name) BETWEEN 1 AND 100
+		AND name = btrim(name)
+		AND name !~ '[\x01-\x1f\x7f]'
+	),
+	-- Notes may span several lines.
+	CONSTRAINT honeypots_notes_check CHECK (
+		char_length(notes) <= 2000
+		AND notes !~ '[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]'
+	),
+	CONSTRAINT honeypots_techniques_check CHECK (
+		cardinality(techniques) <= 20 AND public.attack_technique_ids_valid(techniques)
+	),
+	CONSTRAINT honeypots_severity_check CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+	CONSTRAINT honeypots_secret_hash_key UNIQUE (secret_hash),
+	CONSTRAINT honeypots_secret_hash_check CHECK (octet_length(secret_hash) = 32),
+	CONSTRAINT honeypots_last_seen_at_check CHECK (last_seen_at >= created_at),
+	-- The version that a sensor reports, such as 0.1.0 or 0.1.0-rc.1+abc.
+	CONSTRAINT honeypots_sensor_version_check CHECK (sensor_version ~ '^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$'),
+	CONSTRAINT honeypots_updated_at_check CHECK (updated_at >= created_at)
+);
+
+-- The console lists honeypots from the newest to the oldest, a page at a time,
+-- continuing after the last honeypot of the previous page.
+CREATE INDEX honeypots_created_at_id_idx ON public.honeypots (created_at DESC, id DESC);
+
+-- The console lists the honeypots of a scenario in the same order, and deletes
+-- or detaches them with the scenario.
+CREATE INDEX honeypots_scenario_id_created_at_id_idx ON public.honeypots (scenario_id, created_at DESC, id DESC);
+
+CREATE TRIGGER honeypots_set_updated_at
+	BEFORE INSERT ON public.honeypots
+	FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- What a sensor reported with the old secret says nothing about the new one.
+-- Clearing it here keeps the console from writing the report itself, so that
+-- it can never make a honeypot look online.
+CREATE FUNCTION public.honeypots_clear_report() RETURNS trigger
+	LANGUAGE plpgsql
+	SET search_path = ''
+AS $$
+BEGIN
+	NEW.last_seen_at := NULL;
+	NEW.sensor_version := NULL;
+	RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER honeypots_clear_report
+	BEFORE UPDATE OF secret_hash ON public.honeypots
+	FOR EACH ROW WHEN (NEW.secret_hash IS DISTINCT FROM OLD.secret_hash)
+	EXECUTE FUNCTION public.honeypots_clear_report();
+
+-- Default privileges set by an operator could grant more than this migration
+-- intends, so everything is revoked before the grants.
+REVOKE ALL ON public.honeypots FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.honeypots_clear_report() FROM PUBLIC, nyktus_console;
+
+-- The console creates, lists, changes and deletes honeypots, assigns them to
+-- scenarios and replaces their secrets; it cannot change the service of one or
+-- what a sensor reported, and identifiers and creation times come from the
+-- database. It reads the hash of the secret, as it does for
+-- API keys: the hash of a random value of 256 bits reveals nothing usable.
+GRANT SELECT, DELETE ON public.honeypots TO nyktus_console;
+GRANT INSERT (service, name, notes, enabled, techniques, severity, secret_hash) ON public.honeypots TO nyktus_console;
+GRANT UPDATE (name, notes, enabled, techniques, severity, secret_hash, scenario_id, updated_at) ON public.honeypots TO nyktus_console;
+
+-- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
+-- result is verified instead of assumed, in both directions.
+DO $$
+BEGIN
+	IF NOT has_table_privilege('nyktus_console', 'public.honeypots', 'SELECT')
+		OR NOT has_table_privilege('nyktus_console', 'public.honeypots', 'DELETE')
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['service', 'name', 'notes', 'enabled', 'techniques', 'severity',
+				'secret_hash']) AS c (name)
+			WHERE NOT has_column_privilege('nyktus_console', 'public.honeypots', c.name, 'INSERT')
+		)
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['name', 'notes', 'enabled', 'techniques', 'severity', 'secret_hash', 'scenario_id',
+				'updated_at']) AS c (name)
+			WHERE NOT has_column_privilege('nyktus_console', 'public.honeypots', c.name, 'UPDATE')
+		) THEN
+		RAISE EXCEPTION 'nyktus_console lacks privileges on public.honeypots; run migrations as the owner of the schema';
+	END IF;
+
+	IF has_table_privilege('nyktus_console', 'public.honeypots', 'INSERT, UPDATE, TRUNCATE, REFERENCES, TRIGGER')
+		OR has_any_column_privilege('nyktus_console', 'public.honeypots', 'REFERENCES')
+		OR has_function_privilege('nyktus_console', 'public.honeypots_clear_report()', 'EXECUTE')
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['id', 'scenario_id', 'last_seen_at', 'sensor_version', 'created_at',
+				'updated_at']) AS c (name)
+			WHERE has_column_privilege('nyktus_console', 'public.honeypots', c.name, 'INSERT')
+		)
+		OR EXISTS (
+			SELECT FROM unnest(ARRAY['id', 'service', 'last_seen_at', 'sensor_version', 'created_at']) AS c (name)
+			WHERE has_column_privilege('nyktus_console', 'public.honeypots', c.name, 'UPDATE')
+		) THEN
+		RAISE EXCEPTION 'nyktus_console has more privileges on public.honeypots than granted; check the default privileges of the owner';
+	END IF;
+END
+$$;
+
 -- An artifact is a file that applying a deception rendered, such as an SSH
 -- configuration that names a DNS honeytoken. It raises no event itself; it
 -- makes the story of its scenario believable. Its content is stored, so that

@@ -24,6 +24,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/catalog"
 	"nyktus.org/nyktus/internal/catalog/catalogapi"
+	"nyktus.org/nyktus/internal/honeypot/honeypotapi"
 	"nyktus.org/nyktus/internal/honeytoken/honeytokenapi"
 	"nyktus.org/nyktus/internal/incident/incidentapi"
 	"nyktus.org/nyktus/internal/metrics"
@@ -100,6 +101,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 	a := account.NewHandler(o.Logger, account.NewService(o.DB, o.ConsoleURL, o.Hasher), o.Hasher)
 	cat := catalogapi.NewHandler(deceptions)
 	t := honeytokenapi.NewHandler(o.Logger, o.DB, o.TriggerURL, o.DNSZones)
+	hp := honeypotapi.NewHandler(o.Logger, o.DB)
 	sc := scenarioapi.NewHandler(o.Logger, o.DB, deceptions, o.TriggerURL, o.DNSZones)
 	art := artifactapi.NewHandler(o.Logger, o.DB)
 	i := incidentapi.NewHandler(o.Logger, o.DB)
@@ -152,6 +154,17 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 
 			AssignScenario: http.HandlerFunc(t.AssignScenario),
 			DetachScenario: http.HandlerFunc(t.DetachScenario),
+		},
+		Honeypots: Honeypots{
+			List:          http.HandlerFunc(hp.List),
+			Get:           http.HandlerFunc(hp.Get),
+			Create:        http.HandlerFunc(hp.Create),
+			Update:        http.HandlerFunc(hp.Update),
+			Delete:        http.HandlerFunc(hp.Delete),
+			ReplaceSecret: http.HandlerFunc(hp.ReplaceSecret),
+
+			AssignScenario: http.HandlerFunc(hp.AssignScenario),
+			DetachScenario: http.HandlerFunc(hp.DetachScenario),
 		},
 		Scenarios: Scenarios{
 			List:   http.HandlerFunc(sc.List),
