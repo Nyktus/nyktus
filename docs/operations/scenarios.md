@@ -2,7 +2,7 @@
 
 A scenario groups the decoys that tell one story, such as the honeytokens placed on one file share or in the configuration of one admin workstation. An attacker who follows the story triggers several of them; Nyktus correlates their events into one [incident](incidents.md) with one alert, instead of one incident per honeytoken.
 
-A honeytoken belongs to at most one scenario or stands alone. Scenarios belong to the team, not to the account that created them.
+A honeytoken or a [honeypot](honeypots.md) belongs to at most one scenario or stands alone. Scenarios belong to the team, not to the account that created them.
 
 ## Creating a scenario
 
@@ -45,6 +45,10 @@ curl --fail-with-body --request PUT https://nyktus.example.com/api/v1/honeytoken
 
 The `scenario_id` of a honeytoken shows its scenario, and `GET /api/v1/honeytokens?scenario_id=<scenario>` lists the honeytokens of a scenario. Changing the scenario of a honeytoken needs the permission `honeytokens:write` only: the honeytoken changes, the scenario does not.
 
+## Adding honeypots
+
+A [honeypot](honeypots.md) joins and leaves a scenario in the same way, through `PUT` and `DELETE /api/v1/honeypots/<id>/scenario`, with the same rules; a honeypot that belongs to another scenario receives `409` with the code `honeypot_in_scenario`. `GET /api/v1/honeypots?scenario_id=<scenario>` lists the honeypots of a scenario. Changing the scenario of a honeypot needs the permission `honeypots:write` only.
+
 ## Incidents
 
 The events of every honeytoken of a scenario join one open [incident](incidents.md#how-events-become-incidents) of the scenario, with one alert. The incident and its alert name the scenario as their resource (`resource_type` `scenario`), and `GET /api/v1/incidents?resource_id=<scenario>` lists the incidents of a scenario.
@@ -56,24 +60,24 @@ An event belongs to the scenario its honeytoken belonged to when the event was r
 - `GET /api/v1/scenarios` lists scenarios from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`.
 - `GET /api/v1/scenarios/<id>` returns one scenario.
 - `PATCH /api/v1/scenarios/<id>` changes `name`, `notes` or `engage_activities`. Members that you leave out stay unchanged; `"engage_activities": []` removes the activities.
-- `DELETE /api/v1/scenarios/<id>` deletes a scenario. The parameters `honeytokens` and `artifacts` choose what happens to its honeytokens and artifacts:
-  - `keep`, the default, removes them from the scenario. They stay and stand alone; the next events of the honeytokens open incidents of their own, and the [artifacts](artifacts.md) can still be downloaded, for example to find what was placed.
-  - `delete` deletes them with the scenario. Remove their URLs, names and files from where you placed them as well: a deleted honeytoken records nothing.
+- `DELETE /api/v1/scenarios/<id>` deletes a scenario. The parameters `honeytokens`, `honeypots` and `artifacts` choose what happens to its honeytokens, honeypots and artifacts, each on its own:
+  - `keep`, the default, removes them from the scenario. They stay and stand alone; the next events of the honeytokens and honeypots open incidents of their own, and the [artifacts](artifacts.md) can still be downloaded, for example to find what was placed.
+  - `delete` deletes them with the scenario. Remove their URLs, names and files from where you placed them, and stop the honeypots on their sensor, as well: a deleted honeytoken or honeypot records nothing.
 
   ```sh
   curl --fail-with-body --request DELETE \
-    'https://nyktus.example.com/api/v1/scenarios/<id>?honeytokens=delete&artifacts=delete' \
+    'https://nyktus.example.com/api/v1/scenarios/<id>?honeytokens=delete&honeypots=delete&artifacts=delete' \
     --cookie cookies.txt
   ```
 
-  Events and incidents remain either way. The deletion and every honeytoken and artifact it removes take effect together or not at all.
+  Events and incidents remain either way. The deletion and every honeytoken, honeypot and artifact it removes take effect together or not at all.
 
 ## Who can read scenarios
 
-Every role reads scenarios; `admin` and `user` create, change and delete them. [API keys](api-keys.md) carry the scopes `scenarios:read` and `scenarios:write`; the second requires the first.
+Every role reads scenarios; `admin` and `user` create, change and delete them. [API keys](api-keys.md) carry the scopes `scenarios:read` and `scenarios:write`; the second requires the first. Deleting a scenario with its honeypots needs `scenarios:write` only, as it does with its honeytokens.
 
 Names, notes, persona and guides of scenarios are part of the inventory: they tell where decoys are placed and what they are called. Give integrations that do not manage scenarios keys without these scopes.
 
 ## Audit
 
-The [audit log](audit-log.md) records every creation as `scenario.create`, every change as `scenario.update` with the names of the changed fields, and every deletion as `scenario.delete`. A deletion also records every honeytoken and artifact it removes from the scenario as `honeytoken.update` or `artifact.update` with the field `scenario_id`, or that it deletes as `honeytoken.delete` or `artifact.delete`. Applying a deception records every honeytoken it creates as `honeytoken.create`, the scenario as `scenario.create` and every artifact as `artifact.create`. Adding a honeytoken to a scenario or removing it is recorded as `honeytoken.update` with the field `scenario_id`. Entries name scenarios and honeytokens by their identifiers only, never by name or notes. A change that changes no value is not recorded. Reads are not recorded.
+The [audit log](audit-log.md) records every creation as `scenario.create`, every change as `scenario.update` with the names of the changed fields, and every deletion as `scenario.delete`. A deletion also records every honeytoken, honeypot and artifact it removes from the scenario as `honeytoken.update`, `honeypot.update` or `artifact.update` with the field `scenario_id`, or that it deletes as `honeytoken.delete`, `honeypot.delete` or `artifact.delete`. Applying a deception records every honeytoken it creates as `honeytoken.create`, the scenario as `scenario.create` and every artifact as `artifact.create`. Adding a honeytoken or a honeypot to a scenario or removing it is recorded as `honeytoken.update` or `honeypot.update` with the field `scenario_id`. Entries name scenarios, honeytokens and honeypots by their identifiers only, never by name or notes. A change that changes no value is not recorded. Reads are not recorded.

@@ -52,6 +52,8 @@ type Deps struct {
 	Catalog Catalog
 	// Honeytokens manages the honeytokens of the team.
 	Honeytokens Honeytokens
+	// Honeypots manages the honeypots of the team.
+	Honeypots Honeypots
 	// Scenarios manages the scenarios of the team.
 	Scenarios Scenarios
 	// Artifacts serves the artifacts of the scenarios.
@@ -106,6 +108,20 @@ type Honeytokens struct {
 func (h Honeytokens) complete() bool {
 	return h.List != nil && h.Get != nil && h.Create != nil && h.Update != nil && h.Delete != nil &&
 		h.AssignScenario != nil && h.DetachScenario != nil
+}
+
+// Honeypots are the handlers of the management of the honeypots.
+type Honeypots struct {
+	List, Get, Create, Update, Delete http.Handler
+	// ReplaceSecret gives a honeypot a new secret.
+	ReplaceSecret http.Handler
+	// AssignScenario and DetachScenario change the scenario of a honeypot.
+	AssignScenario, DetachScenario http.Handler
+}
+
+func (h Honeypots) complete() bool {
+	return h.List != nil && h.Get != nil && h.Create != nil && h.Update != nil && h.Delete != nil &&
+		h.ReplaceSecret != nil && h.AssignScenario != nil && h.DetachScenario != nil
 }
 
 // Scenarios are the handlers of the management of the scenarios.
@@ -190,7 +206,7 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Scenarios.complete() || !d.Artifacts.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
+		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Honeypots.complete() || !d.Scenarios.complete() || !d.Artifacts.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
 		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, catalog, honeytoken, scenario, artifact, incident, event and alert channel handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
@@ -248,6 +264,18 @@ func NewRouter(d Deps) *httpx.Router {
 		d.Honeytokens.AssignScenario)
 	rt.Handle(http.MethodDelete, "/api/v1/honeytokens/{id}/scenario", httpx.Require("honeytokens:write"),
 		d.Honeytokens.DetachScenario)
+	rt.Handle(http.MethodGet, "/api/v1/honeypots", httpx.Require("honeypots:read"), d.Honeypots.List)
+	rt.Handle(http.MethodPost, "/api/v1/honeypots", httpx.Require("honeypots:write"), d.Honeypots.Create)
+	rt.Handle(http.MethodGet, "/api/v1/honeypots/{id}", httpx.Require("honeypots:read"), d.Honeypots.Get)
+	rt.Handle(http.MethodPatch, "/api/v1/honeypots/{id}", httpx.Require("honeypots:write"), d.Honeypots.Update)
+	rt.Handle(http.MethodDelete, "/api/v1/honeypots/{id}", httpx.Require("honeypots:write"), d.Honeypots.Delete)
+	rt.Handle(http.MethodPost, "/api/v1/honeypots/{id}/secret", httpx.Require("honeypots:write"), d.Honeypots.ReplaceSecret)
+	// The scenario of a honeypot is a change of the honeypot, as for
+	// honeytokens.
+	rt.Handle(http.MethodPut, "/api/v1/honeypots/{id}/scenario", httpx.Require("honeypots:write"),
+		d.Honeypots.AssignScenario)
+	rt.Handle(http.MethodDelete, "/api/v1/honeypots/{id}/scenario", httpx.Require("honeypots:write"),
+		d.Honeypots.DetachScenario)
 	rt.Handle(http.MethodGet, "/api/v1/scenarios", httpx.Require("scenarios:read"), d.Scenarios.List)
 	rt.Handle(http.MethodPost, "/api/v1/scenarios", httpx.Require("scenarios:write"), d.Scenarios.Create)
 	rt.Handle(http.MethodGet, "/api/v1/scenarios/{id}", httpx.Require("scenarios:read"), d.Scenarios.Get)

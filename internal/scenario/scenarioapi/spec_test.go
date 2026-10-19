@@ -85,10 +85,11 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		removals = append(removals, string(r))
 	}
 	params = spec.Paths["/api/v1/scenarios/{id}"].Delete.Parameters
-	if len(params) != 2 {
-		t.Fatalf("parameters of the deletion = %+v, want %s and %s", params, paramHoneytokens, paramArtifacts)
+	names := []string{paramHoneytokens, paramHoneypots, paramArtifacts}
+	if len(params) != len(names) {
+		t.Fatalf("parameters of the deletion = %+v, want %v", params, names)
 	}
-	for i, name := range []string{paramHoneytokens, paramArtifacts} {
+	for i, name := range names {
 		// Other specification tests read every default of a query parameter
 		// as a number, so the default removal is part of the description.
 		if p := params[i]; p.Name != name ||

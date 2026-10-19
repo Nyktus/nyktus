@@ -39,10 +39,11 @@ const defaultPageSize = 50
 // character escaped in JSON, and the activities fit with room to spare.
 const maxBodyBytes = 64 << 10
 
-// paramHoneytokens and paramArtifacts choose what the deletion of a scenario
-// does with its honeytokens and artifacts.
+// paramHoneytokens, paramHoneypots and paramArtifacts choose what the deletion
+// of a scenario does with its honeytokens, honeypots and artifacts.
 const (
 	paramHoneytokens = "honeytokens"
+	paramHoneypots   = "honeypots"
 	paramArtifacts   = "artifacts"
 )
 
@@ -210,22 +211,29 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, toResponse(s))
 }
 
-// Delete handles DELETE /api/v1/scenarios/{id}. The parameters honeytokens
-// and artifacts choose whether its honeytokens and artifacts are deleted with
-// it or stay alone, which is the default: a deleted honeytoken that is still
-// placed records nothing, and a kept artifact helps to find what was placed.
+// Delete handles DELETE /api/v1/scenarios/{id}. The parameters honeytokens,
+// honeypots and artifacts choose whether its honeytokens, honeypots and
+// artifacts are deleted with it or stay alone, which is the default: a
+// deleted honeytoken that is still placed or a deleted honeypot whose sensor
+// still runs records nothing, and a kept artifact helps to find what was
+// placed.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	p, ok := h.principal(w, r)
 	if !ok {
 		return
 	}
-	query, ok := httpx.DecodeQuery(w, r, paramHoneytokens, paramArtifacts)
+	query, ok := httpx.DecodeQuery(w, r, paramHoneytokens, paramHoneypots, paramArtifacts)
 	if !ok {
 		return
 	}
-	removals := scenario.ResourceRemovals{Honeytokens: scenario.RemovalKeep, Artifacts: scenario.RemovalKeep}
+	removals := scenario.ResourceRemovals{
+		Honeytokens: scenario.RemovalKeep, Honeypots: scenario.RemovalKeep, Artifacts: scenario.RemovalKeep,
+	}
 	if v, ok := query[paramHoneytokens]; ok {
 		removals.Honeytokens = scenario.Removal(v)
+	}
+	if v, ok := query[paramHoneypots]; ok {
+		removals.Honeypots = scenario.Removal(v)
 	}
 	if v, ok := query[paramArtifacts]; ok {
 		removals.Artifacts = scenario.Removal(v)
@@ -238,6 +246,8 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	h.logger.InfoContext(r.Context(), "scenario: deleted", slog.String("scenario_id", r.PathValue("id")),
 		slog.Int("honeytokens_deleted", len(removed.DeletedHoneytokens)),
 		slog.Int("honeytokens_detached", len(removed.DetachedHoneytokens)),
+		slog.Int("honeypots_deleted", len(removed.DeletedHoneypots)),
+		slog.Int("honeypots_detached", len(removed.DetachedHoneypots)),
 		slog.Int("artifacts_deleted", len(removed.DeletedArtifacts)),
 		slog.Int("artifacts_detached", len(removed.DetachedArtifacts)))
 	w.Header().Set("Cache-Control", "no-store")
@@ -260,7 +270,7 @@ var (
 	nameRule       = fmt.Sprintf("name must have 1 to %d printable characters without leading or trailing spaces", scenario.MaxNameLength)
 	notesRule      = fmt.Sprintf("notes must have at most %d characters; line breaks and tabs are the only control characters allowed", scenario.MaxNotesLength)
 	activitiesRule = fmt.Sprintf("engage_activities must list at most %d distinct engagement activities of MITRE Engage, such as EAC0005", scenario.MaxEngageActivities)
-	removalRule    = "honeytokens and artifacts must be keep or delete"
+	removalRule    = "honeytokens, honeypots and artifacts must be keep or delete"
 	languageRule   = "language must be one of " + strings.Join(catalog.Languages, ", ")
 )
 
