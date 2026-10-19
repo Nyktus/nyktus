@@ -2,7 +2,7 @@
 
 A honeypot is a network service that nobody has a reason to connect to, such as an SSH server on a host that the team never uses or a directory server that no application knows. The sensor `nyktus-sensor` emulates it inside the monitored network: it answers like the real service, but offers nothing behind the login, and reports every session to the trigger.
 
-This page covers the management of honeypots in the console.
+This page covers the management of honeypots in the console. The sensor and the way it reports to the trigger are not part of Nyktus yet: until they are, a honeypot records no events and its [status](#status) stays `never`.
 
 ## Services
 
@@ -81,7 +81,7 @@ The old secret stops working at once. A sensor that still uses it is shut out un
 
 ## Status
 
-The console shows whether a sensor reports for a honeypot. A sensor reports for each of its honeypots when it starts and every five minutes, and every session it reports counts as well.
+The console shows whether a sensor reports for a honeypot, from the time of its last report.
 
 | `status` | Meaning |
 |---|---|
@@ -89,14 +89,14 @@ The console shows whether a sensor reports for a honeypot. A sensor reports for 
 | `online` | A sensor reported within the last 15 minutes. |
 | `offline` | The last report is older than 15 minutes: the sensor stopped, lost its connection to the trigger or no longer runs this honeypot. |
 
-`last_seen_at` is the time of the last report, and `sensor_version` the version that the sensor named. The status is evaluated against the clock of the database when you read the honeypot. An offline honeypot raises no alert: alerts belong to incidents, which only attacker activity opens.
+`last_seen_at` is the time of the last report, and `sensor_version` the version that the sensor named. Only a sensor sets them; the console cannot. The status is evaluated against the clock of the database when you read the honeypot. An offline honeypot raises no alert: alerts belong to incidents, which only attacker activity opens.
 
 ## Listing, changing and deleting
 
 - `GET /api/v1/honeypots` lists honeypots from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filters. `service=<service>`, `enabled=true` or `enabled=false` and `scenario_id=<scenario>` narrow the list.
 - `GET /api/v1/honeypots/<id>` returns one honeypot.
 - `PATCH /api/v1/honeypots/<id>` changes `name`, `notes`, `enabled`, `techniques` or `severity`. Members that you leave out stay unchanged; `"techniques": []` removes the techniques. The service and the secret cannot be changed this way.
-- `DELETE /api/v1/honeypots/<id>` deletes a honeypot. Its secret stops working, and its events remain. Stop the honeypot on the sensor as well, so that a service without a honeypot in the console does not mislead your own team.
+- `DELETE /api/v1/honeypots/<id>` deletes a honeypot. Its secret stops working. Stop the honeypot on the sensor as well, so that a service without a honeypot in the console does not mislead your own team.
 
 Every role reads honeypots; viewers cannot change them.
 

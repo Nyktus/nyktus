@@ -226,8 +226,8 @@ func TestStore_DerivesTheStatusFromTheLastReport(t *testing.T) {
 	}{
 		{"no report", nil, honeypot.StatusNever},
 		{"just now", ptr(time.Duration(0)), honeypot.StatusOnline},
-		{"shortly before the bound", ptr(honeypot.OfflineAfter - 5*time.Second), honeypot.StatusOnline},
-		{"at the bound", ptr(honeypot.OfflineAfter), honeypot.StatusOffline},
+		{"shortly before 15 minutes", ptr(15*time.Minute - 5*time.Second), honeypot.StatusOnline},
+		{"at 15 minutes", ptr(15 * time.Minute), honeypot.StatusOffline},
 		{"long ago", ptr(12 * time.Hour), honeypot.StatusOffline},
 	} {
 		c := create(t, d, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "p"})
@@ -283,6 +283,18 @@ func TestStore_ReplaceSecret_InvalidatesTheOldSecret(t *testing.T) {
 	}
 	if got, err := s.Get(t.Context(), other.ID); err != nil || got.Status != honeypot.StatusOnline || findBySecret(t, d, other.Secret) != other.ID {
 		t.Errorf("another honeypot = %+v, %v; want it unchanged", got, err)
+	}
+
+	// Only a new secret clears the report: a change or a move to a scenario
+	// keeps it.
+	if _, _, err := update(t.Context(), d, other.ID, honeypot.Change{Name: ptr("renamed")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := setScenario(t.Context(), d, other.ID, createScenario(t, d)); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Get(t.Context(), other.ID); err != nil || got.LastSeenAt == nil || got.SensorVersion == nil {
+		t.Errorf("Get() after a change = %+v, %v; want the report kept", got, err)
 	}
 
 	for _, id := range []string{"00000000-0000-4000-8000-000000000000", "not-a-uuid"} {

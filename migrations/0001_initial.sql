@@ -1217,8 +1217,8 @@ CREATE TABLE public.honeypots (
 	-- does not cascade for the same reason.
 	scenario_id    uuid CONSTRAINT honeypots_scenario_id_fkey REFERENCES public.scenarios (id),
 	-- When a sensor last reported for the honeypot, and the version it named.
-	-- Both are cleared when the secret is replaced, so that the honeypot shows
-	-- whether a sensor with the new secret has reported yet.
+	-- The trigger below clears both when the secret is replaced, so that the
+	-- honeypot shows whether a sensor with the new secret has reported yet.
 	last_seen_at   timestamptz,
 	sensor_version text,
 	created_at     timestamptz NOT NULL DEFAULT clock_timestamp(),
@@ -1260,19 +1260,38 @@ CREATE TRIGGER honeypots_set_updated_at
 	BEFORE INSERT ON public.honeypots
 	FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+-- What a sensor reported with the old secret says nothing about the new one.
+-- Clearing it here keeps the console from writing the report itself, so that
+-- it can never make a honeypot look online.
+CREATE FUNCTION public.honeypots_clear_report() RETURNS trigger
+	LANGUAGE plpgsql
+	SET search_path = ''
+AS $$
+BEGIN
+	NEW.last_seen_at := NULL;
+	NEW.sensor_version := NULL;
+	RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER honeypots_clear_report
+	BEFORE UPDATE OF secret_hash ON public.honeypots
+	FOR EACH ROW WHEN (NEW.secret_hash IS DISTINCT FROM OLD.secret_hash)
+	EXECUTE FUNCTION public.honeypots_clear_report();
+
 -- Default privileges set by an operator could grant more than this migration
 -- intends, so everything is revoked before the grants.
 REVOKE ALL ON public.honeypots FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.honeypots_clear_report() FROM PUBLIC, nyktus_console;
 
 -- The console creates, lists, changes and deletes honeypots, assigns them to
--- scenarios and replaces their secrets, which clears what the last sensor
--- reported; it cannot change the service of one, and identifiers and creation
--- times come from the database. It reads the hash of the secret, as it does for
+-- scenarios and replaces their secrets; it cannot change the service of one or
+-- what a sensor reported, and identifiers and creation times come from the
+-- database. It reads the hash of the secret, as it does for
 -- API keys: the hash of a random value of 256 bits reveals nothing usable.
 GRANT SELECT, DELETE ON public.honeypots TO nyktus_console;
 GRANT INSERT (service, name, notes, enabled, techniques, severity, secret_hash) ON public.honeypots TO nyktus_console;
-GRANT UPDATE (name, notes, enabled, techniques, severity, secret_hash, scenario_id, last_seen_at, sensor_version, updated_at)
-	ON public.honeypots TO nyktus_console;
+GRANT UPDATE (name, notes, enabled, techniques, severity, secret_hash, scenario_id, updated_at) ON public.honeypots TO nyktus_console;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
 -- result is verified instead of assumed, in both directions.
@@ -1287,7 +1306,7 @@ BEGIN
 		)
 		OR EXISTS (
 			SELECT FROM unnest(ARRAY['name', 'notes', 'enabled', 'techniques', 'severity', 'secret_hash', 'scenario_id',
-				'last_seen_at', 'sensor_version', 'updated_at']) AS c (name)
+				'updated_at']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.honeypots', c.name, 'UPDATE')
 		) THEN
 		RAISE EXCEPTION 'nyktus_console lacks privileges on public.honeypots; run migrations as the owner of the schema';
@@ -1301,7 +1320,7 @@ BEGIN
 			WHERE has_column_privilege('nyktus_console', 'public.honeypots', c.name, 'INSERT')
 		)
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['id', 'service', 'created_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['id', 'service', 'last_seen_at', 'sensor_version', 'created_at']) AS c (name)
 			WHERE has_column_privilege('nyktus_console', 'public.honeypots', c.name, 'UPDATE')
 		) THEN
 		RAISE EXCEPTION 'nyktus_console has more privileges on public.honeypots than granted; check the default privileges of the owner';

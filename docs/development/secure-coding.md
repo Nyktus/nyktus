@@ -197,6 +197,7 @@ Setup tokens, activation tokens, password reset tokens, recovery codes and secon
 - Role checks fail closed. An unknown or empty role or scope has no permissions.
 - Read-only roles are enforced on the server for sessions and API keys alike.
 - Read access to the inventory is a sensitive permission. Integrations that only need incidents get a key without inventory scopes.
+- Deleting a scenario with its resources (`?honeytokens=delete`, `?honeypots=delete`, `?artifacts=delete`) needs `scenarios:write` only, as applying a deception creates them with it: the scenario owns its resources, and every resource it removes has an audit entry of its own. Changing a single resource, including its scenario, needs the permission of the resource.
 
 ## Database
 

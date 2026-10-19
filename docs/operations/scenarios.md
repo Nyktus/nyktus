@@ -61,7 +61,7 @@ An event belongs to the scenario its honeytoken belonged to when the event was r
 - `GET /api/v1/scenarios/<id>` returns one scenario.
 - `PATCH /api/v1/scenarios/<id>` changes `name`, `notes` or `engage_activities`. Members that you leave out stay unchanged; `"engage_activities": []` removes the activities.
 - `DELETE /api/v1/scenarios/<id>` deletes a scenario. The parameters `honeytokens`, `honeypots` and `artifacts` choose what happens to its honeytokens, honeypots and artifacts, each on its own:
-  - `keep`, the default, removes them from the scenario. They stay and stand alone; the next events of the honeytokens and honeypots open incidents of their own, and the [artifacts](artifacts.md) can still be downloaded, for example to find what was placed.
+  - `keep`, the default, removes them from the scenario. They stay and stand alone; the next events of the honeytokens open incidents of their own, and the [artifacts](artifacts.md) can still be downloaded, for example to find what was placed.
   - `delete` deletes them with the scenario. Remove their URLs, names and files from where you placed them, and stop the honeypots on their sensor, as well: a deleted honeytoken or honeypot records nothing.
 
   ```sh

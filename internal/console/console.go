@@ -207,7 +207,7 @@ func (a Accounts) complete() bool {
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
 		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Honeypots.complete() || !d.Scenarios.complete() || !d.Artifacts.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
-		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, catalog, honeytoken, scenario, artifact, incident, event and alert channel handlers")
+		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, catalog, honeytoken, honeypot, scenario, artifact, incident, event and alert channel handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	// The session itself and how the account signs in are managed only with a

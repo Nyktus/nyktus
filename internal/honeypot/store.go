@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -69,10 +70,10 @@ func NewStore(q db.Querier) *Store {
 // last report with its own clock, so that every console process agrees and
 // tests move the stored time instead of a clock. A honeypot is offline after
 // OfflineAfter.
-const columns = `id, service, name, notes, enabled, techniques, severity, scenario_id, last_seen_at, sensor_version,
+var columns = `id, service, name, notes, enabled, techniques, severity, scenario_id, last_seen_at, sensor_version,
 CASE
 	WHEN last_seen_at IS NULL THEN 'never'
-	WHEN last_seen_at > clock_timestamp() - interval '15 minutes' THEN 'online'
+	WHEN last_seen_at > clock_timestamp() - interval '` + strconv.Itoa(int(OfflineAfter/time.Second)) + ` seconds' THEN 'online'
 	ELSE 'offline'
 END,
 created_at, updated_at`
@@ -156,7 +157,7 @@ type Filter struct {
 // active only sometimes would keep a generic plan from seeking into the index;
 // the scenario and the cursor, which the indexes serve, are therefore
 // conditions of statements of their own.
-const (
+var (
 	listOrder = `
 ORDER BY created_at DESC, id DESC`
 	listNewest = `SELECT ` + columns + ` FROM honeypots
@@ -289,16 +290,16 @@ RETURNING `+columns, id, updated.Name, updated.Notes, updated.Enabled, updated.T
 
 // ReplaceSecret gives the honeypot id a new secret and returns it with the
 // honeypot. The old secret stops working at once, because only the hash of the
-// new one is stored. What the last sensor reported is cleared, so that the
-// honeypot shows whether a sensor with the new secret has reported yet. It
-// returns ErrNotFound if there is no such honeypot.
+// new one is stored. The database clears what the last sensor reported, so
+// that the honeypot shows whether a sensor with the new secret has reported
+// yet. It returns ErrNotFound if there is no such honeypot.
 func (s *Store) ReplaceSecret(ctx context.Context, id string) (Created, error) {
 	secret, hash, err := newSecret()
 	if err != nil {
 		return Created{}, err
 	}
 	h, err := scan(s.db.QueryRow(ctx, `
-UPDATE honeypots SET secret_hash = $2, last_seen_at = NULL, sensor_version = NULL, updated_at = clock_timestamp()
+UPDATE honeypots SET secret_hash = $2, updated_at = clock_timestamp()
 WHERE id = $1
 RETURNING `+columns, id, hash))
 	if db.NotFound(err) {

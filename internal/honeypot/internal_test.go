@@ -90,14 +90,3 @@ func TestList_CursorIsAnIndexConditionInTheGenericPlan(t *testing.T) {
 		}
 	}
 }
-
-// The database derives the status with the same bound that OfflineAfter
-// documents.
-func TestColumns_DeriveTheStatusWithOfflineAfter(t *testing.T) {
-	t.Parallel()
-
-	want := fmt.Sprintf("last_seen_at > clock_timestamp() - interval '%d minutes'", int(OfflineAfter.Minutes()))
-	if !strings.Contains(columns, want) {
-		t.Errorf("columns do not contain %q:\n%s", want, columns)
-	}
-}

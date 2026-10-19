@@ -2082,10 +2082,9 @@ paths:
       operationId: deleteHoneypot
       summary: Delete a honeypot
       description: |
-        Deletes a honeypot. Its secret stops working, and the trigger ignores
-        what a sensor still reports for it. Stop the honeypot on the sensor as
-        well, so that it does not mislead your own team. The audit log records
-        the deletion as `honeypot.delete`.
+        Deletes a honeypot. Its secret stops working. Stop the honeypot on the
+        sensor as well, so that it does not mislead your own team. The audit
+        log records the deletion as `honeypot.delete`.
       tags: [honeypots]
       x-access: honeypots:write
       security:
@@ -4434,7 +4433,7 @@ components:
           description: Where and why the honeypot runs. Empty if there are none.
         enabled:
           type: boolean
-          description: Whether what the sensor reports raises an event.
+          description: Whether the honeypot is active.
         techniques:
           type: array
           description: |
