@@ -23,16 +23,18 @@ import (
 var grants = map[user.Role][]httpx.Permission{
 	user.RoleAdmin: {
 		"alert_channels:read", "alert_channels:write", "api_keys:read", "api_keys:write", "artifacts:read",
-		"artifacts:write", "audit:read", "catalog:read", "events:read",
+		"artifacts:write", "audit:read", "catalog:read", "events:read", "honeypots:read", "honeypots:write",
 		"honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write", "metrics:read", "scenarios:read",
 		"scenarios:write", "users:read", "users:write",
 	},
 	user.RoleUser: {
-		"artifacts:read", "artifacts:write", "catalog:read", "events:read", "honeytokens:read", "honeytokens:write",
-		"incidents:read", "incidents:write", "scenarios:read", "scenarios:write",
+		"artifacts:read", "artifacts:write", "catalog:read", "events:read", "honeypots:read", "honeypots:write",
+		"honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write", "scenarios:read",
+		"scenarios:write",
 	},
 	user.RoleViewer: {
-		"artifacts:read", "catalog:read", "events:read", "honeytokens:read", "incidents:read", "scenarios:read",
+		"artifacts:read", "catalog:read", "events:read", "honeypots:read", "honeytokens:read", "incidents:read",
+		"scenarios:read",
 	},
 }
 
@@ -40,23 +42,24 @@ var grants = map[user.Role][]httpx.Permission{
 // not manage accounts or keys, not even by reading them: a leaked key with
 // users:write could take over every account through password reset links, and
 // one with api_keys:write could issue itself a successor. Keys may manage
-// honeytokens, scenarios and artifacts, so that they can be rolled out by
-// script; reading them is reading the inventory, so integrations that only
-// need other data get keys without these scopes. Keys may read events and
+// honeytokens, honeypots, scenarios and artifacts, so that they can be rolled
+// out by script; reading them is reading the inventory, so integrations that
+// only need other data get keys without these scopes. Keys may read events and
 // incidents and triage incidents, so that a SIEM or a ticket system can follow
 // them up. Keys may read the metrics, so that a monitoring system can collect
 // them. Keys may read the catalog, which holds no inventory. Keys never manage
 // alert channels: a leaked key could redirect the alerts to its holder or stop
 // them.
 var keyScopes = []httpx.Permission{
-	"artifacts:read", "artifacts:write", "audit:read", "catalog:read", "events:read", "honeytokens:read",
-	"honeytokens:write", "incidents:read", "incidents:write", "metrics:read", "scenarios:read", "scenarios:write",
+	"artifacts:read", "artifacts:write", "audit:read", "catalog:read", "events:read", "honeypots:read",
+	"honeypots:write", "honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write", "metrics:read",
+	"scenarios:read", "scenarios:write",
 }
 
 // keyScopeRequires names the scopes that a key may carry only together with
-// another one. A key that changes honeytokens, scenarios, artifacts or
-// incidents receives them in every response, also to a change that changes nothing, so
-// it reads them anyway; requiring the scope to read them keeps the scopes of a
+// another one. A key that changes honeytokens, honeypots, scenarios, artifacts
+// or incidents receives them in every response, also to a change that changes
+// nothing, so it reads them anyway; requiring the scope to read them keeps the scopes of a
 // key honest about what it can see. For the same reason, reading scenarios
 // and artifacts requires reading honeytokens: the guide of a scenario, the
 // answer to applying a deception and the content of an artifact name the URLs
@@ -64,6 +67,7 @@ var keyScopes = []httpx.Permission{
 var keyScopeRequires = map[httpx.Permission]httpx.Permission{
 	"artifacts:read":    "honeytokens:read",
 	"artifacts:write":   "artifacts:read",
+	"honeypots:write":   "honeypots:read",
 	"honeytokens:write": "honeytokens:read",
 	"incidents:write":   "incidents:read",
 	"scenarios:read":    "honeytokens:read",

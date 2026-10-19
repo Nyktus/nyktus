@@ -93,13 +93,20 @@ const (
 	ActionHoneytokenUpdate Action = "honeytoken.update"
 	// ActionHoneytokenDelete records the deletion of a honeytoken.
 	ActionHoneytokenDelete Action = "honeytoken.delete"
+	// ActionHoneypotCreate records the creation of a honeypot.
+	ActionHoneypotCreate Action = "honeypot.create"
+	// ActionHoneypotUpdate records a change of a honeypot, with the names of
+	// the changed fields. A new secret is recorded as the field secret.
+	ActionHoneypotUpdate Action = "honeypot.update"
+	// ActionHoneypotDelete records the deletion of a honeypot.
+	ActionHoneypotDelete Action = "honeypot.delete"
 	// ActionScenarioCreate records the creation of a scenario.
 	ActionScenarioCreate Action = "scenario.create"
 	// ActionScenarioUpdate records a change of a scenario, with the names of
 	// the changed fields.
 	ActionScenarioUpdate Action = "scenario.update"
-	// ActionScenarioDelete records the deletion of a scenario. Each honeytoken
-	// and artifact that it deletes or detaches has an entry of its own.
+	// ActionScenarioDelete records the deletion of a scenario. Each honeytoken,
+	// honeypot and artifact that it deletes or detaches has an entry of its own.
 	ActionScenarioDelete Action = "scenario.delete"
 	// ActionArtifactCreate records an artifact that applying a deception
 	// rendered.

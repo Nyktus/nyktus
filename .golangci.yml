@@ -58,6 +58,8 @@ linters:
               desc: the trigger never reads the inventory; it resolves single trigger values through a database function
             - pkg: nyktus.org/nyktus/internal/scenario
               desc: the trigger never reads the inventory; it resolves single trigger values through a database function
+            - pkg: nyktus.org/nyktus/internal/honeypot
+              desc: the trigger never reads the inventory; it resolves single trigger values through a database function
             - pkg: nyktus.org/nyktus/internal/alerting
               desc: the trigger records events and their jobs; the worker processes them and sends alerts
             - pkg: nyktus.org/nyktus/internal/incident
@@ -76,6 +78,8 @@ linters:
             - pkg: nyktus.org/nyktus/internal/honeytoken
               desc: the DNS role never reads the inventory; it resolves single trigger values through a database function
             - pkg: nyktus.org/nyktus/internal/scenario
+              desc: the DNS role never reads the inventory; it resolves single trigger values through a database function
+            - pkg: nyktus.org/nyktus/internal/honeypot
               desc: the DNS role never reads the inventory; it resolves single trigger values through a database function
             - pkg: nyktus.org/nyktus/internal/alerting
               desc: the DNS role records events and their jobs; the worker processes them and sends alerts
@@ -111,6 +115,8 @@ linters:
               desc: the worker answers no requests; handlers live in API packages of their own
             - pkg: nyktus.org/nyktus/internal/honeytoken/honeytokenapi
               desc: the worker answers no requests and holds no code of the console
+            - pkg: nyktus.org/nyktus/internal/honeypot/honeypotapi
+              desc: the worker answers no requests and holds no code of the console
             - pkg: nyktus.org/nyktus/internal/audit/auditapi
               desc: the worker answers no requests and holds no code of the console
             - pkg: nyktus.org/nyktus/internal/trigger
@@ -134,6 +140,8 @@ linters:
             - pkg: nyktus.org/nyktus/internal/honeytoken
               desc: alerts carry no inventory; the incident holds what an alert reports
             - pkg: nyktus.org/nyktus/internal/scenario
+              desc: alerts carry no inventory; the incident holds what an alert reports
+            - pkg: nyktus.org/nyktus/internal/honeypot
               desc: alerts carry no inventory; the incident holds what an alert reports
         # Test-only dependencies must never reach the binaries.
         test-only:

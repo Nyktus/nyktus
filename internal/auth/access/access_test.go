@@ -226,6 +226,44 @@ func TestScenarios_ReadByEveryRoleWrittenByAdminsAndUsers(t *testing.T) {
 	}
 }
 
+// Every role reads the honeypots; only viewers cannot change them. A key that
+// changes them must also read them, and reading them requires no other scope:
+// a honeypot names no honeytoken, and no scenario names a honeypot.
+func TestHoneypots_ReadByEveryRoleWrittenByAdminsAndUsers(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		role        user.Role
+		read, write bool
+	}{
+		{user.RoleAdmin, true, true},
+		{user.RoleUser, true, true},
+		{user.RoleViewer, true, false},
+		{"", false, false},
+	} {
+		if got := Allowed(tt.role, "honeypots:read"); got != tt.read {
+			t.Errorf("Allowed(%q, honeypots:read) = %v, want %v", tt.role, got, tt.read)
+		}
+		if got := Allowed(tt.role, "honeypots:write"); got != tt.write {
+			t.Errorf("Allowed(%q, honeypots:write) = %v, want %v", tt.role, got, tt.write)
+		}
+	}
+
+	key := Principal{Method: audit.AuthAPIKey, APIKeyID: "k1", Scopes: []httpx.Permission{"honeypots:read"}}
+	if !key.Allowed("honeypots:read") || key.Allowed("honeypots:write") || key.Allowed("honeytokens:read") {
+		t.Error("a key with honeypots:read must read honeypots and nothing else")
+	}
+	if got, ok := KeyScopeRequires("honeypots:write"); !ok || got != "honeypots:read" {
+		t.Errorf("KeyScopeRequires(honeypots:write) = %s, %v", got, ok)
+	}
+	if got, ok := KeyScopeRequires("honeypots:read"); ok {
+		t.Errorf("KeyScopeRequires(honeypots:read) = %s, want none", got)
+	}
+	if got, _ := KeyScopeRequires("scenarios:read"); got == "honeypots:read" {
+		t.Error("scenarios:read requires honeypots:read, but no scenario names a honeypot")
+	}
+}
+
 // The catalog holds no inventory, so every role and every key with the scope
 // reads it; nobody changes it, because it ships with the server.
 func TestCatalog_ReadByEveryRoleAndKeysWithTheScope(t *testing.T) {

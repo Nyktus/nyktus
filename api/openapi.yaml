@@ -66,6 +66,8 @@ tags:
     description: The deceptions of the catalog, blueprints of scenarios that ship with Nyktus.
   - name: honeytokens
     description: Honeytokens of the team, which raise an event when their URL is requested.
+  - name: honeypots
+    description: Honeypots of the team, network services that a sensor emulates in the monitored network.
   - name: scenarios
     description: Scenarios of the team, which group decoys that tell one story.
   - name: artifacts
@@ -1886,6 +1888,367 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/honeypots:
+    get:
+      operationId: listHoneypots
+      summary: List honeypots
+      description: |
+        Returns honeypots from the newest to the oldest, a page at a time. To
+        read the next page, pass the `next_cursor` of a response as `cursor`,
+        with the same filters.
+
+        Honeypots are part of the inventory: whoever reads them knows which
+        services to avoid. Give integrations that do not manage honeypots keys
+        without the scope `honeypots:read`.
+      tags: [honeypots]
+      x-access: honeypots:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      parameters:
+        - name: limit
+          in: query
+          description: Number of honeypots per page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+        - name: service
+          in: query
+          description: Lists only honeypots of this service.
+          schema:
+            type: string
+            enum: [ssh, telnet, postgres, ldap]
+        - name: enabled
+          in: query
+          description: Lists only enabled (`true`) or disabled (`false`) honeypots.
+          schema:
+            type: string
+            enum: ["true", "false"]
+        - name: scenario_id
+          in: query
+          description: Lists only the honeypots of this scenario.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: A page of honeypots.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HoneypotPage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createHoneypot
+      summary: Create a honeypot
+      description: |
+        Creates a honeypot with a new secret of 256 random bits, which the
+        sensor presents to the trigger. The secret is shown only in this
+        response; the server keeps only a hash of it. To replace a lost or
+        exposed secret, use `POST /api/v1/honeypots/{id}/secret`.
+
+        The service cannot be changed, because the sensor is configured for
+        it: to emulate another service, create a new honeypot.
+
+        The audit log records the creation as `honeypot.create`.
+      tags: [honeypots]
+      x-access: honeypots:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateHoneypotRequest"
+      responses:
+        "201":
+          description: "The honeypot has been created. It is sent with `Cache-Control: no-store`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedHoneypot"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/honeypots/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getHoneypot
+      summary: Get a honeypot
+      tags: [honeypots]
+      x-access: honeypots:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The honeypot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Honeypot"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateHoneypot
+      summary: Change a honeypot
+      description: |
+        Changes the name, the notes, the state, the techniques or the severity
+        of a honeypot. Members that are left out stay unchanged. The service
+        and the secret cannot be changed here.
+
+        The audit log records the names of the changed fields as
+        `honeypot.update`, not their values. A request that changes no value
+        is not recorded.
+      tags: [honeypots]
+      x-access: honeypots:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateHoneypotRequest"
+      responses:
+        "200":
+          description: The honeypot after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Honeypot"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteHoneypot
+      summary: Delete a honeypot
+      description: |
+        Deletes a honeypot. Its secret stops working. Stop the honeypot on the
+        sensor as well, so that it does not mislead your own team. The audit
+        log records the deletion as `honeypot.delete`.
+      tags: [honeypots]
+      x-access: honeypots:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "204":
+          description: The honeypot has been deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/honeypots/{id}/secret:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: replaceHoneypotSecret
+      summary: Replace the secret of a honeypot
+      description: |
+        Gives a honeypot a new secret of 256 random bits. The old secret stops
+        working at once, so a sensor that still uses it is shut out until it
+        is configured with the new one. The new secret is shown only in this
+        response.
+
+        The honeypot forgets what its sensor last reported: its `status` is
+        `never` until a sensor reports with the new secret.
+
+        The audit log records the change as `honeypot.update` with the field
+        `secret`, never its value.
+      tags: [honeypots]
+      x-access: honeypots:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: "The honeypot with its new secret. It is sent with `Cache-Control: no-store`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedHoneypot"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/honeypots/{id}/scenario:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      operationId: assignHoneypotScenario
+      summary: Assign a honeypot to a scenario
+      description: |
+        Assigns a honeypot that stands alone to a scenario. Assigning a
+        honeypot to its own scenario again changes nothing.
+
+        A honeypot that belongs to another scenario receives `409` with the
+        code `honeypot_in_scenario`: remove it from that scenario first, so
+        that nothing takes a honeypot from a scenario by mistake. A scenario
+        that does not exist receives `422` with the code `scenario_not_found`.
+
+        The audit log records the change as `honeypot.update` with the field
+        `scenario_id`. A request that changes nothing is not recorded.
+      tags: [honeypots]
+      x-access: honeypots:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignScenarioRequest"
+      responses:
+        "200":
+          description: The honeypot after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Honeypot"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The honeypot belongs to another scenario (`honeypot_in_scenario`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: The scenario does not exist (`scenario_not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: detachHoneypotScenario
+      summary: Remove a honeypot from its scenario
+      description: |
+        Removes a honeypot from its scenario. The honeypot stays and stands
+        alone. A honeypot that stands alone stays as it is.
+
+        The audit log records the change as `honeypot.update` with the field
+        `scenario_id`. A request that changes nothing is not recorded.
+      tags: [honeypots]
+      x-access: honeypots:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The honeypot after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Honeypot"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
   /api/v1/scenarios:
     get:
       operationId: listScenarios
@@ -2060,15 +2423,19 @@ paths:
       operationId: deleteScenario
       summary: Delete a scenario
       description: |
-        Deletes a scenario. The parameters `honeytokens` and `artifacts`
-        choose what happens to its honeytokens and artifacts: `keep` removes
-        them from the scenario, and they stand alone; `delete` deletes them
-        with it. Events and incidents remain either way.
+        Deletes a scenario. The parameters `honeytokens`, `honeypots` and
+        `artifacts` choose what happens to its honeytokens, honeypots and
+        artifacts: `keep` removes them from the scenario, and they stand
+        alone; `delete` deletes them with it. Events and incidents remain
+        either way. `honeypots=delete` also requires the permission
+        `honeypots:write`, because only that permission puts a honeypot into
+        a scenario; without it, the request receives `403`.
 
         The audit log records the deletion as `scenario.delete`, and each
-        honeytoken and artifact as `honeytoken.update` or `artifact.update`
-        with the field `scenario_id`, or as `honeytoken.delete` or
-        `artifact.delete`, all in one transaction.
+        honeytoken, honeypot and artifact as `honeytoken.update`,
+        `honeypot.update` or `artifact.update` with the field `scenario_id`,
+        or as `honeytoken.delete`, `honeypot.delete` or `artifact.delete`, all
+        in one transaction.
       tags: [scenarios]
       x-access: scenarios:write
       security:
@@ -2079,6 +2446,14 @@ paths:
           in: query
           description: |
             What happens to the honeytokens of the scenario: `keep` (the
+            default) leaves them alone, `delete` deletes them.
+          schema:
+            type: string
+            enum: [keep, delete]
+        - name: honeypots
+          in: query
+          description: |
+            What happens to the honeypots of the scenario: `keep` (the
             default) leaves them alone, `delete` deletes them.
           schema:
             type: string
@@ -3486,7 +3861,7 @@ components:
             an artifact name the URLs and host names of honeytokens.
           items:
             type: string
-            enum: [artifacts:read, artifacts:write, audit:read, catalog:read, events:read, honeytokens:read, honeytokens:write, incidents:read, incidents:write, metrics:read, scenarios:read, scenarios:write]
+            enum: [artifacts:read, artifacts:write, audit:read, catalog:read, events:read, honeypots:read, honeypots:write, honeytokens:read, honeytokens:write, incidents:read, incidents:write, metrics:read, scenarios:read, scenarios:write]
         expires_at:
           type: string
           format: date-time
@@ -4040,6 +4415,184 @@ components:
         scenario_id:
           type: string
           format: uuid
+
+    Honeypot:
+      type: object
+      additionalProperties: false
+      required: [id, service, name, notes, enabled, techniques, severity, scenario_id, status, last_seen_at, sensor_version, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        service:
+          type: string
+          enum: [ssh, telnet, postgres, ldap]
+          description: The network service that the sensor emulates. It cannot be changed.
+        name:
+          type: string
+        notes:
+          type: string
+          description: Where and why the honeypot runs. Empty if there are none.
+        enabled:
+          type: boolean
+          description: Whether the honeypot is active.
+        techniques:
+          type: array
+          description: |
+            Identifiers of the MITRE ATT&CK techniques that an event suggests, in addition to those that
+            the kind of event suggests.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          description: The severity that the events of the honeypot receive, whatever the kind of event.
+        scenario_id:
+          type: [string, "null"]
+          format: uuid
+          description: The scenario that the honeypot belongs to, or null if it stands alone.
+        status:
+          type: string
+          enum: [never, online, offline]
+          description: |
+            `never` if no sensor has reported with the current secret, `online` if a sensor reported
+            within the last 15 minutes, and `offline` otherwise.
+        last_seen_at:
+          type: [string, "null"]
+          format: date-time
+          description: When a sensor last reported with the current secret, or null if none has.
+        sensor_version:
+          type: [string, "null"]
+          description: The version that the sensor named when it last reported, or null.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreatedHoneypot:
+      type: object
+      additionalProperties: false
+      required: [id, service, name, notes, enabled, techniques, severity, scenario_id, status, last_seen_at, sensor_version, created_at, updated_at, secret]
+      properties:
+        id:
+          type: string
+          format: uuid
+        service:
+          type: string
+          enum: [ssh, telnet, postgres, ldap]
+        name:
+          type: string
+        notes:
+          type: string
+        enabled:
+          type: boolean
+        techniques:
+          type: array
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        scenario_id:
+          type: [string, "null"]
+          format: uuid
+        status:
+          type: string
+          enum: [never]
+          description: A new secret has not been used by any sensor yet.
+        last_seen_at:
+          type: "null"
+        sensor_version:
+          type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        secret:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{43}$"
+          description: The secret that the sensor presents for this honeypot. It is shown only once.
+
+    HoneypotPage:
+      type: object
+      additionalProperties: false
+      required: [honeypots]
+      properties:
+        honeypots:
+          type: array
+          items:
+            $ref: "#/components/schemas/Honeypot"
+        next_cursor:
+          type: string
+          description: Cursor of the next page. Absent on the last page.
+
+    CreateHoneypotRequest:
+      type: object
+      additionalProperties: false
+      required: [service, name]
+      properties:
+        service:
+          type: string
+          enum: [ssh, telnet, postgres, ldap]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Printable characters without leading or trailing spaces.
+        notes:
+          type: string
+          maxLength: 2000
+          default: ""
+          description: Where and why the honeypot runs. Line breaks and tabs are allowed.
+        enabled:
+          type: boolean
+          default: true
+        techniques:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          default: []
+          description: Identifiers of techniques of the ATT&CK version that the server bundles, such as `T1021.004`.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          description: The severity that the events of the honeypot receive. Without it, `medium`.
+
+    UpdateHoneypotRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        notes:
+          type: string
+          maxLength: 2000
+        enabled:
+          type: boolean
+        techniques:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          description: Replaces the techniques. An empty list removes them.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          description: Changes the severity of later events. Recorded events keep theirs.
 
     Scenario:
       type: object

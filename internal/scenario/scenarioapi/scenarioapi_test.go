@@ -124,6 +124,21 @@ RETURNING id`, scenarioID).Scan(&id)
 	return id
 }
 
+// createHoneypot inserts a honeypot in the scenario scenarioID as the owner of
+// the database and returns its identifier.
+func (f fixture) createHoneypot(t *testing.T, scenarioID string) string {
+	t.Helper()
+	var id string
+	err := f.owner.QueryRow(t.Context(), `
+INSERT INTO honeypots (service, name, severity, secret_hash, scenario_id)
+VALUES ('ssh', 'p', 'medium', sha256(gen_random_uuid()::text::bytea), $1)
+RETURNING id`, scenarioID).Scan(&id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
 func TestCreateGetList(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -251,13 +266,59 @@ func TestDelete_KeepsOrDeletesTheHoneytokens(t *testing.T) {
 	}
 }
 
+// The deletion keeps the honeypots of the scenario unless the request asks to
+// delete them, independently of its honeytokens.
+func TestDelete_KeepsOrDeletesTheHoneypots(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	count := func(table string) int {
+		t.Helper()
+		var n int
+		if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM `+table).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for _, tt := range []struct {
+		query                  string
+		honeypots, honeytokens int
+	}{
+		{"", 1, 1},
+		{"?honeypots=keep", 2, 2},
+		{"?honeypots=delete", 2, 3},
+		{"?honeypots=delete&honeytokens=delete", 2, 3},
+	} {
+		sc := f.create(t, `{"name": "s"}`)
+		f.createHoneytoken(t, sc.ID)
+		f.createHoneypot(t, sc.ID)
+		rec := f.serve(t, f.h.Delete, http.MethodDelete, "/api/v1/scenarios/"+sc.ID+tt.query, sc.ID, "")
+		if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
+			t.Errorf("DELETE %s = %d %s, want 204", tt.query, rec.Code, rec.Body)
+		}
+		if got := count("honeypots"); got != tt.honeypots {
+			t.Errorf("DELETE %s: %d honeypots left, want %d", tt.query, got, tt.honeypots)
+		}
+		if got := count("honeytokens"); got != tt.honeytokens {
+			t.Errorf("DELETE %s: %d honeytokens left, want %d", tt.query, got, tt.honeytokens)
+		}
+	}
+	if n := count("honeypots WHERE scenario_id IS NULL"); n != 2 {
+		t.Errorf("%d honeypots stand alone, want the 2 that were kept", n)
+	}
+}
+
 func TestDelete_RejectsInvalidRequests(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	sc := f.create(t, `{"name": "s"}`)
 	h := f.createHoneytoken(t, sc.ID)
+	p := f.createHoneypot(t, sc.ID)
 
-	for _, query := range []string{"?honeytokens=cascade", "?honeytokens=", "?honeytokens=keep&honeytokens=delete", "?honeypots=keep"} {
+	for _, query := range []string{
+		"?honeytokens=cascade", "?honeytokens=", "?honeytokens=keep&honeytokens=delete", "?honeypots=cascade",
+		"?honeypots=delete&honeypots=delete", "?sensors=keep",
+	} {
 		rec := f.serve(t, f.h.Delete, http.MethodDelete, "/api/v1/scenarios/"+sc.ID+query, sc.ID, "")
 		if rec.Code != http.StatusBadRequest || errorCode(t, rec) != "invalid_request" {
 			t.Errorf("DELETE %s = %d %s, want 400 invalid_request", query, rec.Code, rec.Body)
@@ -272,6 +333,10 @@ func TestDelete_RejectsInvalidRequests(t *testing.T) {
 	if err := f.owner.QueryRow(t.Context(), `SELECT scenario_id::text FROM honeytokens WHERE id = $1`, h).Scan(&scenarioID); err != nil ||
 		scenarioID == nil || *scenarioID != sc.ID {
 		t.Errorf("honeytoken in %v, %v; want it unchanged in the scenario", scenarioID, err)
+	}
+	if err := f.owner.QueryRow(t.Context(), `SELECT scenario_id::text FROM honeypots WHERE id = $1`, p).Scan(&scenarioID); err != nil ||
+		scenarioID == nil || *scenarioID != sc.ID {
+		t.Errorf("honeypot in %v, %v; want it unchanged in the scenario", scenarioID, err)
 	}
 }
 

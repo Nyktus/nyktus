@@ -14,6 +14,7 @@ import (
 
 	"nyktus.org/nyktus/internal/artifact"
 	"nyktus.org/nyktus/internal/audit"
+	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/db"
 )
@@ -245,12 +246,12 @@ RETURNING `+columns, id, updated.Name, updated.Notes, updated.EngageActivities))
 // there is no such scenario.
 //
 // Delete must run in a transaction. It locks the scenario before its
-// resources, as the assignment of a honeytoken does, so that a honeytoken
-// that joins the scenario meanwhile either waits and then finds no scenario,
-// or joined before and is removed with the others. Honeytokens are removed
-// before artifacts, everywhere.
+// resources, as the assignment of a honeytoken or a honeypot does, so that a
+// resource that joins the scenario meanwhile either waits and then finds no
+// scenario, or joined before and is removed with the others. Honeytokens are
+// removed before honeypots, and honeypots before artifacts, everywhere.
 func (s *Store) Delete(ctx context.Context, id string, removals ResourceRemovals) (Removed, error) {
-	if !removals.Honeytokens.Valid() || !removals.Artifacts.Valid() {
+	if !removals.Honeytokens.Valid() || !removals.Honeypots.Valid() || !removals.Artifacts.Valid() {
 		return Removed{}, ErrInvalidRemoval
 	}
 	var found bool
@@ -272,6 +273,14 @@ func (s *Store) Delete(ctx context.Context, id string, removals ResourceRemovals
 	} else {
 		removed.DetachedHoneytokens = ids
 	}
+	if ids, err = s.remove(ctx, "honeypots", id, removals.Honeypots); err != nil {
+		return Removed{}, err
+	}
+	if removals.Honeypots == RemovalDelete {
+		removed.DeletedHoneypots = ids
+	} else {
+		removed.DetachedHoneypots = ids
+	}
 	if ids, err = s.remove(ctx, "artifacts", id, removals.Artifacts); err != nil {
 		return Removed{}, err
 	}
@@ -292,6 +301,12 @@ var removeStatements = map[string]map[Removal]string{
 	"honeytokens": {
 		RemovalDelete: `DELETE FROM honeytokens WHERE scenario_id = $1 RETURNING id`,
 		RemovalKeep: `UPDATE honeytokens SET scenario_id = NULL, updated_at = clock_timestamp()
+WHERE scenario_id = $1
+RETURNING id`,
+	},
+	"honeypots": {
+		RemovalDelete: `DELETE FROM honeypots WHERE scenario_id = $1 RETURNING id`,
+		RemovalKeep: `UPDATE honeypots SET scenario_id = NULL, updated_at = clock_timestamp()
 WHERE scenario_id = $1
 RETURNING id`,
 	},
@@ -377,8 +392,8 @@ func Update(ctx context.Context, d DB, actor audit.Actor, id string, c Change) (
 }
 
 // Delete deletes the scenario id on behalf of actor, as Store.Delete does, and
-// records it in the audit log together with every honeytoken and artifact
-// that it deleted or detached, all in one transaction.
+// records it in the audit log together with every honeytoken, honeypot and
+// artifact that it deleted or detached, all in one transaction.
 func Delete(ctx context.Context, d DB, actor audit.Actor, id string, removals ResourceRemovals) (Removed, error) {
 	var removed Removed
 	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
@@ -394,6 +409,8 @@ func Delete(ctx context.Context, d DB, actor audit.Actor, id string, removals Re
 		}{
 			{removed.DeletedHoneytokens, honeytoken.ResourceType, audit.ActionHoneytokenDelete, nil},
 			{removed.DetachedHoneytokens, honeytoken.ResourceType, audit.ActionHoneytokenUpdate, []string{honeytoken.FieldScenarioID}},
+			{removed.DeletedHoneypots, honeypot.ResourceType, audit.ActionHoneypotDelete, nil},
+			{removed.DetachedHoneypots, honeypot.ResourceType, audit.ActionHoneypotUpdate, []string{honeypot.FieldScenarioID}},
 			{removed.DeletedArtifacts, artifact.ResourceType, audit.ActionArtifactDelete, nil},
 			{removed.DetachedArtifacts, artifact.ResourceType, audit.ActionArtifactUpdate, []string{artifact.FieldScenarioID}},
 		} {

@@ -181,6 +181,7 @@ func (r Removal) Valid() bool {
 // that is deleted.
 type ResourceRemovals struct {
 	Honeytokens Removal
+	Honeypots   Removal
 	Artifacts   Removal
 }
 
@@ -190,6 +191,9 @@ type Removed struct {
 	// honeytokens that were deleted or detached.
 	DeletedHoneytokens  []string
 	DetachedHoneytokens []string
+	// DeletedHoneypots and DetachedHoneypots are those of the honeypots.
+	DeletedHoneypots  []string
+	DetachedHoneypots []string
 	// DeletedArtifacts and DetachedArtifacts are those of the artifacts.
 	DeletedArtifacts  []string
 	DetachedArtifacts []string
