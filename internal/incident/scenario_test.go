@@ -78,6 +78,70 @@ func TestStore_EventsOfAScenarioShareOneIncident(t *testing.T) {
 	}
 }
 
+// honeypot creates an enabled honeypot of service ssh with a new secret and
+// returns its identifier and the SQL that records a session of it.
+func (f fixture) honeypot(t *testing.T, severity string, techniques []string) (id, record string) {
+	t.Helper()
+	if techniques == nil {
+		techniques = []string{}
+	}
+	err := f.owner.QueryRow(t.Context(), `
+INSERT INTO honeypots (service, name, severity, techniques, secret_hash)
+VALUES ('ssh', 'h', $1, $2, sha256(convert_to(gen_random_uuid()::text, 'UTF8'))) RETURNING id`, severity, techniques).Scan(&id)
+	if err != nil {
+		t.Fatalf("create honeypot: %v", err)
+	}
+	return id, `SELECT * FROM public.record_honeypot_session((SELECT secret_hash FROM honeypots WHERE id = '` + id + `'),
+	gen_random_uuid(), interval '0', 10, '192.0.2.1', 22, 'login_attempt', NULL, NULL, NULL, NULL, NULL, '[{"username":"root"}]')`
+}
+
+// A honeytoken and a honeypot of one scenario share one incident with one
+// alert, whatever raised the event; a honeypot that stands alone keeps an
+// incident of its own, of its own kind.
+func TestStore_HoneytokenAndHoneypotOfAScenarioShareOneIncident(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	sc := f.scenario(t)
+	url, urlValue := f.honeytoken(t, "web_image", []string{"T1083"})
+	pot, inScenario := f.honeypot(t, "high", []string{"T1078"})
+	alone, standalone := f.honeypot(t, "medium", nil)
+	f.exec(t, "UPDATE honeytokens SET scenario_id = $1 WHERE id = $2", sc, url)
+	f.exec(t, "UPDATE honeypots SET scenario_id = $1 WHERE id = $2", sc, pot)
+
+	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')", urlValue)
+	f.exec(t, inScenario)
+	f.exec(t, standalone)
+	f.exec(t, inScenario)
+
+	first := f.process(t)
+	if !first.Opened || first.ResourceType != scenario.ResourceType || first.ResourceID != sc || first.Severity != severity.Low {
+		t.Fatalf("event of the honeytoken = %+v, want an opened incident of the scenario with severity low", first)
+	}
+	session := f.process(t)
+	if session.Opened || session.IncidentID != first.IncidentID || session.Severity != severity.High {
+		t.Errorf("session of the honeypot of the scenario = %+v, want it in %s with severity high", session, first.IncidentID)
+	}
+	own := f.process(t)
+	if !own.Opened || own.ResourceType != "honeypot" || own.ResourceID != alone || own.IncidentID == first.IncidentID {
+		t.Errorf("session of a honeypot that stands alone = %+v, want an incident of its own", own)
+	}
+	if again := f.process(t); again.Opened || again.IncidentID != first.IncidentID {
+		t.Errorf("further session of the scenario = %+v, want it in %s", again, first.IncidentID)
+	}
+
+	got := f.incident(t, first.IncidentID)
+	if got.status != StatusOpen || got.severity != severity.High || got.count != 3 || len(got.techniques) != 4 {
+		t.Errorf("incident of the scenario = %+v, want open, high, 3 events, 4 techniques", got)
+	}
+	if n := f.count(t, "SELECT count(*) FROM alerts"); n != 2 {
+		t.Errorf("%d alerts, want one of the scenario and one of the honeypot that stands alone", n)
+	}
+	if n := f.count(t, "SELECT count(*) FROM incidents"); n != 2 {
+		t.Errorf("%d incidents, want 2", n)
+	}
+}
+
 // A honeytoken that joins a scenario keeps its open incident: its later events
 // go to the incident of the scenario, which opens with its own alert, and the
 // incident of the honeytoken stays open. Events that it raised before it
@@ -282,7 +346,7 @@ VALUES ($1, gen_random_uuid(), 'low', now(), now())`, typ); err != nil {
 	}
 	if _, err := f.owner.Exec(t.Context(), `
 INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
-VALUES ('honeypot', gen_random_uuid(), 'low', now(), now())`); err == nil {
-		t.Error("the schema accepts incidents of honeypots, which do not exist yet")
+VALUES ('artifact', gen_random_uuid(), 'low', now(), now())`); err == nil {
+		t.Error("the schema accepts incidents of artifacts, which raise no events")
 	}
 }

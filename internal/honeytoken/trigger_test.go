@@ -42,7 +42,7 @@ func TestTriggerPath_IsAnsweredByTheTrigger(t *testing.T) {
 			continue
 		}
 		rec := &valueRecorder{}
-		h := trigger.New(trigger.Options{Logger: slog.New(slog.DiscardHandler), Recorder: rec, DefaultRedirect: "https://www.example.com/"})
+		h := trigger.New(trigger.Options{Logger: slog.New(slog.DiscardHandler), Recorder: rec, Reporter: noReporter{}, DefaultRedirect: "https://www.example.com/"})
 		ht := Honeytoken{Type: typ, TriggerValue: newTriggerValue()}
 
 		w := httptest.NewRecorder()
@@ -54,6 +54,17 @@ func TestTriggerPath_IsAnsweredByTheTrigger(t *testing.T) {
 			t.Errorf("%s: status = %d, want %d", typ, w.Code, want[typ])
 		}
 	}
+}
+
+// noReporter reports nothing: this test is about honeytokens.
+type noReporter struct{}
+
+func (noReporter) RecordSession(context.Context, []byte, trigger.Session) (trigger.ReportResult, error) {
+	return trigger.ReportResult{Outcome: trigger.ReportUnknown}, nil
+}
+
+func (noReporter) RecordHeartbeat(context.Context, []byte, trigger.Heartbeat) (trigger.ReportResult, error) {
+	return trigger.ReportResult{Outcome: trigger.ReportUnknown}, nil
 }
 
 type queryRecorder struct {

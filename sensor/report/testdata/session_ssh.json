@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "type": "session",
+  "session_id": "0123456789abcdef0123456789abcdef",
+  "age_ms": 1500,
+  "duration_ms": 4200,
+  "client_ip": "203.0.113.9",
+  "port": 22,
+  "client_version": "SSH-2.0-OpenSSH_9.6",
+  "attempts": [
+    {
+      "username": "root",
+      "password_length": 8
+    },
+    {
+      "username": "admin",
+      "key_fingerprint": "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  ]
+}

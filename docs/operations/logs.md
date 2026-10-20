@@ -22,13 +22,18 @@ Requests without valid credentials, such as a failed setup attempt or a request 
 
 ## Trigger
 
-The trigger writes one record with the message `trigger: request` per request. It never logs the requested path, because the path holds the value of a honeytoken.
+The trigger writes one record with the message `trigger: request` per request. It never logs the requested path, because the path holds the value of a honeytoken, and never the secret of a [sensor](honeypots.md#how-a-sensor-reports) or anything that a sensor or an attacker chose, such as user names or search filters.
 
 | Field | Content |
 |---|---|
 | `method` | HTTP method. |
-| `outcome` | `recorded` (an event was stored), `unknown` (the value belongs to no honeytoken), `disabled`, `limited` (the honeytoken reached its limit of events), `failed` (recording failed; see the error record before it), or `not_looked_up` (the path holds no value, or the method is not recorded). |
+| `outcome` | `recorded` (an event was stored, or a heartbeat accepted), `unknown` (the value belongs to no honeytoken, or the secret to no honeypot), `disabled`, `limited` (the honeytoken or honeypot reached its limit of events), `duplicate` (a session had been recorded before), `rejected` (a report that the trigger does not accept; see `reason`), `failed` (recording failed; see the error record before it), or `not_looked_up` (the path holds no value, or the method is not recorded; a `POST` to `/` without a secret of the form of one). |
 | `honeytoken_id` | The identifier of the honeytoken, unless its value is unknown. |
+| `report` | `session` or `heartbeat`, for a report of a sensor that the trigger read. |
+| `honeypot_id` | The identifier of the honeypot, unless its secret is unknown. |
+| `service` | The service of the honeypot, such as `ssh`. |
+| `event_type` | The highest stage that a reported session reached: `connection`, `login_attempt` or `directory_query`. |
+| `reason` | Why a report was `rejected`: `unsupported_version` (the report names a version that this server does not know, usually because the sensor is newer: update the server first) or `invalid_report` (not JSON of the expected form, too large, or a value outside its limits, or a session that does not fit the service of the honeypot). |
 | `status` | `302` or `200`. |
 | `duration` | Time to answer, in nanoseconds. |
 | `client_ip` | Address of the client. |
@@ -40,6 +45,7 @@ The trigger answers a failed request like any other, so the log is the only plac
 | `trigger: recording failed` | error | The database could not record the request, for example because it was unreachable or slower than two seconds. `error` names the cause. |
 | `trigger: handler panicked` | error | A programming error; `panic` and `stack` describe it. The client still receives the regular answer. |
 | `trigger: requests not recorded` | warn | Requests of the honeytoken `honeytoken_id` beyond its [limit of events](honeytokens.md#events) in the last minute; `requests` is their number. |
+| `trigger: reports not recorded` | warn | Sessions of the honeypot `honeypot_id` beyond its [limit of events](honeypots.md#limits) in the last minute; `reports` is their number. |
 
 ## DNS
 

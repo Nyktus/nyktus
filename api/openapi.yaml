@@ -73,9 +73,9 @@ tags:
   - name: artifacts
     description: Files that applying a deception rendered, to be placed with its scenario.
   - name: incidents
-    description: Incidents, which correlate the events of a scenario or of a honeytoken that stands alone, and their triage.
+    description: Incidents, which correlate the events of a scenario or of a honeytoken or honeypot that stands alone, and their triage.
   - name: events
-    description: Recorded requests and queries of honeytokens.
+    description: Recorded requests and queries of honeytokens and sessions of honeypots.
   - name: alerting
     description: Channels that alerts are delivered to, managed by administrators.
   - name: metrics
@@ -968,7 +968,8 @@ paths:
       summary: Read the metrics
       description: |
         Returns the state of the queues of events and alerts, the incidents that
-        are not closed and the periodic tasks of the worker, in the text format
+        are not closed, the honeypots by whether a sensor reports for them and
+        the periodic tasks of the worker, in the text format
         of Prometheus, version 0.0.4. Every metric is a gauge with the prefix
         `nyktus_`. Values are aggregates, and labels name only fixed states and
         tasks, never a resource, an address or a name.
@@ -2779,9 +2780,9 @@ paths:
         - name: resource_id
           in: query
           description: |
-            Lists only the incidents of this scenario, or of this honeytoken
-            while it stood alone. The events of a honeytoken in a scenario
-            belong to the incidents of the scenario.
+            Lists only the incidents of this scenario, or of this honeytoken or
+            honeypot while it stood alone. The events of a honeytoken or honeypot
+            in a scenario belong to the incidents of the scenario.
           schema:
             type: string
             format: uuid
@@ -2902,11 +2903,12 @@ paths:
         as `cursor`, with the same filter. The order follows `recorded_at`, not
         `occurred_at`: a DNS query can be recorded up to five minutes after it
         arrived, and is listed when it was recorded. The events of a honeytoken
-        are among those of its incidents, or of the incidents of its scenario,
-        which also hold the events of the other honeytokens of the scenario;
-        `resource_id` names the honeytoken of each.
+        or honeypot are among those of its incidents, or of the incidents of its
+        scenario, which also hold the events of the other honeytokens and
+        honeypots of the scenario; `resource_id` names the resource of each.
 
-        Events contain personal data, such as the addresses of clients. Every
+        Events contain personal data, such as the addresses of clients and the
+        user names that an attacker typed into a honeypot. Every
         read is recorded in the audit log as `events.read`, at most once per
         user or API key and minute.
       tags: [events]
@@ -4901,15 +4903,15 @@ components:
           format: uuid
         resource_type:
           type: string
-          enum: [honeytoken, scenario]
+          enum: [honeypot, honeytoken, scenario]
           description: |
             `scenario` for an incident that correlates the events of every
-            honeytoken of a scenario, `honeytoken` for one of a honeytoken that
-            stood alone when its events arrived.
+            honeytoken and honeypot of a scenario, `honeytoken` or `honeypot`
+            for one of a resource that stood alone when its events arrived.
         resource_id:
           type: string
           format: uuid
-          description: The scenario or honeytoken of the incident. It may have been deleted since.
+          description: The scenario, honeytoken or honeypot of the incident. It may have been deleted since.
         status:
           type: string
           enum: [open, acknowledged, closed]
@@ -5012,39 +5014,41 @@ components:
       type: object
       additionalProperties: false
       required: [id, resource_type, resource_id, scenario_id, honeytoken_type, techniques, severity, incident_id,
-        occurred_at, recorded_at, channel, client_ip, http, dns]
+        occurred_at, recorded_at, channel, client_ip, http, dns, sensor]
       properties:
         id:
           type: string
           format: uuid
         resource_type:
           type: string
-          enum: [honeytoken]
+          enum: [honeypot, honeytoken]
         resource_id:
           type: string
           format: uuid
-          description: The honeytoken that was requested. It may have been deleted since.
+          description: The honeytoken that was requested or the honeypot that was reached. It may have been deleted since.
         scenario_id:
           type: [string, "null"]
           format: uuid
           description: |
-            The scenario that the honeytoken belonged to when it was requested,
+            The scenario that the honeytoken or honeypot belonged to when the event arrived,
             or null if it stood alone. The event belongs to the incidents of
-            this scenario, also if the honeytoken changed its scenario since.
+            this scenario, also if the resource changed its scenario since.
         honeytoken_type:
           type: [string, "null"]
           enum: [web_url, web_image, dns, null]
-          description: The type of the honeytoken.
+          description: The type of the honeytoken; null for a honeypot.
         techniques:
           type: array
-          description: The techniques that the honeytoken had when it was requested.
+          description: |
+            The techniques that the honeytoken had when it was requested. For a session of a honeypot, those
+            of its kind of event for the service, followed by those of the honeypot when the session ended.
           items:
             type: string
             pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
         severity:
           type: string
           enum: [low, medium, high, critical]
-          description: The severity that the honeytoken had when it was requested.
+          description: The severity that the honeytoken or honeypot had when the event arrived.
         incident_id:
           type: [string, "null"]
           format: uuid
@@ -5052,19 +5056,19 @@ components:
         occurred_at:
           type: string
           format: date-time
-          description: When the request or query arrived.
+          description: When the request or query arrived, or when the session began.
         recorded_at:
           type: string
           format: date-time
           description: When the event was written.
         channel:
           type: string
-          enum: [http, dns]
+          enum: [http, dns, sensor]
         client_ip:
           type: [string, "null"]
           description: |
-            The address of the client, or for `dns` of the resolver that sent the query, or null if it is
-            unknown. Personal data.
+            The address of the client, or for `dns` of the resolver that sent the query, or for `sensor` of
+            the attacker as the sensor saw it, or null if it is unknown. Personal data.
         http:
           description: The request, for the channel `http`; null otherwise.
           oneOf:
@@ -5075,6 +5079,90 @@ components:
           oneOf:
             - type: "null"
             - $ref: "#/components/schemas/EventQuery"
+        sensor:
+          description: The session, for the channel `sensor`; null otherwise.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EventSession"
+
+    EventSession:
+      type: object
+      additionalProperties: false
+      required: [service, event_type, port, duration_ms, client_version, database, application_name, query, attempts]
+      description: |
+        What a sensor reported about one session of an attacker with a honeypot. The sensor and the attacker chose
+        everything but `service` and `event_type`: the text is shortened, and invalid and non-printable characters
+        are replaced; treat it as claims, not facts. Personal data. A password is never stored, only its length.
+      properties:
+        service:
+          type: string
+          enum: [ssh, telnet, postgres, ldap]
+          description: The service of the honeypot when the session ended.
+        event_type:
+          type: string
+          enum: [connection, login_attempt, directory_query]
+          description: |
+            The highest stage that the session reached: `directory_query` ranks above `login_attempt`, which
+            ranks above a bare `connection`.
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: The port of the honeypot that the attacker reached.
+        duration_ms:
+          type: integer
+          minimum: 0
+          maximum: 300000
+          description: How long the session lasted, in milliseconds.
+        client_version:
+          type: [string, "null"]
+          description: The version string of an SSH client, or null.
+        database:
+          type: [string, "null"]
+          description: The database that a PostgreSQL client asked for, or null.
+        application_name:
+          type: [string, "null"]
+          description: The application name that a PostgreSQL client gave, or null.
+        query:
+          description: The first search of a directory client, or null.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EventSessionQuery"
+        attempts:
+          type: array
+          maxItems: 6
+          description: The logins and binds of the session, in the order in which they were made.
+          items:
+            $ref: "#/components/schemas/EventAttempt"
+
+    EventSessionQuery:
+      type: object
+      additionalProperties: false
+      required: [base_dn, filter]
+      properties:
+        base_dn:
+          type: string
+          description: The base of the search. The empty string is the root of the directory.
+        filter:
+          type: string
+
+    EventAttempt:
+      type: object
+      additionalProperties: false
+      required: [username, password_length, key_fingerprint]
+      properties:
+        username:
+          type: string
+          description: The user name or distinguished name that the attacker used. It may be empty.
+        password_length:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 65535
+          description: The length of the password that was sent, or null if none was. The password itself is not stored.
+        key_fingerprint:
+          type: [string, "null"]
+          pattern: "^SHA256:[A-Za-z0-9+/]{43}$"
+          description: The fingerprint of the public key that was offered, or null.
 
     EventRequest:
       type: object

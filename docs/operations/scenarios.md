@@ -51,9 +51,9 @@ A [honeypot](honeypots.md) joins and leaves a scenario in the same way, through 
 
 ## Incidents
 
-The events of every honeytoken of a scenario join one open [incident](incidents.md#how-events-become-incidents) of the scenario, with one alert. The incident and its alert name the scenario as their resource (`resource_type` `scenario`), and `GET /api/v1/incidents?resource_id=<scenario>` lists the incidents of a scenario.
+The events of every honeytoken and honeypot of a scenario join one open [incident](incidents.md#how-events-become-incidents) of the scenario, with one alert: a request of a URL and a session on a host of the same story are one incident. The incident and its alert name the scenario as their resource (`resource_type` `scenario`), and `GET /api/v1/incidents?resource_id=<scenario>` lists the incidents of a scenario.
 
-An event belongs to the scenario its honeytoken belonged to when the event was recorded. A honeytoken that joins a scenario while it has an open incident of its own keeps that incident open until it is triaged or closes after its inactivity; its next events join the incident of the scenario. A honeytoken that leaves a scenario opens incidents of its own again. Incidents of a scenario remain when the scenario is deleted.
+An event belongs to the scenario its honeytoken or honeypot belonged to when the event was recorded. A honeytoken that joins a scenario while it has an open incident of its own keeps that incident open until it is triaged or closes after its inactivity; its next events join the incident of the scenario. A honeytoken that leaves a scenario opens incidents of its own again. Incidents of a scenario remain when the scenario is deleted.
 
 ## Listing, changing and deleting
 

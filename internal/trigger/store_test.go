@@ -64,8 +64,8 @@ func (f fixture) count(t *testing.T, query string, args ...any) int {
 func ptr(s string) *string { return &s }
 
 // The trigger refuses to start with a login that can do more than record
-// requests, or that cannot record them. db.CheckFunctionOnly covers every
-// privilege; this test checks that the trigger names its own role and function.
+// requests, or that cannot record them. db.CheckScope covers every privilege;
+// this test checks that the trigger names its own role and functions.
 func TestCheckPrivileges(t *testing.T) {
 	t.Parallel()
 

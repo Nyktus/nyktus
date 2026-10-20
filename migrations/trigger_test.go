@@ -75,6 +75,11 @@ func TestTriggerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT public.audit_field_names_valid('{name}')",
 		"SELECT public.api_key_scopes_valid('{audit:read}')",
 		"SELECT public.set_updated_at()",
+		"SELECT public.honeypot_status(NULL)",
+		"SELECT * FROM public.honeypots",
+		"SELECT * FROM public.event_attempts",
+		"UPDATE honeypots SET last_seen_at = now()",
+		"INSERT INTO event_attempts (event_id, ordinal, username) VALUES (gen_random_uuid(), 1, 'root')",
 	} {
 		expectDenied(t, pool, statement)
 	}
@@ -110,8 +115,12 @@ func expectDenied(t *testing.T, pool *pgxpool.Pool, statement string) {
 
 // Functions that the internet-facing roles may execute.
 var (
-	triggerFunctions = []string{"public.record_honeytoken_request(text, text, inet, text, text, text)"}
-	dnsFunctions     = []string{"public.record_dns_query(text, text, text, text, text, inet, interval)"}
+	triggerFunctions = []string{
+		"public.record_honeytoken_request(text, text, inet, text, text, text)",
+		"public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb)",
+		"public.record_honeypot_heartbeat(bytea, text)",
+	}
+	dnsFunctions = []string{"public.record_dns_query(text, text, text, text, text, inet, interval)"}
 )
 
 // rolePrivileges reports every privilege of a group role on the objects of the
@@ -143,12 +152,12 @@ SELECT 'schema public: CREATE' WHERE has_schema_privilege($1, 'public', 'CREATE'
 	return held
 }
 
-func TestTriggerRole_HasNoPrivilegesBeyondItsFunction(t *testing.T) {
+func TestTriggerRole_HasNoPrivilegesBeyondItsFunctions(t *testing.T) {
 	t.Parallel()
 
 	dbURL := schematest.New(t)
 	if held := rolePrivileges(t, dbURL, schematest.TriggerRole, triggerFunctions...); len(held) > 0 {
-		t.Errorf("nyktus_trigger holds %v, want nothing beyond EXECUTE on record_honeytoken_request", held)
+		t.Errorf("nyktus_trigger holds %v, want nothing beyond EXECUTE on its three functions", held)
 	}
 	// Without exceptions, the query must find the granted functions, so that
 	// an empty list never hides every function.
@@ -247,6 +256,6 @@ func TestApply_IgnoresDefaultPrivilegesOfTheTrigger(t *testing.T) {
 		t.Fatalf("Apply() error = %v", err)
 	}
 	if held := rolePrivileges(t, dbURL, schematest.TriggerRole, triggerFunctions...); len(held) > 0 {
-		t.Errorf("nyktus_trigger holds %v, want nothing beyond EXECUTE on record_honeytoken_request", held)
+		t.Errorf("nyktus_trigger holds %v, want nothing beyond EXECUTE on its three functions", held)
 	}
 }

@@ -25,8 +25,8 @@ END
 $$;
 
 -- Group role of the trigger, which answers requests from the internet. It can
--- only call the function that records a request; its login role is a member of
--- it.
+-- only call the functions that record a request of a honeytoken and the reports
+-- of sensors; its login role is a member of it.
 DO $$
 BEGIN
 	CREATE ROLE nyktus_trigger NOLOGIN;
