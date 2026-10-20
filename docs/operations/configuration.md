@@ -42,7 +42,7 @@ Settings of a server role are only read when the role runs. A process started wi
 
 ### Role `trigger`
 
-The trigger answers the URLs of [honeytokens](honeytokens.md) and records their requests. It is reached from the internet, usually through your reverse proxy. Its public address, `NYKTUS_TRIGGER_URL`, is a setting of the console, which hands out the URLs; the trigger answers every host name.
+The trigger answers the URLs of [honeytokens](honeytokens.md) and records their requests. It also accepts the [reports](honeypots.md#how-a-sensor-reports) of sensors, a `POST` to `/` with the secret of a honeypot, and answers them like every other request. It is reached from the internet, usually through your reverse proxy, and sensors reach it from the monitored networks over TLS. Its public address, `NYKTUS_TRIGGER_URL`, is a setting of the console, which hands out the URLs; the trigger answers every host name.
 
 | Variable | Default | Description |
 |---|---|---|

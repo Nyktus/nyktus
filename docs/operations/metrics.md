@@ -1,6 +1,6 @@
 # Metrics
 
-The console reports the state of Nyktus to a monitoring system such as Prometheus: the queues of events and alerts, the incidents that are not closed, and the [periodic tasks](database.md#periodic-tasks) of the worker. The worker listens on no port, so the console answers for it; the values come from the database, which all roles share.
+The console reports the state of Nyktus to a monitoring system such as Prometheus: the queues of events and alerts, the incidents that are not closed, the honeypots by whether a sensor reports for them, and the [periodic tasks](database.md#periodic-tasks) of the worker. The worker listens on no port, so the console answers for it; the values come from the database, which all roles share.
 
 ## Reading the metrics
 
@@ -24,7 +24,7 @@ Every request reads the database, so scrape at most every 15 seconds; once a min
 
 ## What the metrics report
 
-Every metric is a gauge. Values are aggregates; labels name only a fixed status or the name of a periodic task, never a honeytoken, an incident, a channel, an address or a name. Ages are in seconds, times in seconds since the epoch, and `0` where there is nothing to measure.
+Every metric is a gauge. Values are aggregates; labels name only a fixed status or the name of a periodic task, never a honeytoken, a honeypot, an incident, a channel, an address or a name. Ages are in seconds, times in seconds since the epoch, and `0` where there is nothing to measure.
 
 | Metric | Labels | Value |
 |---|---|---|
@@ -35,6 +35,7 @@ Every metric is a gauge. Values are aggregates; labels name only a fixed status 
 | `nyktus_alert_deliveries` | `status`: `pending`, `dead` | [Deliveries](alerting.md#delivery) of alerts and tests that wait to be sent, and those that [failed for good](alerting.md#dead-deliveries), within the retention. |
 | `nyktus_alert_deliveries_oldest_due_age_seconds` | | How long the delivery that has been due longest has waited. |
 | `nyktus_incidents` | `status`: `open`, `acknowledged` | Incidents that are not closed. |
+| `nyktus_honeypots` | `status`: `never`, `online`, `offline` | Honeypots by their [status](honeypots.md#status), disabled ones included. All three values are always reported, also with `0`. |
 | `nyktus_periodic_task_last_success_timestamp_seconds` | `task` | When a periodic task last ran to its end. |
 | `nyktus_periodic_task_last_failure_timestamp_seconds` | `task` | When a periodic task last failed. |
 | `nyktus_periodic_task_last_rows` | `task` | Rows that the last successful run removed or changed. |
@@ -45,6 +46,7 @@ Every metric is a gauge. Values are aggregates; labels name only a fixed status 
 - **No worker.** `time() - nyktus_periodic_task_last_success_timestamp_seconds{task="delete_expired_sign_in_data"} > 900`: the task runs every five minutes, so no worker has run it for three intervals. Without a worker, events raise no alerts.
 - **Events not processed.** `nyktus_event_jobs_oldest_age_seconds > 300` or `nyktus_event_jobs_retrying > 0`: events wait, and their alerts with them.
 - **Alerts not delivered.** `nyktus_alert_deliveries{status="dead"} > 0` after a change, or `nyktus_alert_deliveries_oldest_due_age_seconds > 300`: a channel does not accept alerts. [Retry](alerting.md#dead-deliveries) dead deliveries once the channel works.
+- **A sensor stopped.** `nyktus_honeypots{status="offline"} > 0`: no sensor has reported for a honeypot in 15 minutes. A honeypot that nobody reaches raises no alert, so this is the only sign that a sensor stopped, lost its connection to the trigger or no longer runs a honeypot. A honeypot that you removed from the sensor stays offline until you delete it in the console. `nyktus_honeypots{status="never"} > 0` for longer than it takes to set up a sensor means that a sensor has not yet reported with the current secret.
 - **A periodic task fails.** `nyktus_periodic_task_last_failure_timestamp_seconds > nyktus_periodic_task_last_success_timestamp_seconds`: the log of the worker names the cause as `worker: job failed`.
 
 Monitor the processes themselves, their memory and their connections, with the tools of your platform; Nyktus reports no metrics of the Go runtime.

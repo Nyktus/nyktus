@@ -14,13 +14,14 @@ package incident
 import (
 	"slices"
 
+	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/scenario"
 )
 
 // ResourceTypes lists what an incident can correlate: the events of a
-// scenario, or of a honeytoken that stood alone.
-var ResourceTypes = []string{honeytoken.ResourceType, scenario.ResourceType}
+// scenario, or of a honeytoken or honeypot that stood alone.
+var ResourceTypes = []string{honeytoken.ResourceType, honeypot.ResourceType, scenario.ResourceType}
 
 // Status is where an incident stands in triage. It only moves forward, in the
 // order of Statuses.

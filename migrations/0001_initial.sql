@@ -1329,6 +1329,32 @@ BEGIN
 END
 $$;
 
+-- Whether a sensor reports for a honeypot, from the time of its last report: a
+-- honeypot is offline after three intervals of the heartbeat of a sensor, so
+-- that a single lost or late heartbeat never makes it offline. The window
+-- starts at statement_timestamp(), so that every honeypot of a statement is
+-- judged at the same time. The console lists the status and the metrics count
+-- it, and both use this definition.
+CREATE FUNCTION public.honeypot_status(last_seen timestamptz) RETURNS text
+	LANGUAGE sql STABLE
+	SET search_path = ''
+	RETURN CASE
+		WHEN last_seen IS NULL THEN 'never'
+		WHEN last_seen > statement_timestamp() - interval '15 minutes' THEN 'online'
+		ELSE 'offline'
+	END;
+
+REVOKE ALL ON FUNCTION public.honeypot_status(timestamptz) FROM PUBLIC, nyktus_console;
+GRANT EXECUTE ON FUNCTION public.honeypot_status(timestamptz) TO nyktus_console;
+
+DO $$
+BEGIN
+	IF NOT has_function_privilege('nyktus_console', 'public.honeypot_status(timestamptz)', 'EXECUTE') THEN
+		RAISE EXCEPTION 'nyktus_console lacks privileges on public.honeypot_status(); run migrations as the owner of the schema';
+	END IF;
+END
+$$;
+
 -- An artifact is a file that applying a deception rendered, such as an SSH
 -- configuration that names a DNS honeytoken. It raises no event itself; it
 -- makes the story of its scenario believable. Its content is stored, so that
@@ -1464,11 +1490,11 @@ CREATE FUNCTION public.untrusted_text_valid(value text, max_bytes integer) RETUR
 	RETURN octet_length(value) <= max_bytes
 		AND value !~ '[\x01-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\U000e0000-\U000e007f]';
 
--- An event is a recorded request of a honeytoken, over HTTP or DNS. It is
--- evidence and outlives the honeytoken: it names it by type and identifier
--- without a foreign key, as the audit log names resources, and keeps a copy of
--- the type, the techniques, the severity and the scenario that the honeytoken
--- had when it was requested.
+-- An event is a recorded request of a honeytoken, over HTTP or DNS, or a session
+-- that a sensor reported for a honeypot. It is evidence and outlives the
+-- resource: it names it by type and identifier without a foreign key, as the
+-- audit log names resources, and keeps a copy of the type, the techniques, the
+-- severity and the scenario that the resource had when it was requested.
 -- Name and notes are not copied, so that events do not become a second copy of
 -- the inventory, and neither is the trigger value.
 CREATE TABLE public.events (
@@ -1495,13 +1521,15 @@ CREATE TABLE public.events (
 	-- this time, which the DNS role cannot choose, so that a compromised host
 	-- cannot evade the limit with earlier times.
 	recorded_at     timestamptz NOT NULL,
-	-- How the request arrived: 'http' at the trigger, 'dns' at the DNS role.
-	-- The columns of the other channel stay empty.
+	-- How the request arrived: 'http' at the trigger, 'dns' at the DNS role,
+	-- 'sensor' for a session that a sensor reported. The columns of the other
+	-- channels stay empty.
 	channel         text NOT NULL,
 	-- The address of the client as the trigger determined it, or NULL if it is
 	-- unknown. For a DNS query, it is the address of the resolver that asked,
 	-- not of whoever looked up the name: resolvers ask on behalf of their
-	-- clients.
+	-- clients. For a session, it is the address of the attacker as the sensor
+	-- saw it, which the sensor claims, not the trigger observed.
 	client_ip       inet,
 	method          text,
 	-- Headers of the request. Whoever sends a request chooses them, so they are
@@ -1524,8 +1552,30 @@ CREATE TABLE public.events (
 	-- over UDP or TCP.
 	dns_qtype       text,
 	dns_transport   text,
+	-- The session of a sensor, whose fields the sensor chooses and which are
+	-- untrusted like the headers of a request. The sensor names a session by a
+	-- random identifier, so that a report sent twice is stored once. The service
+	-- is a copy of the one of the honeypot. A session is stored when it ends, so
+	-- occurred_at is its start and the duration tells how long it lasted. The
+	-- port is the one the attacker reached. A password is never stored; the
+	-- attempts of the session are in event_attempts.
+	sensor_session_id       uuid,
+	sensor_service          text,
+	-- The highest stage that the session reached: a directory query ranks above
+	-- a login attempt, which ranks above a bare connection.
+	sensor_event_type       text,
+	sensor_port             integer,
+	sensor_duration_ms      integer,
+	-- What the client says about itself, such as the version string of an SSH
+	-- client, the database and the application name of a PostgreSQL client, and
+	-- the base and the filter of the first search of a directory client.
+	sensor_client_version   text,
+	sensor_database         text,
+	sensor_application_name text,
+	sensor_base_dn          text,
+	sensor_filter           text,
 
-	CONSTRAINT events_resource_type_check CHECK (resource_type IN ('honeytoken')),
+	CONSTRAINT events_resource_type_check CHECK (resource_type IN ('honeytoken', 'honeypot')),
 	CONSTRAINT events_honeytoken_type_check CHECK (
 		(resource_type = 'honeytoken') = (honeytoken_type IS NOT NULL)
 		AND honeytoken_type IN ('web_url', 'web_image', 'dns')
@@ -1534,7 +1584,7 @@ CREATE TABLE public.events (
 		cardinality(techniques) <= 20 AND public.attack_technique_ids_valid(techniques)
 	),
 	CONSTRAINT events_severity_check CHECK (severity IN ('low', 'medium', 'high', 'critical')),
-	CONSTRAINT events_channel_check CHECK (channel IN ('http', 'dns')),
+	CONSTRAINT events_channel_check CHECK (channel IN ('http', 'dns', 'sensor')),
 	-- A query waits at most five minutes to be recorded.
 	CONSTRAINT events_occurred_at_check CHECK (
 		occurred_at <= recorded_at AND occurred_at >= recorded_at - interval '5 minutes'
@@ -1550,6 +1600,41 @@ CREATE TABLE public.events (
 		AND (channel = 'dns') = (dns_qtype IS NOT NULL)
 		AND (channel = 'dns') = (dns_transport IS NOT NULL)
 	),
+	-- Only a honeypot raises an event over the channel sensor, and the session
+	-- columns are set exactly for those events.
+	CONSTRAINT events_sensor_check CHECK (
+		(channel = 'sensor') = (resource_type = 'honeypot')
+		AND (channel = 'sensor') = (sensor_session_id IS NOT NULL)
+		AND (channel = 'sensor') = (sensor_service IS NOT NULL)
+		AND (channel = 'sensor') = (sensor_event_type IS NOT NULL)
+		AND (channel = 'sensor') = (sensor_port IS NOT NULL)
+		AND (channel = 'sensor') = (sensor_duration_ms IS NOT NULL)
+		AND (channel <> 'sensor' OR client_ip IS NOT NULL)
+	),
+	-- What a client says about itself fits the service it talked to, and a
+	-- directory query holds the search it names.
+	CONSTRAINT events_sensor_fields_check CHECK (
+		channel <> 'sensor' OR (
+			(sensor_event_type = 'directory_query') = (sensor_base_dn IS NOT NULL)
+			AND (sensor_event_type = 'directory_query') = (sensor_filter IS NOT NULL)
+			AND (sensor_event_type <> 'directory_query' OR sensor_service = 'ldap')
+			AND ((sensor_database IS NULL AND sensor_application_name IS NULL) OR sensor_service = 'postgres')
+			AND (sensor_client_version IS NULL OR sensor_service = 'ssh')
+		)
+	),
+	CONSTRAINT events_sensor_service_check CHECK (sensor_service IN ('ssh', 'telnet', 'postgres', 'ldap')),
+	CONSTRAINT events_sensor_event_type_check CHECK (
+		sensor_event_type IN ('connection', 'login_attempt', 'directory_query')
+	),
+	CONSTRAINT events_sensor_port_check CHECK (sensor_port BETWEEN 1 AND 65535),
+	-- A session is reported within five minutes of its beginning, as the window of
+	-- occurred_at above allows, so it has lasted no longer.
+	CONSTRAINT events_sensor_duration_ms_check CHECK (sensor_duration_ms BETWEEN 0 AND 300000),
+	CONSTRAINT events_sensor_client_version_check CHECK (public.untrusted_text_valid(sensor_client_version, 128)),
+	CONSTRAINT events_sensor_database_check CHECK (public.untrusted_text_valid(sensor_database, 64)),
+	CONSTRAINT events_sensor_application_name_check CHECK (public.untrusted_text_valid(sensor_application_name, 64)),
+	CONSTRAINT events_sensor_base_dn_check CHECK (public.untrusted_text_valid(sensor_base_dn, 256)),
+	CONSTRAINT events_sensor_filter_check CHECK (public.untrusted_text_valid(sensor_filter, 256)),
 	-- Only requests that read a honeytoken are recorded.
 	CONSTRAINT events_method_check CHECK (method IN ('GET', 'HEAD')),
 	CONSTRAINT events_user_agent_check CHECK (public.untrusted_text_valid(user_agent, 512)),
@@ -1568,6 +1653,15 @@ CREATE TABLE public.events (
 -- The limit of events per honeytoken counts its events written in the last
 -- minute.
 CREATE INDEX events_resource_id_recorded_at_idx ON public.events (resource_id, recorded_at);
+
+-- A report that reaches the trigger twice is stored once. Only sessions are
+-- indexed, because the events of the other channels have no identifier and
+-- would only grow the index of the busiest table. The identifier comes first: a
+-- random session identifier is unique by itself, and an index that led with the
+-- resource would compete with the one above for the limit of events, which
+-- must seek by resource and time.
+CREATE UNIQUE INDEX events_sensor_session_key ON public.events (sensor_session_id, resource_id)
+	WHERE sensor_session_id IS NOT NULL;
 
 -- The outbox: every event has a job that processes it, written in the same
 -- transaction, so that no event goes unprocessed. The worker deletes the job in
@@ -1589,8 +1683,34 @@ WITH (autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0
 -- statement_timestamp(), so that the index can be used.
 CREATE INDEX event_jobs_not_before_idx ON public.event_jobs (not_before);
 
--- At most 10 events per resource and minute are recorded, over HTTP and DNS
--- together, so that a flood of requests for one known value cannot fill the
+-- What an attacker tried during a session of a honeypot, in the order of the
+-- attempts: the user name or bind DN, the key that was offered, and the length
+-- of the password. The password itself is never stored, and no column could
+-- hold it: whoever mistypes the address of a host in a terminal sends their own
+-- password to the honeypot, and an event is readable by every viewer for half a
+-- year. Like the session, the values are untrusted. The attempts belong to the
+-- event and leave with it.
+CREATE TABLE public.event_attempts (
+	event_id        uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
+	ordinal         smallint NOT NULL,
+	username        text NOT NULL,
+	-- NULL if the attacker sent no password; 0 for an empty one.
+	password_length integer,
+	-- The SHA-256 fingerprint of an offered public key, such as the one OpenSSH
+	-- prints.
+	key_fingerprint text,
+
+	PRIMARY KEY (event_id, ordinal),
+	-- A session holds at most six attempts, so that one connection cannot fill
+	-- the table.
+	CONSTRAINT event_attempts_ordinal_check CHECK (ordinal BETWEEN 1 AND 6),
+	CONSTRAINT event_attempts_username_check CHECK (public.untrusted_text_valid(username, 256)),
+	CONSTRAINT event_attempts_password_length_check CHECK (password_length BETWEEN 0 AND 65535),
+	CONSTRAINT event_attempts_key_fingerprint_check CHECK (key_fingerprint ~ '^SHA256:[A-Za-z0-9+/]{43}$')
+);
+
+-- At most 10 events per resource and minute are recorded, over HTTP, DNS and
+-- from sensors together, so that a flood of requests for one known value cannot fill the
 -- database; the outcome "limited" lets the trigger and the DNS role count the
 -- rest. Concurrent requests can exceed the limit slightly, which is accepted.
 -- Identifiers are random UUIDs, so the identifier alone names the resource,
@@ -1733,6 +1853,184 @@ BEGIN
 END
 $$;
 
+-- A sensor reports to the trigger, which, like the DNS role, must never be able
+-- to read the inventory. It reports through these functions, each of which
+-- resolves one secret by its hash and writes only what the secret allows.
+-- Whoever holds a secret can report for its honeypot; nobody can list the
+-- honeypots or write an event without a job.
+--
+-- The sensor is not trusted: it names no service, severity or technique, which
+-- come from the honeypot, and what it names is checked here and by the table.
+-- A report that does not fit the service of the honeypot is not stored; the
+-- outcome 'invalid' tells the trigger, so that a PostgreSQL log does not
+-- receive a row with captured values from a failed check.
+--
+-- A session is stored as one event, with its attempts and its job, in one
+-- transaction. The sensor passes how long ago the session began, measured with
+-- its own clock, which the function keeps between zero and five minutes, as for
+-- DNS. A session of a disabled honeypot is not stored. A session that is
+-- stored, or that the limit of events or the identifier of an earlier report
+-- turns away, proves that a sensor is alive and counts as a report; the time of
+-- the report moves at most once a minute.
+--
+-- The techniques of the event are those of its kind for the service, then those
+-- of the honeypot, without repeats and at most twenty.
+CREATE FUNCTION public.record_honeypot_session(
+	report_secret_hash bytea,
+	report_session_id uuid,
+	report_age interval,
+	report_duration_ms integer,
+	report_client_ip inet,
+	report_port integer,
+	report_event_type text,
+	report_client_version text,
+	report_database text,
+	report_application_name text,
+	report_base_dn text,
+	report_filter text,
+	report_attempts jsonb,
+	OUT outcome text,
+	OUT honeypot_id uuid,
+	OUT service text
+)
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = ''
+AS $$
+DECLARE
+	h record;
+	new_event_id uuid;
+	now_at timestamptz := clock_timestamp();
+	attempt_count integer;
+	kind_techniques text[];
+	event_techniques text[];
+BEGIN
+	-- The lock keeps the console from replacing the secret while the report
+	-- is recorded: a secret that was replaced meanwhile finds no honeypot, so
+	-- the old secret stops working at once and cannot mark the honeypot as
+	-- reported again after the replacement cleared it.
+	SELECT p.id, p.service, p.enabled, p.techniques, p.severity, p.scenario_id INTO h
+	FROM public.honeypots AS p
+	WHERE p.secret_hash = report_secret_hash
+	FOR KEY SHARE OF p;
+	IF NOT FOUND THEN
+		outcome := 'unknown';
+		RETURN;
+	END IF;
+
+	honeypot_id := h.id;
+	service := h.service;
+	IF NOT h.enabled THEN
+		outcome := 'disabled';
+		RETURN;
+	END IF;
+
+	-- The techniques of a kind of event for each service; the code of the
+	-- trigger keeps the same table, and a test compares both.
+	kind_techniques := CASE
+		WHEN report_event_type = 'connection' THEN ARRAY['T1046']
+		WHEN report_event_type = 'login_attempt' AND h.service = 'ssh' THEN ARRAY['T1110', 'T1021.004']
+		WHEN report_event_type = 'login_attempt' THEN ARRAY['T1110']
+		WHEN report_event_type = 'directory_query' AND h.service = 'ldap' THEN ARRAY['T1087.002']
+	END;
+	attempt_count := CASE WHEN jsonb_typeof(report_attempts) = 'array' THEN jsonb_array_length(report_attempts) END;
+	IF kind_techniques IS NULL OR attempt_count IS NULL OR attempt_count > 6
+		OR (report_event_type = 'connection') <> (attempt_count = 0 AND report_base_dn IS NULL)
+		OR (report_event_type = 'login_attempt' AND (attempt_count = 0 OR report_base_dn IS NOT NULL))
+		OR (report_event_type = 'directory_query') <> (report_base_dn IS NOT NULL AND report_filter IS NOT NULL)
+		OR (report_filter IS NOT NULL AND report_base_dn IS NULL)
+		OR ((report_database IS NOT NULL OR report_application_name IS NOT NULL) AND h.service <> 'postgres')
+		OR (report_client_version IS NOT NULL AND h.service <> 'ssh') THEN
+		outcome := 'invalid';
+		RETURN;
+	END IF;
+
+	UPDATE public.honeypots AS p SET last_seen_at = now_at
+	WHERE p.id = h.id AND (p.last_seen_at IS NULL OR p.last_seen_at < now_at - interval '1 minute');
+
+	IF public.event_limit_reached(h.id) THEN
+		outcome := 'limited';
+		RETURN;
+	END IF;
+
+	SELECT coalesce(array_agg(u.technique ORDER BY u.place), '{}') INTO event_techniques
+	FROM (
+		SELECT x.technique, min(x.place) AS place
+		FROM unnest(kind_techniques || h.techniques) WITH ORDINALITY AS x (technique, place)
+		GROUP BY x.technique
+		ORDER BY min(x.place)
+		LIMIT 20
+	) AS u;
+
+	INSERT INTO public.events (resource_type, resource_id, scenario_id, techniques, severity, occurred_at, recorded_at,
+		channel, client_ip, sensor_session_id, sensor_service, sensor_event_type, sensor_port, sensor_duration_ms,
+		sensor_client_version, sensor_database, sensor_application_name, sensor_base_dn, sensor_filter)
+	VALUES ('honeypot', h.id, h.scenario_id, event_techniques, h.severity,
+		now_at - least(greatest(coalesce(report_age, interval '0'), interval '0'), interval '5 minutes'), now_at,
+		'sensor', report_client_ip, report_session_id, h.service, report_event_type, report_port, report_duration_ms,
+		report_client_version, report_database, report_application_name, report_base_dn, report_filter)
+	ON CONFLICT (sensor_session_id, resource_id) WHERE sensor_session_id IS NOT NULL DO NOTHING
+	RETURNING id INTO new_event_id;
+	IF new_event_id IS NULL THEN
+		outcome := 'duplicate';
+		RETURN;
+	END IF;
+
+	INSERT INTO public.event_attempts (event_id, ordinal, username, password_length, key_fingerprint)
+	SELECT new_event_id, a.ordinal, a.item ->> 'username', (a.item ->> 'password_length')::integer,
+		a.item ->> 'key_fingerprint'
+	FROM jsonb_array_elements(report_attempts) WITH ORDINALITY AS a (item, ordinal);
+	INSERT INTO public.event_jobs (event_id) VALUES (new_event_id);
+	outcome := 'recorded';
+END
+$$;
+
+-- A sensor says that it is alive every five minutes, for each honeypot it runs,
+-- and names its version. The function sets nothing but the time of the last
+-- report, at most once a minute, and the version; it never writes an event, an
+-- incident or an alert. A disabled honeypot is still reported for, so that the
+-- console shows whether its sensor runs.
+CREATE FUNCTION public.record_honeypot_heartbeat(
+	report_secret_hash bytea,
+	report_sensor_version text,
+	OUT outcome text,
+	OUT honeypot_id uuid,
+	OUT service text
+)
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = ''
+AS $$
+DECLARE
+	h record;
+	now_at timestamptz := clock_timestamp();
+BEGIN
+	SELECT p.id, p.service INTO h
+	FROM public.honeypots AS p
+	WHERE p.secret_hash = report_secret_hash
+	FOR KEY SHARE OF p;
+	IF NOT FOUND THEN
+		outcome := 'unknown';
+		RETURN;
+	END IF;
+
+	honeypot_id := h.id;
+	service := h.service;
+	-- The pattern of the column, checked here so that a failing check does not
+	-- write the row to the log of the database.
+	IF report_sensor_version !~ '^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$' THEN
+		outcome := 'invalid';
+		RETURN;
+	END IF;
+
+	UPDATE public.honeypots AS p SET last_seen_at = now_at, sensor_version = coalesce(report_sensor_version, p.sensor_version)
+	WHERE p.id = h.id
+		AND (p.last_seen_at IS NULL OR p.last_seen_at < now_at - interval '1 minute'
+			OR p.sensor_version IS DISTINCT FROM coalesce(report_sensor_version, p.sensor_version));
+	outcome := 'recorded';
+END
+$$;
+
 -- An incident correlates the events of one scenario, or of one resource that
 -- stood alone when the event arrived: the worker assigns every event to the
 -- open incident of its scenario or resource, or opens one. Triage happens on
@@ -1765,7 +2063,7 @@ CREATE TABLE public.incidents (
 	acknowledged_at     timestamptz,
 	closed_at           timestamptz,
 
-	CONSTRAINT incidents_resource_type_check CHECK (resource_type IN ('honeytoken', 'scenario')),
+	CONSTRAINT incidents_resource_type_check CHECK (resource_type IN ('honeytoken', 'honeypot', 'scenario')),
 	CONSTRAINT incidents_status_check CHECK (status IN ('open', 'acknowledged', 'closed')),
 	-- An incident can be closed without having been acknowledged.
 	CONSTRAINT incidents_status_times_check CHECK (
@@ -1879,20 +2177,24 @@ CREATE TABLE public.alerts (
 
 -- Nobody writes events except through the functions above, and incidents and
 -- alerts only the worker, apart from the triage of the console.
-REVOKE ALL ON public.events, public.event_jobs, public.incidents, public.alerts FROM PUBLIC, nyktus_console;
+REVOKE ALL ON public.events, public.event_attempts, public.event_jobs, public.incidents, public.alerts
+	FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.incidents_change_status() FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.untrusted_text_valid(text, integer) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.event_limit_reached(uuid) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text)
 	FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_dns_query(text, text, text, text, text, inet, interval) FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text,
+	text, text, jsonb) FROM PUBLIC, nyktus_console;
+REVOKE ALL ON FUNCTION public.record_honeypot_heartbeat(bytea, text) FROM PUBLIC, nyktus_console;
 
 -- The console reads events and incidents and triages incidents: it moves their
 -- status, writes notes and overrides the severity and the techniques. It cannot
 -- write or change an event, open an incident, change what the worker
 -- correlated, or choose when the status changed. It reads neither the jobs nor
 -- the alerts.
-GRANT SELECT ON public.events, public.incidents TO nyktus_console;
+GRANT SELECT ON public.events, public.event_attempts, public.incidents TO nyktus_console;
 GRANT UPDATE (status, notes, severity_override, techniques_override) ON public.incidents TO nyktus_console;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
@@ -1908,14 +2210,14 @@ BEGIN
 	WITH granted (relname, attname, privilege) AS (
 		-- A NULL column stands for the whole table.
 		VALUES
-			('events', NULL, 'SELECT'), ('incidents', NULL, 'SELECT'),
+			('events', NULL, 'SELECT'), ('event_attempts', NULL, 'SELECT'), ('incidents', NULL, 'SELECT'),
 			('incidents', 'status', 'UPDATE'), ('incidents', 'notes', 'UPDATE'),
 			('incidents', 'severity_override', 'UPDATE'), ('incidents', 'techniques_override', 'UPDATE')
 	),
 	tables AS (
 		SELECT c.oid, c.relname FROM pg_catalog.pg_class AS c
-		WHERE c.oid IN ('public.events'::regclass, 'public.event_jobs'::regclass, 'public.incidents'::regclass,
-			'public.alerts'::regclass)
+		WHERE c.oid IN ('public.events'::regclass, 'public.event_attempts'::regclass, 'public.event_jobs'::regclass,
+			'public.incidents'::regclass, 'public.alerts'::regclass)
 	),
 	privileges (object, privilege, held, wanted) AS (
 		SELECT t.relname::text, p.privilege,
@@ -1943,7 +2245,9 @@ BEGIN
 			'public.untrusted_text_valid(text, integer)',
 			'public.event_limit_reached(uuid)',
 			'public.record_honeytoken_request(text, text, inet, text, text, text)',
-			'public.record_dns_query(text, text, text, text, text, inet, interval)'
+			'public.record_dns_query(text, text, text, text, text, inet, interval)',
+			'public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb)',
+			'public.record_honeypot_heartbeat(bytea, text)'
 		]) AS f (signature)
 	)
 	SELECT string_agg(object || ': ' || privilege, ', ' ORDER BY object, privilege) FILTER (WHERE wanted AND NOT held),
@@ -2567,6 +2871,9 @@ AS $$
 	SELECT 'incidents', s.status, (SELECT count(*) FROM public.incidents AS i WHERE i.status = s.status)
 	FROM unnest(ARRAY['open', 'acknowledged']) AS s (status)
 	UNION ALL
+	SELECT 'honeypots', s.status, (SELECT count(*) FROM public.honeypots AS p WHERE public.honeypot_status(p.last_seen_at) = s.status)
+	FROM unnest(ARRAY['never', 'online', 'offline']) AS s (status)
+	UNION ALL
 	SELECT 'periodic_task_last_success_timestamp_seconds', name, coalesce(extract(epoch FROM last_succeeded_at), 0)
 	FROM public.periodic_tasks
 	UNION ALL
@@ -2589,7 +2896,7 @@ BEGIN
 END
 $$;
 
--- The trigger and the DNS role reach nothing but their function, and the
+-- The trigger and the DNS role reach nothing but their functions, and the
 -- worker nothing but its tables. Everything in the schema is revoked here, at
 -- its end, including the table of the migration runner, so that default
 -- privileges set by an operator cannot widen them beyond it.
@@ -2598,6 +2905,9 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM nyktus_trigger, nyktus_dns, ny
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM nyktus_trigger, nyktus_dns, nyktus_worker;
 GRANT USAGE ON SCHEMA public TO nyktus_trigger, nyktus_dns, nyktus_worker;
 GRANT EXECUTE ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text) TO nyktus_trigger;
+GRANT EXECUTE ON FUNCTION public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text,
+	text, text, text, jsonb) TO nyktus_trigger;
+GRANT EXECUTE ON FUNCTION public.record_honeypot_heartbeat(bytea, text) TO nyktus_trigger;
 GRANT EXECUTE ON FUNCTION public.record_dns_query(text, text, text, text, text, inet, interval) TO nyktus_dns;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
@@ -2609,7 +2919,11 @@ DECLARE
 	function_name text;
 BEGIN
 	FOR role_name, function_names IN VALUES
-		('nyktus_trigger', ARRAY['public.record_honeytoken_request(text, text, inet, text, text, text)']),
+		('nyktus_trigger', ARRAY[
+			'public.record_honeytoken_request(text, text, inet, text, text, text)',
+			'public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb)',
+			'public.record_honeypot_heartbeat(bytea, text)'
+		]),
 		('nyktus_dns', ARRAY['public.record_dns_query(text, text, text, text, text, inet, interval)'])
 	LOOP
 		FOREACH function_name IN ARRAY function_names LOOP

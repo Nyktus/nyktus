@@ -2,7 +2,7 @@
 
 A honeypot is a network service that nobody has a reason to connect to, such as an SSH server on a host that the team never uses or a directory server that no application knows. The sensor `nyktus-sensor` emulates it inside the monitored network: it answers like the real service, but offers nothing behind the login, and reports every session to the trigger.
 
-This page covers the management of honeypots in the console. The sensor and the way it reports to the trigger are not part of Nyktus yet: until they are, a honeypot records no events and its [status](#status) stays `never`.
+This page covers the management of honeypots in the console and what the trigger accepts from a sensor. The sensor itself is not part of Nyktus yet: until it is, no honeypot reports on its own and its [status](#status) stays `never`, unless a program sends the [reports](#how-a-sensor-reports) described below with the secret of the honeypot.
 
 ## Services
 
@@ -89,7 +89,7 @@ The console shows whether a sensor reports for a honeypot, from the time of its 
 | `online` | A sensor reported within the last 15 minutes. |
 | `offline` | The last report is older than 15 minutes: the sensor stopped, lost its connection to the trigger or no longer runs this honeypot. |
 
-`last_seen_at` is the time of the last report, and `sensor_version` the version that the sensor named. Only a sensor sets them; the console cannot. The status is evaluated against the clock of the database when you read the honeypot. An offline honeypot raises no alert: alerts belong to incidents, which only attacker activity opens.
+`last_seen_at` is the time of the last report, and `sensor_version` the version that the sensor named. A [heartbeat](#heartbeat) or a [session](#session) that was accepted sets them, at most once a minute; the console cannot. The status is evaluated against the clock of the database when you read the honeypot. An offline honeypot raises no alert: alerts belong to incidents, which only attacker activity opens. The [metric](metrics.md) `nyktus_honeypots` counts the honeypots by status, so that your monitoring can tell you when a sensor stops.
 
 ## Listing, changing and deleting
 
@@ -113,6 +113,99 @@ A honeypot can belong to a [scenario](scenarios.md), like a honeytoken. Its `sce
 - A scenario that does not exist receives `422` with the code `scenario_not_found`.
 
 Changing the scenario of a honeypot needs the permission `honeypots:write` only. Deleting a scenario keeps its honeypots unless you ask to delete them, which needs `honeypots:write` as well; see [Listing, changing and deleting](scenarios.md#listing-changing-and-deleting) of scenarios.
+
+## How a sensor reports
+
+A sensor reports to the [trigger](configuration.md#role-trigger), the same internet-facing address that serves the URLs of honeytokens, with a `POST` to `/`. It authenticates with the [secret](#the-secret) of the honeypot as a bearer token and sends one JSON document with a `version` and a `type`:
+
+```http
+POST / HTTP/1.1
+Authorization: Bearer <secret>
+Content-Type: application/json
+```
+
+Use TLS: the secret travels in the header. The sensor verifies the certificate of the trigger.
+
+### Session
+
+The sensor sends a session once, when it ends or after a short maximum delay, so that the first event of an incident describes what the attacker did, not only the handshake.
+
+```json
+{
+  "version": 1,
+  "type": "session",
+  "session_id": "0123456789abcdef0123456789abcdef",
+  "age_ms": 1500,
+  "duration_ms": 4200,
+  "client_ip": "203.0.113.9",
+  "port": 22,
+  "client_version": "SSH-2.0-OpenSSH_9.6",
+  "attempts": [
+    { "username": "root", "password_length": 8 },
+    { "username": "admin", "key_fingerprint": "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }
+  ]
+}
+```
+
+| Field | Rules |
+|---|---|
+| `version` | Required. `1`. |
+| `type` | Required. `session`. |
+| `session_id` | Required. 128 random bits as 32 lowercase hexadecimal digits, chosen by the sensor for each session. A session that reaches the trigger twice, for example because the sensor repeated a request, is stored once. |
+| `age_ms` | Required, not negative. How long ago the session began, in milliseconds, measured with the monotonic clock of the sensor, so that the clocks of the sensor and the server need not agree. A session that began longer than five minutes ago is stored as if it had begun five minutes ago; a sensor drops such a report instead of sending it. |
+| `duration_ms` | Required, not negative. How long the session lasted, in milliseconds. A session is reported within five minutes of its beginning, so a value beyond 300,000 is stored as 300,000. |
+| `client_ip` | Required. The address of the attacker, as the sensor saw it. |
+| `port` | Required. The port of the honeypot that the attacker reached, 1 to 65535. |
+| `attempts` | Required, possibly empty. At most 6 logins or binds, in the order in which they were made, each with `username` (required, possibly empty; for a directory the distinguished name of the bind), `password_length` (the length of the password that was sent, 0 to 65535, or absent) and `key_fingerprint` (the `SHA256:` fingerprint of an offered public key, or absent). **A password is never sent and never stored**, only its length. |
+| `client_version` | Optional, `ssh` only. The version string of the client, up to 128 bytes. |
+| `database`, `application_name` | Optional, `postgres` only. What the client asked for and called itself, up to 64 bytes each. |
+| `query` | Optional, `ldap` only. The first search of the session, with `base_dn` and `filter` (both required, the base may be empty for the root of the directory), up to 256 bytes each. |
+
+The sensor does not send the service, the severity, the techniques or the kind of event. The service, the severity and the techniques come from the honeypot, and the server derives the kind of event from the content.
+
+Every text field is chosen by the attacker. The trigger cuts it to its length and replaces characters that are not printable, as for the headers of a request.
+
+### Heartbeat
+
+The sensor says that it is alive when it starts and every five minutes, for each honeypot it runs:
+
+```json
+{ "version": 1, "type": "heartbeat", "sensor_version": "0.1.0" }
+```
+
+`sensor_version` is optional: up to 32 characters (letters, digits and `.+_-`, starting with a letter or digit). A heartbeat sets the time of the [last report](#status) and the version, at most once a minute, and nothing else. It never records an event, opens an incident or raises an alert, and it works for a disabled honeypot as well, so that the console shows whether its sensor runs.
+
+### The answer
+
+The trigger answers every report like any other `POST` to `/`: the same redirect to the default target, whether the report was recorded, the secret is unknown, the honeypot is disabled or deleted, the database failed or the report was malformed. The sensor learns nothing from the answer, and neither does anyone who finds the address. A sensor therefore repeats a report only after a failure of the transport, at most three times with a growing pause, and follows no redirect. The [log of the trigger](logs.md#trigger) names the outcome.
+
+### Versions
+
+A report names its version, and the server reads only versions it knows. A report with a version or a member that the server does not know is not stored; the log of the trigger records `rejected` with the reason `unsupported_version` or `invalid_report`. A change of the report needs a new version, so update the server before the sensors.
+
+## Events
+
+Every session that a sensor reports for an enabled honeypot becomes one event, with its job in the same transaction, and joins the [incident](incidents.md) of the honeypot's scenario, or of the honeypot if it stands alone.
+
+The kind of event is the highest stage that the session reached:
+
+| Kind | A session that | Techniques it suggests |
+|---|---|---|
+| `connection` | only connected | [T1046](https://attack.mitre.org/techniques/T1046/) Network Service Discovery |
+| `login_attempt` | tried to log in or bind | T1110 Brute Force; for `ssh` also T1021.004 Remote Services: SSH |
+| `directory_query` | searched a directory (`ldap` only) | T1087.002 Account Discovery: Domain Account |
+
+A session that reached several stages raises one event of the highest, so that a directory query is not hidden by the bind before it. The event keeps the techniques of its kind, followed by the techniques of the honeypot, the severity of the honeypot, its service and its scenario as they were when the event arrived; a later change of the honeypot, or its deletion, does not change the event. `occurred_at` is when the session began; `recorded_at` is when the event was written.
+
+The event holds what the attacker typed: user names and bind names, the version string of the client, the database and the search of a directory client, with the length of each password and the fingerprint of each key offered. This is personal data, and it is untrusted: treat it as claims, not facts. A password is never stored: a person who mistypes the address of a host in a terminal sends their own password to the honeypot, and an event is readable by everyone who may read events for the length of the [retention](database.md#periodic-tasks). Alerts, metrics and logs hold none of it. [Reading incidents and events](incidents.md#reading-incidents-and-events) describes how to read them.
+
+## Limits
+
+- At most 10 events per honeypot and minute are stored. Further sessions are counted and logged as `trigger: reports not recorded`; a flood of connections to one honeypot cannot fill the database.
+- A session is stored once per `session_id` and honeypot.
+- A session of a disabled honeypot is not stored. Its heartbeats are.
+- The body of a report is limited to 64 KiB.
+- A session counts as a sign of life, like a heartbeat, if it was stored or turned away by the limit or as a duplicate; one that is refused does not.
 
 ## Who can read honeypots
 

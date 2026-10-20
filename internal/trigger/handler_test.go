@@ -72,10 +72,16 @@ type response struct {
 
 func newServer(t *testing.T, rec Recorder, trusted ...netip.Prefix) (*httptest.Server, *bytes.Buffer) {
 	t.Helper()
+	return newReportingServer(t, rec, &fakeReporter{}, trusted...)
+}
+
+func newReportingServer(t *testing.T, rec Recorder, rep Reporter, trusted ...netip.Prefix) (*httptest.Server, *bytes.Buffer) {
+	t.Helper()
 	var log bytes.Buffer
 	h := New(Options{
 		Logger:          slog.New(slog.NewJSONHandler(&log, nil)),
 		Recorder:        rec,
+		Reporter:        rep,
 		DefaultRedirect: defaultRedirect,
 		TrustedProxies:  trusted,
 	})
@@ -155,7 +161,7 @@ func TestTrigger_PanicIsAnsweredWithTheDefaultResponse(t *testing.T) {
 	wantImage := fetch(t, ok, http.MethodGet, "/"+value+".gif", nil, nil)
 
 	var log bytes.Buffer
-	h := New(Options{Logger: slog.New(slog.NewJSONHandler(&log, nil)), Recorder: &fakeRecorder{}, DefaultRedirect: defaultRedirect})
+	h := New(Options{Logger: slog.New(slog.NewJSONHandler(&log, nil)), Recorder: &fakeRecorder{}, Reporter: &fakeReporter{}, DefaultRedirect: defaultRedirect})
 	h.next = http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("handler failed") })
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
@@ -280,8 +286,8 @@ func TestTrigger_AnswersEverythingElseWithoutLookingItUp(t *testing.T) {
 	}
 }
 
-// Request bodies on the trigger are limited to 64 KiB. The trigger never reads
-// them, so a larger body changes nothing.
+// Request bodies on the trigger are limited to 64 KiB. Only the report of a
+// sensor is read, so a larger body to any other path changes nothing.
 func TestTrigger_LargeBodyChangesNothing(t *testing.T) {
 	t.Parallel()
 
@@ -353,7 +359,7 @@ func TestTrigger_RecordingOutlivesTheClient(t *testing.T) {
 	t.Parallel()
 
 	var canceled error
-	h := New(Options{Logger: slog.New(slog.DiscardHandler), Recorder: recorderFunc(func(ctx context.Context, _ Request) (Result, error) {
+	h := New(Options{Logger: slog.New(slog.DiscardHandler), Reporter: &fakeReporter{}, Recorder: recorderFunc(func(ctx context.Context, _ Request) (Result, error) {
 		canceled = ctx.Err()
 		return Result{Outcome: OutcomeRecorded}, nil
 	}), DefaultRedirect: defaultRedirect})
@@ -425,6 +431,7 @@ func TestTrigger_LogsRequestsBeyondTheLimit(t *testing.T) {
 	h := New(Options{
 		Logger:          slog.New(slog.NewJSONHandler(&log, nil)),
 		Recorder:        &fakeRecorder{results: map[string]Result{value: {Outcome: OutcomeLimited, HoneytokenID: "4f1c"}}},
+		Reporter:        &fakeReporter{},
 		DefaultRedirect: defaultRedirect,
 	})
 	for range 3 {
@@ -453,7 +460,7 @@ func TestTrigger_RecordingHasADeadline(t *testing.T) {
 	t.Parallel()
 
 	var remaining time.Duration
-	h := New(Options{Logger: slog.New(slog.DiscardHandler), Recorder: recorderFunc(func(ctx context.Context, _ Request) (Result, error) {
+	h := New(Options{Logger: slog.New(slog.DiscardHandler), Reporter: &fakeReporter{}, Recorder: recorderFunc(func(ctx context.Context, _ Request) (Result, error) {
 		if deadline, ok := ctx.Deadline(); ok {
 			remaining = time.Until(deadline)
 		}

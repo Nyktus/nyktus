@@ -3,7 +3,8 @@
 
 // Package metrics exposes the state of Nyktus to a monitoring system in the
 // text format of Prometheus: the queues of events and alerts, the open
-// incidents and the periodic tasks of the worker.
+// incidents, the honeypots by whether a sensor reports for them and the
+// periodic tasks of the worker.
 //
 // The values come from a function of the database that returns aggregates
 // only, and labels name fixed states or tasks, never a resource, an address
@@ -49,6 +50,7 @@ var families = []family{
 	{"alert_deliveries", "Deliveries of alerts and tests that wait to be sent, or that failed for good, by status.", "status"},
 	{"alert_deliveries_oldest_due_age_seconds", "How long the delivery that has been due longest has waited, or 0.", ""},
 	{"incidents", "Incidents that are not closed, by status.", "status"},
+	{"honeypots", "Honeypots by whether a sensor reports for them: never, online or offline.", "status"},
 	{"periodic_task_last_success_timestamp_seconds", "When a periodic task of the worker last succeeded, or 0.", "task"},
 	{"periodic_task_last_failure_timestamp_seconds", "When a periodic task of the worker last failed, or 0.", "task"},
 	{"periodic_task_last_rows", "Rows that the last successful run of a periodic task removed or changed.", "task"},

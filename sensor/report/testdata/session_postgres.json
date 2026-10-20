@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "type": "session",
+  "session_id": "fedcba9876543210fedcba9876543210",
+  "age_ms": 0,
+  "duration_ms": 350,
+  "client_ip": "2001:db8::7",
+  "port": 5432,
+  "database": "postgres",
+  "application_name": "psql",
+  "attempts": [
+    {
+      "username": "postgres",
+      "password_length": 12
+    }
+  ]
+}

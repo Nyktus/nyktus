@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "type": "session",
+  "session_id": "ffeeddccbbaa99887766554433221100",
+  "age_ms": 300000,
+  "duration_ms": 0,
+  "client_ip": "192.0.2.77",
+  "port": 23,
+  "attempts": []
+}

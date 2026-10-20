@@ -128,6 +128,19 @@ INSERT INTO events (resource_type, resource_id, honeytoken_type, techniques, sev
 	client_ip, method, user_agent, referer, accept_language, incident_id)
 VALUES ('honeytoken', $1, 'web_url', '{T1213}', 'high', $2, $2, 'http', '192.0.2.7', 'GET', 'curl/8.0', 'https://a.example.com/', 'de', $3)
 RETURNING id`, resource, occurredAt, incidentID).Scan(&id)
+	case "sensor":
+		err = f.owner.QueryRow(t.Context(), `
+INSERT INTO events (resource_type, resource_id, techniques, severity, occurred_at, recorded_at, channel, client_ip,
+	sensor_session_id, sensor_service, sensor_event_type, sensor_port, sensor_duration_ms, sensor_client_version,
+	sensor_database, sensor_application_name, sensor_base_dn, sensor_filter, incident_id)
+VALUES ('honeypot', $1, '{T1110,T1021.004}', 'critical', $2, $2, 'sensor', '198.51.100.4', gen_random_uuid(), 'ssh',
+	'login_attempt', 22, 4200, 'SSH-2.0-OpenSSH_9.6', NULL, NULL, NULL, NULL, $3)
+RETURNING id`, resource, occurredAt, incidentID).Scan(&id)
+		if err == nil {
+			_, err = f.owner.Exec(t.Context(), `
+INSERT INTO event_attempts (event_id, ordinal, username, password_length, key_fingerprint) VALUES
+	($1, 1, 'root', 8, NULL), ($1, 2, 'admin', NULL, 'SHA256:' || repeat('A', 43)), ($1, 3, '', 0, NULL)`, id)
+		}
 	default:
 		err = f.owner.QueryRow(t.Context(), `
 INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, client_ip,
@@ -401,6 +414,55 @@ func TestGetEvent_ShowsTheRequestOrTheQuery(t *testing.T) {
 	}
 }
 
+// The session of a honeypot has a member of its own, with the attempts in the
+// order in which they were made, in a single event and in a list, and the other
+// members are null.
+func TestGetEvent_ShowsTheSessionOfASensor(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	session := f.event(t, resourceA, "", "sensor", time.Now())
+	later := f.event(t, resourceA, "", "sensor", time.Now().Add(time.Second))
+	request := f.event(t, resourceA, "", "http", time.Now().Add(2*time.Second))
+
+	rec := f.serve(t, f.h.GetEvent, http.MethodGet, "/", session, "")
+	got := decode[eventResponse](t, rec)
+	if rec.Code != http.StatusOK || got.Channel != "sensor" || got.ResourceType != "honeypot" || got.HTTP != nil || got.DNS != nil ||
+		got.HoneytokenType != nil || got.Severity != "critical" || got.ClientIP == nil || *got.ClientIP != "198.51.100.4" ||
+		!slices.Equal(got.Techniques, []string{"T1110", "T1021.004"}) || got.Sensor == nil {
+		t.Fatalf("GET session = %d %s", rec.Code, rec.Body)
+	}
+	s := got.Sensor
+	if s.Service != "ssh" || s.EventType != "login_attempt" || s.Port != 22 || s.DurationMS != 4200 || s.ClientVersion == nil ||
+		*s.ClientVersion != "SSH-2.0-OpenSSH_9.6" || s.Database != nil || s.ApplicationName != nil || s.Query != nil || len(s.Attempts) != 3 {
+		t.Errorf("session = %+v", s)
+	}
+	a := s.Attempts
+	if a[0].Username != "root" || a[0].PasswordLength == nil || *a[0].PasswordLength != 8 || a[0].KeyFingerprint != nil ||
+		a[1].Username != "admin" || a[1].PasswordLength != nil || a[1].KeyFingerprint == nil || *a[1].KeyFingerprint != "SHA256:"+strings.Repeat("A", 43) ||
+		a[2].Username != "" || a[2].PasswordLength == nil || *a[2].PasswordLength != 0 {
+		t.Errorf("attempts = %+v, want root with 8, admin with a key, and an empty name with 0", a)
+	}
+
+	// An event of another channel has no session.
+	if got := decode[eventResponse](t, f.serve(t, f.h.GetEvent, http.MethodGet, "/", request, "")); got.Sensor != nil {
+		t.Errorf("request has the session %+v", got.Sensor)
+	}
+
+	// Lists carry the attempts of each session, and only of it.
+	page := decode[eventListResponse](t, f.serve(t, f.h.ListEvents, http.MethodGet, "/api/v1/events", "", ""))
+	if len(page.Events) != 3 || page.Events[0].ID != request || page.Events[1].ID != later || page.Events[2].ID != session {
+		t.Fatalf("events = %+v, want the request, then the later session, then the first", page.Events)
+	}
+	for _, e := range page.Events[1:] {
+		if e.Sensor == nil || len(e.Sensor.Attempts) != 3 || e.Sensor.Attempts[0].Username != "root" || e.Sensor.Attempts[2].Username != "" {
+			t.Errorf("session of %s in the list = %+v, want its three attempts in order", e.ID, e.Sensor)
+		}
+	}
+	if page.Events[0].Sensor != nil {
+		t.Errorf("request in the list has the session %+v", page.Events[0].Sensor)
+	}
+}
+
 // Without the entry in the audit log, the reader receives no events.
 func TestEvents_AreNotReturnedWithoutTheAuditEntry(t *testing.T) {
 	t.Parallel()
@@ -421,8 +483,8 @@ func TestEvents_AreNotReturnedWithoutTheAuditEntry(t *testing.T) {
 }
 
 // Every kind of response matches the schema of the specification: incidents
-// of a honeytoken and of a scenario, events over HTTP and DNS, alone and in a
-// scenario, one at a time and in lists.
+// of a honeytoken and of a scenario, events over HTTP, DNS and from a sensor,
+// alone and in a scenario, one at a time and in lists.
 func TestResponses_MatchTheSpecification(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -433,6 +495,7 @@ func TestResponses_MatchTheSpecification(t *testing.T) {
 	incidentID := f.incident(t, resourceA, "open", time.Now())
 	request := f.event(t, resourceA, incidentID, "http", time.Now())
 	query := f.event(t, resourceA, incidentID, "dns", time.Now())
+	session := f.event(t, resourceA, incidentID, "sensor", time.Now())
 	var scenarioIncident, scenarioEvent string
 	if err := f.owner.QueryRow(t.Context(), `
 INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
@@ -455,6 +518,7 @@ VALUES ('honeytoken', $1, $2, 'web_image', 'low', now(), now(), 'http', 'HEAD', 
 		{"IncidentPage", f.serve(t, f.h.ListIncidents, http.MethodGet, "/api/v1/incidents", "", "")},
 		{"Event", f.serve(t, f.h.GetEvent, http.MethodGet, "/", request, "")},
 		{"Event", f.serve(t, f.h.GetEvent, http.MethodGet, "/", query, "")},
+		{"Event", f.serve(t, f.h.GetEvent, http.MethodGet, "/", session, "")},
 		{"Event", f.serve(t, f.h.GetEvent, http.MethodGet, "/", scenarioEvent, "")},
 		{"EventPage", f.serve(t, f.h.ListEvents, http.MethodGet, "/api/v1/events", "", "")},
 	} {
