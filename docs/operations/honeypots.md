@@ -68,7 +68,7 @@ The answer is the new honeypot with its secret and status `201`:
 }
 ```
 
-`sensor_config` is the entry of the honeypot for the [configuration file of the sensor](sensor.md#setting-up-a-sensor): a list item for `honeypots:` with the identifier, the service, the usual port of the service as the address to listen on, and the secret. It holds the secret, so it is shown once with it. It holds neither the name nor the notes of the honeypot, which have no place on the host of a sensor.
+`sensor_config` is the entry of the honeypot for the [configuration file of the sensor](sensor.md#setting-up-a-sensor): a list item for `honeypots:` with the identifier, the service, the usual port of the service as the address to listen on, and the secret. It holds the secret, so it is shown once with it. It holds neither the name nor the notes of the honeypot, which have no place on the host of a sensor. A sensor runs a service only if its version emulates it: the entry of an `ssh`, `postgres` or `ldap` honeypot is accepted by the sensors that follow (see [Sensor](sensor.md)).
 
 ## The secret
 
@@ -180,7 +180,7 @@ The sensor says that it is alive when it starts and every five minutes, for each
 
 ### The answer
 
-The trigger answers every report like any other `POST` to `/`: the same redirect to the default target, whether the report was recorded, the secret is unknown, the honeypot is disabled or deleted, the database failed or the report was malformed. The sensor learns nothing from the answer, and neither does anyone who finds the address. A sensor therefore repeats a report only after a failure of the transport, at most three times with a growing pause, and follows no redirect. It drops a session that has waited longer than five minutes, so the age of a report is never beyond what the server takes; see [How reports are delivered](sensor.md#how-reports-are-delivered). The [log of the trigger](logs.md#trigger) names the outcome.
+The trigger answers every report like any other `POST` to `/`: the same redirect to the default target, whether the report was recorded, the secret is unknown, the honeypot is disabled or deleted, the database failed or the report was malformed. The sensor learns nothing from the answer, and neither does anyone who finds the address. A sensor therefore repeats a report only after a failure of the transport, or of a proxy in front of the trigger that answers 502, 503 or 504, at most three times with a growing pause, and follows no redirect. It drops a session that has waited longer than five minutes, so the age of a report is never beyond what the server takes; see [How reports are delivered](sensor.md#how-reports-are-delivered). The [log of the trigger](logs.md#trigger) names the outcome.
 
 ### Versions
 

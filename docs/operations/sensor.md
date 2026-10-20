@@ -2,7 +2,7 @@
 
 The sensor `nyktus-sensor` runs the [honeypots](honeypots.md) inside the network you monitor. It listens where you tell it to, answers attackers like the real service would, offers nothing behind the login, and reports every session to the [trigger](configuration.md#role-trigger). It is a separate program from the server, with a configuration file of its own and nothing to share with the server but the secrets of the honeypots: it runs on hosts that attackers can reach, and what it knows is only what it needs to report.
 
-This version emulates one service, `telnet`. The other services of the console follow with later versions of the sensor; a configuration that names one is refused.
+This version emulates one service, `telnet`. The other services of the console follow with later versions of the sensor; a configuration that names one is refused. The console shows the entry for the configuration file of every honeypot, also for a service that this version does not run yet: keep that entry until a sensor that emulates the service is installed.
 
 ## What the sensor does and does not do
 
@@ -129,11 +129,11 @@ The sensor keeps no table of sources beyond the connections that are open. A flo
 
 ## How reports are delivered
 
-A session is reported once, when it ends. The report waits in a queue of 256 sessions and is sent by four workers. The [trigger answers every report alike](honeypots.md#the-answer), so the sensor cannot tell whether a report was stored. It repeats a request only when the transport fails, because of a connection that is refused, a timeout or a certificate that is not accepted, at most three times after 1, 3 and 9 seconds. It follows no redirect and sends the secret to the address you configured and to no other.
+A session is reported once, when it ends. The report waits in a queue of 256 sessions and is sent by four workers. The [trigger answers every report alike](honeypots.md#the-answer), so the sensor cannot tell whether a report was stored. It repeats a request only when the transport fails, because of a connection that is refused, a timeout, a certificate that is not accepted or a proxy in front of the trigger that cannot pass the request on (the answers 502, 503 and 504, which the trigger itself never sends), at most three times after 1, 3 and 9 seconds. Every other answer, including an error, counts as delivered. It follows no redirect and sends the secret to the address you configured and to no other.
 
 The server takes the age of a session within five minutes. A session that is still waiting after five minutes is dropped, because its time would be wrong, and it is counted. A session is also dropped when the queue is full, when the transport failed on every attempt and when the sensor stops before it could be sent.
 
-The sensor sends a [heartbeat](honeypots.md#heartbeat) for each honeypot when it starts, once the honeypot listens, and every five minutes. Heartbeats do not use the queue, so an attacker who fills it cannot make a honeypot look offline.
+The sensor sends a [heartbeat](honeypots.md#heartbeat) for each honeypot when it starts, once the honeypot listens, and every five minutes. Every honeypot has a loop of its own, and heartbeats do not use the queue, so neither a slow trigger nor an attacker who fills the queue can make a honeypot look offline.
 
 ### Stopping
 
