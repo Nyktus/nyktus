@@ -2,7 +2,7 @@
 
 A honeypot is a network service that nobody has a reason to connect to, such as an SSH server on a host that the team never uses or a directory server that no application knows. The sensor `nyktus-sensor` emulates it inside the monitored network: it answers like the real service, but offers nothing behind the login, and reports every session to the trigger.
 
-This page covers the management of honeypots in the console and what the trigger accepts from a sensor. The sensor itself is not part of Nyktus yet: until it is, no honeypot reports on its own and its [status](#status) stays `never`, unless a program sends the [reports](#how-a-sensor-reports) described below with the secret of the honeypot.
+This page covers the management of honeypots in the console and what the trigger accepts from a sensor. Installing, configuring and running the sensor is described in [Sensor](sensor.md); this version of the sensor emulates `telnet`, and the other services follow. A honeypot that no sensor runs has the [status](#status) `never`.
 
 ## Services
 
@@ -63,13 +63,16 @@ The answer is the new honeypot with its secret and status `201`:
   "sensor_version": null,
   "created_at": "2026-10-19T09:30:00Z",
   "updated_at": "2026-10-19T09:30:00Z",
-  "secret": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  "secret": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "sensor_config": "- id: \"7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d\"\n  service: \"ssh\"\n  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.\n  listen: \":22\"\n  secret: \"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\"\n"
 }
 ```
 
+`sensor_config` is the entry of the honeypot for the [configuration file of the sensor](sensor.md#setting-up-a-sensor): a list item for `honeypots:` with the identifier, the service, the usual port of the service as the address to listen on, and the secret. It holds the secret, so it is shown once with it. It holds neither the name nor the notes of the honeypot, which have no place on the host of a sensor.
+
 ## The secret
 
-The sensor authenticates to the trigger with the `secret` of the honeypot: 256 random bits, 43 characters without a prefix, so that nothing on the host of the sensor marks it as a decoy. **The secret is shown only in this response** and is sent with `Cache-Control: no-store`. Nyktus keeps only a SHA-256 hash of it; no later response, log or audit entry contains it. Store it where the sensor reads it, for example in a file that only the user of the sensor can read.
+The sensor authenticates to the trigger with the `secret` of the honeypot: 256 random bits, 43 characters without a prefix, so that nothing on the host of the sensor marks it as a decoy. **The secret is shown only in this response** and is sent with `Cache-Control: no-store`. Nyktus keeps only a SHA-256 hash of it; no later response, log or audit entry contains it. Store it where the sensor reads it: in the configuration file or in a [secret file](sensor.md#secrets-in-files) that only the user of the sensor can read.
 
 Every honeypot has a secret of its own. A secret that an attacker takes from the host of a sensor reveals only the honeypots configured there.
 
@@ -77,7 +80,7 @@ Every honeypot has a secret of its own. A secret that an attacker takes from the
 
 `POST /api/v1/honeypots/<id>/secret` gives a honeypot a new secret, for example when the old one was lost, exposed or left on a host that was decommissioned. The answer is the honeypot with the new `secret`, as when it was created, and the same applies: it is shown once.
 
-The old secret stops working at once. A sensor that still uses it is shut out until you configure it with the new one. The honeypot forgets what its sensor last reported: its `status` is `never` until a sensor reports with the new secret, so you can see when the replacement has reached the sensor.
+The old secret stops working at once. A sensor that still uses it is shut out until you configure it with the new one. The honeypot forgets what its sensor last reported: its `status` is `never` until a sensor reports with the new secret, so you can see when the replacement has reached the sensor. The new `sensor_config` holds the new secret; put it into the configuration of the sensor and [restart the sensor](sensor.md#replacing-a-secret).
 
 ## Status
 
@@ -124,7 +127,7 @@ Authorization: Bearer <secret>
 Content-Type: application/json
 ```
 
-Use TLS: the secret travels in the header. The sensor verifies the certificate of the trigger.
+Use TLS: the secret travels in the header. The sensor verifies the certificate of the trigger in every case, and accepts a private authority through `SSL_CERT_FILE`; see [TLS and a private authority](sensor.md#tls-and-a-private-authority).
 
 ### Session
 
@@ -177,7 +180,7 @@ The sensor says that it is alive when it starts and every five minutes, for each
 
 ### The answer
 
-The trigger answers every report like any other `POST` to `/`: the same redirect to the default target, whether the report was recorded, the secret is unknown, the honeypot is disabled or deleted, the database failed or the report was malformed. The sensor learns nothing from the answer, and neither does anyone who finds the address. A sensor therefore repeats a report only after a failure of the transport, at most three times with a growing pause, and follows no redirect. The [log of the trigger](logs.md#trigger) names the outcome.
+The trigger answers every report like any other `POST` to `/`: the same redirect to the default target, whether the report was recorded, the secret is unknown, the honeypot is disabled or deleted, the database failed or the report was malformed. The sensor learns nothing from the answer, and neither does anyone who finds the address. A sensor therefore repeats a report only after a failure of the transport, at most three times with a growing pause, and follows no redirect. It drops a session that has waited longer than five minutes, so the age of a report is never beyond what the server takes; see [How reports are delivered](sensor.md#how-reports-are-delivered). The [log of the trigger](logs.md#trigger) names the outcome.
 
 ### Versions
 
