@@ -979,3 +979,54 @@ VALUES ('scenario', $1, 'low', clock_timestamp(), clock_timestamp()) RETURNING i
 		t.Errorf("mail body %q does not name the scenario", mail.Body)
 	}
 }
+
+// The alert of an incident of a honeypot that stands alone names the honeypot
+// as its resource, in every format, with the worker's role, and nothing of it
+// but its identifier: neither its name, its notes nor anything that the
+// attacker typed.
+func TestLoadAlert_NamesTheHoneypotOfAnIncident(t *testing.T) {
+	t.Parallel()
+	f := newDeliveryFixture(t)
+
+	var honeypotID, incidentID string
+	if err := f.owner.QueryRow(t.Context(), `
+INSERT INTO honeypots (service, name, notes, severity, secret_hash)
+VALUES ('ssh', 'Jump host', 'rack4', 'high', sha256('x')) RETURNING id`).Scan(&honeypotID); err != nil {
+		t.Fatal(err)
+	}
+	err := f.owner.QueryRow(t.Context(), `
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
+VALUES ('honeypot', $1, 'high', clock_timestamp(), clock_timestamp()) RETURNING id`, honeypotID).Scan(&incidentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.owner.Exec(t.Context(), `INSERT INTO alerts (incident_id, severity) VALUES ($1, 'high')`, incidentID); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := f.worker.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(t.Context()) }()
+	m, err := loadAlert(t.Context(), tx, incidentID)
+	if err != nil || m.resourceType != "honeypot" || m.resourceID != honeypotID {
+		t.Fatalf("loadAlert() = %+v, %v; want the honeypot %s", m, err, honeypotID)
+	}
+
+	d := Delivery{ID: "33333333-3333-4333-8333-333333333333", AlertID: &incidentID}
+	for _, typ := range []Type{TypeWebhook, TypeSlack, TypeTeams} {
+		body, _, err := format(typ, m, d, "https://nyktus.example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), "honeypot") || !strings.Contains(string(body), honeypotID) ||
+			strings.Contains(string(body), "Jump") || strings.Contains(string(body), "rack4") {
+			t.Errorf("%s: body %s, want the honeypot by its identifier only", typ, body)
+		}
+	}
+	mail := emailMessage(m, d, []string{"soc@example.com"}, "https://nyktus.example.com")
+	if !strings.Contains(mail.Body, "honeypot "+honeypotID) {
+		t.Errorf("mail body %q does not name the honeypot", mail.Body)
+	}
+}

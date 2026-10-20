@@ -5,7 +5,9 @@ package trigger
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -22,14 +24,15 @@ import (
 )
 
 const (
-	// maxBodyBytes limits the body of a request. The trigger never reads it,
-	// but the limit holds for every reader the handler may gain.
+	// maxBodyBytes limits the body of a request. Only the report of a sensor
+	// is read, and the limit is the only bound on it; the limit holds for
+	// every reader the handler may gain.
 	maxBodyBytes = 64 << 10
 	// recordTimeout bounds the wait for the database. A request that takes
 	// longer is answered as if its value were unknown.
 	recordTimeout = 2 * time.Second
-	// limitLogInterval is how often the requests that a honeytoken's limit of
-	// events kept from being recorded are logged.
+	// limitLogInterval is how often the requests that the limit of events of a
+	// honeytoken or honeypot kept from being recorded are logged.
 	limitLogInterval = time.Minute
 )
 
@@ -62,6 +65,8 @@ var pixel = []byte{
 type Options struct {
 	Logger   *slog.Logger
 	Recorder Recorder
+	// Reporter records the reports of sensors.
+	Reporter Reporter
 	// DefaultRedirect is where every request goes that is not sent to the
 	// redirect target of a honeytoken.
 	DefaultRedirect string
@@ -72,22 +77,30 @@ type Options struct {
 type Handler struct {
 	logger          *slog.Logger
 	recorder        Recorder
+	reporter        Reporter
 	defaultRedirect string
 	next            http.Handler
 	limited         limitedRequests
+	limitedReports  limitedRequests
 }
 
 // New returns the handler of the trigger. Run must run alongside it, so that
-// requests beyond the limit of a honeytoken are logged.
+// requests beyond the limit of a honeytoken or honeypot are logged.
 func New(o Options) *Handler {
-	if o.Logger == nil || o.Recorder == nil || o.DefaultRedirect == "" {
-		panic("trigger: missing logger, recorder or default redirect")
+	if o.Logger == nil || o.Recorder == nil || o.Reporter == nil || o.DefaultRedirect == "" {
+		panic("trigger: missing logger, recorder, reporter or default redirect")
 	}
 	h := &Handler{
 		logger:          o.Logger,
 		recorder:        o.Recorder,
+		reporter:        o.Reporter,
 		defaultRedirect: o.DefaultRedirect,
-		limited:         limitedRequests{counts: map[string]int{}},
+		limited: limitedRequests{counts: map[string]int{}, warn: func(ctx context.Context, l *slog.Logger, id string, n int) {
+			l.WarnContext(ctx, "trigger: requests not recorded", slog.String("honeytoken_id", id), slog.Int("requests", n))
+		}},
+		limitedReports: limitedRequests{counts: map[string]int{}, warn: func(ctx context.Context, l *slog.Logger, id string, n int) {
+			l.WarnContext(ctx, "trigger: reports not recorded", slog.String("honeypot_id", id), slog.Int("reports", n))
+		}},
 	}
 	// The middleware of the console is not used: its request IDs, JSON errors
 	// and redirects of unclean paths would each identify the trigger.
@@ -141,8 +154,9 @@ func (w *answerWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-// Run logs the requests that the limit of events kept from being recorded, at
-// most once per interval and honeytoken, until ctx is canceled.
+// Run logs the requests and reports that the limit of events kept from being
+// recorded, at most once per interval and honeytoken or honeypot, until ctx is
+// canceled.
 func (h *Handler) Run(ctx context.Context) {
 	ticker := time.NewTicker(limitLogInterval)
 	defer ticker.Stop()
@@ -150,8 +164,10 @@ func (h *Handler) Run(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			h.limited.flush(ctx, h.logger)
+			h.limitedReports.flush(ctx, h.logger)
 		case <-ctx.Done():
 			h.limited.flush(context.WithoutCancel(ctx), h.logger)
+			h.limitedReports.flush(context.WithoutCancel(ctx), h.logger)
 			return
 		}
 	}
@@ -169,6 +185,10 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	path := strings.ToLower(r.URL.Path)
 	value, ok := triggerValue(path)
 	switch {
+	case r.Method == http.MethodPost && path == reportPath:
+		// A sensor reports here. The answer is the one that every other POST
+		// receives, whatever became of the report.
+		attrs = h.report(r, attrs)
 	case !ok || (r.Method != http.MethodGet && r.Method != http.MethodHead):
 		attrs = append(attrs, slog.String("outcome", "not_looked_up"))
 	default:
@@ -224,12 +244,80 @@ func (h *Handler) answer(w http.ResponseWriter, path, redirectURL string) int {
 }
 
 func (h *Handler) record(ctx context.Context, req Request) (Result, error) {
-	// A client that closes the connection right after its request must not
-	// cancel the recording, or it could request a honeytoken without leaving an
-	// event.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	ctx, cancel := recordingContext(ctx)
 	defer cancel()
 	return h.recorder.Record(ctx, req)
+}
+
+// recordingContext returns the context of a recording. A client that closes
+// the connection right after its request must not cancel the recording, or it
+// could request a honeytoken without leaving an event.
+func recordingContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+}
+
+// reportPath is where sensors send their reports.
+const reportPath = "/"
+
+// report records the report of a sensor, if the request carries the form of
+// one, and returns the attributes of the log. It writes no response. The log
+// names the honeypot, its service and the type of the event, never the secret
+// or anything that the sensor chose.
+func (h *Handler) report(r *http.Request, attrs []slog.Attr) []slog.Attr {
+	secret, ok := bearerSecret(r.Header.Get("Authorization"))
+	if !ok {
+		return append(attrs, slog.String("outcome", "not_looked_up"))
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return append(attrs, slog.String("outcome", "rejected"), slog.String("reason", "invalid_report"))
+	}
+	rep, err := DecodeReport(body)
+	switch {
+	case errors.Is(err, ErrUnsupportedVersion):
+		return append(attrs, slog.String("outcome", "rejected"), slog.String("reason", "unsupported_version"))
+	case err != nil:
+		return append(attrs, slog.String("outcome", "rejected"), slog.String("reason", "invalid_report"))
+	}
+	attrs = append(attrs, slog.String("report", rep.Kind()))
+
+	ctx, cancel := recordingContext(r.Context())
+	defer cancel()
+	var res ReportResult
+	hash := SecretHash(secret)
+	if rep.Session != nil {
+		res, err = h.reporter.RecordSession(ctx, hash, *rep.Session)
+		attrs = append(attrs, slog.String("event_type", string(rep.Session.EventType())))
+	} else {
+		res, err = h.reporter.RecordHeartbeat(ctx, hash, *rep.Heartbeat)
+	}
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "trigger: recording failed", slog.Any("error", err))
+		return append(attrs, slog.String("outcome", "failed"))
+	}
+	if res.Outcome == ReportInvalid {
+		attrs = append(attrs, slog.String("outcome", "rejected"), slog.String("reason", "invalid_report"))
+	} else {
+		attrs = append(attrs, slog.String("outcome", string(res.Outcome)))
+	}
+	if res.HoneypotID != "" {
+		attrs = append(attrs, slog.String("honeypot_id", res.HoneypotID), slog.String("service", res.Service))
+	}
+	if res.Outcome == ReportLimited {
+		h.limitedReports.add(res.HoneypotID)
+	}
+	return attrs
+}
+
+// bearerSecret returns the secret of an Authorization header of the form
+// "Bearer <secret>", if the value has the form of a secret.
+func bearerSecret(header string) (string, bool) {
+	const scheme = "Bearer "
+	if len(header) != len(scheme)+secretLength || !strings.EqualFold(header[:len(scheme)], scheme) {
+		return "", false
+	}
+	secret := header[len(scheme):]
+	return secret, isSecret(secret)
 }
 
 // triggerValue extracts the trigger value from the lowercase path of a URL of a
@@ -310,17 +398,20 @@ func writeRedirect(w http.ResponseWriter, target string) {
 	w.WriteHeader(http.StatusFound)
 }
 
-// limitedRequests counts, per honeytoken, the requests that its limit of events
-// kept from being recorded since they were last logged.
+// limitedRequests counts, per honeytoken or honeypot, the requests or reports
+// that its limit of events kept from being recorded since they were last
+// logged.
 type limitedRequests struct {
 	mu     sync.Mutex
 	counts map[string]int
+	// warn logs the count of one identifier.
+	warn func(ctx context.Context, logger *slog.Logger, id string, n int)
 }
 
-func (l *limitedRequests) add(honeytokenID string) {
+func (l *limitedRequests) add(id string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.counts[honeytokenID]++
+	l.counts[id]++
 }
 
 func (l *limitedRequests) flush(ctx context.Context, logger *slog.Logger) {
@@ -329,7 +420,6 @@ func (l *limitedRequests) flush(ctx context.Context, logger *slog.Logger) {
 	l.counts = map[string]int{}
 	l.mu.Unlock()
 	for id, n := range counts {
-		logger.WarnContext(ctx, "trigger: requests not recorded",
-			slog.String("honeytoken_id", id), slog.Int("requests", n))
+		l.warn(ctx, logger, id, n)
 	}
 }

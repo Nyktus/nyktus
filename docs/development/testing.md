@@ -25,7 +25,8 @@ The test must fail without the fix. Verify this by reverting the fix locally bef
 Each of these properties needs its own test, named after the property:
 
 - Trigger responses are identical for valid, unknown, disabled and failing tokens, apart from an operator-configured redirect target. For the DNS role, this covers rcode, flags, every section and the TTLs, over a real UDP and TCP server, including a panic during recording.
-- The trigger and DNS database roles cannot select from any table and resolve only single values through their own function.
+- The trigger and DNS database roles cannot select from any table and resolve only single values through their own functions: the trigger holds exactly three, one for honeytokens and two for sensors.
+- Reports of sensors are answered like every other `POST` to the trigger for a wrong, replaced or old secret, a disabled or deleted honeypot, a refused report, a failing database and a panic. A wrong, replaced or old secret records nothing. A session sent twice, also at the same moment, is stored once, and a heartbeat never records an event or a job. A password is never stored, and every text field of a session passes the same check as the headers of a request.
 - The DNS role refuses names outside its zones (no recursion) and answers no queries in the class `CHAOS`.
 - The server refuses database roles with privileges beyond their grants, with one case for every privilege the check covers.
 - The database role of every server role passes that check after all migrations and has no privileges beyond its grants.

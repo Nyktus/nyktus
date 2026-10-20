@@ -416,3 +416,58 @@ FROM generate_series(0, $2::int) AS i`, beyond, kept); err != nil {
 		}
 	}
 }
+
+// The attempts of a session leave with the event beyond the retention, and
+// those of a session within it stay: no attempt outlives its event, so that the
+// user names of attackers are kept no longer than the events.
+func TestDeleteExpiredIncidentData_RemovesTheAttemptsOfExpiredEvents(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, workerURL := schematest.Worker(t)
+	owner := schematest.Open(t, ownerURL)
+	d := incidentData{owner: owner, t: t}
+	const retention = 180
+	var honeypotID string
+	if err := owner.QueryRow(t.Context(), `
+INSERT INTO honeypots (service, name, severity, secret_hash) VALUES ('ssh', 'p', 'medium', sha256('x')) RETURNING id`).Scan(&honeypotID); err != nil {
+		t.Fatal(err)
+	}
+	incident := d.incident(honeypotID, days(retention)+time.Hour, days(retention)+margin)
+
+	session := func(age time.Duration) string {
+		t.Helper()
+		if _, err := owner.Exec(t.Context(), `
+SELECT * FROM public.record_honeypot_session(sha256('x'), gen_random_uuid(), interval '0', 0, '192.0.2.1', 22, 'login_attempt',
+	NULL, NULL, NULL, NULL, NULL, '[{"username":"root","password_length":3},{"username":"admin"}]')`); err != nil {
+			t.Fatal(err)
+		}
+		var id string
+		if err := owner.QueryRow(t.Context(), `SELECT id FROM events WHERE incident_id IS NULL`).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		// Processed, and recorded age ago.
+		if _, err := owner.Exec(t.Context(), `DELETE FROM event_jobs WHERE event_id = $1`, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := owner.Exec(t.Context(), `
+UPDATE events SET incident_id = $2, occurred_at = occurred_at - $3::interval, recorded_at = recorded_at - $3::interval WHERE id = $1`,
+			id, incident, age); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	old, young := session(days(retention)+margin), session(days(retention)-margin)
+
+	if _, err := schematest.Open(t, workerURL).Exec(t.Context(), "SELECT public.delete_expired_incident_data($1, 100)", retention); err != nil {
+		t.Fatalf("delete_expired_incident_data() error = %v", err)
+	}
+	if n := count(t, owner, "SELECT count(*) FROM event_attempts WHERE event_id = $1", old); n != 0 {
+		t.Errorf("%d attempts of the expired event remain, want none", n)
+	}
+	if n := count(t, owner, "SELECT count(*) FROM event_attempts WHERE event_id = $1", young); n != 2 {
+		t.Errorf("%d attempts of the event within the retention, want 2", n)
+	}
+	if n := count(t, owner, "SELECT count(*) FROM event_attempts AS a WHERE NOT EXISTS (SELECT FROM events AS e WHERE e.id = a.event_id)"); n != 0 {
+		t.Errorf("%d attempts without an event", n)
+	}
+}

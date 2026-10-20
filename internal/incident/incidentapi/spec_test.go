@@ -12,9 +12,11 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"nyktus.org/nyktus/api"
+	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/incident"
 	"nyktus.org/nyktus/internal/severity"
+	"nyktus.org/nyktus/internal/trigger"
 )
 
 type schemaProperty struct {
@@ -122,9 +124,11 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		{"TriageIncidentRequest", "severity_override", severities},
 		{"Incident", "event_severity", eventSeverities},
 		{"Event", "severity", eventSeverities},
-		{"Event", "channel", []string{incident.ChannelDNS, incident.ChannelHTTP}},
+		{"Event", "channel", []string{incident.ChannelDNS, incident.ChannelHTTP, incident.ChannelSensor}},
 		{"Incident", "resource_type", slices.Sorted(slices.Values(incident.ResourceTypes))},
-		{"Event", "resource_type", []string{honeytoken.ResourceType}},
+		{"Event", "resource_type", []string{honeypot.ResourceType, honeytoken.ResourceType}},
+		{"EventSession", "service", slices.Sorted(slices.Values(names(honeypot.Services)))},
+		{"EventSession", "event_type", slices.Sorted(slices.Values(names(trigger.EventTypes)))},
 	} {
 		if got := enum(schemas[check.schema].Properties[check.property]); !slices.Equal(got, check.want) {
 			t.Errorf("%s.%s = %v, want %v", check.schema, check.property, got, check.want)

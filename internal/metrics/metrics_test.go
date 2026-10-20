@@ -28,9 +28,14 @@ const (
 	userAgent      = "agent-of-a-person-qx"
 	notes          = "notes-of-an-analyst-qx"
 	channelName    = "channel-name-qx"
+	honeypotName   = "honeypot-name-qx"
+	attackerName   = "attacker-name-qx"
+	attackerIP     = "198.51.100.78"
+	clientVersion  = "client-version-qx"
 )
 
-// placeState writes a honeytoken with an event and its job, an open and an
+// placeState writes a honeytoken with an event and its job, three honeypots of
+// the three states, one of which reported a session, an open and an
 // acknowledged incident, a pending and a dead delivery, and a run of a
 // periodic task, as the owner.
 func placeState(t *testing.T, owner *pgxpool.Pool) {
@@ -38,6 +43,12 @@ func placeState(t *testing.T, owner *pgxpool.Pool) {
 	for _, statement := range []string{
 		"INSERT INTO honeytokens (type, name, severity, trigger_value) VALUES ('web_url', '" + honeytokenName + "', 'medium', repeat('a', 26))",
 		"SELECT * FROM record_honeytoken_request(repeat('a', 26), 'GET', '" + clientIP + "', '" + userAgent + "', '', '')",
+		`INSERT INTO honeypots (service, name, severity, secret_hash, created_at, last_seen_at) VALUES
+('ssh', '` + honeypotName + `', 'medium', sha256('a'), now() - interval '2 hours', NULL),
+('ssh', '` + honeypotName + `', 'medium', sha256('b'), now() - interval '2 hours', now() - interval '1 minute'),
+('ldap', '` + honeypotName + `', 'medium', sha256('c'), now() - interval '2 hours', now() - interval '1 hour')`,
+		`SELECT * FROM record_honeypot_session(sha256('b'), gen_random_uuid(), interval '0', 10, '` + attackerIP + `', 22, 'login_attempt',
+'` + clientVersion + `', NULL, NULL, NULL, NULL, '[{"username":"` + attackerName + `","password_length":3}]')`,
 		`INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, notes)
 SELECT 'honeytoken', id, 'high', now(), now(), '` + notes + `' FROM honeytokens`,
 		`INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at, acknowledged_at)
@@ -101,13 +112,16 @@ func TestHandler_ReportsTheState(t *testing.T) {
 	}
 	text := resp.body
 	for _, want := range []string{
-		"nyktus_event_jobs 1\n",
-		"nyktus_event_jobs_due 1\n",
+		"nyktus_event_jobs 2\n",
+		"nyktus_event_jobs_due 2\n",
 		"nyktus_event_jobs_retrying 0\n",
 		`nyktus_alert_deliveries{status="pending"} 1` + "\n",
 		`nyktus_alert_deliveries{status="dead"} 1` + "\n",
 		`nyktus_incidents{status="open"} 1` + "\n",
 		`nyktus_incidents{status="acknowledged"} 1` + "\n",
+		`nyktus_honeypots{status="never"} 1` + "\n",
+		`nyktus_honeypots{status="online"} 1` + "\n",
+		`nyktus_honeypots{status="offline"} 1` + "\n",
 		`nyktus_periodic_task_last_rows{task="delete_expired_sign_in_data"} 5` + "\n",
 		`nyktus_periodic_task_last_failure_timestamp_seconds{task="delete_expired_sign_in_data"} 0` + "\n",
 		"# TYPE nyktus_build_info gauge\n",
@@ -141,7 +155,10 @@ func TestHandler_ReportsNoInventoryOrPersonalData(t *testing.T) {
 	owner := schematest.Open(t, ownerURL)
 	placeState(t, owner)
 	text := get(t, schematest.Open(t, consoleURL)).body
-	for _, secret := range []string{honeytokenName, clientIP, userAgent, notes, channelName, strings.Repeat("a", 26)} {
+	for _, secret := range []string{
+		honeytokenName, clientIP, userAgent, notes, channelName, strings.Repeat("a", 26),
+		honeypotName, attackerName, attackerIP, clientVersion, "ssh", "ldap",
+	} {
 		if strings.Contains(text, secret) {
 			t.Errorf("metrics contain %q:\n%s", secret, text)
 		}
@@ -159,7 +176,7 @@ func TestHandler_ReportsNoInventoryOrPersonalData(t *testing.T) {
 		t.Fatal(err)
 	}
 	allowed := map[string][]string{
-		"status": {"pending", "dead", "open", "acknowledged"},
+		"status": {"pending", "dead", "open", "acknowledged", "never", "online", "offline"},
 		"task":   tasks,
 	}
 	for line := range strings.SplitSeq(strings.TrimSuffix(text, "\n"), "\n") {

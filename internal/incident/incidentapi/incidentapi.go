@@ -232,21 +232,45 @@ type dnsResponse struct {
 	Transport string `json:"transport"`
 }
 
+type attemptResponse struct {
+	Username       string  `json:"username"`
+	PasswordLength *int    `json:"password_length"`
+	KeyFingerprint *string `json:"key_fingerprint"`
+}
+
+type sessionQueryResponse struct {
+	BaseDN string `json:"base_dn"`
+	Filter string `json:"filter"`
+}
+
+type sensorResponse struct {
+	Service         string                `json:"service"`
+	EventType       string                `json:"event_type"`
+	Port            int                   `json:"port"`
+	DurationMS      int                   `json:"duration_ms"`
+	ClientVersion   *string               `json:"client_version"`
+	Database        *string               `json:"database"`
+	ApplicationName *string               `json:"application_name"`
+	Query           *sessionQueryResponse `json:"query"`
+	Attempts        []attemptResponse     `json:"attempts"`
+}
+
 type eventResponse struct {
-	ID             string         `json:"id"`
-	ResourceType   string         `json:"resource_type"`
-	ResourceID     string         `json:"resource_id"`
-	ScenarioID     *string        `json:"scenario_id"`
-	HoneytokenType *string        `json:"honeytoken_type"`
-	Techniques     []string       `json:"techniques"`
-	Severity       severity.Level `json:"severity"`
-	IncidentID     *string        `json:"incident_id"`
-	OccurredAt     time.Time      `json:"occurred_at"`
-	RecordedAt     time.Time      `json:"recorded_at"`
-	Channel        string         `json:"channel"`
-	ClientIP       *string        `json:"client_ip"`
-	HTTP           *httpResponse  `json:"http"`
-	DNS            *dnsResponse   `json:"dns"`
+	ID             string          `json:"id"`
+	ResourceType   string          `json:"resource_type"`
+	ResourceID     string          `json:"resource_id"`
+	ScenarioID     *string         `json:"scenario_id"`
+	HoneytokenType *string         `json:"honeytoken_type"`
+	Techniques     []string        `json:"techniques"`
+	Severity       severity.Level  `json:"severity"`
+	IncidentID     *string         `json:"incident_id"`
+	OccurredAt     time.Time       `json:"occurred_at"`
+	RecordedAt     time.Time       `json:"recorded_at"`
+	Channel        string          `json:"channel"`
+	ClientIP       *string         `json:"client_ip"`
+	HTTP           *httpResponse   `json:"http"`
+	DNS            *dnsResponse    `json:"dns"`
+	Sensor         *sensorResponse `json:"sensor"`
 }
 
 func newEventResponse(e incident.Event) eventResponse {
@@ -276,6 +300,23 @@ func newEventResponse(e incident.Event) eventResponse {
 		out.HTTP = &httpResponse{Method: e.Method, UserAgent: e.UserAgent, Referer: e.Referer, AcceptLanguage: e.AcceptLanguage}
 	case incident.ChannelDNS:
 		out.DNS = &dnsResponse{Zone: e.DNSZone, Prefix: e.DNSPrefix, QType: e.DNSQType, Transport: e.DNSTransport}
+	case incident.ChannelSensor:
+		out.Sensor = newSensorResponse(e.Sensor)
+	}
+	return out
+}
+
+func newSensorResponse(s *incident.Session) *sensorResponse {
+	out := &sensorResponse{
+		Service: s.Service, EventType: s.EventType, Port: s.Port, DurationMS: s.DurationMS,
+		ClientVersion: s.ClientVersion, Database: s.Database, ApplicationName: s.ApplicationName,
+		Attempts: make([]attemptResponse, 0, len(s.Attempts)),
+	}
+	if s.Query != nil {
+		out.Query = &sessionQueryResponse{BaseDN: s.Query.BaseDN, Filter: s.Query.Filter}
+	}
+	for _, a := range s.Attempts {
+		out.Attempts = append(out.Attempts, attemptResponse{Username: a.Username, PasswordLength: a.PasswordLength, KeyFingerprint: a.KeyFingerprint})
 	}
 	return out
 }

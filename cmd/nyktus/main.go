@@ -350,9 +350,11 @@ func serveTrigger(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 	}
 	logger.InfoContext(ctx, "trigger: listening", slog.String("addr", ln.Addr().String()))
 
+	store := trigger.NewStore(pool)
 	h := trigger.New(trigger.Options{
 		Logger:          logger,
-		Recorder:        trigger.NewStore(pool),
+		Recorder:        store,
+		Reporter:        store,
 		DefaultRedirect: cfg.Trigger.DefaultRedirect,
 		TrustedProxies:  cfg.TrustedProxies,
 	})
