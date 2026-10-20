@@ -143,11 +143,41 @@ linters:
               desc: alerts carry no inventory; the incident holds what an alert reports
             - pkg: nyktus.org/nyktus/internal/honeypot
               desc: alerts carry no inventory; the incident holds what an alert reports
+        # The sensor runs in the monitored network and talks to attackers. It is
+        # a module of its own and imports nothing of the server: without a
+        # require, the compiler refuses it already, and this rule keeps a
+        # change from adding one.
+        sensor:
+          list-mode: lax
+          files:
+            - "**/sensor/**"
+          deny:
+            - pkg: nyktus.org/nyktus/internal
+              desc: the sensor is a module of its own and imports nothing of the server
+            - pkg: nyktus.org/nyktus/cmd
+              desc: the sensor is a module of its own and imports nothing of the server
+            - pkg: nyktus.org/nyktus/catalog
+              desc: the sensor is a module of its own and imports nothing of the server
+            - pkg: nyktus.org/nyktus/migrations
+              desc: the sensor is a module of its own and imports nothing of the server
+            - pkg: nyktus.org/nyktus/api
+              desc: the sensor is a module of its own and imports nothing of the server
+        # The clock of tests moves by hand and is for tests only.
+        sensor-test-only:
+          list-mode: lax
+          files:
+            - "**/sensor/**"
+            - "!$test"
+            - "!**/sensor/internal/clock/clocktest/*.go"
+          deny:
+            - pkg: nyktus.org/nyktus/sensor/internal/clock/clocktest
+              desc: the clock of tests is for tests only
         # Test-only dependencies must never reach the binaries.
         test-only:
           list-mode: lax
           files:
             - "!$test"
+            - "!**/sensor/**"
             - "!**/internal/platform/apispec/*.go"
             - "!**/internal/platform/schematest/*.go"
             - "!**/internal/platform/secretbox/secretboxtest/*.go"

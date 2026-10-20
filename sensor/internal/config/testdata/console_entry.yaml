@@ -1,0 +1,5 @@
+- id: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d"
+  service: "telnet"
+  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.
+  listen: ":23"
+  secret: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
