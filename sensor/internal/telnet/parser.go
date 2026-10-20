@@ -131,9 +131,9 @@ type lineReader struct {
 
 // read reads one line. A line ends with CR LF, CR NUL or a lone LF or CR; a
 // NUL anywhere else is dropped. It keeps at most keep bytes of the text but
-// counts all of them. echo, if set, receives every printable byte that the
-// client typed, in order to show it to the client. On an error the line holds
-// what was read until then.
+// counts all of them. echo, if set, receives every printable byte that is kept,
+// in order to show it to the client. On an error the line holds what was read
+// until then.
 func (l *lineReader) read(keep int, echo func(byte) error) (line, error) {
 	var ln line
 	for {
@@ -165,9 +165,12 @@ func (l *lineReader) read(keep int, echo func(byte) error) (line, error) {
 			continue
 		}
 		ln.n++
-		if len(ln.text) < keep {
-			ln.text = append(ln.text, data)
+		if len(ln.text) >= keep {
+			continue
 		}
+		ln.text = append(ln.text, data)
+		// What is kept is shown back, and nothing more: a client that sends
+		// a long line does not make the sensor write a long answer.
 		if echo != nil && data >= 0x20 && data <= 0x7e {
 			if err := echo(data); err != nil {
 				return ln, err

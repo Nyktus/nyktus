@@ -228,7 +228,8 @@ func logStats(ctx context.Context, logger *slog.Logger, rep *reporter.Reporter, 
 			logger.WarnContext(ctx, "sensor: accepting connections failed", b.hp.Attr(), slog.Int("errors", st.AcceptErrors))
 		}
 		if st.Panics > 0 {
-			logger.ErrorContext(ctx, "sensor: sessions ended by a failure of the service", b.hp.Attr(), slog.Int("sessions", st.Panics))
+			logger.ErrorContext(ctx, "sensor: sessions ended by a failure of the service", b.hp.Attr(),
+				slog.Int("sessions", st.Panics), slog.String("panic", st.Panic), slog.String("stack", st.Stack))
 		}
 	}
 }

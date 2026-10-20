@@ -183,22 +183,29 @@ func (r *Reporter) send(s *session.Session) {
 }
 
 // RunHeartbeats tells the trigger that the honeypots run, once for each now
-// and again for each every HeartbeatInterval, until ctx is done. It does not
-// use the queue, which an attacker can fill: a honeypot under attack must not
-// look offline.
+// and again for each every HeartbeatInterval, until ctx is done. Every honeypot
+// has a loop of its own, so that a slow trigger delays only the heartbeat it is
+// answering, not the ones after it. The heartbeats do not use the queue, which
+// an attacker can fill: a honeypot under attack must not look offline.
 func (r *Reporter) RunHeartbeats(ctx context.Context, sensorVersion string, honeypots []*session.Honeypot) {
 	body, err := json.Marshal(report.NewHeartbeat(sensorVersion))
 	if err != nil {
 		panic("reporter: heartbeat does not serialize")
 	}
+	var wg sync.WaitGroup
+	for _, hp := range honeypots {
+		wg.Go(func() { r.heartbeats(ctx, hp, body) })
+	}
+	wg.Wait()
+}
+
+func (r *Reporter) heartbeats(ctx context.Context, hp *session.Honeypot, body []byte) {
 	for {
-		for _, hp := range honeypots {
-			// A heartbeat comes once in five minutes whatever an attacker does,
-			// so a failure is logged at once: it is how an operator learns that
-			// the address or the certificate of the trigger is wrong.
-			if out, err := r.sender.deliver(ctx, hp.Secret, func() ([]byte, bool) { return body, true }); out == failed {
-				r.logger.WarnContext(ctx, "sensor: heartbeat not delivered", hp.Attr(), slog.Any("error", err))
-			}
+		// A heartbeat comes once in five minutes whatever an attacker does, so
+		// a failure is logged at once: it is how an operator learns that the
+		// address or the certificate of the trigger is wrong.
+		if out, err := r.sender.deliver(ctx, hp.Secret, func() ([]byte, bool) { return body, true }); out == failed {
+			r.logger.WarnContext(ctx, "sensor: heartbeat not delivered", hp.Attr(), slog.Any("error", err))
 		}
 		if r.clock.Wait(ctx, HeartbeatInterval) != nil {
 			return

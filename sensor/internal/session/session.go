@@ -110,14 +110,13 @@ func (s *Session) End() {
 }
 
 // EventType names the stage that the session reached, for the log. The server
-// derives the kind of event from the content in the same way.
+// decides the kind of event from the report; this is what it will find in a
+// session of a service that only logs in.
 func (s *Session) EventType() string {
-	switch {
-	case len(s.attempts) > 0:
+	if len(s.attempts) > 0 {
 		return "login_attempt"
-	default:
-		return "connection"
 	}
+	return "connection"
 }
 
 // Attr is the attribute that describes the session in a log record: the

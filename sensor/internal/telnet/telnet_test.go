@@ -401,6 +401,18 @@ func TestServe_Echo_ShowsPrintableBytesOnly(t *testing.T) {
 	}
 }
 
+// A long line is not answered with a long echo: only what is kept is shown.
+func TestServe_Echo_StopsWhereTheNameIsCut(t *testing.T) {
+	t.Parallel()
+
+	_, conn := play(t, defaultConfig, strings.Repeat("u", 5000))
+
+	out := strings.TrimPrefix(conn.written(), opening+"\r\nTest banner\r\nlogin: ")
+	if out != strings.Repeat("u", 256) {
+		t.Errorf("echo is %d bytes, want the 256 that are kept", len(out))
+	}
+}
+
 func TestServe_Config_ChangesTheTexts(t *testing.T) {
 	t.Parallel()
 

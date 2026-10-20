@@ -144,10 +144,10 @@ func Load(path string) (*Config, error) {
 	if inline && info.Mode().Perm()&otherAccess != 0 {
 		problems = append(problems, fmt.Errorf("the configuration holds a secret and other users can read it: mode %04o, want 0600", info.Mode().Perm()))
 	}
-	if err := errors.Join(problems...); err != nil {
-		return nil, err
+	if err := cfg.checkDistinctSecrets(); err != nil {
+		problems = append(problems, err)
 	}
-	if err := checkDistinctSecrets(cfg); err != nil {
+	if err := errors.Join(problems...); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -195,7 +195,7 @@ func Parse(data []byte) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := cfg.validate(); err != nil {
+	if err := errors.Join(cfg.validate(), cfg.checkDistinctSecrets()); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -254,7 +254,6 @@ func (c *Config) validate() error {
 		add("honeypots: at most %d honeypots", maxHoneypots)
 	}
 	ids := map[string]int{}
-	secrets := map[secret.Secret]int{}
 	for i := range c.Honeypots {
 		hp := &c.Honeypots[i]
 		for _, err := range hp.validate() {
@@ -264,14 +263,11 @@ func (c *Config) validate() error {
 			add("honeypots[%d].id: the same id as honeypots[%d]", i, prev)
 		}
 		ids[hp.ID] = i
-		if prev, ok := secrets[hp.Secret]; ok && hp.Secret != "" {
-			add("honeypots[%d].secret: the same secret as honeypots[%d]; every honeypot has its own", i, prev)
-		}
-		secrets[hp.Secret] = i
 	}
 	for i := range c.Honeypots {
+		a, okA := parseListen(c.Honeypots[i].Listen)
 		for j := range i {
-			if conflict(c.Honeypots[j].Listen, c.Honeypots[i].Listen) {
+			if b, okB := parseListen(c.Honeypots[j].Listen); okA && okB && a.overlaps(b) {
 				add("honeypots[%d].listen: conflicts with honeypots[%d].listen", i, j)
 			}
 		}
@@ -279,11 +275,16 @@ func (c *Config) validate() error {
 	return errors.Join(problems...)
 }
 
-// checkDistinctSecrets compares the secrets that were read from files.
-func checkDistinctSecrets(c *Config) error {
+// checkDistinctSecrets reports honeypots that share a secret, whether it stands
+// in the file or in a secret file, so that the server can tell them apart. It
+// ignores honeypots that have none yet.
+func (c *Config) checkDistinctSecrets() error {
 	var problems []error
 	seen := map[secret.Secret]int{}
 	for i, hp := range c.Honeypots {
+		if hp.Secret == "" {
+			continue
+		}
 		if prev, ok := seen[hp.Secret]; ok {
 			problems = append(problems, fmt.Errorf("honeypots[%d].secret: the same secret as honeypots[%d]; every honeypot has its own", i, prev))
 		}
@@ -356,40 +357,61 @@ func validateText(s string, maxLen int, multiline bool) error {
 	return nil
 }
 
+// portPattern is a port as the system writes it: digits without a sign or a
+// leading zero, so that two spellings of one port are not taken for two ports.
+var portPattern = regexp.MustCompile(`^[1-9][0-9]{0,4}$`)
+
+// listenAddr is a listen address that has passed validateListen.
+type listenAddr struct {
+	// host is the address, or the zero Addr for no host, which stands for every
+	// address.
+	host netip.Addr
+	port string
+}
+
 // validateListen accepts "host:port" with an IP address or no host, and a port.
 func validateListen(s string) error {
-	host, port, err := net.SplitHostPort(s)
-	if err != nil {
-		return errors.New("must be host:port or :port")
-	}
-	if host != "" {
-		if _, err := netip.ParseAddr(host); err != nil {
-			return errors.New("the host must be an IP address or empty")
-		}
-	}
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
-		return errors.New("the port must be a number from 1 to 65535")
+	if _, ok := parseListen(s); !ok {
+		return errors.New("must be host:port or :port, with an IP address or no host and a port from 1 to 65535")
 	}
 	return nil
 }
 
-// conflict reports whether two listen addresses cannot both be bound: the same
-// port on the same address, or on an address and on all addresses.
-func conflict(a, b string) bool {
-	ha, pa, errA := net.SplitHostPort(a)
-	hb, pb, errB := net.SplitHostPort(b)
-	if errA != nil || errB != nil || pa != pb {
-		return false
+func parseListen(s string) (listenAddr, bool) {
+	host, port, err := net.SplitHostPort(s)
+	if err != nil || !portPattern.MatchString(port) {
+		return listenAddr{}, false
 	}
-	return ha == hb || wildcard(ha) || wildcard(hb)
-}
-
-func wildcard(host string) bool {
+	if n, err := strconv.Atoi(port); err != nil || n > 65535 {
+		return listenAddr{}, false
+	}
 	if host == "" {
-		return true
+		return listenAddr{port: port}, true
 	}
 	addr, err := netip.ParseAddr(host)
-	return err == nil && addr.IsUnspecified()
+	if err != nil {
+		return listenAddr{}, false
+	}
+	return listenAddr{host: addr.Unmap(), port: port}, true
+}
+
+// overlaps reports whether the two cannot both be bound: the same port on the
+// same address, on an address and on all addresses, or on an IPv4 address and
+// on all IPv4 addresses. The wildcard of no host and "::" takes both families,
+// "0.0.0.0" only IPv4, so that 0.0.0.0 and ::1 may share a port.
+func (a listenAddr) overlaps(b listenAddr) bool {
+	if a.port != b.port {
+		return false
+	}
+	if a.dualStack() || b.dualStack() || a.host == b.host {
+		return true
+	}
+	v4 := netip.IPv4Unspecified()
+	return (a.host == v4 && b.host.Is4()) || (b.host == v4 && a.host.Is4())
+}
+
+func (a listenAddr) dualStack() bool {
+	return !a.host.IsValid() || a.host == netip.IPv6Unspecified()
 }
 
 // validateTriggerURL returns the URL that reports go to. The trigger accepts

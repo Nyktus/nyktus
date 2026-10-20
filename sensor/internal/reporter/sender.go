@@ -14,6 +14,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -122,8 +123,15 @@ func (s *sender) deliver(ctx context.Context, sec secret.Secret, build func() ([
 // errRequest is a request that cannot be built, which no repetition helps.
 var errRequest = errors.New("build request")
 
+// errGateway is the answer of a proxy in front of the trigger that could not
+// pass the request on.
+var errGateway = errors.New("the gateway in front of the trigger failed")
+
 // post sends one request. It returns an error only if the transport failed:
 // any answer is a success, because the trigger answers alike whatever it did.
+// The exception is a gateway failure (502, 503, 504), which the trigger never
+// sends: it says that the request did not reach the trigger, like a refused
+// connection, and a restart of the proxy would otherwise lose the sessions.
 func (s *sender) post(ctx context.Context, sec secret.Secret, body []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, bytes.NewReader(body))
 	if err != nil {
@@ -137,5 +145,9 @@ func (s *sender) post(ctx context.Context, sec secret.Secret, body []byte) error
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBody))
 	_ = resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return fmt.Errorf("%w: status %d", errGateway, resp.StatusCode)
+	}
 	return nil
 }

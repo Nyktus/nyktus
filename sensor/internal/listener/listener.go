@@ -9,8 +9,11 @@ package listener
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
+	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -71,7 +74,13 @@ type Server struct {
 	refusedTotal  atomic.Int64
 	refusedSource atomic.Int64
 	acceptErrors  atomic.Int64
-	panics        atomic.Int64
+
+	// failures counts the handlers that panicked, and the first of them since
+	// the last call of TakeStats is described.
+	failMu       sync.Mutex
+	failures     int
+	failure      string
+	failureWhere string
 }
 
 // Stats counts what the server turned away or lost since the last call of
@@ -87,6 +96,10 @@ type Stats struct {
 	AcceptErrors int
 	// Panics counts handlers that panicked.
 	Panics int
+	// Panic and Stack describe the first of them: the kind of the failure and
+	// where it happened. They hold no text that a client sent, see describe.
+	Panic string
+	Stack string
 }
 
 // New returns a server. It panics if a dependency is missing.
@@ -123,12 +136,44 @@ func (s *Server) Close() error { return s.ln.Close() }
 
 // TakeStats returns the counts since the last call and resets them.
 func (s *Server) TakeStats() Stats {
-	return Stats{
+	s.failMu.Lock()
+	defer s.failMu.Unlock()
+	st := Stats{
 		RefusedTotal:  int(s.refusedTotal.Swap(0)),
 		RefusedSource: int(s.refusedSource.Swap(0)),
 		AcceptErrors:  int(s.acceptErrors.Swap(0)),
-		Panics:        int(s.panics.Swap(0)),
+		Panics:        s.failures,
+		Panic:         s.failure,
+		Stack:         s.failureWhere,
 	}
+	s.failures, s.failure, s.failureWhere = 0, "", ""
+	return st
+}
+
+// maxStack is the most of a stack that is kept.
+const maxStack = 2048
+
+// recordPanic counts a handler that panicked and keeps a description of the
+// first one of the interval, so that the operator can find the fault.
+func (s *Server) recordPanic(v any) {
+	s.failMu.Lock()
+	defer s.failMu.Unlock()
+	s.failures++
+	if s.failures == 1 {
+		s.failure = describe(v)
+		stack := debug.Stack()
+		s.failureWhere = string(stack[:min(len(stack), maxStack)])
+	}
+}
+
+// describe says what kind of failure a panic value is. The text of a runtime
+// error names an index or a nil map, never a byte that a client sent; the
+// text of any other value could, so only its type is kept.
+func describe(v any) string {
+	if err, ok := v.(runtime.Error); ok {
+		return err.Error()
+	}
+	return fmt.Sprintf("%T", v)
 }
 
 // Serve accepts connections until ctx is done or the listener is closed, then
@@ -206,8 +251,8 @@ func (s *Server) serve(ctx context.Context, conn net.Conn, source netip.Addr) {
 	defer func() {
 		// A protocol that panics on what an attacker sent must not end the
 		// sensor, which would blind every other honeypot on it.
-		if recover() != nil {
-			s.panics.Add(1)
+		if v := recover(); v != nil {
+			s.recordPanic(v)
 		}
 	}()
 

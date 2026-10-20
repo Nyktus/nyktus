@@ -88,12 +88,16 @@ func TestParse_Invalid_NamesTheRule(t *testing.T) {
 		{name: "an upper case id", yaml: strings.Replace(valid, idOne, strings.ToUpper(idOne), 1), want: "honeypots[0].id"},
 		{name: "a missing service", yaml: strings.Replace(valid, "service: telnet\n    ", "", 1), want: "service: required"},
 		{name: "an unknown service", yaml: strings.Replace(valid, "service: telnet", "service: ftp", 1), want: `unknown service "ftp"`},
-		{name: "a missing listen address", yaml: strings.Replace(valid, "listen: \":2323\"\n    ", "", 1), want: "listen: must be host:port"},
-		{name: "a port without a host and colon", yaml: strings.Replace(valid, `":2323"`, "2323", 1), want: "listen: must be host:port"},
-		{name: "a port of 0", yaml: strings.Replace(valid, `":2323"`, `":0"`, 1), want: "port must be a number from 1 to 65535"},
-		{name: "a port of 65536", yaml: strings.Replace(valid, `":2323"`, `":65536"`, 1), want: "port must be a number from 1 to 65535"},
-		{name: "a port that is a name", yaml: strings.Replace(valid, `":2323"`, `":telnet"`, 1), want: "port must be a number from 1 to 65535"},
-		{name: "a host name", yaml: strings.Replace(valid, `":2323"`, `"honeypot.example.com:23"`, 1), want: "host must be an IP address"},
+		{name: "a missing listen address", yaml: strings.Replace(valid, "listen: \":2323\"\n    ", "", 1), want: "listen: must be host:port or :port"},
+		{name: "a port without a host and colon", yaml: strings.Replace(valid, `":2323"`, "2323", 1), want: "listen: must be host:port or :port"},
+		{name: "a port of 0", yaml: strings.Replace(valid, `":2323"`, `":0"`, 1), want: "a port from 1 to 65535"},
+		{name: "a port of 65536", yaml: strings.Replace(valid, `":2323"`, `":65536"`, 1), want: "a port from 1 to 65535"},
+		{name: "a port that is a name", yaml: strings.Replace(valid, `":2323"`, `":telnet"`, 1), want: "a port from 1 to 65535"},
+		{name: "a port with a sign", yaml: strings.Replace(valid, `":2323"`, `":+2323"`, 1), want: "a port from 1 to 65535"},
+		{name: "a port with a leading zero", yaml: strings.Replace(valid, `":2323"`, `":02323"`, 1), want: "a port from 1 to 65535"},
+		{name: "a port in hexadecimal", yaml: strings.Replace(valid, `":2323"`, `":0x913"`, 1), want: "a port from 1 to 65535"},
+		{name: "a port with a space", yaml: strings.Replace(valid, `":2323"`, `": 2323"`, 1), want: "a port from 1 to 65535"},
+		{name: "a host name", yaml: strings.Replace(valid, `":2323"`, `"honeypot.example.com:23"`, 1), want: "an IP address or no host"},
 		{name: "no secret", yaml: strings.Replace(valid, "secret: "+secretOne+"\n", "", 1), want: "set secret or secret_file"},
 		{name: "a secret and a secret file", yaml: entry("    secret_file: /x\n"), want: "not both"},
 		{name: "a secret that is too short", yaml: strings.Replace(valid, secretOne, secretOne[:42], 1), want: "does not have the form of a secret"},
@@ -128,6 +132,47 @@ func TestParse_Invalid_NamesTheRule(t *testing.T) {
 // twin is a second honeypot.
 func twin(id, listen, secret string) string {
 	return "  - id: " + id + "\n    service: telnet\n    listen: \"" + listen + "\"\n    secret: " + secret + "\n"
+}
+
+// Two honeypots may share a port only on addresses that cannot meet.
+func TestParse_Listen_Conflicts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		a, b     string
+		conflict bool
+	}{
+		{name: "the same address", a: "127.0.0.1:2323", b: "127.0.0.1:2323", conflict: true},
+		{name: "the same wildcard", a: ":2323", b: ":2323", conflict: true},
+		{name: "another port", a: ":2323", b: ":2324"},
+		{name: "wildcard and address", a: ":2323", b: "127.0.0.1:2323", conflict: true},
+		{name: "address and wildcard", a: "127.0.0.1:2323", b: ":2323", conflict: true},
+		{name: "wildcard and IPv6 address", a: ":2323", b: "[::1]:2323", conflict: true},
+		{name: "IPv6 wildcard and IPv4 address", a: "[::]:2323", b: "127.0.0.1:2323", conflict: true},
+		{name: "IPv4 wildcard and IPv4 address", a: "0.0.0.0:2323", b: "127.0.0.1:2323", conflict: true},
+		{name: "IPv4 address and IPv4 wildcard", a: "127.0.0.1:2323", b: "0.0.0.0:2323", conflict: true},
+		{name: "IPv4 wildcard and IPv6 address", a: "0.0.0.0:2323", b: "[::1]:2323"},
+		{name: "IPv6 address and IPv4 wildcard", a: "[::1]:2323", b: "0.0.0.0:2323"},
+		{name: "IPv4 wildcard and IPv6 wildcard", a: "0.0.0.0:2323", b: "[::]:2323", conflict: true},
+		{name: "two addresses", a: "127.0.0.1:2323", b: "127.0.0.2:2323"},
+		{name: "one IPv6 address written twice", a: "[::1]:2323", b: "[0:0:0:0:0:0:0:1]:2323", conflict: true},
+		{name: "IPv4 and the same address mapped into IPv6", a: "127.0.0.1:2323", b: "[::ffff:127.0.0.1]:2323", conflict: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			data := valid + twin(idTwo, tt.b, secretTwo)
+			data = strings.Replace(data, `":2323"`, `"`+tt.a+`"`, 1)
+			_, err := config.Parse([]byte(data))
+			if got := err != nil && strings.Contains(err.Error(), "conflicts with honeypots[0].listen"); got != tt.conflict {
+				t.Errorf("Parse() = %v, want a conflict = %v", err, tt.conflict)
+			}
+			if !tt.conflict && err != nil {
+				t.Errorf("Parse() = %v, want the two honeypots to share the port", err)
+			}
+		})
+	}
 }
 
 func TestParse_TooManyHoneypots_IsRefused(t *testing.T) {

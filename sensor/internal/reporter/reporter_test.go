@@ -243,7 +243,7 @@ func TestReporter_Repetition_ReportsTheGrownAge(t *testing.T) {
 func TestReporter_AnyAnswer_IsNotRepeated(t *testing.T) {
 	t.Parallel()
 
-	for _, status := range []int{http.StatusOK, http.StatusFound, http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway} {
+	for _, status := range []int{http.StatusOK, http.StatusFound, http.StatusNotFound, http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusNotImplemented} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t)
@@ -260,6 +260,55 @@ func TestReporter_AnyAnswer_IsNotRepeated(t *testing.T) {
 				t.Errorf("stats = %+v, want the session delivered", st)
 			}
 		})
+	}
+}
+
+// The trigger never answers with a gateway failure. A proxy in front of it
+// does when it cannot pass the request on, and then the request did not reach
+// the trigger, like one that was refused.
+func TestReporter_GatewayFailure_IsRepeatedLikeATransportFailure(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t)
+			f.tr.status = status
+			r := f.reporter(reporter.Options{Backoff: []time.Duration{time.Second}})
+			r.Start()
+			r.Submit(f.session("root"))
+			f.clock.BlockUntil(1)
+			f.clock.Advance(time.Second)
+			shutdown(t, r)
+
+			if got := len(f.tr.calls()); got != 2 {
+				t.Errorf("%d requests after the answer %d, want the first and a repetition", got, status)
+			}
+			if st := r.TakeStats(); st.Failed != 1 || st.Sent != 0 {
+				t.Errorf("stats = %+v, want the session counted as failed", st)
+			}
+		})
+	}
+}
+
+func TestReporter_GatewayFailure_OfAHeartbeat_IsLoggedWithItsStatus(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	f.tr.status = http.StatusBadGateway
+	r := f.reporter(reporter.Options{Backoff: []time.Duration{}})
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.RunHeartbeats(ctx, "0.1.0", []*session.Honeypot{honeypotOne})
+	}()
+	f.clock.BlockUntil(1)
+	cancel()
+	<-done
+
+	if logs := f.logs.String(); !strings.Contains(logs, "sensor: heartbeat not delivered") || !strings.Contains(logs, "status 502") {
+		t.Errorf("log = %s, want the heartbeat reported as not delivered, with the status", logs)
 	}
 }
 
@@ -486,12 +535,14 @@ func TestReporter_Heartbeats_AtTheStartAndEveryFiveMinutesForEveryHoneypot(t *te
 		r.RunHeartbeats(ctx, "0.1.0", []*session.Honeypot{honeypotOne, two})
 	}()
 
-	f.clock.BlockUntil(1)
+	// Every honeypot has a loop of its own, and both wait for the next round.
+	f.clock.BlockUntil(2)
 	calls := f.tr.calls()
 	if len(calls) != 2 {
 		t.Fatalf("%d heartbeats at the start, want one for each honeypot", len(calls))
 	}
-	if calls[0].authorization != "Bearer "+secretOne || calls[1].authorization != "Bearer "+secretTwo {
+	auths := map[string]bool{calls[0].authorization: true, calls[1].authorization: true}
+	if !auths["Bearer "+secretOne] || !auths["Bearer "+secretTwo] {
 		t.Errorf("authorizations = %q, %q; want the secret of each honeypot", calls[0].authorization, calls[1].authorization)
 	}
 	if h := heartbeatOf(t, calls[0]); h.Version != 1 || h.Type != "heartbeat" || h.SensorVersion != "0.1.0" {
@@ -502,11 +553,11 @@ func TestReporter_Heartbeats_AtTheStartAndEveryFiveMinutesForEveryHoneypot(t *te
 	}
 
 	f.clock.Advance(5*time.Minute - time.Nanosecond)
-	if got := len(f.tr.calls()); got != 2 || f.clock.Pending() != 1 {
-		t.Fatalf("%d heartbeats just before five minutes, pending = %d; want 2 and 1", got, f.clock.Pending())
+	if got := len(f.tr.calls()); got != 2 || f.clock.Pending() != 2 {
+		t.Fatalf("%d heartbeats just before five minutes, pending = %d; want 2 and 2", got, f.clock.Pending())
 	}
 	f.clock.Advance(time.Nanosecond)
-	f.clock.BlockUntil(1)
+	f.clock.BlockUntil(2)
 	if got := len(f.tr.calls()); got != 4 {
 		t.Errorf("%d heartbeats after five minutes, want 4", got)
 	}

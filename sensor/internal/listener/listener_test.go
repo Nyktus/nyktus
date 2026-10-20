@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -40,6 +41,10 @@ func (h *holdHandler) Handle(ctx context.Context, _ net.Conn) {
 	case <-ctx.Done():
 	}
 }
+
+// zero is 0 where the compiler cannot see it, so that a division by it is a
+// failure at run time.
+func zero() int { return 0 }
 
 type handlerFunc func(ctx context.Context, conn net.Conn)
 
@@ -318,7 +323,9 @@ func TestServer_PanickingHandler_IsCountedAndFreesItsSlot(t *testing.T) {
 
 	var calls atomic.Int64
 	srv, _ := serve(t, Options{MaxConns: 1, MaxPerSource: 1, Handler: handlerFunc(func(context.Context, net.Conn) {
-		calls.Add(1)
+		if calls.Add(1) == 1 {
+			_ = 1 / zero()
+		}
 		panic("the protocol failed on what an attacker sent")
 	})})
 	for range 3 {
@@ -331,8 +338,49 @@ func TestServer_PanickingHandler_IsCountedAndFreesItsSlot(t *testing.T) {
 	if got := calls.Load(); got != 3 {
 		t.Errorf("handled = %d, want 3", got)
 	}
-	if got := srv.TakeStats().Panics; got != 3 {
-		t.Errorf("Panics = %d, want 3", got)
+	// The first failure of the interval is described, so that an operator can
+	// find the fault, and the count starts again after it was taken.
+	got := srv.TakeStats()
+	if got.Panics != 3 || !strings.Contains(got.Panic, "integer divide by zero") || !strings.Contains(got.Stack, "listener_test.go") {
+		t.Errorf("TakeStats() = %+v, want 3 failures and the first one described with its place", got)
+	}
+	if again := srv.TakeStats(); again.Panics != 0 || again.Panic != "" || again.Stack != "" {
+		t.Errorf("TakeStats() = %+v after it was taken, want nothing", again)
+	}
+}
+
+// The text of a panic could hold what a client sent, so only its type is kept.
+func TestServer_PanicWithText_DescribesOnlyItsType(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := serve(t, Options{Handler: handlerFunc(func(context.Context, net.Conn) {
+		panic("typed-by-an-attacker")
+	})})
+	if !refused(t, dial(t, srv)) {
+		t.Fatal("the connection stayed open")
+	}
+	got := srv.TakeStats()
+	if got.Panic != "string" || strings.Contains(got.Stack, "typed-by-an-attacker") {
+		t.Errorf("TakeStats() = %q, %q; want the type of the value and no text of it", got.Panic, got.Stack)
+	}
+}
+
+func TestServer_Stack_IsCut(t *testing.T) {
+	t.Parallel()
+
+	var deep func(n int)
+	deep = func(n int) {
+		if n == 0 {
+			panic("deep")
+		}
+		deep(n - 1)
+	}
+	srv, _ := serve(t, Options{Handler: handlerFunc(func(context.Context, net.Conn) { deep(200) })})
+	if !refused(t, dial(t, srv)) {
+		t.Fatal("the connection stayed open")
+	}
+	if got := len(srv.TakeStats().Stack); got != 2048 {
+		t.Errorf("len(Stack) = %d, want it cut at 2048", got)
 	}
 }
 
