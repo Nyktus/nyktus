@@ -123,8 +123,9 @@ func TestSpecification_MatchesCode(t *testing.T) {
 	if got := slices.Collect(maps.Keys(schemas["UpdateHoneypotRequest"].Properties)); !sameSet(got, fields) {
 		t.Errorf("UpdateHoneypotRequest properties = %v, want the fields of a change %v", got, fields)
 	}
-	// The created honeypot is the honeypot with its secret.
-	want := append(slices.Clone(schemas["Honeypot"].Required), "secret")
+	// The created honeypot is the honeypot with its secret and the entry for the
+	// sensor that holds it.
+	want := append(slices.Clone(schemas["Honeypot"].Required), "secret", "sensor_config")
 	if got := schemas["CreatedHoneypot"].Required; !sameSet(got, want) {
 		t.Errorf("CreatedHoneypot.required = %v, want %v", got, want)
 	}
