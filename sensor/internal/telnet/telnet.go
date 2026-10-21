@@ -79,6 +79,16 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 		left: maxReadBytes,
 	})}
 
+	// A login whose name has been entered is recorded wherever the dialog
+	// ends after that: when the prompt for the password cannot be written, the
+	// client leaves or the password stays unfinished.
+	var open *report.Attempt
+	defer func() {
+		if open != nil {
+			sess.AddAttempt(*open)
+		}
+	}()
+
 	// The options that a Telnet server offers first: it echoes what the
 	// client types, and it sends no go-ahead.
 	opening := []byte{iac, will, optEcho, iac, will, optSGA}
@@ -103,19 +113,20 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 			continue
 		}
 
-		attempt := report.Attempt{Username: string(user.text)}
+		open = &report.Attempt{Username: string(user.text)}
 		if w.write([]byte(passwordPrompt)) != nil {
 			return
 		}
 		pass, err := r.read(0, nil)
 		if pass.n > 0 || pass.complete {
 			n := pass.n
-			attempt.PasswordLength = &n
+			open.PasswordLength = &n
 		}
-		sess.AddAttempt(attempt)
 		if err != nil || !pass.complete {
 			return
 		}
+		sess.AddAttempt(*open)
+		open = nil
 		if w.write([]byte("\r\nLogin incorrect\r\n")) != nil {
 			return
 		}
@@ -136,10 +147,10 @@ func (w *writer) write(b []byte) error {
 	return err
 }
 
-// echo shows a typed character to the client, as a Telnet server that offers
-// to echo does.
-func (w *writer) echo(b byte) error {
-	return w.write([]byte{b})
+// echo shows what the client typed to the client, as a Telnet server that
+// offers to echo does.
+func (w *writer) echo(b []byte) error {
+	return w.write(b)
 }
 
 // idleReader reads from the client and gives it the idle time again with

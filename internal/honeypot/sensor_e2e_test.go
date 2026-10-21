@@ -142,7 +142,6 @@ func (p *process) stop(t *testing.T) error {
 // its attempts, and a heartbeat makes the honeypot online.
 func TestSensor_EndToEnd(t *testing.T) {
 	t.Parallel()
-	bin := buildSensor(t)
 
 	tests := []struct {
 		name string
@@ -153,22 +152,26 @@ func TestSensor_EndToEnd(t *testing.T) {
 		{name: "plain HTTP in development"},
 		{name: "TLS with a private authority", tls: true},
 	}
+	// The cases run one after the other: each takes a port that it finds free
+	// and gives back, which two at the same moment could both find.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			if tt.tls && runtime.GOOS != "linux" {
 				// Only Linux reads SSL_CERT_FILE; the system verifier of other
 				// systems does not.
 				t.Skip("SSL_CERT_FILE is honored on Linux only")
 			}
-			endToEnd(t, bin, tt.tls)
+			endToEnd(t, tt.tls)
 		})
 	}
 }
 
-func endToEnd(t *testing.T, bin string, useTLS bool) {
+func endToEnd(t *testing.T, useTLS bool) {
 	t.Helper()
+	// The database comes first: without one the test is skipped, and nothing
+	// is built.
 	ownerURL, consoleURL := schematest.Console(t)
+	bin := buildSensor(t)
 	_, triggerURL := dbtest.Role(t, ownerURL, "trigger", "IN ROLE "+pgx.Identifier{schematest.TriggerRole}.Sanitize())
 	owner := schematest.Open(t, ownerURL)
 	console := honeypot.NewStore(schematest.Open(t, consoleURL))
@@ -230,8 +233,13 @@ func endToEnd(t *testing.T, bin string, useTLS bool) {
 		got, err := console.Get(t.Context(), created.ID)
 		return err == nil && got.Status == honeypot.StatusOnline && got.SensorVersion != nil
 	})
-	if got, _ := console.Get(t.Context(), created.ID); *got.SensorVersion != "devel" {
-		t.Errorf("sensor_version = %q, want devel for a build without a release", *got.SensorVersion)
+	// The sensor reports the version that it prints, whatever the build is.
+	printed, err := exec.CommandContext(t.Context(), bin, "version").Output() //nolint:gosec // G204: bin is the binary that the test has built.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := console.Get(t.Context(), created.ID); *got.SensorVersion != strings.TrimSpace(string(printed)) {
+		t.Errorf("sensor_version = %q, want %q, the version that the sensor prints", *got.SensorVersion, strings.TrimSpace(string(printed)))
 	}
 
 	// An attacker tries a login.

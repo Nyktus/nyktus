@@ -186,7 +186,7 @@ func bind(ctx context.Context, o Options, rep *reporter.Reporter) ([]bound, erro
 	)
 	for _, c := range o.Config.Honeypots {
 		hp := &session.Honeypot{ID: c.ID, Service: string(c.Service), Secret: c.Secret}
-		ln, err := lc.Listen(ctx, "tcp", c.Listen)
+		ln, err := lc.Listen(ctx, c.Network(), c.Listen)
 		if err != nil {
 			for _, b := range servers {
 				_ = b.server.Close()

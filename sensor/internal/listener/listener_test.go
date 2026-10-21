@@ -6,6 +6,7 @@ package listener
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -353,15 +354,27 @@ func TestServer_PanickingHandler_IsCountedAndFreesItsSlot(t *testing.T) {
 func TestServer_PanicWithText_DescribesOnlyItsType(t *testing.T) {
 	t.Parallel()
 
-	srv, _ := serve(t, Options{Handler: handlerFunc(func(context.Context, net.Conn) {
-		panic("typed-by-an-attacker")
-	})})
-	if !refused(t, dial(t, srv)) {
-		t.Fatal("the connection stayed open")
+	tests := []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{name: "a string", value: "typed-by-an-attacker", want: "string"},
+		{name: "an error", value: errors.New("typed-by-an-attacker"), want: "*errors.errorString"},
+		{name: "a formatted error", value: fmt.Errorf("typed-by-an-attacker: %w", io.EOF), want: "*fmt.wrapError"},
 	}
-	got := srv.TakeStats()
-	if got.Panic != "string" || strings.Contains(got.Stack, "typed-by-an-attacker") {
-		t.Errorf("TakeStats() = %q, %q; want the type of the value and no text of it", got.Panic, got.Stack)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			srv, _ := serve(t, Options{Handler: handlerFunc(func(context.Context, net.Conn) { panic(tt.value) })})
+			if !refused(t, dial(t, srv)) {
+				t.Fatal("the connection stayed open")
+			}
+			got := srv.TakeStats()
+			if got.Panic != tt.want || strings.Contains(got.Stack, "typed-by-an-attacker") {
+				t.Errorf("TakeStats() = %q, %q; want %q and no text of the value", got.Panic, got.Stack, tt.want)
+			}
+		})
 	}
 }
 

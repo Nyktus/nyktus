@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -49,10 +50,15 @@ type transport struct {
 	requests  []request
 	failFirst int
 	status    int
+	// notify, if set, receives a value for every request.
+	notify chan struct{}
 }
 
 func (tr *transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	body, _ := io.ReadAll(r.Body)
+	if tr.notify != nil {
+		defer func() { tr.notify <- struct{}{} }()
+	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.requests = append(tr.requests, request{
@@ -361,6 +367,83 @@ func TestReporter_QueueFull_CountsTheOverflow(t *testing.T) {
 	}
 	if st := r.TakeStats(); st.Overflow != 3 || st.Sent != 2 {
 		t.Errorf("stats = %+v, want 3 overflowed and 2 sent", st)
+	}
+}
+
+// Every honeypot has its own share of the queue: a flood at one does not take
+// the places of another.
+func TestReporter_QueueShare_IsKeptForEveryHoneypot(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	two := &session.Honeypot{ID: "11111111-2222-4333-8444-555555555555", Service: "telnet", Secret: secret.Secret(secretTwo)}
+	r := f.reporter(reporter.Options{QueueSize: 2})
+	for range 5 {
+		r.Submit(f.session("flood"))
+	}
+	for range 2 {
+		s, err := session.Start(f.clock, two, netip.MustParseAddrPort("203.0.113.9:51000"), netip.MustParseAddrPort("10.0.0.5:23"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.End()
+		r.Submit(s)
+	}
+	r.Start()
+	shutdown(t, r)
+
+	if st := r.TakeStats(); st.Overflow != 3 || st.Sent != 4 {
+		t.Errorf("stats = %+v, want 3 sessions of the flood dropped and the 2 + 2 that fitted sent", st)
+	}
+	auths := map[string]int{}
+	for _, c := range f.tr.calls() {
+		auths[c.authorization]++
+	}
+	if auths["Bearer "+secretOne] != 2 || auths["Bearer "+secretTwo] != 2 {
+		t.Errorf("requests per secret = %v, want 2 for each honeypot", auths)
+	}
+}
+
+func TestReporter_QueueShare_IsFreedWhenASessionIsTaken(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	f.tr.notify = make(chan struct{})
+	r := f.reporter(reporter.Options{QueueSize: 1, Senders: 1})
+	r.Start()
+	for range 20 {
+		r.Submit(f.session("root"))
+		// A request means that the sender has taken the session, which frees
+		// the place for the next.
+		<-f.tr.notify
+	}
+	shutdown(t, r)
+	if st := r.TakeStats(); st.Sent != 20 || st.Overflow != 0 {
+		t.Errorf("stats = %+v, want all 20 sent one after the other", st)
+	}
+}
+
+// The channel has room for the shares of 32 honeypots. A sensor with more must
+// lose a session, not block with the lock held.
+func TestReporter_MoreHoneypotsThanRoom_DropsInsteadOfBlocking(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	r := f.reporter(reporter.Options{QueueSize: 1})
+	for i := range 33 {
+		hp := &session.Honeypot{ID: fmt.Sprintf("00000000-0000-4000-8000-%012d", i), Service: "telnet", Secret: secret.Secret(secretOne)}
+		s, err := session.Start(f.clock, hp, netip.MustParseAddrPort("203.0.113.9:51000"), netip.MustParseAddrPort("10.0.0.5:23"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.End()
+		r.Submit(s)
+	}
+	r.Start()
+	shutdown(t, r)
+
+	if st := r.TakeStats(); st.Overflow != 1 || st.Sent != 32 {
+		t.Errorf("stats = %+v, want 32 sent and the 33rd dropped", st)
 	}
 }
 

@@ -13,6 +13,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -116,7 +118,12 @@ type running struct {
 
 func parse(t *testing.T, triggerURL string, honeypots string) *config.Config {
 	t.Helper()
-	cfg, err := config.Parse([]byte("environment: development\ntrigger_url: " + triggerURL + "\nhoneypots:\n" + honeypots))
+	path := filepath.Join(t.TempDir(), "sensor.yaml")
+	data := "environment: development\ntrigger_url: " + triggerURL + "\nhoneypots:\n" + honeypots
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,6 +459,48 @@ func TestRun_RefusedConnections_AreLoggedOncePerInterval(t *testing.T) {
 		}
 	}
 	_ = held
+}
+
+// 0.0.0.0 takes IPv4 only, as the operator means, so a honeypot on it and one
+// on an IPv6 address can use the same port. With the network "tcp", Go would
+// listen on both families for the wildcard and the second would not bind.
+func TestRun_IPv4Wildcard_LeavesIPv6ThePort(t *testing.T) {
+	t.Parallel()
+
+	probe, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("no IPv6 loopback: %v", err)
+	}
+	port := probe.Addr().(*net.TCPAddr).Port
+	_ = probe.Close()
+
+	tr := newTrigger(t, false)
+	honeypots := "  - id: " + idOne + "\n    service: telnet\n    listen: \"0.0.0.0:" + strconv.Itoa(port) + "\"\n    secret: " + secretOne + "\n" +
+		"  - id: " + idTwo + "\n    service: telnet\n    listen: \"[::1]:" + strconv.Itoa(port) + "\"\n    secret: " + secretTwo + "\n"
+	ctx, cancel := context.WithCancel(t.Context())
+	listening := make(chan string, 2)
+	done := make(chan error, 1)
+	go func() {
+		done <- sensor.Run(ctx, sensor.Options{
+			Config:    parse(t, tr.URL, honeypots),
+			Logger:    slog.New(slog.DiscardHandler),
+			Clock:     clocktest.New(),
+			Listening: func(id string, _ net.Addr) { listening <- id },
+		})
+	}()
+	for range 2 {
+		select {
+		case <-listening:
+		case err := <-done:
+			t.Fatalf("Run() = %v, want both honeypots to bind", err)
+		case <-time.After(deadline):
+			t.Fatal("the honeypots did not listen")
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("Run() = %v", err)
+	}
 }
 
 func TestDefaults_AreTheDocumentedOnes(t *testing.T) {

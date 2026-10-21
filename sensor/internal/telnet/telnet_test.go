@@ -413,6 +413,42 @@ func TestServe_Echo_StopsWhereTheNameIsCut(t *testing.T) {
 	}
 }
 
+// A name that was entered is recorded, also when the client leaves before the
+// prompt for the password can be written.
+func TestServe_NameEntered_IsRecordedWhenThePasswordPromptCannotBeWritten(t *testing.T) {
+	t.Parallel()
+
+	clk := clocktest.New()
+	conn := &failingAfter{scriptConn: newScriptConn("root\r\n"), okWrites: 4}
+	hp := &session.Honeypot{ID: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d", Service: "telnet"}
+	s, err := session.Start(clk, hp, netip.MustParseAddrPort("203.0.113.9:1"), netip.MustParseAddrPort("10.0.0.5:23"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	telnet.New(defaultConfig, clk).Serve(t.Context(), conn, s)
+
+	got := attempts(t, s)
+	if len(got) != 1 || got[0].user != "root" || got[0].pass != -1 {
+		t.Errorf("attempts = %+v, want the name without a password", got)
+	}
+}
+
+// failingAfter lets a number of writes through and fails the rest: the
+// opening, the prompt, the echo of the name and its line break, but not the
+// prompt for the password.
+type failingAfter struct {
+	*scriptConn
+	okWrites int
+}
+
+func (c *failingAfter) Write(p []byte) (int, error) {
+	if c.okWrites == 0 {
+		return 0, errors.New("write failed")
+	}
+	c.okWrites--
+	return c.scriptConn.Write(p)
+}
+
 func TestServe_Config_ChangesTheTexts(t *testing.T) {
 	t.Parallel()
 

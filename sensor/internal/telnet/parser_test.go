@@ -10,6 +10,7 @@ import (
 	"go/ast"
 	goparser "go/parser"
 	"go/token"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -156,7 +157,7 @@ func TestLineReader_Echo_ReceivesPrintableBytesInOrder(t *testing.T) {
 
 	var echoed []byte
 	l := &lineReader{r: bufio.NewReader(bytes.NewReader([]byte("a\x01 b\xff\xffc\r\n")))}
-	if _, err := l.read(10, func(b byte) error { echoed = append(echoed, b); return nil }); err != nil {
+	if _, err := l.read(10, func(b []byte) error { echoed = append(echoed, b...); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if string(echoed) != "a bc" {
@@ -169,10 +170,57 @@ func TestLineReader_FailingEcho_StopsTheRead(t *testing.T) {
 
 	l := &lineReader{r: bufio.NewReader(bytes.NewReader([]byte("abc\r\n")))}
 	want := errors.New("echo failed")
-	ln, err := l.read(10, func(byte) error { return want })
+	ln, err := l.read(10, func([]byte) error { return want })
 	if !errors.Is(err, want) || ln.complete {
 		t.Errorf("read() = %+v, %v; want the error of the echo and an incomplete line", ln, err)
 	}
+}
+
+// What one read of the connection brought is shown in one piece, and what
+// arrives byte by byte is shown byte by byte.
+func TestLineReader_Echo_FollowsTheReadsOfTheConnection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		reads []string
+		want  []string
+	}{
+		{name: "a name in one piece", reads: []string{"root\r\n"}, want: []string{"root"}},
+		{name: "a name typed by hand", reads: []string{"r", "o", "o", "t", "\r\n"}, want: []string{"r", "o", "o", "t"}},
+		{name: "two pieces", reads: []string{"ro", "ot\r\n"}, want: []string{"ro", "ot"}},
+		{name: "a name that is cut", reads: []string{strings.Repeat("a", 300) + "\r\n"}, want: []string{strings.Repeat("a", 256)}},
+		{name: "a name that is cut and typed on", reads: []string{strings.Repeat("a", 255), "bcd", "\r\n"}, want: []string{strings.Repeat("a", 255), "b"}},
+		{name: "control bytes only", reads: []string{"\x01\x02\r\n"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			l := &lineReader{r: bufio.NewReader(&pieces{reads: tt.reads})}
+			var shown []string
+			if _, err := l.read(256, func(b []byte) error { shown = append(shown, string(b)); return nil }); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(shown, tt.want) {
+				t.Errorf("echoed %q, want %q", shown, tt.want)
+			}
+		})
+	}
+}
+
+// pieces is a connection that delivers one piece for each read.
+type pieces struct{ reads []string }
+
+func (p *pieces) Read(b []byte) (int, error) {
+	if len(p.reads) == 0 {
+		return 0, io.EOF
+	}
+	n := copy(b, p.reads[0])
+	p.reads[0] = p.reads[0][n:]
+	if p.reads[0] == "" {
+		p.reads = p.reads[1:]
+	}
+	return n, nil
 }
 
 func FuzzParser(f *testing.F) {

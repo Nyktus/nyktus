@@ -175,6 +175,32 @@ func TestParse_Listen_Conflicts(t *testing.T) {
 	}
 }
 
+// The listener takes IPv4 and IPv6 only where the address says so. An IPv4
+// address, also 0.0.0.0, is listened on with tcp4, because "tcp" would take IPv6
+// for the wildcard too, and then two honeypots on 0.0.0.0 and ::1 could not
+// both bind.
+func TestHoneypot_Network(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		listen string
+		want   string
+	}{
+		{listen: "0.0.0.0:23", want: "tcp4"},
+		{listen: "127.0.0.1:23", want: "tcp4"},
+		{listen: "[::ffff:127.0.0.1]:23", want: "tcp4"},
+		{listen: ":23", want: "tcp"},
+		{listen: "[::]:23", want: "tcp"},
+		{listen: "[::1]:23", want: "tcp"},
+		{listen: "[2001:db8::1]:23", want: "tcp"},
+	}
+	for _, tt := range tests {
+		if got := (config.Honeypot{Listen: tt.listen}).Network(); got != tt.want {
+			t.Errorf("Network(%s) = %q, want %q", tt.listen, got, tt.want)
+		}
+	}
+}
+
 func TestParse_TooManyHoneypots_IsRefused(t *testing.T) {
 	t.Parallel()
 
@@ -354,9 +380,9 @@ func TestLoad_SecretFile_Invalid(t *testing.T) {
 		mode    os.FileMode
 		want    string
 	}{
-		{name: "readable by the group", content: secretOne, mode: 0o640, want: "other users can read the secret file"},
-		{name: "readable by everyone", content: secretOne, mode: 0o644, want: "other users can read the secret file"},
-		{name: "writable by the group", content: secretOne, mode: 0o620, want: "other users can read the secret file"},
+		{name: "readable by the group", content: secretOne, mode: 0o640, want: "the group or other users can access the secret file"},
+		{name: "readable by everyone", content: secretOne, mode: 0o644, want: "the group or other users can access the secret file"},
+		{name: "writable by the group", content: secretOne, mode: 0o620, want: "the group or other users can access the secret file"},
 		{name: "not a secret", content: "not a secret", mode: 0o600, want: "form of a secret"},
 		{name: "empty", content: "", mode: 0o600, want: "form of a secret"},
 		{name: "two secrets", content: secretOne + "\n" + secretTwo + "\n", mode: 0o600, want: "form of a secret"},
@@ -422,7 +448,7 @@ func TestLoad_ConfigurationWithASecret_IsNotReadableByOthers(t *testing.T) {
 			if tt.ok && err != nil {
 				t.Errorf("Load() = %v", err)
 			}
-			if !tt.ok && (err == nil || !strings.Contains(err.Error(), "other users can read it")) {
+			if !tt.ok && (err == nil || !strings.Contains(err.Error(), "group or other users can access it")) {
 				t.Errorf("Load() = %v, want an error about the mode", err)
 			}
 		})
@@ -452,6 +478,30 @@ func TestLoad_TwoFilesWithTheSameSecret_AreRefused(t *testing.T) {
 
 	if _, err := config.Load(path); err == nil || !strings.Contains(err.Error(), "the same secret as honeypots[0]") {
 		t.Errorf("Load() = %v, want an error about the shared secret", err)
+	}
+}
+
+// Secrets that have not been read are not the same secret: two files that
+// cannot be read are two problems with two files, not a shared secret.
+func TestLoad_SecretFilesThatCannotBeRead_AreNotTakenForTheSameSecret(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	data := withSecretFile + "  - id: " + idTwo + "\n    service: telnet\n    listen: \":2324\"\n    secret_file: other.secret\n"
+	path := write(t, dir, "sensor.yaml", data, 0o600)
+
+	_, err := config.Load(path)
+	if err == nil || strings.Contains(err.Error(), "the same secret") || !strings.Contains(err.Error(), "honeypots[1].secret_file") {
+		t.Errorf("Load() = %v, want one error for each file and none about a shared secret", err)
+	}
+}
+
+func TestParse_SecretFiles_AreNotTakenForTheSameSecret(t *testing.T) {
+	t.Parallel()
+
+	data := withSecretFile + "  - id: " + idTwo + "\n    service: telnet\n    listen: \":2324\"\n    secret_file: other.secret\n"
+	if _, err := config.Parse([]byte(data)); err != nil {
+		t.Errorf("Parse() = %v, want two honeypots whose secrets are still in their files", err)
 	}
 }
 

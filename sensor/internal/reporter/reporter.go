@@ -17,10 +17,16 @@ import (
 	"nyktus.org/nyktus/sensor/internal/session"
 )
 
+// maxHoneypots is the number of honeypots whose shares the queue has room for:
+// a sensor runs at most this many. The share of each is what limits it, not
+// the capacity of the channel.
+const maxHoneypots = 32
+
 // Limits of the queue and of the heartbeat.
 const (
-	// QueueSize is the number of sessions that wait for delivery. A session
-	// that finds the queue full is counted and dropped.
+	// QueueSize is the number of sessions of one honeypot that wait for
+	// delivery. A session that finds its share full is counted and dropped, so
+	// that a flood at one honeypot cannot take the places of the others.
 	QueueSize = 256
 	// Senders is the number of sessions that are delivered at the same time.
 	Senders = 4
@@ -63,6 +69,7 @@ type Reporter struct {
 	clock     clock.Clock
 	logger    *slog.Logger
 	queue     chan *session.Session
+	share     int
 	senders   int
 	sendCtx   context.Context
 	abort     context.CancelFunc
@@ -71,6 +78,8 @@ type Reporter struct {
 
 	mu     sync.Mutex
 	closed bool
+	// queued counts the sessions of each honeypot that wait in the queue.
+	queued map[*session.Honeypot]int
 
 	sent, overflow, expired, failed, shutdown atomic.Int64
 }
@@ -96,8 +105,10 @@ func New(o Options) *Reporter {
 		sender:  &sender{url: o.URL, client: o.Client, clock: o.Clock, backoff: o.Backoff, logger: o.Logger},
 		clock:   o.Clock,
 		logger:  o.Logger,
-		queue:   make(chan *session.Session, o.QueueSize),
+		queue:   make(chan *session.Session, o.QueueSize*maxHoneypots),
+		share:   o.QueueSize,
 		senders: o.Senders,
+		queued:  map[*session.Honeypot]int{},
 	}
 	// The senders outlive the cancellation of the process, so that Shutdown
 	// can deliver what is queued; Shutdown ends them at its deadline.
@@ -111,6 +122,9 @@ func (r *Reporter) Start() {
 		for range r.senders {
 			r.wg.Go(func() {
 				for s := range r.queue {
+					r.mu.Lock()
+					r.queued[s.Honeypot()]--
+					r.mu.Unlock()
 					r.send(s)
 				}
 			})
@@ -119,7 +133,8 @@ func (r *Reporter) Start() {
 }
 
 // Submit queues a finished session for delivery. It never blocks: a session
-// that finds the queue full, or comes after Shutdown, is counted and dropped.
+// that finds the share of its honeypot full, or comes after Shutdown, is
+// counted and dropped.
 func (r *Reporter) Submit(s *session.Session) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -127,8 +142,13 @@ func (r *Reporter) Submit(s *session.Session) {
 		r.shutdown.Add(1)
 		return
 	}
+	if r.queued[s.Honeypot()] >= r.share {
+		r.overflow.Add(1)
+		return
+	}
 	select {
 	case r.queue <- s:
+		r.queued[s.Honeypot()]++
 	default:
 		r.overflow.Add(1)
 	}

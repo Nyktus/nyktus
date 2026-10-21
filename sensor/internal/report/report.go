@@ -23,9 +23,8 @@ const (
 // Limits that the server enforces as well. The sensor keeps within them, so
 // that it does not send what would be cut or refused.
 const (
-	MaxAttempts      = 6
-	MaxUsername      = 256
-	MaxClientVersion = 128
+	MaxAttempts = 6
+	MaxUsername = 256
 )
 
 // Session is the report of one session of an attacker.

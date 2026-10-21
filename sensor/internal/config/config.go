@@ -54,9 +54,6 @@ const (
 	Telnet Service = "telnet"
 )
 
-// Services lists every service that this sensor emulates.
-var Services = []Service{Telnet}
-
 // Config is the configuration of the sensor.
 type Config struct {
 	Environment Environment `yaml:"environment"`
@@ -94,8 +91,10 @@ var (
 )
 
 // Load reads the file at path and returns the configuration, with the secrets
-// read from their files. It refuses a file that other users can read when it
-// holds a secret, and a secret file that they can read.
+// read from their files. It refuses a configuration that holds a secret and a
+// secret file when their group or other users can read or write them. The
+// modes are those of Unix systems; a system that reports none, such as
+// Windows, is not supported.
 func Load(path string) (*Config, error) {
 	f, err := os.Open(path) //nolint:gosec // G304: the operator names the file.
 	if err != nil {
@@ -142,7 +141,7 @@ func Load(path string) (*Config, error) {
 		hp.Secret = s
 	}
 	if inline && info.Mode().Perm()&otherAccess != 0 {
-		problems = append(problems, fmt.Errorf("the configuration holds a secret and other users can read it: mode %04o, want 0600", info.Mode().Perm()))
+		problems = append(problems, fmt.Errorf("the configuration holds a secret and its group or other users can access it: mode %04o, want 0600", info.Mode().Perm()))
 	}
 	if err := cfg.checkDistinctSecrets(); err != nil {
 		problems = append(problems, err)
@@ -174,7 +173,7 @@ func readSecretFile(path string) (secret.Secret, error) {
 		return "", errors.New("the secret file is not a regular file")
 	}
 	if info.Mode().Perm()&otherAccess != 0 {
-		return "", fmt.Errorf("other users can read the secret file: mode %04o, want 0600", info.Mode().Perm())
+		return "", fmt.Errorf("the group or other users can access the secret file: mode %04o, want 0600", info.Mode().Perm())
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxSecretFile+1))
 	if err != nil {
@@ -186,19 +185,6 @@ func readSecretFile(path string) (secret.Secret, error) {
 		return "", errSecretFormat
 	}
 	return secret.Secret(s), nil
-}
-
-// Parse decodes and validates a configuration. It reads no file: the secrets
-// that name a file stay unresolved.
-func Parse(data []byte) (*Config, error) {
-	cfg, err := decode(data)
-	if err != nil {
-		return nil, err
-	}
-	if err := errors.Join(cfg.validate(), cfg.checkDistinctSecrets()); err != nil {
-		return nil, err
-	}
-	return cfg, nil
 }
 
 // decode reads the YAML into the types, refusing what they do not have.
@@ -367,6 +353,17 @@ type listenAddr struct {
 	// address.
 	host netip.Addr
 	port string
+}
+
+// Network returns the network to listen on. An IPv4 address is listened on with
+// tcp4, so that 0.0.0.0 takes IPv4 only, as the operator means; with "tcp" Go
+// would take IPv6 too. No host, and an IPv6 address, use tcp, which takes both
+// families for a wildcard.
+func (hp Honeypot) Network() string {
+	if a, ok := parseListen(hp.Listen); ok && a.host.Is4() {
+		return "tcp4"
+	}
+	return "tcp"
 }
 
 // validateListen accepts "host:port" with an IP address or no host, and a port.

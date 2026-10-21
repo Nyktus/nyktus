@@ -91,7 +91,7 @@ func TestCheck_InvalidConfiguration_ListsEveryProblemAndFails(t *testing.T) {
 	if code != exitFailure || stdout != "" {
 		t.Errorf("check = %d, %q; want exit code 1 and nothing on standard output", code, stdout)
 	}
-	for _, want := range []string{"invalid configuration", "honeypots[0].listen", "other users can read it"} {
+	for _, want := range []string{"invalid configuration", "honeypots[0].listen", "group or other users can access it"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr = %q, want it to contain %q", stderr, want)
 		}
