@@ -20,7 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	embedded "nyktus.org/nyktus/catalog"
-	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/password/passwordtest"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
@@ -34,7 +34,7 @@ const (
 	unknownID    = "00000000-0000-4000-8000-000000000000"
 )
 
-var hasher = password.NewHasher()
+var hasher = passwordtest.NewHasher()
 
 type env struct {
 	srv   *httptest.Server

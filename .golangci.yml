@@ -215,6 +215,8 @@ linters:
           msg: write to an explicit io.Writer or use the logger
         - pattern: ^os\.(Getenv|LookupEnv|Environ)$
           msg: read configuration through the config package
+        - pattern: ^password\.NewHasherWithCost$
+          msg: weaker password hashing is for tests only, through passwordtest
 
     godot:
       scope: declarations
@@ -244,6 +246,9 @@ linters:
       - path: internal/platform/(config|dbtest)/
         linters: [forbidigo]
         text: os\.(Getenv|LookupEnv|Environ)
+      - path: internal/auth/password/
+        linters: [forbidigo]
+        text: NewHasherWithCost
 
 formatters:
   enable:

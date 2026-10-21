@@ -101,3 +101,4 @@ When data is maintained in two places, for example technique identifiers in the 
 - Use `t.Helper()` in helpers and `t.Cleanup()` for teardown.
 - Assertions show what was expected and what was received.
 - Test data is built through small builders or fixtures, not copied between tests.
+- Tests hash passwords with `passwordtest.NewHasher`, never `password.NewHasher`. Argon2id at the production parameters costs almost half a second under the race detector, which made the suites that sign in half of the whole run. Only the tests of `internal/auth/password` use the production parameters, because they test them; the linter rejects `password.NewHasherWithCost` elsewhere.

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/password/passwordtest"
 	"nyktus.org/nyktus/internal/platform/schematest"
 )
 
@@ -55,7 +55,7 @@ func TestRunAdmin_ResetPasswordPrintsALinkForAnAdministrator(t *testing.T) {
 
 	ownerURL, consoleURL := schematest.Console(t)
 	owner := schematest.Open(t, ownerURL)
-	hash, err := password.NewHasher().Hash(t.Context(), "correct horse battery")
+	hash, err := passwordtest.NewHasher().Hash(t.Context(), "correct horse battery")
 	if err != nil {
 		t.Fatalf("Hash() error = %v", err)
 	}

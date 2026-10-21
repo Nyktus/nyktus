@@ -265,6 +265,53 @@ func TestNewHasher_RejectsInvalidConcurrency(t *testing.T) {
 	newHasher(cheapParams(), 0)
 }
 
+func TestNewHasherWithCost_RejectsParametersThatVerifyRefuses(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name               string
+		memory, iterations uint32
+		parallelism        uint8
+	}{
+		{"memory below eight KiB per lane", 15, 1, 2},
+		{"no iterations", 64, 0, 1},
+		{"too many iterations", 64, maxIterations + 1, 1},
+		{"no lanes", 64, 1, 0},
+		{"too much memory", maxMemory + 1, 1, 1},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s: NewHasherWithCost(%d, %d, %d) did not panic", tt.name, tt.memory, tt.iterations, tt.parallelism)
+				}
+			}()
+			NewHasherWithCost(tt.memory, tt.iterations, tt.parallelism)
+		}()
+	}
+}
+
+func TestNewHasherWithCost_HashesVerifiablyAtOtherParametersThanTheDefault(t *testing.T) {
+	t.Parallel()
+
+	h := NewHasherWithCost(256, 1, 1)
+	encoded, err := h.Hash(t.Context(), validPassword)
+	if err != nil {
+		t.Fatalf("Hash() error = %v", err)
+	}
+	if !strings.HasPrefix(encoded, "$argon2id$v=19$m=256,t=1,p=1$") {
+		t.Errorf("Hash() = %q, want the given parameters", encoded)
+	}
+	if ok, err := NewHasher().Verify(t.Context(), validPassword, encoded); err != nil || !ok {
+		t.Errorf("default hasher Verify() = %v, %v, want true: parameters come from the hash", ok, err)
+	}
+	if h.NeedsRehash(encoded) {
+		t.Error("NeedsRehash() = true for a hash of the same hasher")
+	}
+	if !NewHasher().NeedsRehash(encoded) {
+		t.Error("NeedsRehash() = false for the default hasher, want true for cheaper parameters")
+	}
+}
+
 func TestNeedsRehash(t *testing.T) {
 	t.Parallel()
 
