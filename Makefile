@@ -36,6 +36,13 @@ test: ## Run unit tests; database tests are skipped
 	go test -race -count=1 ./...
 	cd $(SENSOR_DIR) && go test -race -count=1 ./...
 
+# The race detector slows the suite down by a factor of four. This target is for
+# the loop while you work; "test-db" runs in CI and before every push.
+.PHONY: test-fast
+test-fast: ## Run all tests including database tests without the race detector (needs db-up)
+	NYKTUS_TEST_DATABASE_URL='$(TEST_DB_URL)' NYKTUS_REQUIRE_DB_TESTS=1 go test -count=1 ./...
+	cd $(SENSOR_DIR) && go test -count=1 ./...
+
 .PHONY: test-db
 test-db: ## Run all tests including database tests (needs db-up)
 	NYKTUS_TEST_DATABASE_URL='$(TEST_DB_URL)' NYKTUS_REQUIRE_DB_TESTS=1 go test -race -count=1 ./...
@@ -43,14 +50,18 @@ test-db: ## Run all tests including database tests (needs db-up)
 
 # Packages and their database tests run in parallel, one per CPU each, and every
 # test holds its own connections, so the default of 100 connections runs out on
-# machines with many cores.
+# machines with many cores. The database is disposable, so it does not wait for
+# the disk: a crash loses it, and the next "make db-up" starts a new one.
 .PHONY: db-up
 db-up: ## Start the disposable test database
 	docker run --detach --rm --name $(TEST_DB_CONTAINER) \
 		--env POSTGRES_PASSWORD=postgres \
 		--publish 127.0.0.1:$(TEST_DB_PORT):5432 \
 		$(TEST_DB_IMAGE) \
-		-c max_connections=400
+		-c max_connections=400 \
+		-c fsync=off \
+		-c synchronous_commit=off \
+		-c full_page_writes=off
 	@until docker exec $(TEST_DB_CONTAINER) pg_isready --username postgres --quiet; do sleep 1; done
 
 .PHONY: db-down

@@ -9,7 +9,12 @@
 package schematest
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io/fs"
 	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -41,18 +46,57 @@ func GroupRoles(tb testing.TB) {
 
 // New creates a database with all migrations applied, like "nyktus migrate" on a
 // fresh installation, and returns a URL that connects as its owner.
+//
+// The migrations are applied once per server, to a template named after a digest
+// of the migration files, and every database is a copy of it. Tests of the
+// migrations themselves apply them to an empty database from dbtest.New.
 func New(tb testing.TB) string {
 	tb.Helper()
 
-	dbURL := dbtest.New(tb)
+	// The migrations check that the group roles exist, and a copy keeps the
+	// grants to them, so they must exist before the template is built.
 	GroupRoles(tb)
+	key, err := templateKey()
+	if err != nil {
+		tb.Fatalf("digest migrations: %v", err)
+	}
+	return dbtest.NewFromTemplate(tb, key, applyMigrations)
+}
+
+// templateKey identifies the contents of the migration files.
+var templateKey = sync.OnceValues(func() (string, error) { return digest(migrations.FS) })
+
+// digest returns a key that changes with the name or the content of any file of
+// fsys.
+func digest(fsys fs.FS) (string, error) {
+	sum := sha256.New()
+	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		content, err := fs.ReadFile(fsys, path)
+		if err != nil {
+			return err
+		}
+		// Length prefixes keep the boundaries between names and contents unambiguous.
+		_, err = fmt.Fprintf(sum, "%d:%s%d:", len(path), path, len(content))
+		sum.Write(content)
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(sum.Sum(nil))[:24], nil
+}
+
+func applyMigrations(tb testing.TB, dbURL string) {
+	tb.Helper()
 
 	all, err := migrate.Load(migrations.FS)
 	if err != nil {
 		tb.Fatalf("load migrations: %v", err)
 	}
-	// The pool is closed right away, so that parallel tests do not hold idle
-	// connections they no longer need.
+	// The pool is closed before the database is copied, which needs it unused.
 	pool, err := db.Open(tb.Context(), dbURL, db.Options{MaxConns: 1})
 	if err != nil {
 		tb.Fatalf("open database: %v", err)
@@ -61,7 +105,6 @@ func New(tb testing.TB) string {
 	if _, err := migrate.Apply(tb.Context(), pool, all, slog.New(slog.DiscardHandler)); err != nil {
 		tb.Fatalf("apply migrations: %v", err)
 	}
-	return dbURL
 }
 
 // Console creates a migrated database and returns the URL of a login role that is

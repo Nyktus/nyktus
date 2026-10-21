@@ -111,7 +111,8 @@ Never weaken these without an explicit decision by a maintainer:
 |---|---|
 | `make test` | Unit tests with the race detector; database tests are skipped |
 | `make db-up` / `make db-down` | Start or stop a disposable PostgreSQL on port 55432 |
-| `make test-db` | All tests, including database tests |
+| `make test-db` | All tests, including database tests, with the race detector |
+| `make test-fast` | All tests, including database tests, without the race detector |
 | `make lint` | Linters and formatting checks |
 | `make fmt` | Format the code |
 | `make check` | Lint, unit tests, vulnerability scan and `go.mod` check |

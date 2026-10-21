@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -24,6 +25,23 @@ import (
 // ends. It returns the connection URL of the new database.
 func New(tb testing.TB) string {
 	tb.Helper()
+	return create(tb, "")
+}
+
+// NewFromTemplate creates a database for the calling test as a copy of the
+// template key and drops it when the test ends. The template is built once per
+// server by prepare, which receives the URL of an empty database and fills it,
+// and is kept for later runs, so a copy costs a quarter of what preparing a
+// database does. The key must change whenever what prepare does changes, for
+// example by holding a digest of its input: a template with an existing key is
+// never rebuilt.
+func NewFromTemplate(tb testing.TB, key string, prepare func(tb testing.TB, dbURL string)) string {
+	tb.Helper()
+	return create(tb, ensureTemplate(tb, key, prepare))
+}
+
+func create(tb testing.TB, template string) string {
+	tb.Helper()
 
 	adminURL := serverURL(tb)
 	u, err := url.Parse(adminURL)
@@ -32,13 +50,113 @@ func New(tb testing.TB) string {
 	}
 
 	name := "nyktus_test_" + strings.ToLower(rand.Text())
-	exec(tb, adminURL, "CREATE DATABASE "+pgx.Identifier{name}.Sanitize())
+	statement := "CREATE DATABASE " + pgx.Identifier{name}.Sanitize()
+	if template != "" {
+		statement += " TEMPLATE " + pgx.Identifier{template}.Sanitize()
+	}
+	exec(tb, adminURL, statement)
 	tb.Cleanup(func() {
 		exec(tb, adminURL, "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)")
 	})
 
 	u.Path = "/" + name
 	return u.String()
+}
+
+// readyTemplates remembers, per process, the templates known to exist on the
+// server, so that only the first test asks the server.
+var (
+	readyMu        sync.Mutex
+	readyTemplates = map[string]bool{}
+)
+
+// ensureTemplate returns the name of the template key, building it if the server
+// has none. The template is built under another name and renamed when it is
+// complete, so that a process that stops while it builds leaves no template that
+// looks finished. Templates of other keys stay: another checkout may still use
+// them, and a container is thrown away anyway.
+func ensureTemplate(tb testing.TB, key string, prepare func(tb testing.TB, dbURL string)) string {
+	tb.Helper()
+
+	adminURL := serverURL(tb)
+	name := "nyktus_tpl_" + key
+	readyMu.Lock()
+	defer readyMu.Unlock()
+	if readyTemplates[adminURL+name] {
+		return name
+	}
+
+	ctx := context.WithoutCancel(tb.Context())
+	conn, err := pgx.Connect(ctx, adminURL)
+	if err != nil {
+		tb.Fatalf("connect to test database: %v", err)
+	}
+	defer func() { _ = conn.Close(ctx) }()
+	// Packages run in separate processes, so a lock in the database is the only one
+	// they share. It belongs to the session and ends with the connection.
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock(hashtextextended($1, 0))", name); err != nil {
+		tb.Fatalf("lock template construction: %v", err)
+	}
+
+	var exists bool
+	if err := conn.QueryRow(ctx, "SELECT EXISTS (SELECT FROM pg_database WHERE datname = $1)", name).Scan(&exists); err != nil {
+		tb.Fatalf("look up template: %v", err)
+	}
+	if !exists {
+		build(ctx, tb, conn, adminURL, name, prepare)
+	}
+	readyTemplates[adminURL+name] = true
+	return name
+}
+
+// buildPrefix starts the names of the databases in which the template name is
+// built.
+func buildPrefix(name string) string { return "nyktus_tplbuild_" + name + "_" }
+
+func build(ctx context.Context, tb testing.TB, conn *pgx.Conn, adminURL, name string, prepare func(tb testing.TB, dbURL string)) {
+	tb.Helper()
+
+	// Constructions of one template are serialized, so a database of this kind
+	// belongs to a process that stopped in the middle.
+	rows, err := conn.Query(ctx, "SELECT datname FROM pg_database WHERE starts_with(datname, $1)", buildPrefix(name))
+	if err != nil {
+		tb.Fatalf("look up unfinished templates: %v", err)
+	}
+	orphans, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		tb.Fatalf("read unfinished templates: %v", err)
+	}
+	for _, orphan := range orphans {
+		if _, err := conn.Exec(ctx, "DROP DATABASE IF EXISTS "+pgx.Identifier{orphan}.Sanitize()+" WITH (FORCE)"); err != nil {
+			tb.Fatalf("drop unfinished template %s: %v", orphan, err)
+		}
+	}
+
+	building := buildPrefix(name) + strings.ToLower(rand.Text())
+	ident := pgx.Identifier{building}.Sanitize()
+	if _, err := conn.Exec(ctx, "CREATE DATABASE "+ident); err != nil {
+		tb.Fatalf("create template: %v", err)
+	}
+	renamed := false
+	defer func() {
+		if !renamed {
+			_, _ = conn.Exec(ctx, "DROP DATABASE IF EXISTS "+ident+" WITH (FORCE)")
+		}
+	}()
+
+	u, err := url.Parse(adminURL)
+	if err != nil {
+		tb.Fatalf("parse database url: %v", err)
+	}
+	u.Path = "/" + building
+	prepare(tb, u.String())
+
+	// A database cannot be copied while a session is connected to it, so prepare
+	// must have closed its connections.
+	if _, err := conn.Exec(ctx, "ALTER DATABASE "+ident+" RENAME TO "+pgx.Identifier{name}.Sanitize()); err != nil {
+		tb.Fatalf("complete template: %v", err)
+	}
+	renamed = true
 }
 
 // GroupRole creates the group role name on the test server unless it exists. It

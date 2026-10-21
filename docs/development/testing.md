@@ -67,7 +67,7 @@ Stores are interfaces, and tests use hand-written fakes backed by maps. Fakes ca
 
 Fakes cannot find a mismatch between a `SELECT` list and a `Scan`, a missing index or a wrong lock. Every store method has at least one test against a real database.
 
-- `dbtest.New` creates an empty database for each test and drops it afterwards, so tests and packages run in parallel without shared state.
+- `dbtest.New` creates an empty database for each test and drops it afterwards, so tests and packages run in parallel without shared state. `schematest.New` and the functions built on it return a database that is a copy of a template with all migrations applied: the migrations run once per server, and a copy costs a quarter of that. The template is named after a digest of the migration files, so a changed migration builds a new one. Tests of the migrations themselves apply them to an empty database from `dbtest.New`.
 - Database tests run when `NYKTUS_TEST_DATABASE_URL` points to a server that allows creating databases. `make db-up` starts one, `make test-db` runs the suite against it. Without the variable the tests are skipped; CI sets `NYKTUS_REQUIRE_DB_TESTS=1`, which turns a skip into a failure.
 - Constraint and permission behavior is tested with the same database roles that production uses, one per server role. `schematest.Console` returns a migrated database and a login role that is a member of `nyktus_console`, as the console connects in production. Store tests use it instead of the superuser, so a missing grant fails the test.
 - Group roles are global to the server and shared by all tests. `dbtest.GroupRole` creates one idempotently and safely under concurrency; tests never drop them. A test that needs a missing role uses a unique name instead.
@@ -81,7 +81,7 @@ Fakes cannot find a mismatch between a `SELECT` list and a `Scan`, a missing ind
 - A statement inside a PL/pgSQL function cannot be explained on its own without copying it. To prove that it seeks into an index, also with the generic plan, call the function on a connection with `plan_cache_mode = force_generic_plan` and `enable_seqscan = off` and compare `idx_tup_read` of the index in `pg_stat_user_indexes` before and after, with `pg_stat_force_next_flush()` and `pg_stat_clear_snapshot()`: a seek returns only the rows beyond the condition, a scan of the whole index every row.
 - To prove that a table lock is taken, probe it from a second transaction with a `NOWAIT` mode that conflicts with the lock under test and with nothing else the first transaction does. Every `INSERT`, `UPDATE` and `DELETE` holds `ROW EXCLUSIVE`, so a probe in `EXCLUSIVE` mode would also fail without the lock under test. `ROW SHARE` conflicts only with `EXCLUSIVE` and `ACCESS EXCLUSIVE`.
 - A lock that must be taken before a check, such as "no administrator exists yet", is proven by ordering: hold the lock and change the checked state in one transaction, wait until the code under test is blocked on the lock (poll `pg_locks` for a waiter on the table, or `pg_stat_activity` for a session of the test database with `wait_event_type = 'Lock'` when the waiter waits for a row), commit, and assert the outcome.
-- Run the full suite with `-race` in CI.
+- Run the full suite with `-race` in CI. `make test-fast` runs it without the race detector, a quarter of the time, for the loop while you work; `make test-db` is the check before a push.
 
 ### Drift between curated data and code is tested
 
