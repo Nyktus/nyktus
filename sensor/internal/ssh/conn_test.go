@@ -4,16 +4,22 @@
 package ssh
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	cryptossh "golang.org/x/crypto/ssh"
+
 	"nyktus.org/nyktus/sensor/internal/clock/clocktest"
+	"nyktus.org/nyktus/sensor/internal/session"
 )
 
 // fakeConn records the deadlines and serves a script.
@@ -130,6 +136,7 @@ func TestGuardedConn_ClientVersion(t *testing.T) {
 		{name: "a line of 255 bytes", chunks: []string{"SSH-" + strings.Repeat("a", 251) + "\n"}, want: "SSH-" + strings.Repeat("a", 251)},
 		{name: "a line of 256 bytes gives up", chunks: []string{"SSH-" + strings.Repeat("a", 252) + "\nSSH-2.0-b\n"}, want: ""},
 		{name: "a line over 255 bytes gives up", chunks: []string{"SSH-" + strings.Repeat("a", 300) + "\nSSH-2.0-b\n"}, want: ""},
+		{name: "the first line with the prefix is the version, also of another protocol", chunks: []string{"SSH-1.5-a\nSSH-2.0-b\n"}, want: "SSH-1.5-a"},
 		{name: "the first version stays", chunks: []string{"SSH-2.0-a\nSSH-2.0-b\n"}, want: "SSH-2.0-a"},
 		{name: "the first version stays in later reads", chunks: []string{"SSH-2.0-a\n", "SSH-2.0-b\n", "c\n"}, want: "SSH-2.0-a"},
 		{name: "http", chunks: []string{"GET / HTTP/1.1\r\n\r\n"}, want: ""},
@@ -202,3 +209,138 @@ func TestClean(t *testing.T) {
 		})
 	}
 }
+
+// prefixedConn writes lines before the first bytes of the client, as a client
+// may before its version.
+type prefixedConn struct {
+	net.Conn
+	prefix string
+	sent   bool
+}
+
+func (c *prefixedConn) Write(p []byte) (int, error) {
+	if !c.sent {
+		c.sent = true
+		if _, err := c.Conn.Write([]byte(c.prefix)); err != nil {
+			return 0, err
+		}
+	}
+	return c.Conn.Write(p)
+}
+
+// The honeypot reads the version of the client itself, because the library
+// shows it only after the key exchange. This ties the two readings together:
+// where the library accepts a version, the honeypot has the same one.
+func TestGuardedConn_ClientVersion_IsTheOneOfTheLibrary(t *testing.T) {
+	t.Parallel()
+
+	for name, tt := range map[string]struct{ prefix, version string }{
+		"plain":        {"", "SSH-2.0-OpenSSH_9.6"},
+		"lines before": {"hello\r\nworld\r\n", "SSH-2.0-Go"},
+		"a comment":    {"", "SSH-2.0-libssh_0.9.6 some comment"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			// A pipe would deadlock: both sides write their version first.
+			ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp4", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ln.Close() //nolint:errcheck // nothing to do about a failed close in a test.
+			client, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(t.Context(), "tcp", ln.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Close() //nolint:errcheck // nothing to do about a failed close in a test.
+			server, err := ln.Accept()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer server.Close() //nolint:errcheck // nothing to do about a failed close in a test.
+			gc := newGuardedConn(server, clocktest.New())
+			var library string
+			cfg := &cryptossh.ServerConfig{
+				PasswordCallback: func(m cryptossh.ConnMetadata, _ []byte) (*cryptossh.Permissions, error) {
+					library = string(m.ClientVersion())
+					return nil, errRefused
+				},
+			}
+			_, priv, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			signer, err := cryptossh.NewSignerFromKey(priv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.AddHostKey(signer)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_, _, _, _ = cryptossh.NewServerConn(gc, cfg)
+			}()
+			_ = client.SetDeadline(time.Now().Add(10 * time.Second))
+			_, _, _, _ = cryptossh.NewClientConn(&prefixedConn{Conn: client, prefix: tt.prefix}, "x", &cryptossh.ClientConfig{
+				User:            "root",
+				Auth:            []cryptossh.AuthMethod{cryptossh.Password("x")},
+				HostKeyCallback: cryptossh.FixedHostKey(signer.PublicKey()),
+				ClientVersion:   tt.version,
+			})
+			_ = client.Close()
+			<-done
+			if library != tt.version || gc.clientVersion() != library {
+				t.Errorf("library version = %q, honeypot version = %q, want both %q", library, gc.clientVersion(), tt.version)
+			}
+		})
+	}
+}
+
+// fakeMeta is what the library tells about a connection.
+type fakeMeta struct {
+	cryptossh.ConnMetadata
+	user string
+}
+
+func (m fakeMeta) User() string { return m.user }
+
+// A client can try a method that the honeypot does not offer, and the library
+// counts it as a failure. A real client of the library asks only for the
+// methods that the server lists, so the callback is tried directly.
+func TestRecorder_Other_RecordsAMethodThatIsNotOfferedAsALoginWithoutAPassword(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		method string
+		want   int
+	}{
+		{"keyboard-interactive", 1},
+		{"gssapi-with-mic", 1},
+		{"hostbased", 1},
+		{"something-else", 1},
+		{"none", 0},
+		{"password", 0},
+		{"publickey", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method, func(t *testing.T) {
+			t.Parallel()
+			clk := clocktest.New()
+			s, err := session.Start(clk, &session.Honeypot{ID: honeypotID, Service: "ssh"}, netip.MustParseAddrPort("203.0.113.9:1"), netip.MustParseAddrPort("10.0.0.5:22"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			recorder{sess: s}.other(fakeMeta{user: "root"}, tt.method, errRefused)
+			if s.Attempts() != tt.want {
+				t.Errorf("attempts = %d, want %d", s.Attempts(), tt.want)
+			}
+			if tt.want == 1 {
+				rep, _ := s.Report(0)
+				if a := rep.Attempts[0]; a.Username != "root" || a.PasswordLength != nil || a.KeyFingerprint != "" {
+					t.Errorf("attempt = %+v, want the user name only", a)
+				}
+			}
+		})
+	}
+}
+
+const honeypotID = "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d"

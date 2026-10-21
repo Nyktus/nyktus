@@ -661,7 +661,7 @@ func TestLoad_HostKeyFile_IsReadRelativeToTheConfigurationAndStaysTheSame(t *tes
 			t.Fatalf("Load() = %v", err)
 		}
 		got := cfg.Honeypots[0].HostKey
-		if got == nil || !bytes.Equal(got.PublicKey().Marshal(), want.PublicKey().Marshal()) {
+		if got.Signer == nil || !bytes.Equal(got.PublicKey().Marshal(), want.PublicKey().Marshal()) {
 			t.Fatalf("host key = %v, want the key of the file on every start", got)
 		}
 	}
@@ -805,5 +805,22 @@ func TestParse_SSHConsoleEntry_IsReadBySensor(t *testing.T) {
 	hp := cfg.Honeypots[0]
 	if hp.Service != config.SSH || hp.Listen != ":22" || hp.HostKeyFile == "" || string(hp.Secret) != strings.Repeat("A", 43) {
 		t.Errorf("honeypot = %+v, want what the console wrote", hp)
+	}
+}
+
+// A host key file of a honeypot that is not SSH is an error of its own and
+// nothing is opened for it.
+func TestLoad_HostKeyFileOfAnotherService_IsRefusedWithoutBeingOpened(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	write(t, dir, "telnet.secret", secretOne, 0o600)
+	// The file would be refused if it were opened: it is readable by everyone.
+	writeKey(t, dir, "ssh_host_key", ed25519Key(t), "", 0o644)
+	path := write(t, dir, "sensor.yaml", strings.Replace(withSecretFile, "    secret_file: telnet.secret\n", "    secret_file: telnet.secret\n    host_key_file: ssh_host_key\n", 1), 0o644)
+
+	_, err := config.Load(path)
+	if err == nil || !strings.Contains(err.Error(), "host_key_file: only for ssh") || strings.Contains(err.Error(), "can access the host key file") {
+		t.Errorf("Load() = %v, want only the error that the field is for ssh", err)
 	}
 }

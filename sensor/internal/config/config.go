@@ -22,9 +22,9 @@ import (
 	"strconv"
 
 	"go.yaml.in/yaml/v3"
-	cryptossh "golang.org/x/crypto/ssh"
 
 	"nyktus.org/nyktus/sensor/internal/secret"
+	"nyktus.org/nyktus/sensor/internal/ssh"
 )
 
 // Limits of the file and of its fields.
@@ -92,7 +92,7 @@ type Honeypot struct {
 	// so the sensor never makes one.
 	HostKeyFile string `yaml:"host_key_file"`
 	// HostKey is the key read from HostKeyFile by Load.
-	HostKey cryptossh.Signer `yaml:"-"`
+	HostKey ssh.HostKey `yaml:"-"`
 }
 
 var (
@@ -139,7 +139,9 @@ func Load(path string) (*Config, error) {
 	inline := false
 	for i := range cfg.Honeypots {
 		hp := &cfg.Honeypots[i]
-		if hp.HostKeyFile != "" {
+		// Only an SSH honeypot has a host key; validate refuses the field for any
+		// other, and a file that nothing uses is not opened.
+		if hp.Service == SSH && hp.HostKeyFile != "" {
 			k, err := readHostKey(resolve(filepath.Dir(path), hp.HostKeyFile))
 			if err != nil {
 				problems = append(problems, fmt.Errorf("honeypots[%d].host_key_file: %w", i, err))
@@ -217,28 +219,17 @@ func readSecretFile(path string) (secret.Secret, error) {
 	return secret.Secret(s), nil
 }
 
-// readHostKey reads the private key of an SSH honeypot: an Ed25519 key without
-// a passphrase, as ssh-keygen writes it for an empty one. The error never
-// holds a byte of the file.
-func readHostKey(path string) (cryptossh.Signer, error) {
+// readHostKey reads the private key of an SSH honeypot from a file that only its
+// owner can access.
+func readHostKey(path string) (ssh.HostKey, error) {
 	data, err := readPrivateFile(path, "host key file", maxHostKeyFile)
 	if err != nil {
-		return nil, err
+		return ssh.HostKey{}, err
 	}
 	if len(data) > maxHostKeyFile {
-		return nil, fmt.Errorf("the host key file is larger than %d bytes", maxHostKeyFile)
+		return ssh.HostKey{}, fmt.Errorf("the host key file is larger than %d bytes", maxHostKeyFile)
 	}
-	key, err := cryptossh.ParsePrivateKey(data)
-	var missing *cryptossh.PassphraseMissingError
-	switch {
-	case errors.As(err, &missing):
-		return nil, errors.New("the host key is protected by a passphrase: the sensor starts unattended, use a key without one")
-	case err != nil:
-		return nil, errors.New("the host key file does not hold a private key in OpenSSH or PEM format")
-	case key.PublicKey().Type() != cryptossh.KeyAlgoED25519:
-		return nil, fmt.Errorf("the host key is of type %s, want %s", key.PublicKey().Type(), cryptossh.KeyAlgoED25519)
-	}
-	return key, nil
+	return ssh.ParseHostKey(data)
 }
 
 // decode reads the YAML into the types, refusing what they do not have.

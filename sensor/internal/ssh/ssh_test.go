@@ -9,12 +9,14 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +55,7 @@ type honeypot struct {
 
 func serve(t *testing.T) *honeypot {
 	t.Helper()
-	return serveWith(t, ssh.Config{Version: ssh.DefaultVersion, HostKey: newSigner(t)}, clocktest.New())
+	return serveWith(t, ssh.Config{Version: ssh.DefaultVersion, HostKey: ssh.HostKey{Signer: newSigner(t)}}, clocktest.New())
 }
 
 func serveWith(t *testing.T, cfg ssh.Config, clk clock.Clock) *honeypot {
@@ -491,7 +493,7 @@ func TestServe_CanceledContext_ReadsAndWritesNothing(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() {
-		ssh.New(ssh.Config{Version: ssh.DefaultVersion, HostKey: newSigner(t)}, clk).Serve(ctx, server, s)
+		ssh.New(ssh.Config{Version: ssh.DefaultVersion, HostKey: ssh.HostKey{Signer: newSigner(t)}}, clk).Serve(ctx, server, s)
 		close(done)
 	}()
 	select {
@@ -505,7 +507,7 @@ func TestServe_Version_IsWhatTheConfigurationSays(t *testing.T) {
 	t.Parallel()
 
 	key := newSigner(t)
-	h := serveWith(t, ssh.Config{Version: "SSH-2.0-dropbear_2022.83", HostKey: key}, clocktest.New())
+	h := serveWith(t, ssh.Config{Version: "SSH-2.0-dropbear_2022.83", HostKey: ssh.HostKey{Signer: key}}, clocktest.New())
 	conn, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(t.Context(), "tcp", h.addr)
 	if err != nil {
 		t.Fatal(err)
@@ -529,7 +531,7 @@ func TestServe_HostKey_IsTheConfiguredOneAndNothingElse(t *testing.T) {
 
 	key := newSigner(t)
 	for range 2 {
-		h := serveWith(t, ssh.Config{Version: ssh.DefaultVersion, HostKey: key}, clocktest.New())
+		h := serveWith(t, ssh.Config{Version: ssh.DefaultVersion, HostKey: ssh.HostKey{Signer: key}}, clocktest.New())
 		var seen cryptossh.PublicKey
 		cc := &cryptossh.ClientConfig{
 			User: "root",
@@ -557,9 +559,9 @@ func TestNew_MissingParts_Panics(t *testing.T) {
 
 	key := newSigner(t)
 	for name, f := range map[string]func(){
-		"clock":    func() { ssh.New(ssh.Config{Version: ssh.DefaultVersion, HostKey: key}, nil) },
+		"clock":    func() { ssh.New(ssh.Config{Version: ssh.DefaultVersion, HostKey: ssh.HostKey{Signer: key}}, nil) },
 		"host key": func() { ssh.New(ssh.Config{Version: ssh.DefaultVersion}, clocktest.New()) },
-		"version":  func() { ssh.New(ssh.Config{HostKey: key}, clocktest.New()) },
+		"version":  func() { ssh.New(ssh.Config{HostKey: ssh.HostKey{Signer: key}}, clocktest.New()) },
 	} {
 		func() {
 			defer func() {
@@ -569,5 +571,77 @@ func TestNew_MissingParts_Panics(t *testing.T) {
 			}()
 			f()
 		}()
+	}
+}
+
+// A client that offers a key twice is one login of the session: the library
+// remembers the answer and asks the honeypot once.
+func TestServe_SameKeyOfferedTwice_IsOneLogin(t *testing.T) {
+	t.Parallel()
+
+	h := serve(t)
+	key := newSigner(t)
+	_ = h.login(t, &cryptossh.ClientConfig{User: "root", Auth: []cryptossh.AuthMethod{cryptossh.PublicKeys(key, key)}})
+	if rep := h.report(t); len(rep.Attempts) != 1 {
+		t.Errorf("attempts = %+v, want one", rep.Attempts)
+	}
+}
+
+func TestHostKey_NeverPrintsTheKey(t *testing.T) {
+	t.Parallel()
+
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := cryptossh.MarshalPrivateKey(priv, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ssh.ParseHostKey(pem.EncodeToMemory(block))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// fmt prints a key as a list of numbers, and %#v as Go syntax.
+	var digits, hex []string
+	for _, b := range priv[:6] {
+		digits = append(digits, strconv.Itoa(int(b)))
+		hex = append(hex, fmt.Sprintf("0x%x", b))
+	}
+	needles := []string{strings.Join(digits, " "), strings.Join(hex, ", ")}
+	// Each way of writing a key gives the placeholder and nothing else, whatever
+	// the key looks like when it is printed.
+	text, err := key.MarshalText()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]string{
+		"String": key.String(), "GoString": key.GoString(), "%#v": fmt.Sprintf("%#v", key),
+		"LogValue": key.LogValue().String(), "MarshalText": string(text),
+	} {
+		if got != "[redacted]" {
+			t.Errorf("%s = %q, want the placeholder", name, got)
+		}
+	}
+	cfg := ssh.Config{Version: ssh.DefaultVersion, HostKey: key}
+	var log bytes.Buffer
+	slog.New(slog.NewJSONHandler(&log, nil)).Info("sensor: config", slog.Any("key", key), slog.Any("config", cfg))
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputs := []string{
+		fmt.Sprint(key), fmt.Sprintf("%v %+v %#v %s", key, key, key, key),
+		fmt.Sprintf("%v %+v %#v", cfg, cfg, cfg), string(data), log.String(),
+	}
+	for _, out := range outputs {
+		if !strings.Contains(out, "[redacted]") || strings.Contains(out, "PRIVATE KEY") {
+			t.Errorf("output %q shows the key or lacks the placeholder", out)
+		}
+		for _, needle := range needles {
+			if strings.Contains(out, needle) {
+				t.Errorf("output %q shows the bytes of the key", out)
+			}
+		}
 	}
 }
