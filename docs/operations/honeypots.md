@@ -64,7 +64,7 @@ The answer is the new honeypot with its secret and status `201`:
   "created_at": "2026-10-19T09:30:00Z",
   "updated_at": "2026-10-19T09:30:00Z",
   "secret": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  "sensor_config": "- id: \"7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d\"\n  service: \"ssh\"\n  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.\n  listen: \":22\"\n  # The private key of the server. Create it once, without a passphrase, with\n  # ssh-keygen -t ed25519 -N '' -f ssh_host_key and keep it: a host key that\n  # changes would identify the honeypot. The path is relative to this file.\n  host_key_file: \"ssh_host_key\"\n  secret: \"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\"\n"
+  "sensor_config": "- id: \"7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d\"\n  service: \"ssh\"\n  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.\n  listen: \":22\"\n  # The private key of the server. Create it once, without a passphrase, with\n  # ssh-keygen -t ed25519 -N '' -f and the path below, and keep it: a host key\n  # that changes would identify the honeypot, and one that two honeypots share\n  # would tie them together. The path is relative to this file.\n  host_key_file: \"ssh_host_key_7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d\"\n  secret: \"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\"\n"
 }
 ```
 

@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -29,7 +30,12 @@ func TestGoMod_RequiresOnlyTheYAMLParserAndTheSSHLibrary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var required []string
+	// The modules that go.mod requires, and whether it marks them indirect.
+	required := map[string]bool{}
+	add := func(line string) {
+		fields := strings.Fields(line)
+		required[fields[0]] = strings.Contains(line, "// indirect")
+	}
 	inBlock := false
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
@@ -41,22 +47,24 @@ func TestGoMod_RequiresOnlyTheYAMLParserAndTheSSHLibrary(t *testing.T) {
 		case line == ")":
 			inBlock = false
 		case strings.HasPrefix(line, "require "):
-			required = append(required, strings.Fields(line)[1])
+			add(strings.TrimPrefix(line, "require "))
 		case inBlock && line != "" && !strings.HasPrefix(line, "//"):
-			required = append(required, strings.Fields(line)[0])
+			add(line)
 		}
 	}
 	// golang.org/x/sys is a requirement of x/crypto for platforms such as s390x
 	// and appears in go.mod only as an indirect one.
-	allowed := []string{"go.yaml.in/yaml/v3", "golang.org/x/crypto", "golang.org/x/sys"}
-	for _, m := range []string{"go.yaml.in/yaml/v3", "golang.org/x/crypto"} {
-		if !slices.Contains(required, m) {
-			t.Errorf("go.mod requires %v, lacks %s", required, m)
+	want := map[string]bool{"go.yaml.in/yaml/v3": false, "golang.org/x/crypto": false, "golang.org/x/sys": true}
+	for m, indirect := range required {
+		if wantIndirect, ok := want[m]; !ok {
+			t.Errorf("go.mod requires %s, want only %v: a new dependency needs a decision", m, slices.Sorted(maps.Keys(want)))
+		} else if indirect != wantIndirect {
+			t.Errorf("go.mod requires %s with indirect = %v, want %v", m, indirect, wantIndirect)
 		}
 	}
-	for _, m := range required {
-		if !slices.Contains(allowed, m) {
-			t.Errorf("go.mod requires %s, want only %v: a new dependency needs a decision", m, allowed)
+	for _, m := range []string{"go.yaml.in/yaml/v3", "golang.org/x/crypto"} {
+		if _, ok := required[m]; !ok {
+			t.Errorf("go.mod does not require %s", m)
 		}
 	}
 }

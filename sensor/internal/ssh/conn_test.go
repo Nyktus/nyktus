@@ -133,8 +133,10 @@ func TestGuardedConn_ClientVersion(t *testing.T) {
 		{name: "lines before it are skipped", chunks: []string{"hi\r\nx\nSSH-2.0-a\r\n"}, want: "SSH-2.0-a"},
 		{name: "a line that only holds the prefix later is no version", chunks: []string{"xSSH-2.0-a\r\n"}, want: ""},
 		{name: "no line ending", chunks: []string{"SSH-2.0-a"}, want: ""},
-		{name: "a line of 255 bytes", chunks: []string{"SSH-" + strings.Repeat("a", 251) + "\n"}, want: "SSH-" + strings.Repeat("a", 251)},
-		{name: "a line of 256 bytes gives up", chunks: []string{"SSH-" + strings.Repeat("a", 252) + "\nSSH-2.0-b\n"}, want: ""},
+		{name: "a line of 254 bytes", chunks: []string{"SSH-" + strings.Repeat("a", 250) + "\n"}, want: "SSH-" + strings.Repeat("a", 250)},
+		{name: "a line of 255 bytes gives up", chunks: []string{"SSH-" + strings.Repeat("a", 251) + "\nSSH-2.0-b\n"}, want: ""},
+		{name: "1023 lines before it", chunks: []string{strings.Repeat("x\n", 1023) + "SSH-2.0-a\n"}, want: "SSH-2.0-a"},
+		{name: "1024 lines before it give up", chunks: []string{strings.Repeat("x\n", 1024) + "SSH-2.0-a\n"}, want: ""},
 		{name: "a line over 255 bytes gives up", chunks: []string{"SSH-" + strings.Repeat("a", 300) + "\nSSH-2.0-b\n"}, want: ""},
 		{name: "the first line with the prefix is the version, also of another protocol", chunks: []string{"SSH-1.5-a\nSSH-2.0-b\n"}, want: "SSH-1.5-a"},
 		{name: "the first version stays", chunks: []string{"SSH-2.0-a\nSSH-2.0-b\n"}, want: "SSH-2.0-a"},
@@ -288,8 +290,13 @@ func TestGuardedConn_ClientVersion_IsTheOneOfTheLibrary(t *testing.T) {
 			})
 			_ = client.Close()
 			<-done
-			if library != tt.version || gc.clientVersion() != library {
-				t.Errorf("library version = %q, honeypot version = %q, want both %q", library, gc.clientVersion(), tt.version)
+			// Where the library gives up, the honeypot has no version either.
+			want := tt.version
+			if len(tt.version) > 254 || strings.Count(tt.prefix, "\n") >= maxLinesBefore {
+				want = ""
+			}
+			if library != want || gc.clientVersion() != library {
+				t.Errorf("library version = %q, honeypot version = %q, want both %q", library, gc.clientVersion(), want)
 			}
 		})
 	}
@@ -317,7 +324,6 @@ func TestRecorder_Other_RecordsAMethodThatIsNotOfferedAsALoginWithoutAPassword(t
 		{"gssapi-with-mic", 1},
 		{"hostbased", 1},
 		{"something-else", 1},
-		{"none", 0},
 		{"password", 0},
 		{"publickey", 0},
 	}
@@ -329,7 +335,7 @@ func TestRecorder_Other_RecordsAMethodThatIsNotOfferedAsALoginWithoutAPassword(t
 			if err != nil {
 				t.Fatal(err)
 			}
-			recorder{sess: s}.other(fakeMeta{user: "root"}, tt.method, errRefused)
+			(&recorder{sess: s}).other(fakeMeta{user: "root"}, tt.method, errRefused)
 			if s.Attempts() != tt.want {
 				t.Errorf("attempts = %d, want %d", s.Attempts(), tt.want)
 			}
@@ -344,3 +350,21 @@ func TestRecorder_Other_RecordsAMethodThatIsNotOfferedAsALoginWithoutAPassword(t
 }
 
 const honeypotID = "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d"
+
+// The first "none" of a client asks for the methods and costs nothing; the
+// library counts every later one as a failure.
+func TestRecorder_Other_FirstNoneIsFreeAndEveryLaterOneIsALogin(t *testing.T) {
+	t.Parallel()
+
+	s, err := session.Start(clocktest.New(), &session.Honeypot{ID: honeypotID, Service: "ssh"}, netip.MustParseAddrPort("203.0.113.9:1"), netip.MustParseAddrPort("10.0.0.5:22"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &recorder{sess: s}
+	for i, want := range []int{0, 1, 2, 3} {
+		r.other(fakeMeta{user: "root"}, "none", errRefused)
+		if s.Attempts() != want {
+			t.Errorf("attempts after %d requests for the methods = %d, want %d", i+1, s.Attempts(), want)
+		}
+	}
+}

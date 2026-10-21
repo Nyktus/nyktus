@@ -60,6 +60,11 @@ func New(cfg Config, clk clock.Clock) *Service {
 	if clk == nil || cfg.HostKey.Signer == nil || cfg.Version == "" {
 		panic("ssh: missing clock, host key or version")
 	}
+	// The library signs with the default algorithm of a key that does not say
+	// which it supports; for Ed25519 that is the only one.
+	if t := cfg.HostKey.PublicKey().Type(); t != cryptossh.KeyAlgoED25519 {
+		panic("ssh: the host key is of type " + t + ", want an Ed25519 key")
+	}
 	s := &Service{clock: clk}
 	s.base.ServerVersion = cfg.Version
 	// As many failures as a session keeps logins. The library counts every
@@ -84,7 +89,7 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 	// is the one that is most worth naming.
 	defer func() { sess.SetClientVersion(clean(gc.clientVersion(), report.MaxClientVersion)) }()
 
-	r := recorder{sess: sess}
+	r := &recorder{sess: sess}
 	cfg := s.base
 	cfg.PasswordCallback = r.password
 	cfg.PublicKeyCallback = r.publicKey
@@ -100,32 +105,41 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 // recorder records the logins of a session. Each of its methods refuses.
 type recorder struct {
 	sess *session.Session
+	// nones counts the requests for the methods, the first of which costs a
+	// client nothing.
+	nones int
 }
 
-func (r recorder) password(m cryptossh.ConnMetadata, password []byte) (*cryptossh.Permissions, error) {
+func (r *recorder) password(m cryptossh.ConnMetadata, password []byte) (*cryptossh.Permissions, error) {
 	n := len(password)
 	r.sess.AddAttempt(report.Attempt{Username: clean(m.User(), report.MaxUsername), PasswordLength: &n})
 	return nil, errRefused
 }
 
 // publicKey records a key that is offered and refuses it. The library then sends
-// no request for a signature, so the client never signs, and a key that the
-// operator trusts elsewhere is never used for anything.
-func (r recorder) publicKey(m cryptossh.ConnMetadata, key cryptossh.PublicKey) (*cryptossh.Permissions, error) {
+// no request for a signature, so a client that asks first never signs. One that
+// signs at once has the signature checked by the library, and is refused all the
+// same: no key opens anything.
+func (r *recorder) publicKey(m cryptossh.ConnMetadata, key cryptossh.PublicKey) (*cryptossh.Permissions, error) {
 	r.sess.AddAttempt(report.Attempt{Username: clean(m.User(), report.MaxUsername), KeyFingerprint: cryptossh.FingerprintSHA256(key)})
 	return nil, errRefused
 }
 
 // other records a client that tries a method that the honeypot does not offer,
 // such as keyboard-interactive, which still costs one of its failures. It is a
-// login of the session, without a password. "none" asks for the methods and
-// costs nothing, and the other two are recorded by their own callbacks.
-func (r recorder) other(m cryptossh.ConnMetadata, method string, _ error) {
+// login of the session, without a password. So is every "none" after the first,
+// which asks for the methods and costs nothing. A password and a key are
+// recorded by their own callbacks.
+func (r *recorder) other(m cryptossh.ConnMetadata, method string, _ error) {
 	switch method {
-	case "none", "password", "publickey":
-	default:
-		r.sess.AddAttempt(report.Attempt{Username: clean(m.User(), report.MaxUsername)})
+	case "password", "publickey":
+		return
+	case "none":
+		if r.nones++; r.nones == 1 {
+			return
+		}
 	}
+	r.sess.AddAttempt(report.Attempt{Username: clean(m.User(), report.MaxUsername)})
 }
 
 // clean returns a text that a client chose in a form that the server accepts:

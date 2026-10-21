@@ -26,9 +26,14 @@ const (
 	maxReadBytes = 16 << 10
 )
 
-// maxVersionLine is the longest line that the library accepts as the version
-// of the client (RFC 4253, section 4.2).
-const maxVersionLine = 255
+// The library reads the version of the client byte by byte, and gives up at a
+// line of 255 bytes before its end, so the longest version it accepts has 254,
+// and after 1024 lines that are not one (RFC 4253, section 4.2). The honeypot
+// reads the same, so that the two agree.
+const (
+	maxVersionLine = 255
+	maxLinesBefore = 1024
+)
 
 // errTooMuch ends a connection that has sent more than it may.
 var errTooMuch = errors.New("ssh: the client sent too much")
@@ -47,6 +52,7 @@ type guardedConn struct {
 	mu      sync.Mutex
 	left    int
 	line    []byte
+	lines   int
 	version string
 	found   bool
 }
@@ -85,26 +91,28 @@ func (c *guardedConn) Write(p []byte) (int, error) {
 
 // scan looks for the version of the client in what it sent: the first line that
 // starts with "SSH-". Lines before it are skipped, as the library skips them,
-// and it gives up where the library does, at a line that is too long. The
-// caller holds the lock.
+// and it gives up where the library does, at a line that is too long or after
+// too many lines. The caller holds the lock.
 func (c *guardedConn) scan(b []byte) {
 	for _, ch := range b {
 		if c.found {
 			return
 		}
-		switch {
-		case ch == '\n':
-			if bytes.HasPrefix(c.line, []byte("SSH-")) {
-				c.version = string(bytes.TrimSuffix(c.line, []byte("\r")))
+		if ch != '\n' {
+			c.line = append(c.line, ch)
+			if len(c.line) >= maxVersionLine {
 				c.found = true
-				return
 			}
-			c.line = c.line[:0]
-		case len(c.line) >= maxVersionLine:
+			continue
+		}
+		if bytes.HasPrefix(c.line, []byte("SSH-")) {
+			c.version = string(bytes.TrimSuffix(c.line, []byte("\r")))
 			c.found = true
 			return
-		default:
-			c.line = append(c.line, ch)
+		}
+		c.line = c.line[:0]
+		if c.lines++; c.lines >= maxLinesBefore {
+			c.found = true
 		}
 	}
 }

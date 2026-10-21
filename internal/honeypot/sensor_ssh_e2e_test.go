@@ -40,12 +40,12 @@ func TestSensor_SSH_EndToEnd(t *testing.T) { //nolint:paralleltest // see above.
 	}
 	// The file is the one that the entry of the console names, next to the
 	// configuration.
-	env := startEndToEnd(t, honeypot.ServiceSSH, ":22", false, func(dir string) {
+	env := startEndToEnd(t, honeypot.ServiceSSH, ":22", false, func(dir string, created honeypot.Created) {
 		block, err := cryptossh.MarshalPrivateKey(priv, "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "ssh_host_key"), pem.EncodeToMemory(block), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "ssh_host_key_"+created.ID), pem.EncodeToMemory(block), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	})

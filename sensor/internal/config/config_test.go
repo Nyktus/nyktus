@@ -779,6 +779,35 @@ func TestLoad_HostKeyFile_ErrorDoesNotRepeatTheFile(t *testing.T) {
 	}
 }
 
+// Two honeypots that show one host key can be tied together by anyone who
+// looks, so every SSH honeypot has a key of its own, as it has its own secret.
+func TestLoad_TwoHoneypotsWithTheSameHostKey_AreRefused(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	priv := ed25519Key(t)
+	writeKey(t, dir, "ssh_host_key", priv, "", 0o600)
+	writeKey(t, dir, "copy_of_the_key", priv, "", 0o600)
+	writeKey(t, dir, "other_key", ed25519Key(t), "", 0o600)
+	write(t, dir, "ssh.secret", secretOne, 0o600)
+	write(t, dir, "other.secret", secretTwo, 0o600)
+	second := func(keyFile string) string {
+		return withHostKey + "  - id: " + idTwo + "\n    service: ssh\n    listen: \":2223\"\n    secret_file: other.secret\n    host_key_file: " + keyFile + "\n"
+	}
+
+	// A copy of the file is the same key.
+	path := write(t, dir, "sensor.yaml", second("copy_of_the_key"), 0o644)
+	_, err := config.Load(path)
+	if err == nil || !strings.Contains(err.Error(), "honeypots[1].host_key_file: the same host key as honeypots[0]") {
+		t.Errorf("Load() = %v, want an error about the same host key", err)
+	}
+
+	path = write(t, dir, "sensor.yaml", second("other_key"), 0o644)
+	if _, err := config.Load(path); err != nil {
+		t.Errorf("Load() with two keys = %v", err)
+	}
+}
+
 // Problems of the key and of the secret file are reported together.
 func TestLoad_HostKeyFileAndSecretFile_ReportEveryProblem(t *testing.T) {
 	t.Parallel()

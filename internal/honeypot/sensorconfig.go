@@ -33,15 +33,21 @@ func (c Created) SensorConfig() string {
   # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.
   listen: %s
 %s  secret: %s
-`, strconv.Quote(c.ID), strconv.Quote(string(c.Service)), strconv.Quote(sensorPorts[c.Service]), sensorServiceFields[c.Service], strconv.Quote(string(c.Secret)))
+`, strconv.Quote(c.ID), strconv.Quote(string(c.Service)), strconv.Quote(sensorPorts[c.Service]), c.serviceFields(), strconv.Quote(string(c.Secret)))
 }
 
-// sensorServiceFields are the lines that a service needs besides the common
-// ones. They hold no value of the honeypot, so none of them needs quoting.
-var sensorServiceFields = map[Service]string{
-	ServiceSSH: `  # The private key of the server. Create it once, without a passphrase, with
-  # ssh-keygen -t ed25519 -N '' -f ssh_host_key and keep it: a host key that
-  # changes would identify the honeypot. The path is relative to this file.
-  host_key_file: "ssh_host_key"
-`,
+// serviceFields returns the lines that a service needs besides the common ones.
+// A comment holds no value of the honeypot, and the value of a field is quoted.
+func (c Created) serviceFields() string {
+	if c.Service != ServiceSSH {
+		return ""
+	}
+	// The name of the file has the identifier of the honeypot in it, so that the
+	// entries of two honeypots in one file name two keys: a key that two
+	// honeypots share would tie them together.
+	return `  # The private key of the server. Create it once, without a passphrase, with
+  # ssh-keygen -t ed25519 -N '' -f and the path below, and keep it: a host key
+  # that changes would identify the honeypot, and one that two honeypots share
+  # would tie them together. The path is relative to this file.
+  host_key_file: ` + strconv.Quote("ssh_host_key_"+c.ID) + "\n"
 }

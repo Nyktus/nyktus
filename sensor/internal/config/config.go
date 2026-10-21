@@ -137,6 +137,7 @@ func Load(path string) (*Config, error) {
 		problems = append(problems, err)
 	}
 	inline := false
+	hostKeys := map[string]int{}
 	for i := range cfg.Honeypots {
 		hp := &cfg.Honeypots[i]
 		// Only an SSH honeypot has a host key; validate refuses the field for any
@@ -147,6 +148,15 @@ func Load(path string) (*Config, error) {
 				problems = append(problems, fmt.Errorf("honeypots[%d].host_key_file: %w", i, err))
 			}
 			hp.HostKey = k
+			// Two honeypots with one key show the same host key, and anyone
+			// who looks can tie them together.
+			if err == nil {
+				id := string(k.PublicKey().Marshal())
+				if prev, ok := hostKeys[id]; ok {
+					problems = append(problems, fmt.Errorf("honeypots[%d].host_key_file: the same host key as honeypots[%d]; every honeypot has its own", i, prev))
+				}
+				hostKeys[id] = i
+			}
 		}
 		if hp.Secret != "" {
 			inline = true

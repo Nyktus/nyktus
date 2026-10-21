@@ -182,7 +182,7 @@ type sensorEnv struct {
 // entry that the console shows, starts it and waits until the honeypot is
 // online. usualPort is the port in that entry, which the test replaces by a free
 // one. prepare writes the files that the entry names, next to the configuration.
-func startEndToEnd(t *testing.T, service honeypot.Service, usualPort string, useTLS bool, prepare func(dir string)) *sensorEnv {
+func startEndToEnd(t *testing.T, service honeypot.Service, usualPort string, useTLS bool, prepare func(dir string, created honeypot.Created)) *sensorEnv {
 	t.Helper()
 	// The database comes first: without one the test is skipped, and nothing
 	// is built.
@@ -244,7 +244,7 @@ func startEndToEnd(t *testing.T, service honeypot.Service, usualPort string, use
 		t.Fatal(err)
 	}
 	if prepare != nil {
-		prepare(dir)
+		prepare(dir, created)
 	}
 
 	p := startSensor(t, bin, configPath, env)

@@ -90,7 +90,7 @@ Every entry of `honeypots`:
 | `login_prompt` | `login: ` | The prompt for the user name, up to 64 bytes of printable ASCII. Telnet only. |
 | `host_key_file` | required for `ssh` | The file with the private key of the server. SSH only; see [SSH honeypots](#ssh-honeypots). A relative path is relative to the directory of the configuration file. |
 
-`nyktus-sensor check -config <file>` reads the file the way `run` does and lists every problem it finds: unknown keys, malformed values, duplicate addresses, ids and secrets, a banner that is too long, a host key that is missing or not usable, and the modes of the files. It binds no port and does not contact the trigger.
+`nyktus-sensor check -config <file>` reads the file the way `run` does and lists every problem it finds: unknown keys, malformed values, duplicate addresses, ids and secrets, a banner that is too long, a host key that is missing, not usable or shared by two honeypots, and the modes of the files. It binds no port and does not contact the trigger.
 
 ### Telnet banners
 
@@ -112,7 +112,7 @@ The prompt for the password is always `Password: `.
 
 ## SSH honeypots
 
-The honeypot speaks the SSH protocol with the library of the Go project, announces the version of a common OpenSSH, and refuses every login. A client can offer a password or a public key. The honeypot records the user name, the length of the password, the fingerprint of every key that the client offers, as `ssh-keygen -l` prints it (`SHA256:...`), and the version string that the client announces. Each password and each offered key is one login of the session, as in OpenSSH, where an offered key counts against `MaxAuthTries`; so is a method that the honeypot does not offer but a client tries anyway, such as keyboard-interactive, which is recorded with the user name only. A key that a client offers twice counts once. A key is only recorded: the honeypot refuses it before the client has to sign, so nothing of it is ever checked or used.
+The honeypot speaks the SSH protocol with the library of the Go project, announces the version of a common OpenSSH, and refuses every login. A client can offer a password or a public key. The honeypot records the user name, the length of the password, the fingerprint of every key that the client offers, as `ssh-keygen -l` prints it (`SHA256:...`), and the version string that the client announces. Each password and each offered key is one login of the session, as in OpenSSH, where an offered key counts against `MaxAuthTries`; so is a method that the honeypot does not offer but a client tries anyway, such as keyboard-interactive, which is recorded with the user name only. A key that a client offers twice counts once. A key is only recorded and refused, so no login succeeds with it. A client that asks first whether a key would do never signs; one that signs at once has the signature checked by the library, and is refused all the same.
 
 No login succeeds. There is therefore never a channel, a shell, a command, a forwarded port or a subsystem, and nothing is run or passed on. The sixth refused login ends the connection, as the default `MaxAuthTries` of OpenSSH does. A client that does not get as far as a login, because it fails the key exchange or leaves, is reported as a connection, with its version if it announced one.
 
@@ -121,20 +121,22 @@ No login succeeds. There is therefore never a channel, a shell, a command, a for
 The honeypot needs a host key, and it has to stay the same: a key that changed with every start would tell anyone who looks that the server is a decoy, and a client that remembers the key would warn of a man in the middle. The sensor therefore creates no key. You create it once, without a passphrase, and name the file:
 
 ```sh
-ssh-keygen -t ed25519 -N '' -f /etc/nyktus-sensor/ssh_host_key
-chmod 600 /etc/nyktus-sensor/ssh_host_key
-chown nyktus-sensor /etc/nyktus-sensor/ssh_host_key
+ssh-keygen -t ed25519 -N '' -f /etc/nyktus-sensor/ssh_host_key_7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d
+chmod 600 /etc/nyktus-sensor/ssh_host_key_7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d
+chown nyktus-sensor /etc/nyktus-sensor/ssh_host_key_7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d
 ```
+
+The entry that the console shows names a file of its own for each honeypot, `ssh_host_key_` and the identifier of the honeypot, next to the configuration file; create the key under that name or change the name.
 
 ```yaml
 - id: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d"
   service: "ssh"
   listen: ":22"
-  host_key_file: "ssh_host_key"
-  secret: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  host_key_file: "ssh_host_key_7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d"
+  secret: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 ```
 
-The key is an Ed25519 key in the format that `ssh-keygen` writes. The sensor refuses a key that its group or others can read or write, as it does for a secret file, a key with a passphrase (the sensor starts unattended), a key of another type and a file larger than 8 KiB. `ssh-keygen` also writes `ssh_host_key.pub`; the sensor does not read it. Use a key of its own: never the host key of a real server, which anyone who captures the honeypot would then know. Keep the file, also in a container, where you mount it like a secret file: the rules for the mode are the same, so mount it with a mode of `0400` for the user of the sensor (in Kubernetes `defaultMode: 0400`), as the common default of `0644` or `0440` is refused. Give every SSH honeypot a key of its own: two honeypots that share one show the same host key, and anyone who looks can tie them together. The sensor does not check it. If you replace it, clients that connected before see a changed host key.
+The key is an Ed25519 key in the format that `ssh-keygen` writes. The sensor refuses a key that its group or others can read or write, as it does for a secret file, a key with a passphrase (the sensor starts unattended), a key of another type and a file larger than 8 KiB. `ssh-keygen` also writes `ssh_host_key.pub`; the sensor does not read it. Use a key of its own: never the host key of a real server, which anyone who captures the honeypot would then know. Keep the file, also in a container, where you mount it like a secret file: the rules for the mode are the same, so mount it with a mode of `0400` for the user of the sensor (in Kubernetes `defaultMode: 0400`), as the common default of `0644` or `0440` is refused. Give every SSH honeypot a key of its own: two honeypots that share one show the same host key, and anyone who looks can tie them together. The sensor refuses a configuration in which two SSH honeypots use the same key, also a copy of the file. If you replace it, clients that connected before see a changed host key.
 
 ### Version and algorithms
 
@@ -147,6 +149,8 @@ banner: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.10"
 Change it to what the servers in your network announce, such as `SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3`. It starts with `SSH-2.0-`, then a software version of printable characters without a space or a minus, and optionally a space and a comment; it is printable ASCII of at most 253 bytes. There is no text banner before the login.
 
 The honeypot offers the algorithms of the SSH library, not those of OpenSSH, and an Ed25519 host key only. A tool that compares the lists, such as `ssh-audit`, can tell it from the OpenSSH that it names. The library offers no algorithm that is broken or deprecated: a client that knows nothing newer than SHA-1, CBC or the 1024-bit groups, such as old embedded devices and some bots, fails the key exchange and shows up as a connection, with its version. A refused login also comes at once, where OpenSSH makes a client wait.
+
+The library starts goroutines of its own for the key exchange and the packets of a connection, and a failure in them that panics ends the process, where the sensor catches a panic in everything else. The library is widely used and fuzzed, and the sensor cannot wrap it; run it as the [unit](#systemd) does, so that the service manager starts it again (`Restart=on-failure`) and the honeypots are `offline` in the console only for the time that takes.
 
 ## Limits
 

@@ -3,7 +3,8 @@
   # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.
   listen: ":22"
   # The private key of the server. Create it once, without a passphrase, with
-  # ssh-keygen -t ed25519 -N '' -f ssh_host_key and keep it: a host key that
-  # changes would identify the honeypot. The path is relative to this file.
-  host_key_file: "ssh_host_key"
+  # ssh-keygen -t ed25519 -N '' -f and the path below, and keep it: a host key
+  # that changes would identify the honeypot, and one that two honeypots share
+  # would tie them together. The path is relative to this file.
+  host_key_file: "ssh_host_key_7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d"
   secret: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"

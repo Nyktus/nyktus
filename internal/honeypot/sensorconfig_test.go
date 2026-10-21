@@ -55,6 +55,24 @@ func TestCreated_SensorConfig_SSH_IsTheEntryThatTheSensorReads(t *testing.T) {
 	}
 }
 
+// The file of the host key of an SSH honeypot has the identifier in its name,
+// and the identifier, like every value, stays a value of its entry.
+func TestCreated_SensorConfig_SSH_NamesAKeyFileForEachHoneypot(t *testing.T) {
+	t.Parallel()
+
+	for _, id := range []string{"7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d", "a\nb: c", "\"quoted\"", "# comment", "x\r\n  host_key_file: \"/etc/shadow\""} {
+		c := honeypot.Created{Honeypot: honeypot.Honeypot{ID: id, Service: honeypot.ServiceSSH}, Secret: "x"}
+		var entries []map[string]string
+		if err := yaml.Unmarshal([]byte(c.SensorConfig()), &entries); err != nil {
+			t.Errorf("%q: %v", id, err)
+			continue
+		}
+		if len(entries) != 1 || entries[0]["host_key_file"] != "ssh_host_key_"+id || entries[0]["id"] != id {
+			t.Errorf("%q: entries = %q, want one entry with the key file named after the identifier", id, entries)
+		}
+	}
+}
+
 func TestCreated_SensorConfig_NamesTheUsualPortOfEveryService(t *testing.T) {
 	t.Parallel()
 

@@ -6,7 +6,9 @@ package ssh_test
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
 	"encoding/pem"
@@ -552,6 +554,25 @@ func TestServe_HostKey_IsTheConfiguredOneAndNothingElse(t *testing.T) {
 			t.Fatalf("host key offered = %v, want the configured key on every start", seen)
 		}
 	}
+}
+
+func TestNew_HostKeyOfAnotherType_Panics(t *testing.T) {
+	t.Parallel()
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := cryptossh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Error("New with an ECDSA host key did not panic")
+		}
+	}()
+	ssh.New(ssh.Config{Version: ssh.DefaultVersion, HostKey: ssh.HostKey{Signer: signer}}, clocktest.New())
 }
 
 func TestNew_MissingParts_Panics(t *testing.T) {
