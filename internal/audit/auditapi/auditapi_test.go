@@ -24,7 +24,7 @@ import (
 	embedded "nyktus.org/nyktus/catalog"
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/audit/auditapi"
-	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/password/passwordtest"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
@@ -34,7 +34,7 @@ import (
 
 const testPassword = "correct horse battery"
 
-var hasher = password.NewHasher()
+var hasher = passwordtest.NewHasher()
 
 type env struct {
 	srv   *httptest.Server
