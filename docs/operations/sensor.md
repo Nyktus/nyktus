@@ -42,7 +42,7 @@ Update the [server before the sensors](honeypots.md#versions): the server refuse
    ```
 
    The entry names the usual port of the service. Change `listen` where the host needs another address or port. To run several honeypots on one sensor, add one entry for each; every honeypot has its own secret.
-3. Make the file readable by the user of the sensor only: `chmod 600`. A file that holds a secret and that other users can read is refused.
+3. Make the file accessible to the user of the sensor only: `chmod 600`. A file that holds a secret and that its group or other users can read or write is refused. The sensor runs on Linux and other Unix systems, where the file modes mean something; it does not support Windows.
 4. Check it, then run it:
 
    ```sh
@@ -65,7 +65,7 @@ Instead of the secret itself, an entry can name a file that holds it, so that th
   secret_file: /etc/nyktus-sensor/telnet.secret
 ```
 
-Give an entry `secret` or `secret_file`, not both. A relative path is relative to the directory of the configuration file. The file holds the secret and an optional line break, and only its owner may read it (`chmod 600`); the sensor checks the mode of the file it has opened, so a file that others can read is refused. With a container or a service manager that supplies secrets as files, this is the way to pass them.
+Give an entry `secret` or `secret_file`, not both. A relative path is relative to the directory of the configuration file. The file holds the secret and an optional line break, and only its owner may access it (`chmod 600`, or `400`); the sensor checks the mode of the file it has opened, so a file that its group or others can read or write is refused. With a container or a service manager that supplies secrets as files, this is the way to pass them; mount them with a mode of `0400` for the user of the sensor (in Kubernetes `defaultMode: 0400` and `runAsUser`), not `0440` with a group.
 
 ## Configuration
 
@@ -84,7 +84,7 @@ Every entry of `honeypots`:
 |---|---|---|
 | `id` | required | The identifier of the honeypot in the console. The sensor logs it, so that a record can be tied to the honeypot. |
 | `service` | required | `telnet`. |
-| `listen` | required | `host:port` or `:port`. The host is an IP address, or empty for every address. Entries must not conflict: the same port on the same address, or on an address and on all addresses. |
+| `listen` | required | `host:port` or `:port`. The host is an IP address, or empty for every address of both families. The port is written without a sign or a leading zero. `0.0.0.0` takes IPv4 addresses only and `[::]` and an empty host take both. Entries must not conflict: the same port on the same address, on an address and on a wildcard that includes it. |
 | `secret` or `secret_file` | one is required | The secret of the honeypot, 43 characters, or the file that holds it. |
 | `banner` | by service | What the service says first. Up to 256 bytes of printable ASCII, with line breaks and tabs. An empty value sends no banner. |
 | `login_prompt` | `login: ` | The prompt for the user name, up to 64 bytes of printable ASCII. Telnet only. |
@@ -129,9 +129,9 @@ The sensor keeps no table of sources beyond the connections that are open. A flo
 
 ## How reports are delivered
 
-A session is reported once, when it ends. The report waits in a queue of 256 sessions and is sent by four workers. The [trigger answers every report alike](honeypots.md#the-answer), so the sensor cannot tell whether a report was stored. It repeats a request only when the transport fails, because of a connection that is refused, a timeout, a certificate that is not accepted or a proxy in front of the trigger that cannot pass the request on (the answers 502, 503 and 504, which the trigger itself never sends), at most three times after 1, 3 and 9 seconds. Every other answer, including an error, counts as delivered. It follows no redirect and sends the secret to the address you configured and to no other.
+A session is reported once, when it ends. The report waits in a queue, which has room for 256 sessions of each honeypot, and is sent by four workers. The [trigger answers every report alike](honeypots.md#the-answer), so the sensor cannot tell whether a report was stored. It repeats a request only when the transport fails, because of a connection that is refused, a timeout, a certificate that is not accepted or a proxy in front of the trigger that cannot pass the request on (the answers 502, 503 and 504, which the trigger itself never sends), at most three times after 1, 3 and 9 seconds. Every other answer, including an error, counts as delivered. It follows no redirect and sends the secret to the address you configured and to no other.
 
-The server takes the age of a session within five minutes. A session that is still waiting after five minutes is dropped, because its time would be wrong, and it is counted. A session is also dropped when the queue is full, when the transport failed on every attempt and when the sensor stops before it could be sent.
+The server takes the age of a session within five minutes. A session that is still waiting after five minutes is dropped, because its time would be wrong, and it is counted. A session is also dropped when the share of its honeypot in the queue is full, so that a flood at one honeypot does not take the places of the others, when the transport failed on every attempt and when the sensor stops before it could be sent.
 
 The sensor sends a [heartbeat](honeypots.md#heartbeat) for each honeypot when it starts, once the honeypot listens, and every five minutes. Every honeypot has a loop of its own, and heartbeats do not use the queue, so neither a slow trigger nor an attacker who fills the queue can make a honeypot look offline.
 
