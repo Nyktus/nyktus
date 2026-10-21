@@ -191,6 +191,8 @@ linters:
               desc: test databases are for tests only
             - pkg: nyktus.org/nyktus/internal/platform/schematest
               desc: test databases are for tests only
+            - pkg: nyktus.org/nyktus/internal/auth/password/passwordtest
+              desc: the cheap password hasher is for tests only
             - pkg: nyktus.org/nyktus/internal/platform/secretbox/secretboxtest
               desc: test keys are for tests only
             - pkg: nyktus.org/nyktus/internal/platform/smtp/smtptest

@@ -25,7 +25,8 @@ You need Go (the version in `go.mod`), Docker for the test database, and `make`.
 
 ```sh
 make db-up      # disposable PostgreSQL on port 55432
-make test-db    # all tests, including database tests
+make test-fast  # all tests, including database tests, without the race detector
+make test-db    # all tests, including database tests, with the race detector (run before you push)
 make lint       # linters and formatting checks
 make db-down
 ```

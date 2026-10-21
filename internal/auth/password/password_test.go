@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -287,6 +289,23 @@ func TestNewHasherWithCost_RejectsParametersThatVerifyRefuses(t *testing.T) {
 			}()
 			NewHasherWithCost(tt.memory, tt.iterations, tt.parallelism)
 		}()
+	}
+}
+
+func TestNewHasherWithCost_IsRefusedOutsideATestBinary(t *testing.T) {
+	t.Parallel()
+
+	bin := filepath.Join(t.TempDir(), "misuse")
+	build := exec.CommandContext(t.Context(), "go", "build", "-o", bin, "./testdata/misuse") //nolint:gosec // G204: the arguments are constants and the output is a temporary directory of the test.
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build the program: %v\n%s", err, out)
+	}
+	out, err := exec.CommandContext(t.Context(), bin).CombinedOutput() //nolint:gosec // G204: bin is the binary that the test has built.
+	if err == nil {
+		t.Fatal("a program built a weak hasher outside a test binary")
+	}
+	if !strings.Contains(string(out), "for tests only") {
+		t.Errorf("program output = %q, want the refusal", out)
 	}
 }
 

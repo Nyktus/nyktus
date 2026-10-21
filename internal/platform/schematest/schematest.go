@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -53,9 +52,6 @@ func GroupRoles(tb testing.TB) {
 func New(tb testing.TB) string {
 	tb.Helper()
 
-	// The migrations check that the group roles exist, and a copy keeps the
-	// grants to them, so they must exist before the template is built.
-	GroupRoles(tb)
 	key, err := templateKey()
 	if err != nil {
 		tb.Fatalf("digest migrations: %v", err)
@@ -63,8 +59,10 @@ func New(tb testing.TB) string {
 	return dbtest.NewFromTemplate(tb, key, applyMigrations)
 }
 
-// templateKey identifies the contents of the migration files.
-var templateKey = sync.OnceValues(func() (string, error) { return digest(migrations.FS) })
+// templateKey identifies the contents of the migration files. It does not cover
+// the code that applies them: a change to it leaves the template of an old
+// container behind, which TestNew_IsEquivalentToApplyingTheMigrations reports.
+func templateKey() (string, error) { return digest(migrations.FS) }
 
 // digest returns a key that changes with the name or the content of any file of
 // fsys.
@@ -91,6 +89,12 @@ func digest(fsys fs.FS) (string, error) {
 
 func applyMigrations(tb testing.TB, dbURL string) {
 	tb.Helper()
+
+	// The migrations check that the group roles exist, and a copy keeps the
+	// grants to them, so they must exist before the template is built. A server
+	// that has the template has them: they cannot be dropped while the template
+	// refers to them.
+	GroupRoles(tb)
 
 	all, err := migrate.Load(migrations.FS)
 	if err != nil {

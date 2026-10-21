@@ -16,9 +16,11 @@ import (
 	"nyktus.org/nyktus/migrations"
 )
 
-// A digest of everything the migrations leave in a database that a copy could
-// lose: objects with their owners and grants, function bodies, constraints,
-// triggers and the recorded migrations.
+// A digest of everything the migrations leave in a database: objects with their
+// owners and grants, columns and their types, function bodies, constraints,
+// indexes, triggers, policies, default privileges and the recorded migrations.
+// A copy of a template does not take what belongs to the database itself, so
+// its privileges, its settings and its comment are part of it.
 const catalogDigest = `
 SELECT md5(string_agg(entry, E'\n' ORDER BY entry)) FROM (
   SELECT 'schema ' || nspname || ' ' || coalesce(nspacl::text, '') || ' ' || pg_get_userbyid(nspowner) AS entry
@@ -28,7 +30,7 @@ SELECT md5(string_agg(entry, E'\n' ORDER BY entry)) FROM (
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname NOT LIKE 'pg\_%' AND n.nspname <> 'information_schema'
   UNION ALL
-  SELECT 'column ' || attrelid::regclass || '.' || attname || ' ' || coalesce(attacl::text, '')
+  SELECT 'column ' || attrelid::regclass || '.' || attname || ' ' || format_type(atttypid, atttypmod) || ' ' || attnotnull::text || ' ' || coalesce(attacl::text, '')
     FROM pg_attribute JOIN pg_class c ON c.oid = attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE attnum > 0 AND NOT attisdropped AND n.nspname NOT LIKE 'pg\_%' AND n.nspname <> 'information_schema'
   UNION ALL
@@ -38,6 +40,18 @@ SELECT md5(string_agg(entry, E'\n' ORDER BY entry)) FROM (
   UNION ALL
   SELECT 'constraint ' || conname || ' ' || pg_get_constraintdef(oid) FROM pg_constraint
     WHERE connamespace IN (SELECT oid FROM pg_namespace WHERE nspname = 'public')
+  UNION ALL
+  SELECT 'index ' || indexdef FROM pg_indexes WHERE schemaname = 'public'
+  UNION ALL
+  SELECT 'policy ' || polname || ' ' || polrelid::regclass || ' ' || polcmd::text || ' ' || coalesce(pg_get_expr(polqual, polrelid), '') || ' ' || coalesce(pg_get_expr(polwithcheck, polrelid), '')
+    FROM pg_policy
+  UNION ALL
+  SELECT 'default privileges ' || pg_get_userbyid(defaclrole) || ' ' || defaclobjtype::text || ' ' || defaclacl::text FROM pg_default_acl
+  UNION ALL
+  SELECT 'database ' || coalesce(datacl::text, '') || ' ' || coalesce(shobj_description(oid, 'pg_database'), '')
+    FROM pg_database WHERE datname = current_database()
+  UNION ALL
+  SELECT 'setting ' || array_to_string(setconfig, ',') FROM pg_db_role_setting WHERE setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
   UNION ALL
   SELECT 'trigger ' || tgname || ' ' || pg_get_triggerdef(oid) FROM pg_trigger WHERE NOT tgisinternal
   UNION ALL
@@ -67,7 +81,8 @@ func TestNew_IsEquivalentToApplyingTheMigrations(t *testing.T) {
 		return d
 	}
 	if got, want := digest(copied), digest(pool); got != want {
-		t.Errorf("catalog digest of schematest.New = %s, want %s of the applied migrations", got, want)
+		t.Errorf("catalog digest of schematest.New = %s, want %s of the applied migrations; "+
+			"a template of an older state of the code that applies them stays on the test server: make db-down && make db-up", got, want)
 	}
 }
 

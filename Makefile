@@ -20,6 +20,9 @@ TEST_DB_IMAGE     := postgres:16-alpine
 TEST_DB_PORT      := 55432
 TEST_DB_URL       := postgres://postgres:postgres@localhost:$(TEST_DB_PORT)/postgres?sslmode=disable
 
+# The environment of the tests that need the database; CI sets the same.
+TEST_DB_ENV := NYKTUS_TEST_DATABASE_URL='$(TEST_DB_URL)' NYKTUS_REQUIRE_DB_TESTS=1
+
 .DEFAULT_GOAL := help
 
 .PHONY: help
@@ -40,12 +43,12 @@ test: ## Run unit tests; database tests are skipped
 # the loop while you work; "test-db" runs in CI and before every push.
 .PHONY: test-fast
 test-fast: ## Run all tests including database tests without the race detector (needs db-up)
-	NYKTUS_TEST_DATABASE_URL='$(TEST_DB_URL)' NYKTUS_REQUIRE_DB_TESTS=1 go test -count=1 ./...
+	$(TEST_DB_ENV) go test -count=1 ./...
 	cd $(SENSOR_DIR) && go test -count=1 ./...
 
 .PHONY: test-db
 test-db: ## Run all tests including database tests (needs db-up)
-	NYKTUS_TEST_DATABASE_URL='$(TEST_DB_URL)' NYKTUS_REQUIRE_DB_TESTS=1 go test -race -count=1 ./...
+	$(TEST_DB_ENV) go test -race -count=1 ./...
 	cd $(SENSOR_DIR) && go test -race -count=1 ./...
 
 # Packages and their database tests run in parallel, one per CPU each, and every

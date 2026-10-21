@@ -34,8 +34,9 @@ const (
 
 var testSessions = session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour}
 
-// hasher is shared by all tests, as by all handlers of a process. Hashing with
-// the real parameters keeps the timing property of the sign-in under test.
+// hasher is shared by all tests, as by all handlers of a process. The sign-in
+// verifies the dummy hash with the same hasher, so that it does equal work for
+// an unknown account whatever the parameters are.
 var hasher = passwordtest.NewHasher()
 
 // testDB is a migrated database with a pool of the owner, for setting up state

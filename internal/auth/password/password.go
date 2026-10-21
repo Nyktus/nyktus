@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"testing"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -99,9 +100,14 @@ func NewHasher() *Hasher {
 // NewHasherWithCost returns a Hasher with the given Argon2id parameters that runs
 // at most GOMAXPROCS hash operations at a time. It exists so that tests can hash
 // at a fraction of the cost of NewHasher, which the race detector multiplies by
-// nine; the linter rejects it outside package passwordtest. It panics if the
-// parameters lie outside the bounds that Verify accepts.
+// nine; the linter rejects it outside package passwordtest. It panics outside a
+// test binary, so that a mistake of the linter configuration cannot weaken the
+// hashes of a server, and if the parameters lie outside the bounds that Verify
+// accepts.
 func NewHasherWithCost(memory, iterations uint32, parallelism uint8) *Hasher {
+	if !testing.Testing() {
+		panic("password: NewHasherWithCost is for tests only")
+	}
 	p := defaultParams()
 	p.memory, p.iterations, p.parallelism = memory, iterations, parallelism
 	return newHasher(p, runtime.GOMAXPROCS(0))

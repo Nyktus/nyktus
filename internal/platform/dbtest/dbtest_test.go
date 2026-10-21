@@ -6,7 +6,9 @@ package dbtest
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -144,10 +146,6 @@ func TestNewFromTemplate_PreparesOncePerKeyAndCopiesIndependently(t *testing.T) 
 
 	first := NewFromTemplate(t, key, prepare)
 	second := NewFromTemplate(t, key, prepare)
-	// Another process finds the template on the server and not in its memory.
-	readyMu.Lock()
-	clear(readyTemplates)
-	readyMu.Unlock()
 	NewFromTemplate(t, key, prepare)
 	if n := prepared.Load(); n != 1 {
 		t.Errorf("prepare ran %d times for one key, want 1", n)
@@ -234,10 +232,12 @@ func TestNewFromTemplate_RemovesWhatAStoppedConstructionLeft(t *testing.T) {
 
 // Two processes that find no template must not both build it: the second would
 // fail on the name or copy a template that is not complete. The lock is proven by
-// holding it and waiting until the construction is blocked on it.
+// holding it and waiting until both constructions are blocked on it; the one that
+// gets the lock second finds the template built.
 func TestNewFromTemplate_WaitsForTheLockOfTheKey(t *testing.T) {
 	t.Parallel()
 
+	const callers = 2
 	ctx := t.Context()
 	key := templateKey(t)
 	t.Cleanup(func() { Exec(t, serverURL(t), "DROP DATABASE IF EXISTS nyktus_tpl_"+key+" WITH (FORCE)") })
@@ -251,11 +251,18 @@ func TestNewFromTemplate_WaitsForTheLockOfTheKey(t *testing.T) {
 		t.Fatalf("take lock: %v", err)
 	}
 
-	prepared := make(chan struct{})
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		NewFromTemplate(t, key, func(testing.TB, string) { close(prepared) })
+	var prepared atomic.Int32
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Go(func() {
+			NewFromTemplate(t, key, func(testing.TB, string) { prepared.Add(1) })
+		})
+	}
+	// The goroutines end before the test does, also when it fails early: they are
+	// blocked until the lock is released, and use the test until they are done.
+	defer func() {
+		_, _ = holder.Exec(context.WithoutCancel(ctx), "SELECT pg_advisory_unlock($1)", id)
+		wg.Wait()
 	}()
 
 	observer := connect(t, serverURL(t))
@@ -267,27 +274,139 @@ func TestNewFromTemplate_WaitsForTheLockOfTheKey(t *testing.T) {
 AND classid = (($1::bigint >> 32) & 4294967295)::oid AND objid = ($1::bigint & 4294967295)::oid`, id).Scan(&waiting); err != nil {
 			t.Fatalf("look up waiters: %v", err)
 		}
-		if waiting > 0 {
+		if waiting == callers {
 			break
 		}
 		select {
 		case <-waitCtx.Done():
-			t.Fatal("the construction does not wait for the lock")
+			t.Fatalf("%d of %d constructions wait for the lock", waiting, callers)
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
-	select {
-	case <-prepared:
-		t.Fatal("the template is prepared while another session holds its lock")
-	default:
+	if n := prepared.Load(); n != 0 {
+		t.Fatalf("the template is prepared %d times while another session holds its lock", n)
 	}
 
 	if _, err := holder.Exec(ctx, "SELECT pg_advisory_unlock($1)", id); err != nil {
 		t.Fatalf("release lock: %v", err)
 	}
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		t.Fatal("the construction does not continue after the lock is released")
+	wg.Wait()
+	if n := prepared.Load(); n != 1 {
+		t.Errorf("the template is prepared %d times, want once: the second construction finds it built", n)
+	}
+}
+
+func TestNewFromTemplate_BuildsATemplateAgainThatWasRemoved(t *testing.T) {
+	t.Parallel()
+
+	var prepared atomic.Int32
+	prepare := func(testing.TB, string) { prepared.Add(1) }
+	key := templateKey(t)
+	t.Cleanup(func() { Exec(t, serverURL(t), "DROP DATABASE IF EXISTS nyktus_tpl_"+key+" WITH (FORCE)") })
+
+	NewFromTemplate(t, key, prepare)
+	Exec(t, serverURL(t), "DROP DATABASE nyktus_tpl_"+key)
+	NewFromTemplate(t, key, prepare)
+
+	if n := prepared.Load(); n != 2 {
+		t.Errorf("prepare ran %d times, want 2: a removed template is built again", n)
+	}
+}
+
+func TestNewFromTemplate_KeepsTheNewestTemplatesOfDigestKeys(t *testing.T) {
+	t.Parallel()
+
+	digestKey := func() string { return hexDigits(t) }
+	var names []string
+	t.Cleanup(func() {
+		for _, name := range names {
+			Exec(t, serverURL(t), "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)")
+		}
+	})
+	// Older than the template that is built below, and more than are kept.
+	for range keptTemplates {
+		name := "nyktus_tpl_" + digestKey()
+		names = append(names, name)
+		Exec(t, serverURL(t), "CREATE DATABASE "+name)
+	}
+	key := digestKey()
+	names = append(names, "nyktus_tpl_"+key)
+
+	NewFromTemplate(t, key, func(testing.TB, string) {})
+
+	var oldest, newest bool
+	conn := connect(t, serverURL(t))
+	for name, exists := range map[string]*bool{names[0]: &oldest, names[len(names)-1]: &newest} {
+		if err := conn.QueryRow(t.Context(), "SELECT EXISTS (SELECT FROM pg_database WHERE datname = $1)", name).Scan(exists); err != nil {
+			t.Fatalf("look up %s: %v", name, err)
+		}
+	}
+	if oldest {
+		t.Error("the oldest template is kept although newer ones fill the quota")
+	}
+	if !newest {
+		t.Error("the template that was just built is gone")
+	}
+}
+
+// hexDigits returns 24 random lower case hexadecimal digits, the form of a digest key.
+func hexDigits(t *testing.T) string {
+	t.Helper()
+	raw := make([]byte, 12)
+	if _, err := rand.Read(raw); err != nil {
+		t.Fatalf("read random bytes: %v", err)
+	}
+	return hex.EncodeToString(raw)
+}
+
+// The lock of a process that stopped must not leave the others waiting for the
+// timeout of the test binary.
+func TestEnsureTemplate_FailsAfterTheWaitForTheLock(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	name := "nyktus_tpl_" + templateKey(t)
+	holder := connect(t, serverURL(t))
+	if _, err := holder.Exec(ctx, "SELECT pg_advisory_lock(hashtextextended($1, 0))", name); err != nil {
+		t.Fatalf("take lock: %v", err)
+	}
+
+	defer func() {
+		if recover() == nil {
+			t.Error("the construction did not fail while another session held the lock")
+		}
+	}()
+	ensureTemplate(failingTB{t}, name, 100*time.Millisecond, func(testing.TB, string) {
+		t.Error("the template is prepared while another session holds its lock")
+	})
+}
+
+func TestNewFromTemplate_RefusesKeysThatDoNotFitAName(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range []string{strings.Repeat("a", maxTemplateName), "Upper", "with space", `quote"`} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("NewFromTemplate(%q) did not fail", key)
+				}
+			}()
+			NewFromTemplate(failingTB{t}, key, func(testing.TB, string) {})
+		}()
+	}
+}
+
+// PostgreSQL cuts longer identifiers without a word, and a cut name no longer
+// starts with the prefix by which what a stopped construction left is found.
+func TestBuildName_FitsAnIdentifierAndStartsWithItsPrefix(t *testing.T) {
+	t.Parallel()
+
+	name := "nyktus_tpl_" + strings.Repeat("a", maxTemplateName-len("nyktus_tpl_"))
+	got := buildName(name)
+	if len(got) > 63 {
+		t.Errorf("len(buildName(%q)) = %d, want at most 63", name, len(got))
+	}
+	if !strings.HasPrefix(got, buildPrefix(name)) {
+		t.Errorf("buildName(%q) = %q, want the prefix %q", name, got, buildPrefix(name))
 	}
 }
