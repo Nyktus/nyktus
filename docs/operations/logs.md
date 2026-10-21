@@ -92,7 +92,7 @@ The [worker](incidents.md) logs what became of the events it processed, of the [
 
 ## Sensor
 
-The [sensor](sensor.md) writes JSON to its standard error as well, one record per line, with the level set by `log_level` of its configuration. Its records name a honeypot by `honeypot_id`, the identifier from the console, and `service`. They hold counts and never the secret of a honeypot, a user name, a password or anything else that an attacker typed. What an attacker can cause at will, such as connections that are refused or sessions that are dropped, is counted and written once a minute, not once for each occurrence.
+The [sensor](sensor.md) writes JSON to its standard error as well, one record per line, with the level set by `log_level` of its configuration. Its records name a honeypot by `honeypot_id`, the identifier from the console, and `service`. They hold counts and never the secret of a honeypot, a user name, a password, the fingerprint of a key, the version of a client or anything else that an attacker typed or sent. What an attacker can cause at will, such as connections that are refused or sessions that are dropped, is counted and written once a minute, not once for each occurrence.
 
 | Message | Level | Content |
 |---|---|---|

@@ -4,12 +4,22 @@
 package config_test
 
 import (
+	"bytes"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	cryptossh "golang.org/x/crypto/ssh"
 
 	"nyktus.org/nyktus/sensor/internal/config"
 )
@@ -113,6 +123,19 @@ func TestParse_Invalid_NamesTheRule(t *testing.T) {
 		{name: "a banner with DEL", yaml: entry("    banner: \"a\\x7fb\"\n"), want: "banner: printable ASCII"},
 		{name: "a banner with NUL", yaml: entry("    banner: \"a\\0b\"\n"), want: "banner: printable ASCII"},
 		{name: "a prompt that is too long", yaml: entry("    login_prompt: " + strings.Repeat("a", 65) + "\n"), want: "login_prompt: at most 64"},
+		{name: "a prompt for ssh", yaml: sshEntry("    login_prompt: x\n"), want: "login_prompt: only for telnet"},
+		{name: "ssh without a host key file", yaml: strings.Replace(sshEntry(""), "    host_key_file: ssh_host_key\n", "", 1), want: "host_key_file: required for ssh"},
+		{name: "a host key file for telnet", yaml: entry("    host_key_file: ssh_host_key\n"), want: "host_key_file: only for ssh"},
+		{name: "an ssh banner that is no identification", yaml: sshEntry("    banner: OpenSSH_9.2\n"), want: "banner: must be an identification string"},
+		{name: "an empty ssh banner", yaml: sshEntry("    banner: \"\"\n"), want: "banner: must be an identification string"},
+		{name: "an ssh banner for protocol 1.5", yaml: sshEntry("    banner: SSH-1.5\n"), want: "banner: must be an identification string"},
+		{name: "an ssh banner for protocol 1", yaml: sshEntry("    banner: SSH-1.99-OpenSSH_3.9\n"), want: "banner: must be an identification string"},
+		{name: "an ssh banner without a software version", yaml: sshEntry("    banner: \"SSH-2.0-\"\n"), want: "banner: must be an identification string"},
+		{name: "an ssh banner with a space in the software version", yaml: sshEntry("    banner: \"SSH-2.0- OpenSSH\"\n"), want: "banner: must be an identification string"},
+		{name: "an ssh banner with a line break", yaml: sshEntry("    banner: \"SSH-2.0-a\\r\\n\"\n"), want: "banner: must be an identification string"},
+		{name: "an ssh banner with a tab", yaml: sshEntry("    banner: \"SSH-2.0-a\\tb\"\n"), want: "banner: must be an identification string"},
+		{name: "an ssh banner with a non-ASCII character", yaml: sshEntry("    banner: \"SSH-2.0-a\\u00e9\"\n"), want: "banner: must be an identification string"},
+		{name: "an ssh banner that is too long", yaml: sshEntry("    banner: SSH-2.0-" + strings.Repeat("a", 246) + "\n"), want: "banner: must be an identification string"},
 		{name: "a prompt with a line break", yaml: entry("    login_prompt: \"a\\r\\nb\"\n"), want: "login_prompt: printable ASCII only"},
 	}
 	for _, tt := range tests {
@@ -127,6 +150,13 @@ func TestParse_Invalid_NamesTheRule(t *testing.T) {
 			}
 		})
 	}
+}
+
+// sshEntry is an SSH honeypot with the lines of extra added; it passes
+// without them.
+func sshEntry(extra string) string {
+	return "trigger_url: https://trigger.example.com/\nhoneypots:\n  - id: " + idOne +
+		"\n    service: ssh\n    listen: \":2222\"\n    secret: " + secretOne + "\n    host_key_file: ssh_host_key\n" + extra
 }
 
 // twin is a second honeypot.
@@ -548,5 +578,278 @@ func TestParse_ConsoleEntry_IsReadBySensor(t *testing.T) {
 	if hp.ID != "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d" || hp.Service != config.Telnet || hp.Listen != ":23" ||
 		string(hp.Secret) != strings.Repeat("A", 43) {
 		t.Errorf("honeypot = %+v, want what the console wrote", hp)
+	}
+}
+
+func TestParse_SSH_IsValidWithAnyIdentificationString(t *testing.T) {
+	t.Parallel()
+
+	for _, banner := range []string{
+		"SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3",
+		"SSH-2.0-dropbear_2022.83",
+		"SSH-2.0-a",
+		"SSH-2.0-a b-c d",
+		"SSH-2.0-" + strings.Repeat("a", 245),
+	} {
+		cfg, err := config.Parse([]byte(sshEntry("    banner: " + strconv.Quote(banner) + "\n")))
+		if err != nil {
+			t.Errorf("Parse(%q) = %v", banner, err)
+			continue
+		}
+		if hp := cfg.Honeypots[0]; hp.Service != config.SSH || hp.HostKeyFile != "ssh_host_key" || hp.Banner == nil || *hp.Banner != banner {
+			t.Errorf("honeypot = %+v", hp)
+		}
+	}
+	if _, err := config.Parse([]byte(sshEntry(""))); err != nil {
+		t.Errorf("Parse() without a banner = %v, want the default", err)
+	}
+}
+
+// writeKey writes a private key in the format of ssh-keygen.
+func writeKey(t *testing.T, dir, name string, key crypto.PrivateKey, passphrase string, mode os.FileMode) string {
+	t.Helper()
+	var block *pem.Block
+	var err error
+	if passphrase == "" {
+		block, err = cryptossh.MarshalPrivateKey(key, "")
+	} else {
+		block, err = cryptossh.MarshalPrivateKeyWithPassphrase(key, "", []byte(passphrase))
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return write(t, dir, name, string(pem.EncodeToMemory(block)), mode)
+}
+
+func ed25519Key(t *testing.T) ed25519.PrivateKey {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return priv
+}
+
+const withHostKey = `
+trigger_url: https://trigger.example.com/
+honeypots:
+  - id: ` + idOne + `
+    service: ssh
+    listen: ":2222"
+    secret_file: ssh.secret
+    host_key_file: ssh_host_key
+`
+
+// The key is read from the file, relative to the configuration, and the same
+// file gives the same key on every start.
+func TestLoad_HostKeyFile_IsReadRelativeToTheConfigurationAndStaysTheSame(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	priv := ed25519Key(t)
+	writeKey(t, dir, "ssh_host_key", priv, "", 0o600)
+	write(t, dir, "ssh.secret", secretOne, 0o600)
+	path := write(t, dir, "sensor.yaml", withHostKey, 0o644)
+
+	want, err := cryptossh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		cfg, err := config.Load(path)
+		if err != nil {
+			t.Fatalf("Load() = %v", err)
+		}
+		got := cfg.Honeypots[0].HostKey
+		if got.Signer == nil || !bytes.Equal(got.PublicKey().Marshal(), want.PublicKey().Marshal()) {
+			t.Fatalf("host key = %v, want the key of the file on every start", got)
+		}
+	}
+}
+
+func TestLoad_HostKeyFile_AbsolutePath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	keyPath := writeKey(t, dir, "elsewhere", ed25519Key(t), "", 0o400)
+	write(t, dir, "ssh.secret", secretOne, 0o600)
+	path := write(t, dir, "sensor.yaml", strings.Replace(withHostKey, "ssh_host_key", keyPath, 1), 0o644)
+
+	if _, err := config.Load(path); err != nil {
+		t.Errorf("Load() = %v", err)
+	}
+}
+
+func TestLoad_HostKeyFile_Invalid(t *testing.T) {
+	t.Parallel()
+
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecdsaKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name  string
+		write func(t *testing.T, dir string)
+		want  string
+	}{
+		{name: "readable by the group", want: "the group or other users can access the host key file", write: func(t *testing.T, dir string) {
+			t.Helper()
+			writeKey(t, dir, "ssh_host_key", ed25519Key(t), "", 0o640)
+		}},
+		{name: "readable by everyone", want: "the group or other users can access the host key file", write: func(t *testing.T, dir string) {
+			t.Helper()
+			writeKey(t, dir, "ssh_host_key", ed25519Key(t), "", 0o644)
+		}},
+		{name: "writable by the group", want: "the group or other users can access the host key file", write: func(t *testing.T, dir string) {
+			t.Helper()
+			writeKey(t, dir, "ssh_host_key", ed25519Key(t), "", 0o620)
+		}},
+		{name: "missing", want: "cannot open the host key file", write: func(*testing.T, string) {}},
+		{name: "a directory", want: "not a regular file", write: func(t *testing.T, dir string) {
+			t.Helper()
+			if err := os.Mkdir(filepath.Join(dir, "ssh_host_key"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "not a key", want: "does not hold a private key", write: func(t *testing.T, dir string) {
+			t.Helper()
+			write(t, dir, "ssh_host_key", "not a key\n", 0o600)
+		}},
+		{name: "empty", want: "does not hold a private key", write: func(t *testing.T, dir string) {
+			t.Helper()
+			write(t, dir, "ssh_host_key", "", 0o600)
+		}},
+		{name: "a public key", want: "does not hold a private key", write: func(t *testing.T, dir string) {
+			t.Helper()
+			pub, err := cryptossh.NewPublicKey(ed25519Key(t).Public())
+			if err != nil {
+				t.Fatal(err)
+			}
+			write(t, dir, "ssh_host_key", string(cryptossh.MarshalAuthorizedKey(pub)), 0o600)
+		}},
+		{name: "a passphrase", want: "protected by a passphrase", write: func(t *testing.T, dir string) {
+			t.Helper()
+			writeKey(t, dir, "ssh_host_key", ed25519Key(t), "correct horse", 0o600)
+		}},
+		{name: "an RSA key", want: "the host key is of type ssh-rsa, want ssh-ed25519", write: func(t *testing.T, dir string) {
+			t.Helper()
+			writeKey(t, dir, "ssh_host_key", rsaKey, "", 0o600)
+		}},
+		{name: "an ECDSA key", want: "the host key is of type ecdsa-sha2-nistp256, want ssh-ed25519", write: func(t *testing.T, dir string) {
+			t.Helper()
+			writeKey(t, dir, "ssh_host_key", ecdsaKey, "", 0o600)
+		}},
+		{name: "far too large", want: "larger than 8192 bytes", write: func(t *testing.T, dir string) {
+			t.Helper()
+			write(t, dir, "ssh_host_key", strings.Repeat("a", 9000), 0o600)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			tt.write(t, dir)
+			write(t, dir, "ssh.secret", secretOne, 0o600)
+			path := write(t, dir, "sensor.yaml", withHostKey, 0o644)
+
+			_, err := config.Load(path)
+			if err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "honeypots[0].host_key_file") {
+				t.Fatalf("Load() = %v, want an error about honeypots[0].host_key_file containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// The error about a key does not repeat what the file holds.
+func TestLoad_HostKeyFile_ErrorDoesNotRepeatTheFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	write(t, dir, "ssh_host_key", "-----BEGIN OPENSSH PRIVATE KEY-----\nTOPSECRETCONTENT\n-----END OPENSSH PRIVATE KEY-----\n", 0o600)
+	write(t, dir, "ssh.secret", secretOne, 0o600)
+	path := write(t, dir, "sensor.yaml", withHostKey, 0o644)
+
+	_, err := config.Load(path)
+	if err == nil || strings.Contains(err.Error(), "TOPSECRETCONTENT") {
+		t.Errorf("Load() = %v, want an error without the content of the file", err)
+	}
+}
+
+// Two honeypots that show one host key can be tied together by anyone who
+// looks, so every SSH honeypot has a key of its own, as it has its own secret.
+func TestLoad_TwoHoneypotsWithTheSameHostKey_AreRefused(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	priv := ed25519Key(t)
+	writeKey(t, dir, "ssh_host_key", priv, "", 0o600)
+	writeKey(t, dir, "copy_of_the_key", priv, "", 0o600)
+	writeKey(t, dir, "other_key", ed25519Key(t), "", 0o600)
+	write(t, dir, "ssh.secret", secretOne, 0o600)
+	write(t, dir, "other.secret", secretTwo, 0o600)
+	second := func(keyFile string) string {
+		return withHostKey + "  - id: " + idTwo + "\n    service: ssh\n    listen: \":2223\"\n    secret_file: other.secret\n    host_key_file: " + keyFile + "\n"
+	}
+
+	// A copy of the file is the same key.
+	path := write(t, dir, "sensor.yaml", second("copy_of_the_key"), 0o644)
+	_, err := config.Load(path)
+	if err == nil || !strings.Contains(err.Error(), "honeypots[1].host_key_file: the same host key as honeypots[0]") {
+		t.Errorf("Load() = %v, want an error about the same host key", err)
+	}
+
+	path = write(t, dir, "sensor.yaml", second("other_key"), 0o644)
+	if _, err := config.Load(path); err != nil {
+		t.Errorf("Load() with two keys = %v", err)
+	}
+}
+
+// Problems of the key and of the secret file are reported together.
+func TestLoad_HostKeyFileAndSecretFile_ReportEveryProblem(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := write(t, dir, "sensor.yaml", withHostKey, 0o644)
+	_, err := config.Load(path)
+	if err == nil || !strings.Contains(err.Error(), "host_key_file") || !strings.Contains(err.Error(), "secret_file") {
+		t.Errorf("Load() = %v, want both problems", err)
+	}
+}
+
+func TestParse_SSHConsoleEntry_IsReadBySensor(t *testing.T) {
+	t.Parallel()
+
+	entry, err := os.ReadFile("testdata/console_entry_ssh.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Parse([]byte("trigger_url: https://trigger.example.com/\nhoneypots:\n" + string(entry)))
+	if err != nil {
+		t.Fatalf("Parse() = %v", err)
+	}
+	hp := cfg.Honeypots[0]
+	if hp.Service != config.SSH || hp.Listen != ":22" || hp.HostKeyFile == "" || string(hp.Secret) != strings.Repeat("A", 43) {
+		t.Errorf("honeypot = %+v, want what the console wrote", hp)
+	}
+}
+
+// A host key file of a honeypot that is not SSH is an error of its own and
+// nothing is opened for it.
+func TestLoad_HostKeyFileOfAnotherService_IsRefusedWithoutBeingOpened(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	write(t, dir, "telnet.secret", secretOne, 0o600)
+	// The file would be refused if it were opened: it is readable by everyone.
+	writeKey(t, dir, "ssh_host_key", ed25519Key(t), "", 0o644)
+	path := write(t, dir, "sensor.yaml", strings.Replace(withSecretFile, "    secret_file: telnet.secret\n", "    secret_file: telnet.secret\n    host_key_file: ssh_host_key\n", 1), 0o644)
+
+	_, err := config.Load(path)
+	if err == nil || !strings.Contains(err.Error(), "host_key_file: only for ssh") || strings.Contains(err.Error(), "can access the host key file") {
+		t.Errorf("Load() = %v, want only the error that the field is for ssh", err)
 	}
 }
