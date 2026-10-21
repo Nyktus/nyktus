@@ -23,7 +23,7 @@ import (
 
 // goldenDir holds the reports that the sensor and the trigger agree on: the
 // trigger decodes every file, and the sensor writes the same JSON.
-const goldenDir = "../../sensor/report/testdata"
+const goldenDir = "../../sensor/internal/report/testdata"
 
 func golden(t *testing.T, name string) []byte {
 	t.Helper()

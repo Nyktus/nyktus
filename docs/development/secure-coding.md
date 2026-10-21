@@ -291,7 +291,11 @@ The sensor runs inside the monitored network and talks to attackers directly.
 - It runs as an unprivileged user with the smallest possible dependency set. It never executes, interprets or forwards attacker input.
 - Emulated services offer no real functionality. A mail decoy accepts messages but never relays them. No service may act as a proxy.
 - Connections, read sizes, sessions and runtimes are bounded so the sensor cannot be used to exhaust the host or amplify traffic.
-- The sensor authenticates to the server with a per-honeypot secret over TLS.
+- The sensor authenticates to the server with a per-honeypot secret over TLS. It verifies the certificate in every case, sends no request through a proxy of the environment, follows no redirect and repeats a request only after a failure of the transport. It reads the secret from its configuration file or from a file, and refuses a file that other users can read, checking the mode of the file it has opened.
+- A honeypot that cannot start, for example because its port is taken, stops the sensor. A sensor that silently watches less than it is configured to would look healthy.
+- A session ends after two minutes at most, so that its report reaches the server within the five minutes in which the server takes its age. A report older than that is dropped and counted, not sent with a wrong time. The queue of reports is bounded and a full queue drops the new report; heartbeats do not use it, so that an attacker cannot make a honeypot look offline.
+- What an attacker typed is read, counted and recorded in the session. It is never run or passed on, and the only part of it that is sent back is the user name, which a Telnet server shows to the client as it is typed. The packages of the services import nothing that runs a program, opens a connection of its own or reads a file, and a test checks that. A password is counted and dropped as it is read.
+- Anything an attacker can cause at will is counted and logged once an interval, as a count. Logs hold the identifier of the honeypot and the service, never a secret or anything the attacker typed.
 - The sensor reports one event per attacker session, summarizing all protocol steps, and sends it when the session ends or after a short maximum delay. An incident raises a single alert when it opens, so its first event must describe what the attacker did, not only the handshake.
 
 ## Logging and audit

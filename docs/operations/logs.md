@@ -90,6 +90,25 @@ The [worker](incidents.md) logs what became of the events it processed, of the [
 | `worker: periodic task completed` | info | A [periodic task](database.md#periodic-tasks) `task` ran to its end and removed `rows` rows. A run that removed nothing is logged at debug. |
 | `worker: job failed` | error | The worker could not reach the database or complete a transaction. `error` names the cause. Unless `claimed` is `true`, the worker waits before it tries again, longer after every failure in a row, up to 30 seconds, or 5 minutes when it looks for periodic tasks. A delivery that could not be claimed is postponed by its backoff, without counting an attempt, so that the deliveries behind it go out. A periodic task that failed starts again within a minute. |
 
+## Sensor
+
+The [sensor](sensor.md) writes JSON to its standard error as well, one record per line, with the level set by `log_level` of its configuration. Its records name a honeypot by `honeypot_id`, the identifier from the console, and `service`. They hold counts and never the secret of a honeypot, a user name, a password or anything else that an attacker typed. What an attacker can cause at will, such as connections that are refused or sessions that are dropped, is counted and written once a minute, not once for each occurrence.
+
+| Message | Level | Content |
+|---|---|---|
+| `sensor: honeypot listening` | info | A honeypot is bound. `listen` is the address it listens on. |
+| `sensor: started` | info | Every honeypot listens. `version` is the version of the sensor and `honeypots` their number. |
+| `sensor: stopped` | info | The sensor delivered what it could and ended. |
+| `sensor: failed` | error | The sensor did not start, for example because a port is taken. `error` names the honeypot and the cause; the exit code is 1. |
+| `sensor: heartbeat not delivered` | warn | The trigger could not be reached for the heartbeat of `honeypot_id`, after three repetitions. `error` is the failure of the transport, such as a connection that was refused, a certificate that was not accepted or a gateway failure with its status. This is how a wrong `trigger_url` or a missing private authority shows. The sensor keeps trying every five minutes. |
+| `sensor: reports not sent` | warn | Logged once a minute while there is something to count: `overflow` sessions that found the share of their honeypot in the queue full, `expired` sessions older than five minutes when their turn came, `failed` sessions that the transport failed for on every attempt and `shutdown` sessions that the stopping sensor could not deliver in time. |
+| `sensor: connections refused` | warn | Logged once a minute for each honeypot with refused connections: `too_many` because the honeypot had its most connections open, `too_many_from_source` because their source had. |
+| `sensor: accepting connections failed` | warn | `errors` accepts of the honeypot failed in the last minute, for example because the process ran out of file descriptors. |
+| `sensor: sessions ended by a failure of the service` | error | A programming error: `sessions` sessions of the honeypot ended with a panic. Their reports were sent. `panic` is the failure of the first one in the last minute (the text of a runtime error such as `assignment to entry in nil map`, otherwise only the type of the value, because its text could hold what a client sent) and `stack` the first 2 KiB of its stack, which names the place of the fault. |
+| `sensor: session not started` | error | The random source failed. |
+
+At level `debug` the sensor also writes `sensor: session reported` for each session that the trigger answered, with the `event_type` that the server will derive (`connection` or `login_attempt`) and the number of `attempts`, and `sensor: report request failed` for each failed request with its `attempt` and `error`. An attacker causes one record of the first kind for each session, so keep this level for debugging.
+
 ## Sign-in through an identity provider
 
 With an [identity provider](sign-in.md#identity-provider), the console writes these records:

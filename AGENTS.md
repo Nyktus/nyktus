@@ -46,7 +46,8 @@ Roles communicate only through PostgreSQL and use separate database roles with l
 ```
 api/                OpenAPI specification of the console API
 cmd/nyktus/         server binary
-cmd/nyktus-sensor/  honeypot sensor for monitored networks
+sensor/             honeypot sensor for monitored networks: a Go module of its own
+                    (nyktus.org/nyktus/sensor) with the binary in sensor/cmd/nyktus-sensor
 internal/           application packages, organized by domain
 catalog/            the deception catalog, embedded at build time
 migrations/         PostgreSQL migrations
@@ -114,6 +115,6 @@ Never weaken these without an explicit decision by a maintainer:
 | `make lint` | Linters and formatting checks |
 | `make fmt` | Format the code |
 | `make check` | Lint, unit tests, vulnerability scan and `go.mod` check |
-| `make build` | Build `bin/nyktus` |
+| `make build` | Build `bin/nyktus` and `bin/nyktus-sensor` |
 
-Run `make lint` and `make test-db` before you consider a change complete. Tool versions are pinned in the `Makefile`; do not install linters globally or add tools to `go.mod`.
+The sensor is a second Go module without a `go.work`; the targets above that check Go code run for both modules. Run `make lint` and `make test-db` before you consider a change complete. Tool versions are pinned in the `Makefile`; do not install linters globally or add tools to `go.mod`.
