@@ -2,7 +2,7 @@
 
 A honeypot is a network service that nobody has a reason to connect to, such as an SSH server on a host that the team never uses or a directory server that no application knows. The sensor `nyktus-sensor` emulates it inside the monitored network: it answers like the real service, but offers nothing behind the login, and reports every session to the trigger.
 
-This page covers the management of honeypots in the console and what the trigger accepts from a sensor. Installing, configuring and running the sensor is described in [Sensor](sensor.md); this version of the sensor emulates `telnet`, and the other services follow. A honeypot that no sensor runs has the [status](#status) `never`.
+This page covers the management of honeypots in the console and what the trigger accepts from a sensor. Installing, configuring and running the sensor is described in [Sensor](sensor.md); this version of the sensor emulates `ssh` and `telnet`, and the other services follow. A honeypot that no sensor runs has the [status](#status) `never`.
 
 ## Services
 
@@ -64,11 +64,11 @@ The answer is the new honeypot with its secret and status `201`:
   "created_at": "2026-10-19T09:30:00Z",
   "updated_at": "2026-10-19T09:30:00Z",
   "secret": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  "sensor_config": "- id: \"7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d\"\n  service: \"ssh\"\n  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.\n  listen: \":22\"\n  secret: \"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\"\n"
+  "sensor_config": "- id: \"7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d\"\n  service: \"ssh\"\n  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.\n  listen: \":22\"\n  # The private key of the server. Create it once, without a passphrase, with\n  # ssh-keygen -t ed25519 -N '' -f and the path below, and keep it: a host key\n  # that changes would identify the honeypot, and one that two honeypots share\n  # would tie them together. The path is relative to this file.\n  host_key_file: \"ssh_host_key_7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d\"\n  secret: \"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\"\n"
 }
 ```
 
-`sensor_config` is the entry of the honeypot for the [configuration file of the sensor](sensor.md#setting-up-a-sensor): a list item for `honeypots:` with the identifier, the service, the usual port of the service as the address to listen on, and the secret. It holds the secret, so it is shown once with it. It holds neither the name nor the notes of the honeypot, which have no place on the host of a sensor. A sensor runs a service only if its version emulates it: the entry of an `ssh`, `postgres` or `ldap` honeypot is accepted by the sensors that follow (see [Sensor](sensor.md)).
+`sensor_config` is the entry of the honeypot for the [configuration file of the sensor](sensor.md#setting-up-a-sensor): a list item for `honeypots:` with the identifier, the service, the usual port of the service as the address to listen on, and the secret; for `ssh` also the file of the host key, which you create yourself (see [SSH honeypots](sensor.md#ssh-honeypots)). It holds the secret, so it is shown once with it. It holds neither the name nor the notes of the honeypot, which have no place on the host of a sensor. A sensor runs a service only if its version emulates it: the entry of a `postgres` or `ldap` honeypot is accepted by the sensors that follow (see [Sensor](sensor.md)).
 
 ## The secret
 

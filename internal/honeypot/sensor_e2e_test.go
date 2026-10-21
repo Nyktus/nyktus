@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/platform/dbtest"
@@ -166,7 +167,22 @@ func TestSensor_EndToEnd(t *testing.T) {
 	}
 }
 
-func endToEnd(t *testing.T, useTLS bool) {
+// sensorEnv is a sensor in its own process, configured by the entry of a
+// honeypot that the console created, and the trigger with its database behind it.
+type sensorEnv struct {
+	owner   *pgxpool.Pool
+	console *honeypot.Store
+	created honeypot.Created
+	bin     string
+	process *process
+	port    int
+}
+
+// startEndToEnd creates a honeypot of the service, configures a sensor with the
+// entry that the console shows, starts it and waits until the honeypot is
+// online. usualPort is the port in that entry, which the test replaces by a free
+// one. prepare writes the files that the entry names, next to the configuration.
+func startEndToEnd(t *testing.T, service honeypot.Service, usualPort string, useTLS bool, prepare func(dir string, created honeypot.Created)) *sensorEnv {
 	t.Helper()
 	// The database comes first: without one the test is skipped, and nothing
 	// is built.
@@ -177,7 +193,7 @@ func endToEnd(t *testing.T, useTLS bool) {
 	console := honeypot.NewStore(schematest.Open(t, consoleURL))
 	store := trigger.NewStore(schematest.Open(t, triggerURL))
 
-	created, err := console.Create(t.Context(), honeypot.Spec{Service: honeypot.ServiceTelnet, Name: "Switch console", Enabled: true})
+	created, err := console.Create(t.Context(), honeypot.Spec{Service: service, Name: "Switch console", Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,14 +232,19 @@ func endToEnd(t *testing.T, useTLS bool) {
 	port := freePort(t)
 	entry := created.SensorConfig()
 	listen := fmt.Sprintf("listen: \"127.0.0.1:%d\"", port)
-	if !strings.Contains(entry, `listen: ":23"`) {
-		t.Fatalf("entry = %q, want the usual port of Telnet", entry)
+	usual := fmt.Sprintf("listen: %q", usualPort)
+	if !strings.Contains(entry, usual) {
+		t.Fatalf("entry = %q, want the usual port %s", entry, usualPort)
 	}
-	entry = strings.Replace(entry, `listen: ":23"`, listen, 1)
+	entry = strings.Replace(entry, usual, listen, 1)
 	data := fmt.Sprintf("environment: %s\ntrigger_url: %s\nhoneypots:\n%s", environment, srv.URL, entry)
-	configPath := filepath.Join(t.TempDir(), "sensor.yaml")
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "sensor.yaml")
 	if err := os.WriteFile(configPath, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	if prepare != nil {
+		prepare(dir, created)
 	}
 
 	p := startSensor(t, bin, configPath, env)
@@ -241,6 +262,13 @@ func endToEnd(t *testing.T, useTLS bool) {
 	if got, _ := console.Get(t.Context(), created.ID); *got.SensorVersion != strings.TrimSpace(string(printed)) {
 		t.Errorf("sensor_version = %q, want %q, the version that the sensor prints", *got.SensorVersion, strings.TrimSpace(string(printed)))
 	}
+	return &sensorEnv{owner: owner, console: console, created: created, bin: bin, process: p, port: port}
+}
+
+func endToEnd(t *testing.T, useTLS bool) {
+	t.Helper()
+	env := startEndToEnd(t, honeypot.ServiceTelnet, ":23", useTLS, nil)
+	owner, created, p, port := env.owner, env.created, env.process, env.port
 
 	// An attacker tries a login.
 	conn, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(t.Context(), "tcp", fmt.Sprintf("127.0.0.1:%d", port))

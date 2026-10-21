@@ -59,7 +59,8 @@ type Session struct {
 	clientIP netip.Addr
 	port     int
 
-	attempts []report.Attempt
+	attempts      []report.Attempt
+	clientVersion string
 }
 
 // Start begins a session of the honeypot for a connection from remote to the
@@ -96,6 +97,10 @@ func (s *Session) AddAttempt(a report.Attempt) bool {
 	s.attempts = append(s.attempts, a)
 	return true
 }
+
+// SetClientVersion records the version string that the client announced. The
+// caller keeps it within report.MaxClientVersion.
+func (s *Session) SetClientVersion(v string) { s.clientVersion = v }
 
 // Attempts returns the number of logins recorded.
 func (s *Session) Attempts() int { return len(s.attempts) }
@@ -158,6 +163,8 @@ func (s *Session) Report(now time.Duration) (report.Session, bool) {
 		DurationMS: (end - s.started).Milliseconds(),
 		ClientIP:   s.clientIP.String(),
 		Port:       s.port,
-		Attempts:   attempts,
+
+		ClientVersion: s.clientVersion,
+		Attempts:      attempts,
 	}, true
 }

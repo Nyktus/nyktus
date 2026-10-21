@@ -20,6 +20,7 @@ import (
 	"nyktus.org/nyktus/sensor/internal/listener"
 	"nyktus.org/nyktus/sensor/internal/reporter"
 	"nyktus.org/nyktus/sensor/internal/session"
+	"nyktus.org/nyktus/sensor/internal/ssh"
 	"nyktus.org/nyktus/sensor/internal/telnet"
 )
 
@@ -61,6 +62,12 @@ type service interface {
 // validated, so the service is known.
 func newService(hp config.Honeypot, clk clock.Clock) service {
 	switch hp.Service {
+	case config.SSH:
+		cfg := ssh.Config{Version: ssh.DefaultVersion, HostKey: hp.HostKey}
+		if hp.Banner != nil {
+			cfg.Version = *hp.Banner
+		}
+		return ssh.New(cfg, clk)
 	case config.Telnet:
 		cfg := telnet.Config{Banner: telnet.DefaultBanner, LoginPrompt: telnet.DefaultLoginPrompt}
 		if hp.Banner != nil {
