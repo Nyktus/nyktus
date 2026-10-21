@@ -15,7 +15,7 @@ import (
 	"time"
 
 	embedded "nyktus.org/nyktus/catalog"
-	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/password/passwordtest"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
@@ -38,7 +38,7 @@ func startConsole(t *testing.T, d testDB) (srv *httptest.Server, tok setup.Token
 		Logger:         logger,
 		DB:             d.console,
 		Setup:          svc,
-		Hasher:         password.NewHasher(),
+		Hasher:         passwordtest.NewHasher(),
 		Sessions:       session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour},
 		Keys:           secretboxtest.Keyring(t),
 		ConsoleURL:     "https://nyktus.example.com",

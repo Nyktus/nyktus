@@ -9,6 +9,10 @@
 package schematest
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io/fs"
 	"log/slog"
 	"testing"
 
@@ -41,18 +45,59 @@ func GroupRoles(tb testing.TB) {
 
 // New creates a database with all migrations applied, like "nyktus migrate" on a
 // fresh installation, and returns a URL that connects as its owner.
+//
+// The migrations are applied once per server, to a template named after a digest
+// of the migrations, and every database is a copy of it. Tests of the migrations
+// themselves apply them to an empty database from dbtest.New.
+//
+// The group roles are created when the template is built and cannot be dropped
+// while it refers to them, so the logins of Console, Trigger, DNS and Worker find
+// them. A role that is added to GroupRoles needs a migration that grants to it,
+// which builds a new template.
 func New(tb testing.TB) string {
 	tb.Helper()
 
-	dbURL := dbtest.New(tb)
+	key, err := templateKey(migrations.FS)
+	if err != nil {
+		tb.Fatalf("digest migrations: %v", err)
+	}
+	return dbtest.NewFromTemplate(tb, templateFamily, key, applyMigrations)
+}
+
+// templateFamily names the templates of the migrated schema.
+const templateFamily = "schema"
+
+// templateKey returns a key that changes with the name or the checksum of any
+// migration of fsys. It does not cover the code that applies them: a change to it
+// leaves the template of an old container behind, which
+// TestNew_IsEquivalentToApplyingTheMigrations reports.
+func templateKey(fsys fs.FS) (string, error) {
+	all, err := migrate.Load(fsys)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.New()
+	for _, m := range all {
+		// A name has no colon, so the fields cannot run into each other.
+		_, _ = fmt.Fprintf(sum, "%d:%s:%x\n", m.Version, m.Name, m.Checksum)
+	}
+	return hex.EncodeToString(sum.Sum(nil))[:24], nil
+}
+
+func applyMigrations(tb testing.TB, dbURL string) {
+	tb.Helper()
+
+	// The migrations check that the group roles exist, and a copy keeps the
+	// grants to them, so they must exist before the template is built. A server
+	// that has the template has them: they cannot be dropped while the template
+	// refers to them.
 	GroupRoles(tb)
 
 	all, err := migrate.Load(migrations.FS)
 	if err != nil {
 		tb.Fatalf("load migrations: %v", err)
 	}
-	// The pool is closed right away, so that parallel tests do not hold idle
-	// connections they no longer need.
+	// The pool is closed before the database is copied, which needs it unused.
 	pool, err := db.Open(tb.Context(), dbURL, db.Options{MaxConns: 1})
 	if err != nil {
 		tb.Fatalf("open database: %v", err)
@@ -61,7 +106,6 @@ func New(tb testing.TB) string {
 	if _, err := migrate.Apply(tb.Context(), pool, all, slog.New(slog.DiscardHandler)); err != nil {
 		tb.Fatalf("apply migrations: %v", err)
 	}
-	return dbURL
 }
 
 // Console creates a migrated database and returns the URL of a login role that is

@@ -191,6 +191,8 @@ linters:
               desc: test databases are for tests only
             - pkg: nyktus.org/nyktus/internal/platform/schematest
               desc: test databases are for tests only
+            - pkg: nyktus.org/nyktus/internal/auth/password/passwordtest
+              desc: the cheap password hasher is for tests only
             - pkg: nyktus.org/nyktus/internal/platform/secretbox/secretboxtest
               desc: test keys are for tests only
             - pkg: nyktus.org/nyktus/internal/platform/smtp/smtptest
@@ -215,6 +217,8 @@ linters:
           msg: write to an explicit io.Writer or use the logger
         - pattern: ^os\.(Getenv|LookupEnv|Environ)$
           msg: read configuration through the config package
+        - pattern: ^password\.NewHasherWithCost$
+          msg: weaker password hashing is for tests only, through passwordtest
 
     godot:
       scope: declarations
@@ -244,6 +248,9 @@ linters:
       - path: internal/platform/(config|dbtest)/
         linters: [forbidigo]
         text: os\.(Getenv|LookupEnv|Environ)
+      - path: internal/auth/password/
+        linters: [forbidigo]
+        text: NewHasherWithCost
 
 formatters:
   enable:

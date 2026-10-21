@@ -19,9 +19,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"runtime"
 	"strconv"
 	"strings"
+	"testing"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -60,6 +62,13 @@ func defaultParams() params {
 	return params{memory: 64 * 1024, iterations: 3, parallelism: 4, saltLength: 16, keyLength: 32}
 }
 
+// inBounds reports whether the cost parameters are ones that Verify accepts.
+// Argon2 requires at least eight KiB of memory per lane.
+func inBounds(memory, iterations, parallelism uint64) bool {
+	return parallelism >= 1 && iterations >= 1 && iterations <= maxIterations &&
+		memory >= 8*parallelism && memory <= maxMemory
+}
+
 // Upper bounds for parameters read from an encoded hash. They are far above the
 // defaults and only stop a corrupted hash from exhausting memory or CPU.
 const (
@@ -88,9 +97,28 @@ func NewHasher() *Hasher {
 	return newHasher(defaultParams(), runtime.GOMAXPROCS(0))
 }
 
+// NewHasherWithCost returns a Hasher with the given Argon2id parameters that runs
+// at most GOMAXPROCS hash operations at a time. It exists so that tests can hash
+// at a fraction of the cost of NewHasher, which the race detector multiplies by
+// nine; the linter rejects it outside package passwordtest. It panics outside a
+// test binary, so that a mistake of the linter configuration cannot weaken the
+// hashes of a server, and if the parameters lie outside the bounds that Verify
+// accepts.
+func NewHasherWithCost(memory, iterations uint32, parallelism uint8) *Hasher {
+	if !testing.Testing() {
+		panic("password: NewHasherWithCost is for tests only")
+	}
+	p := defaultParams()
+	p.memory, p.iterations, p.parallelism = memory, iterations, parallelism
+	return newHasher(p, runtime.GOMAXPROCS(0))
+}
+
 func newHasher(p params, concurrency int) *Hasher {
 	if concurrency < 1 {
 		panic("password: concurrency must be at least 1")
+	}
+	if !inBounds(uint64(p.memory), uint64(p.iterations), uint64(p.parallelism)) {
+		panic("password: parameters out of bounds")
 	}
 	return &Hasher{params: p, slots: make(chan struct{}, concurrency)}
 }
@@ -221,8 +249,7 @@ func decode(encoded string) (params, []byte, []byte, error) {
 			par = n
 		}
 	}
-	// Argon2 requires at least eight KiB of memory per lane.
-	if par < 1 || par > 255 || t < 1 || t > maxIterations || m < 8*par || m > maxMemory {
+	if par > math.MaxUint8 || !inBounds(m, t, par) {
 		return p, nil, nil, fmt.Errorf("%w: parameters out of bounds %q", ErrMalformedHash, fields[3])
 	}
 

@@ -18,7 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	embedded "nyktus.org/nyktus/catalog"
-	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/password/passwordtest"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
@@ -34,9 +34,10 @@ const (
 
 var testSessions = session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour}
 
-// hasher is shared by all tests, as by all handlers of a process. Hashing with
-// the real parameters keeps the timing property of the sign-in under test.
-var hasher = password.NewHasher()
+// hasher is shared by all tests, as by all handlers of a process. The sign-in
+// verifies the dummy hash with the same hasher, so that it does equal work for
+// an unknown account whatever the parameters are.
+var hasher = passwordtest.NewHasher()
 
 // testDB is a migrated database with a pool of the owner, for setting up state
 // that the console cannot create, and a pool of the console's database role.

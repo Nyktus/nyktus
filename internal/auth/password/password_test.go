@@ -8,7 +8,14 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"os/exec"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -263,6 +270,115 @@ func TestNewHasher_RejectsInvalidConcurrency(t *testing.T) {
 		}
 	}()
 	newHasher(cheapParams(), 0)
+}
+
+func TestNewHasherWithCost_RejectsParametersThatVerifyRefuses(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name               string
+		memory, iterations uint32
+		parallelism        uint8
+	}{
+		{"memory below eight KiB per lane", 15, 1, 2},
+		{"no iterations", 64, 0, 1},
+		{"too many iterations", 64, maxIterations + 1, 1},
+		{"no lanes", 64, 1, 0},
+		{"too much memory", maxMemory + 1, 1, 1},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s: NewHasherWithCost(%d, %d, %d) did not panic", tt.name, tt.memory, tt.iterations, tt.parallelism)
+				}
+			}()
+			NewHasherWithCost(tt.memory, tt.iterations, tt.parallelism)
+		}()
+	}
+}
+
+func TestNewHasherWithCost_IsRefusedOutsideATestBinary(t *testing.T) {
+	t.Parallel()
+
+	bin := filepath.Join(t.TempDir(), "misuse")
+	build := exec.CommandContext(t.Context(), "go", "build", "-o", bin, "./testdata/misuse") //nolint:gosec // G204: the arguments are constants and the output is a temporary directory of the test.
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build the program: %v\n%s", err, out)
+	}
+	out, err := exec.CommandContext(t.Context(), bin).CombinedOutput() //nolint:gosec // G204: bin is the binary that the test has built.
+	if err == nil {
+		t.Fatal("a program built a weak hasher outside a test binary")
+	}
+	if !strings.Contains(string(out), "for tests only") {
+		t.Errorf("program output = %q, want the refusal", out)
+	}
+}
+
+// The weak hasher must not reach a server. The linter configuration says so too,
+// but a configuration is not a test: this fails on a deliberate violation
+// whatever the linter does.
+func TestWeakHasher_IsReachedByTestsOnly(t *testing.T) {
+	t.Parallel()
+
+	const root = "../../.."
+	fset := token.NewFileSet()
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		slashed := filepath.ToSlash(path)
+		switch {
+		case d.IsDir():
+			if slices.Contains([]string{".git", ".localdev", "node_modules", "web", "testdata", "bin"}, d.Name()) {
+				return fs.SkipDir
+			}
+			return nil
+		case !strings.HasSuffix(path, ".go"), strings.HasSuffix(path, "_test.go"),
+			strings.Contains(slashed, "internal/auth/password/"):
+			return nil
+		}
+		file, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			if strings.HasSuffix(spec.Path.Value, `/password/passwordtest"`) {
+				t.Errorf("%s imports passwordtest", slashed)
+			}
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "NewHasherWithCost" {
+				t.Errorf("%s calls NewHasherWithCost", slashed)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk the module: %v", err)
+	}
+}
+
+func TestNewHasherWithCost_HashesVerifiablyAtOtherParametersThanTheDefault(t *testing.T) {
+	t.Parallel()
+
+	h := NewHasherWithCost(256, 1, 1)
+	encoded, err := h.Hash(t.Context(), validPassword)
+	if err != nil {
+		t.Fatalf("Hash() error = %v", err)
+	}
+	if !strings.HasPrefix(encoded, "$argon2id$v=19$m=256,t=1,p=1$") {
+		t.Errorf("Hash() = %q, want the given parameters", encoded)
+	}
+	if ok, err := NewHasher().Verify(t.Context(), validPassword, encoded); err != nil || !ok {
+		t.Errorf("default hasher Verify() = %v, %v, want true: parameters come from the hash", ok, err)
+	}
+	if h.NeedsRehash(encoded) {
+		t.Error("NeedsRehash() = true for a hash of the same hasher")
+	}
+	if !NewHasher().NeedsRehash(encoded) {
+		t.Error("NeedsRehash() = false for the default hasher, want true for cheaper parameters")
+	}
 }
 
 func TestNeedsRehash(t *testing.T) {

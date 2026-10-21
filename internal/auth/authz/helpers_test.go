@@ -14,7 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"nyktus.org/nyktus/internal/auth/password"
+	"nyktus.org/nyktus/internal/auth/password/passwordtest"
 	"nyktus.org/nyktus/internal/auth/session"
 	"nyktus.org/nyktus/internal/platform/schematest"
 	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
@@ -24,7 +24,7 @@ const testPassword = "correct horse battery"
 
 var (
 	testSessions = session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour}
-	hasher       = password.NewHasher()
+	hasher       = passwordtest.NewHasher()
 )
 
 // testDB is a migrated database with a pool of the owner, for setting up state,
