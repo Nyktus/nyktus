@@ -48,7 +48,8 @@ SELECT md5(string_agg(entry, E'\n' ORDER BY entry)) FROM (
   UNION ALL
   SELECT 'default privileges ' || pg_get_userbyid(defaclrole) || ' ' || defaclobjtype::text || ' ' || defaclacl::text FROM pg_default_acl
   UNION ALL
-  SELECT 'database ' || coalesce(datacl::text, '') || ' ' || coalesce(shobj_description(oid, 'pg_database'), '')
+  SELECT 'database ' || coalesce(datacl::text, '') || ' ' || coalesce(shobj_description(oid, 'pg_database'), '') || ' ' || datconnlimit || ' ' ||
+    datallowconn::text || ' ' || datistemplate::text || ' ' || pg_get_userbyid(datdba)
     FROM pg_database WHERE datname = current_database()
   UNION ALL
   SELECT 'setting ' || array_to_string(setconfig, ',') FROM pg_db_role_setting WHERE setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
@@ -86,25 +87,31 @@ func TestNew_IsEquivalentToApplyingTheMigrations(t *testing.T) {
 	}
 }
 
-func TestTemplateKey_IsTheDigestOfTheMigrations(t *testing.T) {
+// The key is what keeps a changed migration from being copied from the old
+// template, so New must use it.
+func TestNew_CopiesTheTemplateOfTheMigrations(t *testing.T) {
 	t.Parallel()
 
-	got, err := schematest.TemplateKey()
+	key, err := schematest.TemplateKey(migrations.FS)
 	if err != nil {
 		t.Fatalf("TemplateKey() error = %v", err)
 	}
-	want, err := schematest.Digest(migrations.FS)
-	if err != nil {
-		t.Fatalf("Digest() error = %v", err)
+	schematest.New(t)
+
+	var exists bool
+	name := "nyktus_tpl_" + schematest.TemplateFamily + "_" + key
+	pool := schematest.Open(t, dbtest.New(t))
+	if err := pool.QueryRow(t.Context(), "SELECT EXISTS (SELECT FROM pg_database WHERE datname = $1)", name).Scan(&exists); err != nil {
+		t.Fatalf("look up template: %v", err)
 	}
-	if got != want {
-		t.Errorf("TemplateKey() = %q, want %q: a changed migration would not build a new template", got, want)
+	if !exists {
+		t.Errorf("no template %s after New: it copies a template of another key", name)
 	}
 }
 
 // A template with an existing key is never rebuilt, so a key that ignores a
 // change would let every later run copy the old schema.
-func TestDigest_ChangesWithNamesAndContentsOfTheFiles(t *testing.T) {
+func TestTemplateKey_ChangesWithNamesAndChecksumsOfTheMigrations(t *testing.T) {
 	t.Parallel()
 
 	files := func(m map[string]string) fstest.MapFS {
@@ -116,16 +123,16 @@ func TestDigest_ChangesWithNamesAndContentsOfTheFiles(t *testing.T) {
 	}
 	keys := map[string]string{}
 	for name, m := range map[string]map[string]string{
-		"base":             {"0001_a.sql": "x", "0002_b.sql": "y"},
-		"content changed":  {"0001_a.sql": "x", "0002_b.sql": "z"},
-		"name changed":     {"0001_a.sql": "x", "0003_b.sql": "y"},
-		"file added":       {"0001_a.sql": "x", "0002_b.sql": "y", "0003_c.sql": ""},
-		"file removed":     {"0001_a.sql": "x"},
-		"boundary shifted": {"0001_a.sql": "xy", "0002_b.sql": ""},
+		"base":            {"0001_a.sql": "x", "0002_b.sql": "y"},
+		"content changed": {"0001_a.sql": "x", "0002_b.sql": "z"},
+		"name changed":    {"0001_a.sql": "x", "0002_c.sql": "y"},
+		"file added":      {"0001_a.sql": "x", "0002_b.sql": "y", "0003_c.sql": ""},
+		"file removed":    {"0001_a.sql": "x"},
+		"content moved":   {"0001_a.sql": "xy", "0002_b.sql": ""},
 	} {
-		key, err := schematest.Digest(files(m))
+		key, err := schematest.TemplateKey(files(m))
 		if err != nil {
-			t.Fatalf("%s: Digest() error = %v", name, err)
+			t.Fatalf("%s: TemplateKey() error = %v", name, err)
 		}
 		if other, ok := keys[key]; ok {
 			t.Errorf("%q and %q have the same key %s", name, other, key)

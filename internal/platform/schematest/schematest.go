@@ -47,42 +47,39 @@ func GroupRoles(tb testing.TB) {
 // fresh installation, and returns a URL that connects as its owner.
 //
 // The migrations are applied once per server, to a template named after a digest
-// of the migration files, and every database is a copy of it. Tests of the
-// migrations themselves apply them to an empty database from dbtest.New.
+// of the migrations, and every database is a copy of it. Tests of the migrations
+// themselves apply them to an empty database from dbtest.New.
+//
+// The group roles are created when the template is built and cannot be dropped
+// while it refers to them, so the logins of Console, Trigger, DNS and Worker find
+// them. A role that is added to GroupRoles needs a migration that grants to it,
+// which builds a new template.
 func New(tb testing.TB) string {
 	tb.Helper()
 
-	key, err := templateKey()
+	key, err := templateKey(migrations.FS)
 	if err != nil {
 		tb.Fatalf("digest migrations: %v", err)
 	}
-	return dbtest.NewFromTemplate(tb, key, applyMigrations)
+	return dbtest.NewFromTemplate(tb, templateFamily, key, applyMigrations)
 }
 
-// templateKey identifies the contents of the migration files. It does not cover
-// the code that applies them: a change to it leaves the template of an old
-// container behind, which TestNew_IsEquivalentToApplyingTheMigrations reports.
-func templateKey() (string, error) { return digest(migrations.FS) }
+// templateFamily names the templates of the migrated schema.
+const templateFamily = "schema"
 
-// digest returns a key that changes with the name or the content of any file of
-// fsys.
-func digest(fsys fs.FS) (string, error) {
-	sum := sha256.New()
-	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		content, err := fs.ReadFile(fsys, path)
-		if err != nil {
-			return err
-		}
-		// Length prefixes keep the boundaries between names and contents unambiguous.
-		_, err = fmt.Fprintf(sum, "%d:%s%d:", len(path), path, len(content))
-		sum.Write(content)
-		return err
-	})
+// templateKey returns a key that changes with the name or the checksum of any
+// migration of fsys. It does not cover the code that applies them: a change to it
+// leaves the template of an old container behind, which
+// TestNew_IsEquivalentToApplyingTheMigrations reports.
+func templateKey(fsys fs.FS) (string, error) {
+	all, err := migrate.Load(fsys)
 	if err != nil {
 		return "", err
+	}
+	sum := sha256.New()
+	for _, m := range all {
+		// A name has no colon, so the fields cannot run into each other.
+		_, _ = fmt.Fprintf(sum, "%d:%s:%x\n", m.Version, m.Name, m.Checksum)
 	}
 	return hex.EncodeToString(sum.Sum(nil))[:24], nil
 }

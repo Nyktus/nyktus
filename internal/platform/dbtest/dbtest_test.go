@@ -6,7 +6,8 @@ package dbtest
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
+	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestGroupRole_IsIdempotent(t *testing.T) {
@@ -127,9 +129,27 @@ type failingTB struct{ testing.TB }
 
 func (failingTB) Fatalf(string, ...any) { panic("fatal") }
 
-func templateKey(t *testing.T) string {
+// templateOf returns a family and a key that no other test uses, and drops the
+// databases of the template when the test ends. A family of its own keeps the
+// cleanup of the templates of other tests, and of the schema, away from them.
+func templateOf(t *testing.T) (family, key, name string) {
 	t.Helper()
-	return strings.ToLower(rand.Text())
+	family, key = strings.ToLower(rand.Text())[:12], strings.ToLower(rand.Text())[:12]
+	name = templatePrefix(family) + key
+	t.Cleanup(func() {
+		Exec(t, serverURL(t), "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)")
+	})
+	return family, key, name
+}
+
+func exists(t *testing.T, name string) bool {
+	t.Helper()
+	var found bool
+	if err := connect(t, serverURL(t)).QueryRow(t.Context(),
+		"SELECT EXISTS (SELECT FROM pg_database WHERE datname = $1)", name).Scan(&found); err != nil {
+		t.Fatalf("look up database %s: %v", name, err)
+	}
+	return found
 }
 
 func TestNewFromTemplate_PreparesOncePerKeyAndCopiesIndependently(t *testing.T) {
@@ -141,12 +161,10 @@ func TestNewFromTemplate_PreparesOncePerKeyAndCopiesIndependently(t *testing.T) 
 		prepared.Add(1)
 		Exec(tb, dbURL, "CREATE TABLE marker (n int)", "INSERT INTO marker VALUES (1)")
 	}
-	key := templateKey(t)
-	t.Cleanup(func() { Exec(t, serverURL(t), "DROP DATABASE IF EXISTS nyktus_tpl_"+key+" WITH (FORCE)") })
+	family, key, _ := templateOf(t)
 
-	first := NewFromTemplate(t, key, prepare)
-	second := NewFromTemplate(t, key, prepare)
-	NewFromTemplate(t, key, prepare)
+	first := NewFromTemplate(t, family, key, prepare)
+	second := NewFromTemplate(t, family, key, prepare)
 	if n := prepared.Load(); n != 1 {
 		t.Errorf("prepare ran %d times for one key, want 1", n)
 	}
@@ -165,8 +183,7 @@ func TestNewFromTemplate_PreparesOncePerKeyAndCopiesIndependently(t *testing.T) 
 func TestNewFromTemplate_FailedPreparationLeavesNoTemplate(t *testing.T) {
 	t.Parallel()
 
-	key := templateKey(t)
-	t.Cleanup(func() { Exec(t, serverURL(t), "DROP DATABASE IF EXISTS nyktus_tpl_"+key+" WITH (FORCE)") })
+	family, key, name := templateOf(t)
 
 	func() {
 		defer func() {
@@ -174,24 +191,18 @@ func TestNewFromTemplate_FailedPreparationLeavesNoTemplate(t *testing.T) {
 				t.Error("a failing preparation did not stop the test")
 			}
 		}()
-		NewFromTemplate(failingTB{t}, key, func(tb testing.TB, _ string) {
+		NewFromTemplate(failingTB{t}, family, key, func(tb testing.TB, _ string) {
 			tb.Helper()
 			tb.Fatalf("preparation failed")
 		})
 	}()
 
-	var exists bool
-	if err := connect(t, serverURL(t)).QueryRow(t.Context(),
-		"SELECT EXISTS (SELECT FROM pg_database WHERE datname = $1)", "nyktus_tpl_"+key).Scan(&exists); err != nil {
-		t.Fatalf("look up template: %v", err)
-	}
-	if exists {
+	if exists(t, name) {
 		t.Error("a template exists after a failed preparation, so the next test would copy a half-built database")
 	}
-
 	var left int
 	if err := connect(t, serverURL(t)).QueryRow(t.Context(),
-		"SELECT count(*) FROM pg_database WHERE starts_with(datname, $1)", buildPrefix("nyktus_tpl_"+key)).Scan(&left); err != nil {
+		"SELECT count(*) FROM pg_database WHERE starts_with(datname, $1)", buildPrefix(name)).Scan(&left); err != nil {
 		t.Fatalf("look up unfinished templates: %v", err)
 	}
 	if left != 0 {
@@ -200,7 +211,7 @@ func TestNewFromTemplate_FailedPreparationLeavesNoTemplate(t *testing.T) {
 
 	// The next call builds it.
 	var prepared atomic.Int32
-	NewFromTemplate(t, key, func(testing.TB, string) { prepared.Add(1) })
+	NewFromTemplate(t, family, key, func(testing.TB, string) { prepared.Add(1) })
 	if prepared.Load() != 1 {
 		t.Error("the preparation did not run again after it had failed")
 	}
@@ -209,23 +220,14 @@ func TestNewFromTemplate_FailedPreparationLeavesNoTemplate(t *testing.T) {
 func TestNewFromTemplate_RemovesWhatAStoppedConstructionLeft(t *testing.T) {
 	t.Parallel()
 
-	key := templateKey(t)
-	orphan := buildPrefix("nyktus_tpl_"+key) + "stopped"
+	family, key, name := templateOf(t)
+	orphan := buildPrefix(name) + "stopped"
 	Exec(t, serverURL(t), "CREATE DATABASE "+orphan)
-	t.Cleanup(func() {
-		Exec(t, serverURL(t),
-			"DROP DATABASE IF EXISTS "+orphan+" WITH (FORCE)",
-			"DROP DATABASE IF EXISTS nyktus_tpl_"+key+" WITH (FORCE)")
-	})
+	t.Cleanup(func() { Exec(t, serverURL(t), "DROP DATABASE IF EXISTS "+orphan+" WITH (FORCE)") })
 
-	NewFromTemplate(t, key, func(testing.TB, string) {})
+	NewFromTemplate(t, family, key, func(testing.TB, string) {})
 
-	var n int
-	if err := connect(t, serverURL(t)).QueryRow(t.Context(),
-		"SELECT count(*) FROM pg_database WHERE datname = $1", orphan).Scan(&n); err != nil {
-		t.Fatalf("look up database: %v", err)
-	}
-	if n != 0 {
+	if exists(t, orphan) {
 		t.Error("the database of the stopped construction is still there")
 	}
 }
@@ -239,12 +241,11 @@ func TestNewFromTemplate_WaitsForTheLockOfTheKey(t *testing.T) {
 
 	const callers = 2
 	ctx := t.Context()
-	key := templateKey(t)
-	t.Cleanup(func() { Exec(t, serverURL(t), "DROP DATABASE IF EXISTS nyktus_tpl_"+key+" WITH (FORCE)") })
+	family, key, name := templateOf(t)
 
 	holder := connect(t, serverURL(t))
 	var id int64
-	if err := holder.QueryRow(ctx, "SELECT hashtextextended($1, 0)", "nyktus_tpl_"+key).Scan(&id); err != nil {
+	if err := holder.QueryRow(ctx, "SELECT hashtextextended($1, 0)", name).Scan(&id); err != nil {
 		t.Fatalf("hash key: %v", err)
 	}
 	if _, err := holder.Exec(ctx, "SELECT pg_advisory_lock($1)", id); err != nil {
@@ -255,7 +256,7 @@ func TestNewFromTemplate_WaitsForTheLockOfTheKey(t *testing.T) {
 	var wg sync.WaitGroup
 	for range callers {
 		wg.Go(func() {
-			NewFromTemplate(t, key, func(testing.TB, string) { prepared.Add(1) })
+			NewFromTemplate(t, family, key, func(testing.TB, string) { prepared.Add(1) })
 		})
 	}
 	// The goroutines end before the test does, also when it fails early: they are
@@ -301,62 +302,91 @@ func TestNewFromTemplate_BuildsATemplateAgainThatWasRemoved(t *testing.T) {
 
 	var prepared atomic.Int32
 	prepare := func(testing.TB, string) { prepared.Add(1) }
-	key := templateKey(t)
-	t.Cleanup(func() { Exec(t, serverURL(t), "DROP DATABASE IF EXISTS nyktus_tpl_"+key+" WITH (FORCE)") })
+	family, key, name := templateOf(t)
 
-	NewFromTemplate(t, key, prepare)
-	Exec(t, serverURL(t), "DROP DATABASE nyktus_tpl_"+key)
-	NewFromTemplate(t, key, prepare)
+	NewFromTemplate(t, family, key, prepare)
+	Exec(t, serverURL(t), "DROP DATABASE "+name)
+	NewFromTemplate(t, family, key, prepare)
 
 	if n := prepared.Load(); n != 2 {
 		t.Errorf("prepare ran %d times, want 2: a removed template is built again", n)
 	}
 }
 
-func TestNewFromTemplate_KeepsTheNewestTemplatesOfDigestKeys(t *testing.T) {
+// Another process may remove the template between its construction and the copy.
+// The attempt after the last construction must copy, not give up.
+func TestRetryMissing_CopiesAfterTheLastConstruction(t *testing.T) {
 	t.Parallel()
 
-	digestKey := func() string { return hexDigits(t) }
+	missing := &pgconn.PgError{Code: invalidCatalogName}
+	for _, tt := range []struct {
+		name       string
+		failures   int
+		wantBuilds int
+		wantErr    bool
+	}{
+		{"present", 0, 0, false},
+		{"missing once", 1, 1, false},
+		{"missing before the last attempt", copyAttempts - 1, copyAttempts - 1, false},
+		{"missing at every attempt", copyAttempts, copyAttempts - 1, true},
+	} {
+		builds, tries := 0, 0
+		_, err := retryMissing(copyAttempts,
+			func() (string, error) {
+				tries++
+				if tries <= tt.failures {
+					return "", missing
+				}
+				return "url", nil
+			},
+			func() { builds++ })
+		if builds != tt.wantBuilds || (err != nil) != tt.wantErr {
+			t.Errorf("%s: %d builds and error %v, want %d builds and error %v", tt.name, builds, err, tt.wantBuilds, tt.wantErr)
+		}
+	}
+
+	// Another error is not a missing template and ends the attempts.
+	builds := 0
+	_, err := retryMissing(copyAttempts, func() (string, error) { return "", errors.New("refused") }, func() { builds++ })
+	if err == nil || builds != 0 {
+		t.Errorf("another error: %d builds and error %v, want none and an error", builds, err)
+	}
+}
+
+func TestNewFromTemplate_KeepsTheNewestTemplatesOfAFamily(t *testing.T) {
+	t.Parallel()
+
+	family, key, _ := templateOf(t)
+	// Another family, older than all that are kept in this one.
+	_, _, otherName := templateOf(t)
+	Exec(t, serverURL(t), "CREATE DATABASE "+otherName)
 	var names []string
 	t.Cleanup(func() {
 		for _, name := range names {
 			Exec(t, serverURL(t), "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)")
 		}
 	})
-	// Older than the template that is built below, and more than are kept.
-	for range keptTemplates {
-		name := "nyktus_tpl_" + digestKey()
+	// Older than the template that is built below, and as many as are kept.
+	for i := range keptTemplates {
+		name := templatePrefix(family) + "old" + strconv.Itoa(i)
 		names = append(names, name)
 		Exec(t, serverURL(t), "CREATE DATABASE "+name)
 	}
-	key := digestKey()
-	names = append(names, "nyktus_tpl_"+key)
 
-	NewFromTemplate(t, key, func(testing.TB, string) {})
+	NewFromTemplate(t, family, key, func(testing.TB, string) {})
 
-	var oldest, newest bool
-	conn := connect(t, serverURL(t))
-	for name, exists := range map[string]*bool{names[0]: &oldest, names[len(names)-1]: &newest} {
-		if err := conn.QueryRow(t.Context(), "SELECT EXISTS (SELECT FROM pg_database WHERE datname = $1)", name).Scan(exists); err != nil {
-			t.Fatalf("look up %s: %v", name, err)
-		}
-	}
-	if oldest {
+	if exists(t, names[0]) {
 		t.Error("the oldest template is kept although newer ones fill the quota")
 	}
-	if !newest {
+	if !exists(t, names[len(names)-1]) {
+		t.Error("a template within the quota is gone")
+	}
+	if !exists(t, templatePrefix(family)+key) {
 		t.Error("the template that was just built is gone")
 	}
-}
-
-// hexDigits returns 24 random lower case hexadecimal digits, the form of a digest key.
-func hexDigits(t *testing.T) string {
-	t.Helper()
-	raw := make([]byte, 12)
-	if _, err := rand.Read(raw); err != nil {
-		t.Fatalf("read random bytes: %v", err)
+	if !exists(t, otherName) {
+		t.Error("a template of another family was removed")
 	}
-	return hex.EncodeToString(raw)
 }
 
 // The lock of a process that stopped must not leave the others waiting for the
@@ -365,7 +395,7 @@ func TestEnsureTemplate_FailsAfterTheWaitForTheLock(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	name := "nyktus_tpl_" + templateKey(t)
+	family, _, name := templateOf(t)
 	holder := connect(t, serverURL(t))
 	if _, err := holder.Exec(ctx, "SELECT pg_advisory_lock(hashtextextended($1, 0))", name); err != nil {
 		t.Fatalf("take lock: %v", err)
@@ -376,22 +406,31 @@ func TestEnsureTemplate_FailsAfterTheWaitForTheLock(t *testing.T) {
 			t.Error("the construction did not fail while another session held the lock")
 		}
 	}()
-	ensureTemplate(failingTB{t}, name, 100*time.Millisecond, func(testing.TB, string) {
+	// A wait below a millisecond must not mean no limit.
+	ensureTemplate(failingTB{t}, family, name, time.Microsecond, func(testing.TB, string) {
 		t.Error("the template is prepared while another session holds its lock")
 	})
 }
 
-func TestNewFromTemplate_RefusesKeysThatDoNotFitAName(t *testing.T) {
+func TestNewFromTemplate_RefusesFamiliesAndKeysThatDoNotFitAName(t *testing.T) {
 	t.Parallel()
 
-	for _, key := range []string{strings.Repeat("a", maxTemplateName), "Upper", "with space", `quote"`} {
+	for _, tt := range []struct{ family, key string }{
+		{"", "key"},
+		{"family", ""},
+		{"Upper", "key"},
+		{"family", "with space"},
+		{"family", `quote"`},
+		{"family", "under_score"},
+		{"family", strings.Repeat("a", maxIdentifier)},
+	} {
 		func() {
 			defer func() {
 				if recover() == nil {
-					t.Errorf("NewFromTemplate(%q) did not fail", key)
+					t.Errorf("NewFromTemplate(%q, %q) did not fail", tt.family, tt.key)
 				}
 			}()
-			NewFromTemplate(failingTB{t}, key, func(testing.TB, string) {})
+			NewFromTemplate(failingTB{t}, tt.family, tt.key, func(testing.TB, string) {})
 		}()
 	}
 }
@@ -401,10 +440,10 @@ func TestNewFromTemplate_RefusesKeysThatDoNotFitAName(t *testing.T) {
 func TestBuildName_FitsAnIdentifierAndStartsWithItsPrefix(t *testing.T) {
 	t.Parallel()
 
-	name := "nyktus_tpl_" + strings.Repeat("a", maxTemplateName-len("nyktus_tpl_"))
+	name := templatePrefix("family") + strings.Repeat("a", maxIdentifier-len(templatePrefix("family")))
 	got := buildName(name)
-	if len(got) > 63 {
-		t.Errorf("len(buildName(%q)) = %d, want at most 63", name, len(got))
+	if len(got) > maxIdentifier {
+		t.Errorf("len(buildName(%q)) = %d, want at most %d", name, len(got), maxIdentifier)
 	}
 	if !strings.HasPrefix(got, buildPrefix(name)) {
 		t.Errorf("buildName(%q) = %q, want the prefix %q", name, got, buildPrefix(name))

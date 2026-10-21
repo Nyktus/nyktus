@@ -66,59 +66,84 @@ func create(tb testing.TB, template string) (string, error) {
 }
 
 // NewFromTemplate creates a database for the calling test as a copy of the
-// template key and drops it when the test ends. The template is built once per
-// server by prepare, which receives the URL of an empty database and fills it,
-// and is kept for later runs, so a copy costs a quarter of what preparing a
-// database does. The key must change whenever what prepare does changes, for
-// example by holding a digest of its input: a template with an existing key is
-// never rebuilt.
+// template of family and key and drops it when the test ends. The template is
+// built once per server by prepare, which receives the URL of an empty database
+// and fills it, and is kept for later runs, so a copy costs a quarter of what
+// preparing a database does. The key must change whenever what prepare does
+// changes, for example by holding a digest of its input: a template with an
+// existing key is never rebuilt.
+//
+// A family is one kind of template, such as the migrated schema. Only the newest
+// keptTemplates of a family stay on the server, so that every state of the input
+// does not leave a database behind. Family and key consist of lower case letters
+// and digits.
 //
 // A copy takes the files of the template and what is stored in it, but nothing
 // that belongs to the database itself: its privileges, its settings and its
-// comment. What prepare needs of those cannot be done in prepare.
-//
-// Keys of 24 lowercase hexadecimal digits are digests of a caller that keeps a
-// template for every state of its input. Only the newest keptTemplates of those
-// stay on the server. Other keys are for the caller to drop.
-func NewFromTemplate(tb testing.TB, key string, prepare func(tb testing.TB, dbURL string)) string {
+// comment. What prepare sets of those is lost, and the caller sets it again on
+// the database it gets.
+func NewFromTemplate(tb testing.TB, family, key string, prepare func(tb testing.TB, dbURL string)) string {
 	tb.Helper()
 
-	name := "nyktus_tpl_" + key
-	if len(name) > maxTemplateName || strings.Trim(key, "abcdefghijklmnopqrstuvwxyz0123456789_") != "" {
-		tb.Fatalf("template key %q must be lower case letters, digits and underscores, and %q at most %d bytes", key, name, maxTemplateName)
+	for _, part := range []string{family, key} {
+		if part == "" || strings.Trim(part, "abcdefghijklmnopqrstuvwxyz0123456789") != "" {
+			tb.Fatalf("template family %q and key %q must be lower case letters and digits", family, key)
+		}
+	}
+	name := templatePrefix(family) + key
+	if len(name) > maxIdentifier {
+		tb.Fatalf("template name %q has %d bytes, want at most %d", name, len(name), maxIdentifier)
 	}
 	// A copy is tried first. Only a server without the template pays for the
 	// lock, and a template that another process removed meanwhile is built again.
-	for range 3 {
-		dbURL, err := create(tb, name)
-		if err == nil {
-			return dbURL
-		}
-		if !isMissing(err) {
-			tb.Fatalf("create database from template: %v", err)
-		}
-		ensureTemplate(tb, name, lockTimeout, prepare)
+	dbURL, err := retryMissing(copyAttempts,
+		func() (string, error) { return create(tb, name) },
+		func() { ensureTemplate(tb, family, name, lockTimeout, prepare) })
+	if err != nil {
+		tb.Fatalf("create database from template %s: %v", name, err)
 	}
-	tb.Fatalf("template %s keeps disappearing", name)
-	return ""
+	return dbURL
 }
 
-// maxTemplateName leaves room in the 63 bytes of a PostgreSQL identifier for the
-// prefix and suffix of the database in which a template is built.
-const maxTemplateName = 40
+// retryMissing calls try up to attempts times. After an attempt that fails
+// because the template is missing it calls build, unless that was the last one.
+// The last attempt follows the last build.
+func retryMissing(attempts int, try func() (string, error), build func()) (string, error) {
+	for attempt := 1; ; attempt++ {
+		dbURL, err := try()
+		if err == nil || !isMissing(err) || attempt == attempts {
+			return dbURL, err
+		}
+		build()
+	}
+}
+
+// maxIdentifier is the length of the longest identifier PostgreSQL keeps; it cuts
+// longer ones without a word.
+const maxIdentifier = 63
+
+// copyAttempts is how often a copy is tried: a template that is built and then
+// removed by another process's cleanup before it is copied is built again once.
+const copyAttempts = 3
 
 // lockTimeout is how long a process waits for another that builds the same
 // template. A building takes about a second.
 const lockTimeout = time.Minute
 
-// keptTemplates is the number of templates with a digest as their key that stay
-// on the server. Other checkouts may use older ones, so a few stay.
+// keptTemplates is the number of templates of a family that stay on the server.
+// Other checkouts may use older ones, so a few stay.
 const keptTemplates = 4
+
+// templatePrefix starts the names of the templates of family.
+func templatePrefix(family string) string { return "nyktus_tpl_" + family + "_" }
 
 // ensureTemplate builds the template name unless the server has it. The
 // template is built under another name and renamed when it is complete, so that
 // a process that stops while it builds leaves no template that looks finished.
-func ensureTemplate(tb testing.TB, name string, wait time.Duration, prepare func(tb testing.TB, dbURL string)) {
+//
+// A test that waits here holds one connection and has opened none of its own, so
+// a server without the template needs no more connections than one with it.
+func ensureTemplate(tb testing.TB, family, name string, wait time.Duration, prepare func(tb testing.TB, dbURL string)) {
 	tb.Helper()
 
 	adminURL := serverURL(tb)
@@ -131,8 +156,8 @@ func ensureTemplate(tb testing.TB, name string, wait time.Duration, prepare func
 	// Packages run in separate processes, so a lock in the database is the only one
 	// they share. It belongs to the session and ends with the connection. A process
 	// that stops while it holds the lock fails the others after the wait instead of
-	// leaving them to the timeout of the test binary.
-	if _, err := conn.Exec(ctx, "SELECT set_config('lock_timeout', $1, false)", strconv.FormatInt(wait.Milliseconds(), 10)); err != nil {
+	// leaving them to the timeout of the test binary. A wait of zero would be none.
+	if _, err := conn.Exec(ctx, "SELECT set_config('lock_timeout', $1, false)", strconv.FormatInt(max(wait.Milliseconds(), 1), 10)); err != nil {
 		tb.Fatalf("set lock timeout: %v", err)
 	}
 	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock(hashtextextended($1, 0))", name); err != nil {
@@ -147,7 +172,13 @@ func ensureTemplate(tb testing.TB, name string, wait time.Duration, prepare func
 		return
 	}
 	build(ctx, tb, conn, adminURL, name, prepare)
-	prune(ctx, tb, conn, name)
+
+	// The others need not wait for the cleanup.
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_unlock(hashtextextended($1, 0))", name); err != nil {
+		tb.Logf("release template lock: %v", err)
+		return
+	}
+	prune(ctx, tb, conn, family, name)
 }
 
 // buildPrefix starts the names of the databases in which the template name is
@@ -206,24 +237,33 @@ func build(ctx context.Context, tb testing.TB, conn *pgx.Conn, adminURL, name st
 	renamed = true
 }
 
-// prune drops the templates with a digest as their key beyond the newest
-// keptTemplates, other than keep. A template that is being copied cannot be
-// dropped; it stays, and one that was dropped in vain is built again by whoever
-// finds it missing.
-func prune(ctx context.Context, tb testing.TB, conn *pgx.Conn, keep string) {
+// prune drops the templates of family beyond the newest keptTemplates, other
+// than keep. It is housekeeping: a failure is logged and never fails the test. A
+// template that is being copied makes the drop wait, and it gives up after a
+// second, so the template stays. One that was dropped in vain is built again by
+// whoever finds it missing.
+func prune(ctx context.Context, tb testing.TB, conn *pgx.Conn, family, keep string) {
 	tb.Helper()
 
+	if _, err := conn.Exec(ctx, "SET lock_timeout = 1000"); err != nil {
+		tb.Logf("prune templates: %v", err)
+		return
+	}
 	rows, err := conn.Query(ctx, `SELECT datname FROM pg_database
-WHERE datname ~ '^nyktus_tpl_[0-9a-f]{24}$' AND datname <> $1 ORDER BY oid DESC OFFSET $2`, keep, keptTemplates-1)
+WHERE starts_with(datname, $1) AND datname <> $2 ORDER BY oid DESC OFFSET $3`, templatePrefix(family), keep, keptTemplates-1)
 	if err != nil {
-		tb.Fatalf("look up old templates: %v", err)
+		tb.Logf("look up old templates: %v", err)
+		return
 	}
 	old, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
-		tb.Fatalf("read old templates: %v", err)
+		tb.Logf("read old templates: %v", err)
+		return
 	}
 	for _, name := range old {
-		_, _ = conn.Exec(ctx, "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize())
+		if _, err := conn.Exec(ctx, "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()); err != nil {
+			tb.Logf("drop old template %s: %v", name, err)
+		}
 	}
 }
 

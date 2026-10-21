@@ -8,9 +8,14 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -306,6 +311,51 @@ func TestNewHasherWithCost_IsRefusedOutsideATestBinary(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "for tests only") {
 		t.Errorf("program output = %q, want the refusal", out)
+	}
+}
+
+// The weak hasher must not reach a server. The linter configuration says so too,
+// but a configuration is not a test: this fails on a deliberate violation
+// whatever the linter does.
+func TestWeakHasher_IsReachedByTestsOnly(t *testing.T) {
+	t.Parallel()
+
+	const root = "../../.."
+	fset := token.NewFileSet()
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		slashed := filepath.ToSlash(path)
+		switch {
+		case d.IsDir():
+			if slices.Contains([]string{".git", ".localdev", "node_modules", "web", "testdata", "bin"}, d.Name()) {
+				return fs.SkipDir
+			}
+			return nil
+		case !strings.HasSuffix(path, ".go"), strings.HasSuffix(path, "_test.go"),
+			strings.Contains(slashed, "internal/auth/password/"):
+			return nil
+		}
+		file, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			if strings.HasSuffix(spec.Path.Value, `/password/passwordtest"`) {
+				t.Errorf("%s imports passwordtest", slashed)
+			}
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "NewHasherWithCost" {
+				t.Errorf("%s calls NewHasherWithCost", slashed)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk the module: %v", err)
 	}
 }
 

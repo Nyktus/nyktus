@@ -3,7 +3,8 @@
 
 package schematest
 
-var (
-	Digest      = digest
-	TemplateKey = templateKey
-)
+// TemplateKey is the key of the template for the migrations in fsys.
+var TemplateKey = templateKey
+
+// TemplateFamily is the family of the templates of the migrated schema.
+const TemplateFamily = templateFamily
