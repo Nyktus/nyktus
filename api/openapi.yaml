@@ -1961,8 +1961,10 @@ paths:
       description: |
         Creates a honeypot with a new secret of 256 random bits, which the
         sensor presents to the trigger. The secret is shown only in this
-        response; the server keeps only a hash of it. To replace a lost or
-        exposed secret, use `POST /api/v1/honeypots/{id}/secret`.
+        response, together with the entry for the configuration file of the
+        sensor (`sensor_config`); the server keeps only a hash of it. To
+        replace a lost or exposed secret, use
+        `POST /api/v1/honeypots/{id}/secret`.
 
         The service cannot be changed, because the sensor is configured for
         it: to emulate another service, create a new honeypot.
@@ -2120,7 +2122,8 @@ paths:
         Gives a honeypot a new secret of 256 random bits. The old secret stops
         working at once, so a sensor that still uses it is shut out until it
         is configured with the new one. The new secret is shown only in this
-        response.
+        response, together with the entry for the configuration file of the
+        sensor (`sensor_config`).
 
         The honeypot forgets what its sensor last reported: its `status` is
         `never` until a sensor reports with the new secret.
@@ -4477,7 +4480,7 @@ components:
     CreatedHoneypot:
       type: object
       additionalProperties: false
-      required: [id, service, name, notes, enabled, techniques, severity, scenario_id, status, last_seen_at, sensor_version, created_at, updated_at, secret]
+      required: [id, service, name, notes, enabled, techniques, severity, scenario_id, status, last_seen_at, sensor_version, created_at, updated_at, secret, sensor_config]
       properties:
         id:
           type: string
@@ -4520,6 +4523,14 @@ components:
           type: string
           pattern: "^[A-Za-z0-9_-]{43}$"
           description: The secret that the sensor presents for this honeypot. It is shown only once.
+        sensor_config:
+          type: string
+          description: |
+            The entry of this honeypot for the configuration file of the
+            sensor: a list item for `honeypots:`, in YAML, with the identifier,
+            the service, the usual port of the service as the address to listen
+            on, and the secret. It holds the secret and is shown only once.
+            Name and notes are not part of it.
 
     HoneypotPage:
       type: object

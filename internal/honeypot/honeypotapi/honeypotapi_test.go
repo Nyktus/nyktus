@@ -114,7 +114,8 @@ func errorCode(t *testing.T, rec *httptest.ResponseRecorder) string {
 // handler, so that the test reads what a client receives.
 type created struct {
 	Response
-	Secret string `json:"secret"`
+	Secret       string `json:"secret"`
+	SensorConfig string `json:"sensor_config"`
 }
 
 func (f fixture) create(t *testing.T, body string) created {
@@ -160,6 +161,15 @@ func TestCreate_ReturnsTheHoneypotWithItsSecretOnce(t *testing.T) {
 	if len(got.Secret) != 43 || !f.owns(t, got.ID, got.Secret) {
 		t.Errorf("POST secret = %q, want 43 characters that find the honeypot", got.Secret)
 	}
+	// The entry for the sensor names the honeypot, the service and the secret,
+	// and nothing of the inventory.
+	wantEntry := "- id: \"" + got.ID + "\"\n  service: \"ssh\"\n  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.\n  listen: \":22\"\n  secret: \"" + got.Secret + "\"\n"
+	if got.SensorConfig != wantEntry {
+		t.Errorf("sensor_config = %q, want %q", got.SensorConfig, wantEntry)
+	}
+	if strings.Contains(got.SensorConfig, "Jump host") || strings.Contains(got.SensorConfig, "VLAN 20") {
+		t.Errorf("sensor_config = %q, holds the name or the notes", got.SensorConfig)
+	}
 
 	// Nothing else shows the secret again.
 	for name, rec := range map[string]*httptest.ResponseRecorder{
@@ -167,8 +177,8 @@ func TestCreate_ReturnsTheHoneypotWithItsSecretOnce(t *testing.T) {
 		"list":  f.serve(t, f.h.List, http.MethodGet, "/api/v1/honeypots", "", ""),
 		"PATCH": f.serve(t, f.h.Update, http.MethodPatch, "/", got.ID, `{"name": "b"}`),
 	} {
-		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), got.Secret) || strings.Contains(rec.Body.String(), `"secret"`) {
-			t.Errorf("%s = %d %s, want no secret", name, rec.Code, rec.Body)
+		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), got.Secret) || strings.Contains(rec.Body.String(), `"secret"`) || strings.Contains(rec.Body.String(), "sensor_config") {
+			t.Errorf("%s = %d %s, want no secret and no entry for the sensor", name, rec.Code, rec.Body)
 		}
 	}
 	if strings.Contains(f.log.String(), got.Secret) || strings.Contains(f.log.String(), "Jump host") {
@@ -364,6 +374,11 @@ WHERE id = $1`, c.ID); err != nil {
 	}
 	if len(got.Secret) != 43 || got.Secret == c.Secret || !f.owns(t, c.ID, got.Secret) || f.owns(t, c.ID, c.Secret) {
 		t.Errorf("POST secret = %q; want a new secret that works while the old one does not", got.Secret)
+	}
+	// The entry for the sensor carries the new secret, for the same honeypot.
+	if !strings.Contains(got.SensorConfig, got.Secret) || strings.Contains(got.SensorConfig, c.Secret) || !strings.Contains(got.SensorConfig, `service: "telnet"`) ||
+		!strings.Contains(got.SensorConfig, `id: "`+c.ID+`"`) {
+		t.Errorf("sensor_config = %q, want the entry of the honeypot with the new secret", got.SensorConfig)
 	}
 	if rec := f.serve(t, f.h.Get, http.MethodGet, "/", c.ID, ""); strings.Contains(rec.Body.String(), got.Secret) {
 		t.Errorf("GET after the replacement = %s, want no secret", rec.Body)

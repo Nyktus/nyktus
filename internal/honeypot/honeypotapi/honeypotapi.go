@@ -102,6 +102,9 @@ func NewResponse(h honeypot.Honeypot) Response {
 type createdResponse struct {
 	Response
 	Secret string `json:"secret"`
+	// SensorConfig is the entry of the honeypot for the configuration file of
+	// the sensor. It holds the secret and is shown once with it.
+	SensorConfig string `json:"sensor_config"`
 }
 
 // LogValue keeps the secret out of logs.
@@ -112,7 +115,7 @@ func (r createdResponse) LogValue() slog.Value {
 // writeCreated writes c with its secret. httpx.WriteJSON sends it with
 // Cache-Control: no-store, so that no cache on the way keeps the secret.
 func writeCreated(w http.ResponseWriter, status int, c honeypot.Created) {
-	httpx.WriteJSON(w, status, createdResponse{Response: NewResponse(c.Honeypot), Secret: string(c.Secret)})
+	httpx.WriteJSON(w, status, createdResponse{Response: NewResponse(c.Honeypot), Secret: string(c.Secret), SensorConfig: c.SensorConfig()})
 }
 
 type listResponse struct {

@@ -15,6 +15,19 @@ updates:
       go-dependencies:
         update-types: [minor, patch]
 
+  - package-ecosystem: gomod
+    directory: /sensor
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      sensor-dependencies:
+        update-types: [minor, patch]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
