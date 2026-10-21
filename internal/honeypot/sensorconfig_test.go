@@ -16,7 +16,10 @@ import (
 // goldenEntry is the entry that the sensor reads in its own tests. The sensor
 // is a module of its own, so the two sides cannot import each other: this
 // file is what they agree on.
-const goldenEntry = "../../sensor/internal/config/testdata/console_entry.yaml"
+const (
+	goldenEntry    = "../../sensor/internal/config/testdata/console_entry.yaml"
+	goldenSSHEntry = "../../sensor/internal/config/testdata/console_entry_ssh.yaml"
+)
 
 func TestCreated_SensorConfig_IsTheEntryThatTheSensorReads(t *testing.T) {
 	t.Parallel()
@@ -31,6 +34,24 @@ func TestCreated_SensorConfig_IsTheEntryThatTheSensorReads(t *testing.T) {
 	}
 	if got := c.SensorConfig(); got != string(want) {
 		t.Errorf("SensorConfig() = %q, want the content of %s: %q", got, goldenEntry, want)
+	}
+}
+
+// The entry of an SSH honeypot names the file of its host key, which the sensor
+// requires.
+func TestCreated_SensorConfig_SSH_IsTheEntryThatTheSensorReads(t *testing.T) {
+	t.Parallel()
+
+	want, err := os.ReadFile(goldenSSHEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := honeypot.Created{
+		Honeypot: honeypot.Honeypot{ID: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d", Service: honeypot.ServiceSSH, Name: "Jump host"},
+		Secret:   honeypot.Secret(strings.Repeat("A", 43)),
+	}
+	if got := c.SensorConfig(); got != string(want) {
+		t.Errorf("SensorConfig() = %q, want the content of %s: %q", got, goldenSSHEntry, want)
 	}
 }
 

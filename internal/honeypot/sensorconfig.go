@@ -32,6 +32,16 @@ func (c Created) SensorConfig() string {
   service: %s
   # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.
   listen: %s
-  secret: %s
-`, strconv.Quote(c.ID), strconv.Quote(string(c.Service)), strconv.Quote(sensorPorts[c.Service]), strconv.Quote(string(c.Secret)))
+%s  secret: %s
+`, strconv.Quote(c.ID), strconv.Quote(string(c.Service)), strconv.Quote(sensorPorts[c.Service]), sensorServiceFields[c.Service], strconv.Quote(string(c.Secret)))
+}
+
+// sensorServiceFields are the lines that a service needs besides the common
+// ones. They hold no value of the honeypot, so none of them needs quoting.
+var sensorServiceFields = map[Service]string{
+	ServiceSSH: `  # The private key of the server. Create it once, without a passphrase, with
+  # ssh-keygen -t ed25519 -N '' -f ssh_host_key and keep it: a host key that
+  # changes would identify the honeypot. The path is relative to this file.
+  host_key_file: "ssh_host_key"
+`,
 }

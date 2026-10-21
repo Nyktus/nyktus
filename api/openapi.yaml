@@ -4529,8 +4529,9 @@ components:
             The entry of this honeypot for the configuration file of the
             sensor: a list item for `honeypots:`, in YAML, with the identifier,
             the service, the usual port of the service as the address to listen
-            on, and the secret. It holds the secret and is shown only once.
-            Name and notes are not part of it.
+            on, and the secret. For `ssh` it also names the file of the host
+            key, which the operator creates. It holds the secret and is shown
+            only once. Name and notes are not part of it.
 
     HoneypotPage:
       type: object

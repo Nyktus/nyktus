@@ -22,6 +22,7 @@ import (
 	"strconv"
 
 	"go.yaml.in/yaml/v3"
+	cryptossh "golang.org/x/crypto/ssh"
 
 	"nyktus.org/nyktus/sensor/internal/secret"
 )
@@ -33,8 +34,12 @@ const (
 	maxHoneypots   = 32
 	maxBanner      = 256
 	maxLoginPrompt = 64
-	maxTriggerURL  = 512
-	otherAccess    = 0o077
+	maxHostKeyFile = 8 << 10
+	// maxSSHVersion is the longest identification string that a server may
+	// send: 255 bytes with the line ending (RFC 4253, section 4.2).
+	maxSSHVersion = 253
+	maxTriggerURL = 512
+	otherAccess   = 0o077
 )
 
 // Environment tells whether the sensor may report over plain HTTP.
@@ -51,6 +56,7 @@ type Service string
 
 // Services of honeypots. The server knows the same names.
 const (
+	SSH    Service = "ssh"
 	Telnet Service = "telnet"
 )
 
@@ -76,10 +82,17 @@ type Honeypot struct {
 	Secret     secret.Secret `yaml:"secret"`
 	SecretFile string        `yaml:"secret_file"`
 	// Banner is what the service says first. Nil means the default of the
-	// service, an empty value no banner at all.
+	// service. An empty value means no banner, which an SSH server cannot do:
+	// its first words are its identification string.
 	Banner *string `yaml:"banner"`
 	// LoginPrompt is the prompt for the user name; telnet only.
 	LoginPrompt *string `yaml:"login_prompt"`
+	// HostKeyFile names the file with the host key; ssh only, and required
+	// there. A key that changes with every start would identify the honeypot,
+	// so the sensor never makes one.
+	HostKeyFile string `yaml:"host_key_file"`
+	// HostKey is the key read from HostKeyFile by Load.
+	HostKey cryptossh.Signer `yaml:"-"`
 }
 
 var (
@@ -126,6 +139,13 @@ func Load(path string) (*Config, error) {
 	inline := false
 	for i := range cfg.Honeypots {
 		hp := &cfg.Honeypots[i]
+		if hp.HostKeyFile != "" {
+			k, err := readHostKey(resolve(filepath.Dir(path), hp.HostKeyFile))
+			if err != nil {
+				problems = append(problems, fmt.Errorf("honeypots[%d].host_key_file: %w", i, err))
+			}
+			hp.HostKey = k
+		}
 		if hp.Secret != "" {
 			inline = true
 			continue
@@ -159,25 +179,35 @@ func resolve(dir, p string) string {
 	return filepath.Join(dir, p)
 }
 
-// readSecretFile reads the secret from a file that only its owner can read.
-// The mode is taken from the opened file, so that nothing can change between
-// the check and the read.
-func readSecretFile(path string) (secret.Secret, error) {
+// readPrivateFile reads a file that holds a secret and that only its owner may
+// access. It reads one byte more than limit, so that the caller can tell a file
+// that is too large. what names the file in the errors. The mode is taken from
+// the opened file, so that nothing can change between the check and the read.
+func readPrivateFile(path, what string, limit int) ([]byte, error) {
 	f, err := os.Open(path) //nolint:gosec // G304: the operator names the file.
 	if err != nil {
-		return "", errors.New("cannot open the secret file")
+		return nil, fmt.Errorf("cannot open the %s", what)
 	}
 	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil || !info.Mode().IsRegular() {
-		return "", errors.New("the secret file is not a regular file")
+		return nil, fmt.Errorf("the %s is not a regular file", what)
 	}
 	if info.Mode().Perm()&otherAccess != 0 {
-		return "", fmt.Errorf("the group or other users can access the secret file: mode %04o, want 0600", info.Mode().Perm())
+		return nil, fmt.Errorf("the group or other users can access the %s: mode %04o, want 0600", what, info.Mode().Perm())
 	}
-	data, err := io.ReadAll(io.LimitReader(f, maxSecretFile+1))
+	data, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
 	if err != nil {
-		return "", errors.New("cannot read the secret file")
+		return nil, fmt.Errorf("cannot read the %s", what)
+	}
+	return data, nil
+}
+
+// readSecretFile reads the secret from a file that only its owner can read.
+func readSecretFile(path string) (secret.Secret, error) {
+	data, err := readPrivateFile(path, "secret file", maxSecretFile)
+	if err != nil {
+		return "", err
 	}
 	// Editors and "echo" end the line.
 	s := string(bytes.TrimSpace(data))
@@ -185,6 +215,30 @@ func readSecretFile(path string) (secret.Secret, error) {
 		return "", errSecretFormat
 	}
 	return secret.Secret(s), nil
+}
+
+// readHostKey reads the private key of an SSH honeypot: an Ed25519 key without
+// a passphrase, as ssh-keygen writes it for an empty one. The error never
+// holds a byte of the file.
+func readHostKey(path string) (cryptossh.Signer, error) {
+	data, err := readPrivateFile(path, "host key file", maxHostKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxHostKeyFile {
+		return nil, fmt.Errorf("the host key file is larger than %d bytes", maxHostKeyFile)
+	}
+	key, err := cryptossh.ParsePrivateKey(data)
+	var missing *cryptossh.PassphraseMissingError
+	switch {
+	case errors.As(err, &missing):
+		return nil, errors.New("the host key is protected by a passphrase: the sensor starts unattended, use a key without one")
+	case err != nil:
+		return nil, errors.New("the host key file does not hold a private key in OpenSSH or PEM format")
+	case key.PublicKey().Type() != cryptossh.KeyAlgoED25519:
+		return nil, fmt.Errorf("the host key is of type %s, want %s", key.PublicKey().Type(), cryptossh.KeyAlgoED25519)
+	}
+	return key, nil
 }
 
 // decode reads the YAML into the types, refusing what they do not have.
@@ -289,7 +343,7 @@ func (hp *Honeypot) validate() []error {
 		add("id: must be the identifier of the honeypot in the console, a lowercase UUID")
 	}
 	switch hp.Service {
-	case Telnet:
+	case Telnet, SSH:
 	case "":
 		add("service: required")
 	default:
@@ -307,9 +361,21 @@ func (hp *Honeypot) validate() []error {
 		add("secret: %v", errSecretFormat)
 	}
 	if hp.Banner != nil {
-		if err := validateText(*hp.Banner, maxBanner, true); err != nil {
+		var err error
+		if hp.Service == SSH {
+			err = validateSSHVersion(*hp.Banner)
+		} else {
+			err = validateText(*hp.Banner, maxBanner, true)
+		}
+		if err != nil {
 			add("banner: %v", err)
 		}
+	}
+	switch {
+	case hp.Service == SSH && hp.HostKeyFile == "":
+		add("host_key_file: required for ssh: a host key that changes with every start would identify the honeypot")
+	case hp.Service != SSH && hp.HostKeyFile != "":
+		add("host_key_file: only for ssh")
 	}
 	if hp.LoginPrompt != nil {
 		if hp.Service != Telnet {
@@ -339,6 +405,20 @@ func validateText(s string, maxLen int, multiline bool) error {
 			}
 			return errors.New("printable ASCII only")
 		}
+	}
+	return nil
+}
+
+// sshVersionPattern is the identification string of an SSH 2.0 server: the
+// protocol version, a software version of printable characters without space
+// or minus, and optional comments (RFC 4253, section 4.2).
+var sshVersionPattern = regexp.MustCompile(`^SSH-2\.0-[!-,.-~]+( [ -~]*)?$`)
+
+// validateSSHVersion accepts the identification string that an SSH honeypot
+// sends first. The line ending is added by the protocol.
+func validateSSHVersion(s string) error {
+	if len(s) > maxSSHVersion || !sshVersionPattern.MatchString(s) {
+		return fmt.Errorf("must be an identification string such as SSH-2.0-OpenSSH_9.2p1 of printable ASCII, at most %d bytes", maxSSHVersion)
 	}
 	return nil
 }

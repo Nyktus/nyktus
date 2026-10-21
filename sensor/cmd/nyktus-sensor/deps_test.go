@@ -18,9 +18,11 @@ import (
 const modulePath = "nyktus.org/nyktus/sensor"
 
 // The sensor runs in the monitored network and talks to attackers. Its
-// dependencies are the standard library and one YAML parser, so that a customer
-// can read its go.mod in a minute and a flaw in the server cannot reach it.
-func TestGoMod_RequiresOnlyTheYAMLParser(t *testing.T) {
+// dependencies are the standard library, one YAML parser and the SSH library of
+// the Go project, so that a customer can read its go.mod in a minute and a flaw
+// in the server cannot reach it. The libraries of the project that the SSH
+// library needs only on some platforms follow it as indirect requirements.
+func TestGoMod_RequiresOnlyTheYAMLParserAndTheSSHLibrary(t *testing.T) {
 	t.Parallel()
 
 	data, err := os.ReadFile("../../go.mod")
@@ -44,14 +46,24 @@ func TestGoMod_RequiresOnlyTheYAMLParser(t *testing.T) {
 			required = append(required, strings.Fields(line)[0])
 		}
 	}
-	if want := []string{"go.yaml.in/yaml/v3"}; !slices.Equal(required, want) {
-		t.Errorf("go.mod requires %v, want %v: a new dependency needs a decision", required, want)
+	// golang.org/x/sys is a requirement of x/crypto for platforms such as s390x
+	// and appears in go.mod only as an indirect one.
+	allowed := []string{"go.yaml.in/yaml/v3", "golang.org/x/crypto", "golang.org/x/sys"}
+	for _, m := range []string{"go.yaml.in/yaml/v3", "golang.org/x/crypto"} {
+		if !slices.Contains(required, m) {
+			t.Errorf("go.mod requires %v, lacks %s", required, m)
+		}
+	}
+	for _, m := range required {
+		if !slices.Contains(allowed, m) {
+			t.Errorf("go.mod requires %s, want only %v: a new dependency needs a decision", m, allowed)
+		}
 	}
 }
 
 // No file of the sensor imports a package of the server or anything beyond
-// the standard library, the YAML parser and the sensor itself.
-func TestImports_AreTheStandardLibraryTheYAMLParserAndTheSensor(t *testing.T) {
+// the standard library, the YAML parser, the SSH library and the sensor itself.
+func TestImports_AreTheStandardLibraryTheYAMLParserTheSSHLibraryAndTheSensor(t *testing.T) {
 	t.Parallel()
 
 	fset := token.NewFileSet()
@@ -72,7 +84,7 @@ func TestImports_AreTheStandardLibraryTheYAMLParserAndTheSensor(t *testing.T) {
 			switch {
 			case !strings.Contains(first, "."):
 				// The standard library.
-			case p == "go.yaml.in/yaml/v3", p == modulePath, strings.HasPrefix(p, modulePath+"/"):
+			case p == "go.yaml.in/yaml/v3", p == "golang.org/x/crypto/ssh", p == modulePath, strings.HasPrefix(p, modulePath+"/"):
 			default:
 				t.Errorf("%s imports %s", path, p)
 			}

@@ -163,7 +163,11 @@ func TestCreate_ReturnsTheHoneypotWithItsSecretOnce(t *testing.T) {
 	}
 	// The entry for the sensor names the honeypot, the service and the secret,
 	// and nothing of the inventory.
-	wantEntry := "- id: \"" + got.ID + "\"\n  service: \"ssh\"\n  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.\n  listen: \":22\"\n  secret: \"" + got.Secret + "\"\n"
+	// The entry of an SSH honeypot also names the file of its host key, which
+	// the operator creates.
+	wantEntry := "- id: \"" + got.ID + "\"\n  service: \"ssh\"\n  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.\n  listen: \":22\"\n" +
+		"  # The private key of the server. Create it once, without a passphrase, with\n  # ssh-keygen -t ed25519 -N '' -f ssh_host_key and keep it: a host key that\n  # changes would identify the honeypot. The path is relative to this file.\n  host_key_file: \"ssh_host_key\"\n" +
+		"  secret: \"" + got.Secret + "\"\n"
 	if got.SensorConfig != wantEntry {
 		t.Errorf("sensor_config = %q, want %q", got.SensorConfig, wantEntry)
 	}

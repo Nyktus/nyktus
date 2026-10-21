@@ -2,13 +2,13 @@
 
 The sensor `nyktus-sensor` runs the [honeypots](honeypots.md) inside the network you monitor. It listens where you tell it to, answers attackers like the real service would, offers nothing behind the login, and reports every session to the [trigger](configuration.md#role-trigger). It is a separate program from the server, with a configuration file of its own and nothing to share with the server but the secrets of the honeypots: it runs on hosts that attackers can reach, and what it knows is only what it needs to report.
 
-This version emulates one service, `telnet`. The other services of the console follow with later versions of the sensor; a configuration that names one is refused. The console shows the entry for the configuration file of every honeypot, also for a service that this version does not run yet: keep that entry until a sensor that emulates the service is installed.
+This version emulates two services, `telnet` and `ssh`. The other services of the console follow with later versions of the sensor; a configuration that names one is refused. The console shows the entry for the configuration file of every honeypot, also for a service that this version does not run yet: keep that entry until a sensor that emulates the service is installed.
 
 ## What the sensor does and does not do
 
 - It runs as an ordinary user and needs no privilege except a port below 1024, if you choose one.
-- It never executes, interprets or passes on what an attacker sends. A Telnet honeypot reads a user name and a password, counts them and refuses them. There is no shell, no file, no command.
-- It keeps no password. It reports the length of the password and nothing else about it.
+- It never executes, interprets or passes on what an attacker sends. A Telnet or SSH honeypot reads a user name and a password or a public key, counts them and refuses them. There is no shell, no file, no command, no forwarded port.
+- It keeps no password. It reports the length of the password and nothing else about it. Of a public key that a client offers it reports the fingerprint.
 - It limits everything an attacker can use up: connections, bytes, time and logins. See [Limits](#limits).
 - It reads no environment variables for its configuration, loads nothing from the internet and sends nothing anywhere except the reports to your trigger.
 - It reports one event for each session of an attacker, when the session ends. The first event of an incident therefore says what the attacker did, not only that it connected.
@@ -22,7 +22,7 @@ make build        # writes bin/nyktus-sensor next to bin/nyktus
 go install nyktus.org/nyktus/sensor/cmd/nyktus-sensor@v0.1.0
 ```
 
-The sensor is a Go module of its own whose `go.mod` names one dependency, a YAML parser. It is one static binary without other files, and you may rename it. `nyktus-sensor version` prints its version: the release for a build from a tag, `devel` otherwise. The sensor tells the trigger this version with every heartbeat, and the console shows it as `sensor_version` of the honeypot.
+The sensor is a Go module of its own whose `go.mod` names two dependencies: a YAML parser and the SSH library of the Go project, `golang.org/x/crypto`, which speaks the protocol and the cryptography so that the sensor does not. It is one static binary, and you may rename it. `nyktus-sensor version` prints its version: the release for a build from a tag, `devel` otherwise. The sensor tells the trigger this version with every heartbeat, and the console shows it as `sensor_version` of the honeypot.
 
 Update the [server before the sensors](honeypots.md#versions): the server refuses a report of a version it does not know.
 
@@ -83,13 +83,14 @@ Every entry of `honeypots`:
 | Key | Default | Description |
 |---|---|---|
 | `id` | required | The identifier of the honeypot in the console. The sensor logs it, so that a record can be tied to the honeypot. |
-| `service` | required | `telnet`. |
+| `service` | required | `telnet` or `ssh`. |
 | `listen` | required | `host:port` or `:port`. The host is an IP address, or empty for every address of both families. The port is written without a sign or a leading zero. `0.0.0.0` takes IPv4 addresses only and `[::]` and an empty host take both. Entries must not conflict: the same port on the same address, on an address and on a wildcard that includes it. |
 | `secret` or `secret_file` | one is required | The secret of the honeypot, 43 characters, or the file that holds it. |
-| `banner` | by service | What the service says first. Up to 256 bytes of printable ASCII, with line breaks and tabs. An empty value sends no banner. |
+| `banner` | by service | What the service says first. For Telnet up to 256 bytes of printable ASCII, with line breaks and tabs; an empty value sends no banner. For SSH the identification string, see [SSH honeypots](#ssh-honeypots). |
 | `login_prompt` | `login: ` | The prompt for the user name, up to 64 bytes of printable ASCII. Telnet only. |
+| `host_key_file` | required for `ssh` | The file with the private key of the server. SSH only; see [SSH honeypots](#ssh-honeypots). A relative path is relative to the directory of the configuration file. |
 
-`nyktus-sensor check -config <file>` reads the file the way `run` does and lists every problem it finds: unknown keys, malformed values, duplicate addresses, ids and secrets, a banner that is too long, and the modes of the files. It binds no port and does not contact the trigger.
+`nyktus-sensor check -config <file>` reads the file the way `run` does and lists every problem it finds: unknown keys, malformed values, duplicate addresses, ids and secrets, a banner that is too long, a host key that is missing or not usable, and the modes of the files. It binds no port and does not contact the trigger.
 
 ### Telnet banners
 
@@ -109,6 +110,44 @@ login_prompt: "Username: "
 
 The prompt for the password is always `Password: `.
 
+## SSH honeypots
+
+The honeypot speaks the SSH protocol with the library of the Go project, announces the version of a common OpenSSH, and refuses every login. A client can offer a password or a public key. The honeypot records the user name, the length of the password, the fingerprint of every key that the client offers, as `ssh-keygen -l` prints it (`SHA256:...`), and the version string that the client announces. Each password and each offered key is one login of the session, as in OpenSSH, where an offered key counts against `MaxAuthTries`. A key is only recorded: the honeypot refuses it before the client has to sign, so nothing of it is ever checked or used.
+
+No login succeeds. There is therefore never a channel, a shell, a command, a forwarded port or a subsystem, and nothing is run or passed on. The sixth refused login ends the connection, as the default `MaxAuthTries` of OpenSSH does. A client that does not get as far as a login, because it fails the key exchange or leaves, is reported as a connection, with its version if it announced one.
+
+### The host key
+
+The honeypot needs a host key, and it has to stay the same: a key that changed with every start would tell anyone who looks that the server is a decoy, and a client that remembers the key would warn of a man in the middle. The sensor therefore creates no key. You create it once, without a passphrase, and name the file:
+
+```sh
+ssh-keygen -t ed25519 -N '' -f /etc/nyktus-sensor/ssh_host_key
+chmod 600 /etc/nyktus-sensor/ssh_host_key
+chown nyktus-sensor /etc/nyktus-sensor/ssh_host_key
+```
+
+```yaml
+- id: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d"
+  service: "ssh"
+  listen: ":22"
+  host_key_file: "ssh_host_key"
+  secret: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+```
+
+The key is an Ed25519 key in the format that `ssh-keygen` writes. The sensor refuses a key that its group or others can read or write, as it does for a secret file, a key with a passphrase (the sensor starts unattended), a key of another type and a file larger than 8 KiB. `ssh-keygen` also writes `ssh_host_key.pub`; the sensor does not read it. Use a key of its own: never the host key of a real server, which anyone who captures the honeypot would then know. Keep the file, also in a container, where you mount it like a secret file (mode `0400` for the user of the sensor). If you replace it, clients that connected before see a changed host key.
+
+### Version and algorithms
+
+`banner` of an SSH honeypot is the identification string that the server sends first, without the line ending. The default is that of Ubuntu 22.04:
+
+```yaml
+banner: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.10"
+```
+
+Change it to what the servers in your network announce, such as `SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3`. It starts with `SSH-2.0-`, then a software version of printable characters without a space or a minus, and optionally a space and a comment; it is printable ASCII of at most 253 bytes. There is no text banner before the login.
+
+The honeypot offers the algorithms of the SSH library, not those of OpenSSH, and an Ed25519 host key only. A tool that compares the lists, such as `ssh-audit`, can tell it from the OpenSSH that it names. The library offers no algorithm that is broken or deprecated: a client that knows nothing newer than SHA-1, CBC or the 1024-bit groups, such as old embedded devices and some bots, fails the key exchange and shows up as a connection, with its version. A refused login also comes at once, where OpenSSH makes a client wait.
+
 ## Limits
 
 The limits are fixed. They bound what an attacker can use up, and they are not settings, so that a configuration cannot lift them by mistake.
@@ -119,10 +158,11 @@ The limits are fixed. They bound what an attacker can use up, and they are not s
 | Open connections from one source | 8, where a source is an IPv4 address or an IPv6 network of /64. |
 | Duration of a session | 2 minutes. The sensor closes the connection and reports the session. |
 | Silence | 30 seconds without a byte from the client, or 10 seconds for a client that does not read. |
-| Data from one client | 16 KiB for the whole connection, Telnet commands included. |
-| Logins of a session | 6. The sixth refusal is the last; the sensor then closes the connection. |
+| Data from one client | 16 KiB for the whole connection, Telnet commands and the key exchange of SSH included. |
+| Logins of a session | 6, passwords and offered SSH keys together. The sixth refusal is the last; the sensor then closes the connection. |
 | User name | The first 256 bytes are kept. |
 | Password | Nothing is kept except its length. |
+| Version of an SSH client | The first 128 bytes are kept. |
 | Telnet negotiation | The sensor offers `ECHO` and `SUPPRESS-GO-AHEAD` once and answers nothing the client negotiates. A negotiation of more than 128 bytes ends the session. |
 
 The sensor keeps no table of sources beyond the connections that are open. A flood from many addresses costs memory in proportion to the connections it holds, which are at most 128.
