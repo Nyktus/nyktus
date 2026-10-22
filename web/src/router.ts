@@ -3,6 +3,7 @@
 
 import { watch } from 'vue';
 import { createRouter, createWebHistory, type Router, type RouteRecordRaw } from 'vue-router';
+import type { Permission } from './api/generated';
 import type { PlainMessageKey } from './i18n';
 import { rememberReturnPath, takeReturnPath } from './session/returnTo';
 import type { SessionStore } from './session/store';
@@ -13,11 +14,41 @@ declare module 'vue-router' {
     public?: boolean;
     /** The title of the page, a text of the catalog. */
     title: PlainMessageKey;
+    /**
+     * What the role needs to open the page. A user without it sees a notice instead;
+     * the server checks every request, so this only spares the user a page that
+     * would fail.
+     */
+    permission?: Permission;
   }
 }
 
 export const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: () => import('./views/HomeView.vue'), meta: { title: 'home.title' } },
+  {
+    path: '/honeytokens',
+    name: 'honeytokens',
+    component: () => import('./views/HoneytokensView.vue'),
+    meta: { title: 'honeytokens.title', permission: 'honeytokens:read' },
+  },
+  {
+    path: '/honeytokens/new',
+    name: 'honeytoken-new',
+    component: () => import('./views/HoneytokenNewView.vue'),
+    meta: { title: 'honeytokens.create.title', permission: 'honeytokens:write' },
+  },
+  {
+    path: '/honeytokens/:id',
+    name: 'honeytoken',
+    component: () => import('./views/HoneytokenView.vue'),
+    meta: { title: 'honeytokens.title', permission: 'honeytokens:read' },
+  },
+  {
+    path: '/forbidden',
+    name: 'forbidden',
+    component: () => import('./views/ForbiddenView.vue'),
+    meta: { title: 'forbidden.title' },
+  },
   {
     path: '/sign-in',
     name: 'sign-in',
@@ -78,6 +109,9 @@ export function createConsoleRouter(session: SessionStore, history = createWebHi
     if (!signedIn) {
       rememberReturnPath(to.fullPath);
       return { name: 'sign-in' };
+    }
+    if (to.meta.permission !== undefined && !session.can(to.meta.permission)) {
+      return { name: 'forbidden' };
     }
     return true;
   });

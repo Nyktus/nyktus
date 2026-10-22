@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@paulmillr/qr": "0.3.0",
     "vue": "3.5.44",
     "vue-router": "4.6.4"
   },
