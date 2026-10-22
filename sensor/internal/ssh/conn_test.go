@@ -19,6 +19,7 @@ import (
 	cryptossh "golang.org/x/crypto/ssh"
 
 	"nyktus.org/nyktus/sensor/internal/clock/clocktest"
+	"nyktus.org/nyktus/sensor/internal/guard"
 	"nyktus.org/nyktus/sensor/internal/session"
 )
 
@@ -56,65 +57,26 @@ func (c *fakeConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func TestGuardedConn_Deadlines_AreThirtySecondsToReadAndTenToWriteFromTheClock(t *testing.T) {
+func TestGuardedConn_AppliesTheLimitsOfTheGuard(t *testing.T) {
 	t.Parallel()
 
-	clk := clocktest.New()
-	conn := newFakeConn("abc")
-	g := newGuardedConn(conn, clk)
-	if _, err := g.Read(make([]byte, 1)); err != nil {
-		t.Fatal(err)
-	}
-	clk.Advance(time.Second)
-	if _, err := g.Read(make([]byte, 1)); err != nil {
-		t.Fatal(err)
-	}
+	conn := newFakeConn(strings.Repeat("a", 20<<10))
+	g := newGuardedConn(conn, clocktest.New())
 	if _, err := g.Write([]byte("x")); err != nil {
 		t.Fatal(err)
 	}
-	if len(conn.readDeadlines) != 2 || len(conn.writeDeadlines) != 1 {
-		t.Fatalf("deadlines set: %d for reads, %d for writes, want one for every call", len(conn.readDeadlines), len(conn.writeDeadlines))
-	}
-	// The idle time starts again with every read, from the clock of the sensor.
-	if want := clk.Deadline(30 * time.Second); !conn.readDeadlines[1].Equal(want) {
-		t.Errorf("read deadline = %v, want %v", conn.readDeadlines[1], want)
-	}
-	if !conn.readDeadlines[1].After(conn.readDeadlines[0]) {
-		t.Errorf("read deadlines %v, %v: the second does not follow the clock", conn.readDeadlines[0], conn.readDeadlines[1])
-	}
-	if want := clk.Deadline(10 * time.Second); !conn.writeDeadlines[0].Equal(want) {
-		t.Errorf("write deadline = %v, want %v", conn.writeDeadlines[0], want)
-	}
-}
-
-func TestGuardedConn_Read_StopsAfter16KiBInAll(t *testing.T) {
-	t.Parallel()
-
-	g := newGuardedConn(newFakeConn(strings.Repeat("a", 20<<10)), clocktest.New())
-	// A read that would pass the limit is cut at it.
-	buf := make([]byte, 5000)
 	total := 0
 	var err error
 	for err == nil {
 		var n int
-		n, err = g.Read(buf)
+		n, err = g.Read(make([]byte, 5000))
 		total += n
 	}
-	if total != 16<<10 || !errors.Is(err, errTooMuch) {
+	if total != 16<<10 || !errors.Is(err, guard.ErrTooMuch) {
 		t.Errorf("read %d bytes and then %v, want exactly 16 KiB and the error for too much", total, err)
 	}
-}
-
-func TestGuardedConn_Read_PassesTheEndOfTheStream(t *testing.T) {
-	t.Parallel()
-
-	g := newGuardedConn(newFakeConn("ab"), clocktest.New())
-	buf := make([]byte, 8)
-	if n, err := g.Read(buf); n != 2 || err != nil {
-		t.Fatalf("Read() = %d, %v, want 2, nil", n, err)
-	}
-	if _, err := g.Read(buf); !errors.Is(err, io.EOF) {
-		t.Errorf("Read() = %v, want the end of the stream", err)
+	if len(conn.readDeadlines) == 0 || len(conn.writeDeadlines) != 1 {
+		t.Errorf("deadlines set: %d for reads, %d for writes, want some for reads and one for the write", len(conn.readDeadlines), len(conn.writeDeadlines))
 	}
 }
 

@@ -290,7 +290,7 @@ The sensor runs inside the monitored network and talks to attackers directly.
 
 - It runs as an unprivileged user with the smallest possible dependency set. It never executes, interprets or forwards attacker input.
 - Emulated services offer no real functionality. A mail decoy accepts messages but never relays them. No service may act as a proxy.
-- Connections, read sizes, sessions and runtimes are bounded so the sensor cannot be used to exhaust the host or amplify traffic.
+- Connections, read sizes, sessions and runtimes are bounded so the sensor cannot be used to exhaust the host or amplify traffic. Every honeypot reads and writes through `guard.Conn`, which gives a connection its idle time, its write deadline and its budget of bytes, so that no protocol can leave one out.
 - The sensor authenticates to the server with a per-honeypot secret over TLS. It verifies the certificate in every case, sends no request through a proxy of the environment, follows no redirect and repeats a request only after a failure of the transport. It reads the secret from its configuration file or from a file, and refuses a file that other users can read, checking the mode of the file it has opened.
 - A honeypot that cannot start, for example because its port is taken, stops the sensor. A sensor that silently watches less than it is configured to would look healthy.
 - A session ends after two minutes at most, so that its report reaches the server within the five minutes in which the server takes its age. A report older than that is dropped and counted, not sent with a wrong time. The queue of reports is bounded and a full queue drops the new report; heartbeats do not use it, so that an attacker cannot make a honeypot look offline.
