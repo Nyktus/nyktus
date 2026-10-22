@@ -280,4 +280,42 @@ func TestSession_EventType(t *testing.T) {
 	if got := s.EventType(); got != "login_attempt" {
 		t.Errorf("EventType() = %q after a login, want login_attempt", got)
 	}
+	s.SetQuery(report.Query{BaseDN: "", Filter: "(objectClass=*)"})
+	if got := s.EventType(); got != "directory_query" {
+		t.Errorf("EventType() = %q after a search, want directory_query", got)
+	}
+}
+
+func TestSession_SetQuery_KeepsTheFirstSearchAndAnEmptyBase(t *testing.T) {
+	t.Parallel()
+
+	s := start(t, clocktest.New())
+	if !s.SetQuery(report.Query{BaseDN: "", Filter: "(a=b)"}) {
+		t.Fatal("SetQuery() = false for the first search")
+	}
+	if s.SetQuery(report.Query{BaseDN: "dc=example", Filter: "(c=d)"}) {
+		t.Error("SetQuery() = true for a second search, want false")
+	}
+	s.End()
+	got, _ := s.Report(0)
+	if got.Query == nil || *got.Query != (report.Query{BaseDN: "", Filter: "(a=b)"}) {
+		t.Errorf("Query = %+v, want the first search with the empty base", got.Query)
+	}
+	got.Query.Filter = "changed"
+	again, _ := s.Report(0)
+	if again.Query.Filter != "(a=b)" {
+		t.Errorf("filter = %q after the first report was changed, want (a=b)", again.Query.Filter)
+	}
+}
+
+func TestSession_SetStartup_IsInTheReport(t *testing.T) {
+	t.Parallel()
+
+	s := start(t, clocktest.New())
+	s.SetStartup("app", "psql")
+	s.End()
+	got, _ := s.Report(0)
+	if got.Database != "app" || got.ApplicationName != "psql" {
+		t.Errorf("database = %q, application name = %q, want app and psql", got.Database, got.ApplicationName)
+	}
 }

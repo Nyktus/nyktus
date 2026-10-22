@@ -60,8 +60,12 @@ func New(cfg Config, clk clock.Clock) *Service {
 // when the client has gone, was silent for too long, sent too much or has used
 // up its logins, and leaves closing the connection to its caller.
 func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Session) {
-	w := &writer{conn: guard.New(conn, s.clock)}
-	r := &lineReader{r: bufio.NewReader(w.conn)}
+	g := guard.New(conn, s.clock)
+	r := &lineReader{r: bufio.NewReader(g)}
+	write := func(b []byte) error {
+		_, err := g.Write(b)
+		return err
+	}
 
 	// A login whose name has been entered is recorded wherever the dialog
 	// ends after that: when the prompt for the password cannot be written, the
@@ -76,20 +80,20 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 	// The options that a Telnet server offers first: it echoes what the
 	// client types, and it sends no go-ahead.
 	opening := []byte{iac, will, optEcho, iac, will, optSGA}
-	if w.write(append(opening, s.cfg.Banner...)) != nil {
+	if write(append(opening, s.cfg.Banner...)) != nil {
 		return
 	}
 	for range maxRounds {
-		if ctx.Err() != nil || w.write([]byte(s.cfg.LoginPrompt)) != nil {
+		if ctx.Err() != nil || write([]byte(s.cfg.LoginPrompt)) != nil {
 			return
 		}
-		user, err := r.read(report.MaxUsername, w.echo)
+		user, err := r.read(report.MaxUsername, write)
 		if err != nil {
 			// A name that was not entered, because the client left, was silent
 			// for too long or sent too much, is no login.
 			return
 		}
-		if w.write([]byte("\r\n")) != nil {
+		if write([]byte("\r\n")) != nil {
 			return
 		}
 		if user.n == 0 {
@@ -98,7 +102,7 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 		}
 
 		open = &report.Attempt{Username: string(user.text)}
-		if w.write([]byte(passwordPrompt)) != nil {
+		if write([]byte(passwordPrompt)) != nil {
 			return
 		}
 		pass, err := r.read(0, nil)
@@ -111,24 +115,8 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 		}
 		sess.AddAttempt(*open)
 		open = nil
-		if w.write([]byte("\r\nLogin incorrect\r\n")) != nil {
+		if write([]byte("\r\nLogin incorrect\r\n")) != nil {
 			return
 		}
 	}
-}
-
-// writer writes to the client within the limits of the connection.
-type writer struct {
-	conn *guard.Conn
-}
-
-func (w *writer) write(b []byte) error {
-	_, err := w.conn.Write(b)
-	return err
-}
-
-// echo shows what the client typed to the client, as a Telnet server that
-// offers to echo does.
-func (w *writer) echo(b []byte) error {
-	return w.write(b)
 }

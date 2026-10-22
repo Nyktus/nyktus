@@ -73,6 +73,27 @@ func TestCreated_SensorConfig_SSH_NamesAKeyFileForEachHoneypot(t *testing.T) {
 	}
 }
 
+// The entry of PostgreSQL and LDAP honeypots is the one of Telnet with their
+// service and usual port, which is what the sensor reads in its own tests.
+func TestCreated_SensorConfig_PostgresAndLDAP_HaveTheFormOfTheTelnetEntry(t *testing.T) {
+	t.Parallel()
+
+	golden, err := os.ReadFile(goldenEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for service, port := range map[honeypot.Service]string{honeypot.ServicePostgres: ":5432", honeypot.ServiceLDAP: ":389"} {
+		want := strings.NewReplacer(`"telnet"`, `"`+string(service)+`"`, `":23"`, `"`+port+`"`).Replace(string(golden))
+		c := honeypot.Created{
+			Honeypot: honeypot.Honeypot{ID: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d", Service: service},
+			Secret:   honeypot.Secret(strings.Repeat("A", 43)),
+		}
+		if got := c.SensorConfig(); got != want {
+			t.Errorf("%s: SensorConfig() = %q, want %q", service, got, want)
+		}
+	}
+}
+
 func TestCreated_SensorConfig_NamesTheUsualPortOfEveryService(t *testing.T) {
 	t.Parallel()
 

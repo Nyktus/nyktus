@@ -107,7 +107,7 @@ The [sensor](sensor.md) writes JSON to its standard error as well, one record pe
 | `sensor: sessions ended by a failure of the service` | error | A programming error: `sessions` sessions of the honeypot ended with a panic. Their reports were sent. `panic` is the failure of the first one in the last minute (the text of a runtime error such as `assignment to entry in nil map`, otherwise only the type of the value, because its text could hold what a client sent) and `stack` the first 2 KiB of its stack, which names the place of the fault. |
 | `sensor: session not started` | error | The random source failed. |
 
-At level `debug` the sensor also writes `sensor: session reported` for each session that the trigger answered, with the `event_type` that the server will derive (`connection` or `login_attempt`) and the number of `attempts`, and `sensor: report request failed` for each failed request with its `attempt` and `error`. An attacker causes one record of the first kind for each session, so keep this level for debugging.
+At level `debug` the sensor also writes `sensor: session reported` for each session that the trigger answered, with the `event_type` that the server will derive (`connection`, `login_attempt` or `directory_query`) and the number of `attempts`, and `sensor: report request failed` for each failed request with its `attempt` and `error`. An attacker causes one record of the first kind for each session, so keep this level for debugging.
 
 ## Sign-in through an identity provider
 
