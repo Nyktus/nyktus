@@ -1,0 +1,21 @@
+/*
+ * SPDX-FileCopyrightText: The Nyktus Authors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* The typefaces ship with the build; the console loads no font from elsewhere. */
+@font-face {
+  font-family: 'Schibsted Grotesk Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 900;
+  src: url('../assets/fonts/schibsted-grotesk-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('../assets/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+}

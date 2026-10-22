@@ -3,5 +3,14 @@
 
 import { createApp } from 'vue';
 import App from './App.vue';
+import { locale } from './i18n';
+import { createConsoleRouter } from './router';
+import { session } from './session';
+import './styles/fonts.css';
+import './styles/tokens.css';
+import './styles/base.css';
 
-createApp(App).mount('#app');
+document.documentElement.lang = locale.value;
+
+const router = createConsoleRouter(session);
+createApp(App).use(router).mount('#app');
