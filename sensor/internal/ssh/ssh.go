@@ -17,8 +17,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"strings"
-	"unicode/utf8"
 
 	cryptossh "golang.org/x/crypto/ssh"
 
@@ -87,7 +85,7 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 	// The version is read where the connection ends, because the library
 	// shows it only after the key exchange. A client that fails the exchange
 	// is the one that is most worth naming.
-	defer func() { sess.SetClientVersion(clean(gc.clientVersion(), report.MaxClientVersion)) }()
+	defer func() { sess.SetClientVersion(report.Clean(gc.clientVersion(), report.MaxClientVersion)) }()
 
 	r := &recorder{sess: sess}
 	cfg := s.base
@@ -112,7 +110,7 @@ type recorder struct {
 
 func (r *recorder) password(m cryptossh.ConnMetadata, password []byte) (*cryptossh.Permissions, error) {
 	n := len(password)
-	r.sess.AddAttempt(report.Attempt{Username: clean(m.User(), report.MaxUsername), PasswordLength: &n})
+	r.sess.AddAttempt(report.Attempt{Username: report.Clean(m.User(), report.MaxUsername), PasswordLength: &n})
 	return nil, errRefused
 }
 
@@ -121,7 +119,7 @@ func (r *recorder) password(m cryptossh.ConnMetadata, password []byte) (*cryptos
 // signs at once has the signature checked by the library, and is refused all the
 // same: no key opens anything.
 func (r *recorder) publicKey(m cryptossh.ConnMetadata, key cryptossh.PublicKey) (*cryptossh.Permissions, error) {
-	r.sess.AddAttempt(report.Attempt{Username: clean(m.User(), report.MaxUsername), KeyFingerprint: cryptossh.FingerprintSHA256(key)})
+	r.sess.AddAttempt(report.Attempt{Username: report.Clean(m.User(), report.MaxUsername), KeyFingerprint: cryptossh.FingerprintSHA256(key)})
 	return nil, errRefused
 }
 
@@ -139,22 +137,5 @@ func (r *recorder) other(m cryptossh.ConnMetadata, method string, _ error) {
 			return
 		}
 	}
-	r.sess.AddAttempt(report.Attempt{Username: clean(m.User(), report.MaxUsername)})
-}
-
-// clean returns a text that a client chose in a form that the server accepts:
-// valid UTF-8 of at most limit bytes. The server removes characters that do not
-// show; what it cannot repair is a text that is not UTF-8 or that is longer than
-// its columns.
-func clean(s string, limit int) string {
-	s = strings.ToValidUTF8(s, "\uFFFD")
-	if len(s) <= limit {
-		return s
-	}
-	s = s[:limit]
-	// The cut may have ended in the middle of a character.
-	for !utf8.ValidString(s) {
-		s = s[:len(s)-1]
-	}
-	return s
+	r.sess.AddAttempt(report.Attempt{Username: report.Clean(m.User(), report.MaxUsername)})
 }

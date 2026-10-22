@@ -162,16 +162,19 @@ linters:
               desc: the sensor is a module of its own and imports nothing of the server
             - pkg: nyktus.org/nyktus/api
               desc: the sensor is a module of its own and imports nothing of the server
-        # The clock of tests moves by hand and is for tests only.
+        # The clock and the connection of tests are for tests only.
         sensor-test-only:
           list-mode: lax
           files:
             - "**/sensor/**"
             - "!$test"
             - "!**/sensor/internal/clock/clocktest/*.go"
+            - "!**/sensor/internal/conntest/*.go"
           deny:
             - pkg: nyktus.org/nyktus/sensor/internal/clock/clocktest
               desc: the clock of tests is for tests only
+            - pkg: nyktus.org/nyktus/sensor/internal/conntest
+              desc: the connection of tests is for tests only
         # Test-only dependencies must never reach the binaries.
         test-only:
           list-mode: lax

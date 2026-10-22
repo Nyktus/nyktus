@@ -10,6 +10,11 @@
 // last from the content.
 package report
 
+import (
+	"strings"
+	"unicode/utf8"
+)
+
 // Version is the version of the documents. The server reads only versions it
 // knows, so a new member needs a new version.
 const Version = 1
@@ -23,9 +28,13 @@ const (
 // Limits that the server enforces as well. The sensor keeps within them, so
 // that it does not send what would be cut or refused.
 const (
-	MaxAttempts      = 6
-	MaxUsername      = 256
-	MaxClientVersion = 128
+	MaxAttempts        = 6
+	MaxUsername        = 256
+	MaxClientVersion   = 128
+	MaxDatabase        = 64
+	MaxApplicationName = 64
+	MaxBaseDN          = 256
+	MaxFilter          = 256
 )
 
 // Session is the report of one session of an attacker.
@@ -77,4 +86,21 @@ type Heartbeat struct {
 // may be empty.
 func NewHeartbeat(sensorVersion string) Heartbeat {
 	return Heartbeat{Version: Version, Type: TypeHeartbeat, SensorVersion: sensorVersion}
+}
+
+// Clean returns a text that a client chose in a form that the server accepts:
+// valid UTF-8 of at most limit bytes. The server removes characters that do not
+// show; what it cannot repair is a text that is not UTF-8 or that is longer than
+// its columns.
+func Clean(s string, limit int) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
+	if len(s) <= limit {
+		return s
+	}
+	s = s[:limit]
+	// The cut may have ended in the middle of a character.
+	for !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
 }

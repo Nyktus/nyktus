@@ -17,7 +17,9 @@ import (
 
 	"nyktus.org/nyktus/sensor/internal/clock"
 	"nyktus.org/nyktus/sensor/internal/config"
+	"nyktus.org/nyktus/sensor/internal/ldap"
 	"nyktus.org/nyktus/sensor/internal/listener"
+	"nyktus.org/nyktus/sensor/internal/postgres"
 	"nyktus.org/nyktus/sensor/internal/reporter"
 	"nyktus.org/nyktus/sensor/internal/session"
 	"nyktus.org/nyktus/sensor/internal/ssh"
@@ -77,6 +79,10 @@ func newService(hp config.Honeypot, clk clock.Clock) service {
 			cfg.LoginPrompt = *hp.LoginPrompt
 		}
 		return telnet.New(cfg, clk)
+	case config.Postgres:
+		return postgres.New(clk)
+	case config.LDAP:
+		return ldap.New(clk)
 	default:
 		panic("sensor: unknown service " + string(hp.Service))
 	}
