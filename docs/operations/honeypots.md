@@ -17,6 +17,8 @@ A honeypot is one service on one address. To emulate several services of one hos
 
 ## Creating a honeypot
 
+In the web console, open Honeypots and choose New honeypot. After you create it, the page shows the secret and the entry for the configuration of the sensor, with a button to copy each. They are shown once: the page forgets them when you confirm that you copied them or leave it, and keeps them nowhere in the browser. To replace the secret, choose Replace the secret on the page of the honeypot; the console asks first, because a sensor that still uses the old secret is shut out.
+
 Administrators and users with the role `user` create honeypots, with a session or with an [API key](api-keys.md) that carries the scope `honeypots:write`:
 
 ```sh

@@ -163,6 +163,7 @@ onMounted(load);
       </div>
 
       <ConfirmDialog
+        v-if="canWrite"
         :open="confirming"
         :title="t('honeytokens.delete.title')"
         :confirm="t('honeytokens.delete.confirm')"

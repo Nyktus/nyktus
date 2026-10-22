@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Honeytoken, Session } from '../api/generated';
+import type { Honeypot, Honeytoken, Session } from '../api/generated';
 
 export interface Recorded {
   method: string;
@@ -97,4 +97,33 @@ export function honeytoken(overrides: Partial<Honeytoken> = {}): Honeytoken {
     updated_at: '2026-10-21T09:00:00Z',
     ...overrides,
   };
+}
+
+export const honeypotId = 'beefbeef-1111-4222-8333-944444444444';
+// Plainly made up, so that a scan for secrets does not take it for one.
+export const honeypotSecret = `test-secret-${'x'.repeat(31)}`;
+export const honeypotConfig = `- id: ${honeypotId}\n  service: ssh\n  listen: ":22"\n  secret: ${honeypotSecret}\n`;
+
+export function honeypot(overrides: Partial<Honeypot> = {}): Honeypot {
+  return {
+    id: honeypotId,
+    service: 'ssh',
+    name: 'Jump host',
+    notes: 'VLAN 20, rack 4',
+    enabled: true,
+    techniques: ['T1078'],
+    severity: 'medium',
+    scenario_id: null,
+    status: 'online',
+    last_seen_at: '2026-10-22T07:55:00Z',
+    sensor_version: '0.1.0',
+    created_at: '2026-10-20T08:30:00Z',
+    updated_at: '2026-10-21T09:00:00Z',
+    ...overrides,
+  };
+}
+
+/** What the server answers when a secret is created or replaced. */
+export function withSecret(h: Honeypot) {
+  return { ...h, status: 'never' as const, last_seen_at: null, sensor_version: null, secret: honeypotSecret, sensor_config: honeypotConfig };
 }
