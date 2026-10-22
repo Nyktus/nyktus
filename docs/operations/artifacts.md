@@ -6,6 +6,8 @@ Artifacts are stored, so that you can download them again, see where you placed 
 
 ## Listing and reading artifacts
 
+The web console lists artifacts on a page of their own and on the page of their scenario. The page of an artifact downloads the file, shows its content as text if it is text (a text, Markdown or HTML file; a configuration file is only downloaded), and lets administrators and users note where the file was placed and delete it. The console never opens an artifact: it saves the file for you, and shows an HTML file only as text, because such a file would otherwise run with the rights of your session.
+
 - `GET /api/v1/artifacts` lists artifacts from the newest to the oldest, without their content, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`, with the same filter. `scenario_id=<scenario>` narrows the list to the artifacts of a scenario.
 - `GET /api/v1/artifacts/<id>` returns one artifact without its content.
 

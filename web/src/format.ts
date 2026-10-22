@@ -15,3 +15,15 @@ export function formatDateTime(iso: string, locale: Locale): string {
   }
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
+
+/** The size of a file in the unit that reads best, in the language given. */
+export function formatSize(bytes: number, locale: Locale): { unit: 'bytes' | 'kib' | 'mib'; count: string } {
+  const number = (n: number): string => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(n);
+  if (bytes < 1024) {
+    return { unit: 'bytes', count: number(bytes) };
+  }
+  if (bytes < 1024 * 1024) {
+    return { unit: 'kib', count: number(bytes / 1024) };
+  }
+  return { unit: 'mib', count: number(bytes / (1024 * 1024)) };
+}

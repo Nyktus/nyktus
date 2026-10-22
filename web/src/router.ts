@@ -92,6 +92,18 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'catalog.title', permission: 'catalog:read' },
   },
   {
+    path: '/artifacts',
+    name: 'artifacts',
+    component: () => import('./views/ArtifactsView.vue'),
+    meta: { title: 'artifacts.title', permission: 'artifacts:read' },
+  },
+  {
+    path: '/artifacts/:id',
+    name: 'artifact',
+    component: () => import('./views/ArtifactView.vue'),
+    meta: { title: 'artifacts.title', permission: 'artifacts:read' },
+  },
+  {
     path: '/forbidden',
     name: 'forbidden',
     component: () => import('./views/ForbiddenView.vue'),

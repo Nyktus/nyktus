@@ -23,6 +23,7 @@ function server(role: Role = 'admin', extra: Record<string, () => Response> = {}
     'GET /api/v1/scenarios': () => json(200, { scenarios: [scenario()] }),
     [`GET ${detail}`]: () => json(200, scenario()),
     'GET /api/v1/honeytokens': () => json(200, { honeytokens: [] }),
+    'GET /api/v1/artifacts': () => json(200, { artifacts: [] }),
     'GET /api/v1/honeypots': () => json(200, { honeypots: [] }),
     ...extra,
   });

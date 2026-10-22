@@ -3,7 +3,7 @@
 
 import { afterEach, expect, test, vi } from 'vitest';
 import { boot } from './testing/boot';
-import { catalogDeception, catalogSummary, fakeServer, honeypot, honeypotId, honeytoken, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { artifact, artifactId, catalogDeception, catalogSummary, fakeServer, honeypot, honeypotId, honeytoken, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -24,6 +24,8 @@ function server() {
     [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario({ deception_id: 'browser-bookmarks', language: 'en' })),
     [`GET /api/v1/scenarios/${scenarioId}/guide`]: () => json(200, { language: 'en', content: '# Guide' }),
     'GET /api/v1/catalog/deceptions': () => json(200, { deceptions: [catalogSummary()] }),
+    'GET /api/v1/artifacts': () => json(200, { artifacts: [artifact()] }),
+    [`GET /api/v1/artifacts/${artifactId}`]: () => json(200, artifact()),
     'GET /api/v1/catalog/deceptions/browser-bookmarks': () => json(200, catalogDeception()),
   });
 }
@@ -41,11 +43,34 @@ test.each([
   '/scenarios',
   '/scenarios/new',
   `/scenarios/${scenarioId}`,
+  '/artifacts',
+  `/artifacts/${artifactId}`,
   '/catalog',
   '/catalog/browser-bookmarks',
   '/forbidden',
 ])('%s has no id twice, and every label points at a field', async (path) => {
   const { wrapper } = await boot(server(), path);
+  const ids = [...document.body.querySelectorAll('[id]')].map((e) => e.id);
+  expect(ids.filter((id, i) => ids.indexOf(id) !== i), 'ids that are used twice').toEqual([]);
+  for (const label of wrapper.findAll('label[for]')) {
+    expect(document.getElementById(label.attributes('for') ?? ''), `the target of the label "${label.text()}"`).not.toBeNull();
+  }
+  for (const element of wrapper.findAll('[aria-describedby]')) {
+    for (const target of (element.attributes('aria-describedby') ?? '').split(' ')) {
+      expect(document.getElementById(target), `the description ${target}`).not.toBeNull();
+    }
+  }
+});
+
+// The pages of the sign-in and of the links of the server need no session, and have the same
+// duty: no id twice, every label at a field.
+test.each(['/sign-in', '/setup', '/activate', '/reset-password'])('%s has no id twice, and every label points at a field', async (path) => {
+  const signedOut = fakeServer({
+    'GET /api/v1/session': () => json(401, { error: { code: 'unauthenticated', message: 'x' } }),
+    'GET /api/v1/sign-in-options': () => json(200, { password: true, oidc: 'available' }),
+  });
+  const { wrapper } = await boot(signedOut, path);
+  expect(wrapper.find('input').exists() || wrapper.find('h1').exists()).toBe(true);
   const ids = [...document.body.querySelectorAll('[id]')].map((e) => e.id);
   expect(ids.filter((id, i) => ids.indexOf(id) !== i), 'ids that are used twice').toEqual([]);
   for (const label of wrapper.findAll('label[for]')) {

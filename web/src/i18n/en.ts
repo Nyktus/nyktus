@@ -311,6 +311,39 @@ export const en = {
   'scenarios.guideFailed': 'The guide could not be loaded.',
 
   'error.artifact_reveals_decoy': 'One of the values would make an artifact reveal what it is, for example by naming the product or the decoy. Choose other values.',
+
+  'nav.artifacts': 'Artifacts',
+
+  'artifacts.title': 'Artifacts',
+  'artifacts.intro': 'An artifact is a file that applying a deception rendered. You place it where an intruder looks. It never raises an event itself.',
+  'artifacts.empty': 'There are no artifacts yet. Applying a deception from the catalog creates them.',
+  'artifacts.loadFailed': 'The artifacts could not be loaded.',
+  'artifacts.back': 'All artifacts',
+  'artifacts.fileName': 'File',
+  'artifacts.format': 'Format',
+  'artifacts.size': 'Size',
+  'artifacts.mediaType': 'Media type',
+  'artifacts.scenario': 'Scenario',
+  'artifacts.scenarioGone': 'None; the scenario was deleted',
+  'artifacts.key': 'Key in the deception',
+  'artifacts.placement': 'Where it is placed',
+  'artifacts.placementHint': 'Where you put the file, so that you find it when you clean up.',
+  'artifacts.download': 'Download',
+  'artifacts.downloadFailed': 'The file could not be downloaded.',
+  'artifacts.preview': 'Show the content',
+  'artifacts.previewHide': 'Hide the content',
+  'artifacts.previewNote': 'Shown as text. HTML and configuration files are never opened by the console.',
+  'artifacts.previewCut': 'Only the first {size} are shown. Download the file to read all of it.',
+  'artifacts.noPreview': 'This file is not text; download it to open it.',
+  'artifacts.delete.title': 'Delete this artifact?',
+  'artifacts.delete.body': 'Remove the file from where it was placed as well, so that it does not mislead your own team.',
+  'artifacts.delete.confirm': 'Delete artifact',
+  'artifacts.ofScenario': 'Artifacts',
+  'artifacts.none': 'None.',
+
+  'unit.bytes': '{count} bytes',
+  'unit.kib': '{count} KiB',
+  'unit.mib': '{count} MiB',
 } as const;
 
 export type MessageKey = keyof typeof en;
