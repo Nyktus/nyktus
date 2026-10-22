@@ -36,15 +36,17 @@ export interface OperationInfo {
   access: string;
   /** The browser navigates to the operation; the page does not request it. */
   navigation: boolean;
+  /** The successful answer is a file, not JSON. */
+  binary: boolean;
 }
 
 export const operations = {
-  createThing: { method: 'POST', path: '/things', access: 'things:write', navigation: false },
-  deleteThing: { method: 'DELETE', path: '/things/{id}', access: 'things:write', navigation: false },
-  downloadThing: { method: 'GET', path: '/things/{id}/content', access: 'things:read', navigation: false },
-  getThing: { method: 'GET', path: '/things/{id}', access: 'things:read', navigation: false },
-  goThere: { method: 'GET', path: '/go', access: 'public', navigation: true },
-  listThings: { method: 'GET', path: '/things', access: 'things:read', navigation: false },
+  createThing: { method: 'POST', path: '/things', access: 'things:write', navigation: false, binary: false },
+  deleteThing: { method: 'DELETE', path: '/things/{id}', access: 'things:write', navigation: false, binary: false },
+  downloadThing: { method: 'GET', path: '/things/{id}/content', access: 'things:read', navigation: false, binary: true },
+  getThing: { method: 'GET', path: '/things/{id}', access: 'things:read', navigation: false, binary: false },
+  goThere: { method: 'GET', path: '/go', access: 'public', navigation: true, binary: false },
+  listThings: { method: 'GET', path: '/things', access: 'things:read', navigation: false, binary: false },
 } as const satisfies Record<string, OperationInfo>;
 
 export type OperationId = keyof typeof operations;

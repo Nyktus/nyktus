@@ -215,6 +215,7 @@ describe('the guide of a scenario', () => {
     return server('admin', {
       [`GET ${detail}`]: () => json(200, fromCatalog),
       'GET /api/v1/honeytokens': () => json(200, { honeytokens: [] }),
+      'GET /api/v1/artifacts': () => json(200, { artifacts: [] }),
       'GET /api/v1/honeypots': () => json(200, { honeypots: [] }),
       ...extra,
     });

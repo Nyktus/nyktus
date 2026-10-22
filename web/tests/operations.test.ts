@@ -25,12 +25,9 @@ const pending = [
   'createPasswordResetLink',
   'createUser',
   'deleteAlertChannel',
-  'deleteArtifact',
   'deleteUser',
-  'downloadArtifact',
   'getAlertChannel',
   'getAlertDelivery',
-  'getArtifact',
   'getEvent',
   'getIncident',
   'getLiveness',
@@ -39,7 +36,6 @@ const pending = [
   'getUser',
   'listAPIKeys',
   'listAlertChannels',
-  'listArtifacts',
   'listAuditEntries',
   'listEvents',
   'listIncidentDeliveries',
@@ -52,7 +48,6 @@ const pending = [
   'testAlertChannel',
   'triageIncident',
   'updateAlertChannel',
-  'updateArtifact',
   'updateUser',
 ] as const;
 

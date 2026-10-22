@@ -316,4 +316,37 @@ export const de: Record<MessageKey, string> = {
 
   'error.artifact_reveals_decoy':
     'Einer der Werte würde dazu führen, dass ein Artefakt verrät, was es ist, etwa weil er das Produkt oder den Köder nennt. Wählen Sie andere Werte.',
+
+  'nav.artifacts': 'Artefakte',
+
+  'artifacts.title': 'Artefakte',
+  'artifacts.intro': 'Ein Artefakt ist eine Datei, die das Anwenden einer Deception erzeugt hat. Sie legen es dort aus, wo ein Angreifer sucht. Es löst selbst nie ein Ereignis aus.',
+  'artifacts.empty': 'Es gibt noch keine Artefakte. Das Anwenden einer Deception aus dem Katalog legt sie an.',
+  'artifacts.loadFailed': 'Die Artefakte konnten nicht geladen werden.',
+  'artifacts.back': 'Alle Artefakte',
+  'artifacts.fileName': 'Datei',
+  'artifacts.format': 'Format',
+  'artifacts.size': 'Größe',
+  'artifacts.mediaType': 'Medientyp',
+  'artifacts.scenario': 'Scenario',
+  'artifacts.scenarioGone': 'Keines; das Scenario wurde gelöscht',
+  'artifacts.key': 'Schlüssel in der Deception',
+  'artifacts.placement': 'Wo es ausgelegt ist',
+  'artifacts.placementHint': 'Wo Sie die Datei abgelegt haben, damit Sie sie beim Aufräumen finden.',
+  'artifacts.download': 'Herunterladen',
+  'artifacts.downloadFailed': 'Die Datei konnte nicht heruntergeladen werden.',
+  'artifacts.preview': 'Inhalt anzeigen',
+  'artifacts.previewHide': 'Inhalt ausblenden',
+  'artifacts.previewNote': 'Als Text dargestellt. HTML- und Konfigurationsdateien öffnet die Console nie.',
+  'artifacts.previewCut': 'Gezeigt werden nur die ersten {size}. Laden Sie die Datei herunter, um sie ganz zu lesen.',
+  'artifacts.noPreview': 'Diese Datei ist kein Text; laden Sie sie herunter, um sie zu öffnen.',
+  'artifacts.delete.title': 'Dieses Artefakt löschen?',
+  'artifacts.delete.body': 'Entfernen Sie die Datei auch dort, wo sie ausgelegt wurde, damit sie Ihr eigenes Team nicht in die Irre führt.',
+  'artifacts.delete.confirm': 'Artefakt löschen',
+  'artifacts.ofScenario': 'Artefakte',
+  'artifacts.none': 'Keine.',
+
+  'unit.bytes': '{count} Byte',
+  'unit.kib': '{count} KiB',
+  'unit.mib': '{count} MiB',
 };

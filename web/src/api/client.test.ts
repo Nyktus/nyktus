@@ -79,6 +79,17 @@ describe('call', () => {
     expect(server.requests.map((r) => r.url)).toEqual(['/api/v1/incidents/a%2Fb', '/api/v1/incidents?limit=10']);
   });
 
+  test('returns a download as the file, and never as text that anything could read as markup', async () => {
+    const server = fakeServer({
+      'GET /api/v1/artifacts/abc/content': () =>
+        new Response('<script>alert(1)</script>', { status: 200, headers: { 'Content-Type': 'text/html', 'Content-Disposition': 'attachment; filename="x.html"' } }),
+    });
+    const { status, body } = await client(server).call('downloadArtifact', { path: { id: 'abc' } });
+    expect(status).toBe(200);
+    expect(body).toBeInstanceOf(Blob);
+    expect(await body.text()).toBe('<script>alert(1)</script>');
+  });
+
   test('refuses an operation that the browser navigates to', async () => {
     await expect(client(fakeServer({})).call('beginOIDCSignIn', {})).rejects.toThrow('navigation');
   });
