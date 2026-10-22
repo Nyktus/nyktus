@@ -13,7 +13,7 @@ import { errorText } from '../api/messages';
 import { t } from '../i18n';
 import { leaveSignIn } from '../router';
 import { session } from '../session';
-import markUrl from '../assets/mark.svg';
+import AuthCard from '../components/AuthCard.vue';
 
 type Options = OperationTypes['getSignInOptions']['responses'][200];
 
@@ -127,123 +127,93 @@ function switchFactor(): void {
 </script>
 
 <template>
-  <main class="stage">
-    <div class="card panel">
-      <div class="brand">
-        <img :src="markUrl" alt="" width="36" height="36" />
-        <span>Nyktus</span>
+  <AuthCard :title="step === 'password' ? t('signIn.title') : t('secondFactor.title')">
+
+    <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
+
+    <template v-if="step === 'password'">
+      <div v-if="optionsFailed" class="stack">
+        <p class="notice" role="status">{{ t('signIn.loadFailed') }}</p>
+        <button class="button button-ghost" type="button" @click="loadOptions">{{ t('signIn.retry') }}</button>
       </div>
-      <h1>{{ step === 'password' ? t('signIn.title') : t('secondFactor.title') }}</h1>
+      <p v-else-if="options === undefined" role="status">{{ t('app.loading') }}</p>
+      <template v-else>
+        <form v-if="options.password" class="stack" @submit.prevent="submitPassword">
+          <div class="field">
+            <label for="email">{{ t('field.email') }}</label>
+            <input
+              id="email"
+              ref="email-input"
+              v-model="email"
+              type="email"
+              name="email"
+              autocomplete="username"
+              required
+              maxlength="254"
+            />
+          </div>
+          <div class="field">
+            <label for="password">{{ t('signIn.password') }}</label>
+            <input
+              id="password"
+              v-model="password"
+              type="password"
+              name="password"
+              autocomplete="current-password"
+              required
+              maxlength="1024"
+            />
+          </div>
+          <button class="button button-primary" type="submit" :disabled="busy">
+            {{ busy ? t('signIn.submitting') : t('signIn.submit') }}
+          </button>
+        </form>
 
-      <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
+        <p v-if="options.password && options.oidc !== 'off'" class="or" aria-hidden="true">{{ t('signIn.or') }}</p>
 
-      <template v-if="step === 'password'">
-        <div v-if="optionsFailed" class="stack">
-          <p class="notice" role="status">{{ t('signIn.loadFailed') }}</p>
-          <button class="button button-ghost" type="button" @click="loadOptions">{{ t('signIn.retry') }}</button>
-        </div>
-        <p v-else-if="options === undefined" role="status">{{ t('app.loading') }}</p>
-        <template v-else>
-          <form v-if="options.password" class="stack" @submit.prevent="submitPassword">
-            <div class="field">
-              <label for="email">{{ t('signIn.email') }}</label>
-              <input
-                id="email"
-                ref="email-input"
-                v-model="email"
-                type="email"
-                name="email"
-                autocomplete="username"
-                required
-                maxlength="254"
-              />
-            </div>
-            <div class="field">
-              <label for="password">{{ t('signIn.password') }}</label>
-              <input
-                id="password"
-                v-model="password"
-                type="password"
-                name="password"
-                autocomplete="current-password"
-                required
-                maxlength="1024"
-              />
-            </div>
-            <button class="button button-primary" type="submit" :disabled="busy">
-              {{ busy ? t('signIn.submitting') : t('signIn.submit') }}
-            </button>
-          </form>
-
-          <p v-if="options.password && options.oidc !== 'off'" class="or" aria-hidden="true">{{ t('signIn.or') }}</p>
-
-          <a v-if="options.oidc === 'available'" class="button button-ghost" :href="operations.beginOIDCSignIn.path">
+        <a v-if="options.oidc === 'available'" class="button button-ghost" :href="operations.beginOIDCSignIn.path">
+          {{ t('signIn.sso') }}
+        </a>
+        <template v-else-if="options.oidc === 'unavailable'">
+          <button class="button button-ghost" type="button" aria-disabled="true" aria-describedby="sso-hint">
             {{ t('signIn.sso') }}
-          </a>
-          <template v-else-if="options.oidc === 'unavailable'">
-            <button class="button button-ghost" type="button" aria-disabled="true" aria-describedby="sso-hint">
-              {{ t('signIn.sso') }}
-            </button>
-            <p id="sso-hint" class="hint">{{ t('signIn.ssoUnavailable') }}</p>
-          </template>
-
-          <p v-if="!options.password && options.oidc === 'off'" class="notice">{{ t('signIn.noMethod') }}</p>
+          </button>
+          <p id="sso-hint" class="hint">{{ t('signIn.ssoUnavailable') }}</p>
         </template>
-      </template>
 
-      <form v-else class="stack" @submit.prevent="submitSecondFactor">
-        <p>{{ recovery ? t('secondFactor.recoveryIntro') : t('secondFactor.intro') }}</p>
-        <div class="field">
-          <label for="code">{{ recovery ? t('secondFactor.recoveryCode') : t('secondFactor.code') }}</label>
-          <input
-            id="code"
-            ref="code-input"
-            v-model="code"
-            type="text"
-            name="code"
-            :inputmode="recovery ? 'text' : 'numeric'"
-            autocomplete="one-time-code"
-            :pattern="recovery ? undefined : '[0-9]{6}'"
-            :maxlength="recovery ? 64 : 6"
-            required
-            spellcheck="false"
-            class="mono"
-          />
-        </div>
-        <button class="button button-primary" type="submit" :disabled="busy">{{ t('secondFactor.submit') }}</button>
-        <button class="link" type="button" @click="switchFactor">
-          {{ recovery ? t('secondFactor.useCode') : t('secondFactor.useRecovery') }}
-        </button>
-        <button class="link" type="button" @click="startAgain()">{{ t('secondFactor.back') }}</button>
-      </form>
-    </div>
-  </main>
+        <p v-if="!options.password && options.oidc === 'off'" class="notice">{{ t('signIn.noMethod') }}</p>
+      </template>
+    </template>
+
+    <form v-else class="stack" @submit.prevent="submitSecondFactor">
+      <p>{{ recovery ? t('secondFactor.recoveryIntro') : t('secondFactor.intro') }}</p>
+      <div class="field">
+        <label for="code">{{ recovery ? t('secondFactor.recoveryCode') : t('secondFactor.code') }}</label>
+        <input
+          id="code"
+          ref="code-input"
+          v-model="code"
+          type="text"
+          name="code"
+          :inputmode="recovery ? 'text' : 'numeric'"
+          autocomplete="one-time-code"
+          :pattern="recovery ? undefined : '[0-9]{6}'"
+          :maxlength="recovery ? 64 : 6"
+          required
+          spellcheck="false"
+          class="mono"
+        />
+      </div>
+      <button class="button button-primary" type="submit" :disabled="busy">{{ t('secondFactor.submit') }}</button>
+      <button class="link" type="button" @click="switchFactor">
+        {{ recovery ? t('secondFactor.useCode') : t('secondFactor.useRecovery') }}
+      </button>
+      <button class="link" type="button" @click="startAgain()">{{ t('secondFactor.back') }}</button>
+    </form>
+  </AuthCard>
 </template>
 
 <style scoped>
-.stage {
-  display: grid;
-  min-height: 100vh;
-  padding: var(--gutter);
-  place-items: center;
-}
-
-.card {
-  display: grid;
-  gap: 1.1rem;
-  width: min(100%, 26rem);
-  padding: 2rem;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  font-size: 1.3rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}
-
 .stack {
   display: grid;
   gap: 1rem;

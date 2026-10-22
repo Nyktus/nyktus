@@ -18,8 +18,9 @@ afterEach(() => {
 // The router asks the server for the session before it arrives at a page. Until then,
 // nothing of the frame may show, which a user without a session never sees.
 test('draws nothing before the router has arrived at a page', async () => {
+  // The server never answers, so the router cannot arrive, whatever the pages cost to load.
   const { wrapper } = await boot(
-    fakeServer({ 'GET /api/v1/session': signedOut, 'GET /api/v1/sign-in-options': options() }),
+    fakeServer({ 'GET /api/v1/session': () => new Promise<Response>(() => undefined), 'GET /api/v1/sign-in-options': options() }),
     '/',
     false,
   );

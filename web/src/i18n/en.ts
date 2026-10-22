@@ -24,12 +24,44 @@ export const en = {
   'home.welcome': 'Signed in as {name}.',
   'home.role': 'Role: {role}',
 
+  'app.saving': 'Saving \u2026',
+
+  'field.email': 'Email address',
+  'field.displayName': 'Display name',
+  'field.nameRequired': 'Enter a name.',
+
+  'password.new': 'New password',
+  'password.repeat': 'Repeat the password',
+  'password.hint': 'Between {min} and {max} characters.',
+  'password.too_short': 'The password needs at least {min} characters.',
+  'password.too_long': 'The password can have at most {max} characters.',
+  'password.mismatch': 'The two passwords are not the same.',
+
+  'link.invalid': 'This link is not valid. It may have expired or been used already. Ask for a new one.',
+  'link.toSignIn': 'Go to sign-in',
+
+  'setup.title': 'Set up Nyktus',
+  'setup.intro': 'Create the first administrator.',
+  'setup.invalid':
+    'This setup link is not valid. It may have expired or been used already, or the installation is set up. The operator can restart the console to get a new link.',
+  'setup.submit': 'Create administrator',
+  'setup.done': 'The administrator has been created. You can sign in now.',
+
+  'activate.title': 'Activate your account',
+  'activate.intro': 'Choose a password for your account.',
+  'activate.submit': 'Activate account',
+  'activate.done': 'Your account is active. Sign in with your email address and the new password.',
+
+  'reset.title': 'Choose a new password',
+  'reset.intro': 'Choose a new password for your account.',
+  'reset.submit': 'Change password',
+  'reset.done': 'The password has been changed. Sign in with the new password.',
+
   'notFound.title': 'Page not found',
   'notFound.body': 'There is no page at this address.',
   'notFound.back': 'Back to the overview',
 
   'signIn.title': 'Sign in',
-  'signIn.email': 'Email address',
   'signIn.password': 'Password',
   'signIn.submit': 'Sign in',
   'signIn.submitting': 'Signing in \u2026',

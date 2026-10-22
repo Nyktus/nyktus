@@ -16,22 +16,21 @@ export async function boot(server: ReturnType<typeof fakeServer>, path = '/', na
   localStorage.clear();
   // Vue and its test utilities are loaded again with the rest, so that one copy of
   // Vue renders what the modules of the console keep in reactive state.
-  const [{ createConsoleRouter }, { session }, { default: App }, i18n, client, utils, { createMemoryHistory }] = await Promise.all([
-    import('../router'),
+  const [{ createConsole }, { session }, i18n, client, utils, { createMemoryHistory }] = await Promise.all([
+    import('../app'),
     import('../session'),
-    import('../App.vue'),
     import('../i18n'),
     import('../api/client'),
     import('@vue/test-utils'),
     import('vue-router'),
   ]);
   i18n.setLocale('en');
-  const router = createConsoleRouter(session, createMemoryHistory());
+  const { router, root } = createConsole(createMemoryHistory());
   if (navigate) {
     await router.push(path);
     await router.isReady();
   }
-  const wrapper = utils.mount(App, { global: { plugins: [router] }, attachTo: document.body });
+  const wrapper = utils.mount(root, { global: { plugins: [router] }, attachTo: document.body });
   await flushPromises();
   return { wrapper, router, session, i18n, client };
 }

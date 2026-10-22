@@ -22,12 +22,44 @@ export const de: Record<MessageKey, string> = {
   'home.welcome': 'Angemeldet als {name}.',
   'home.role': 'Rolle: {role}',
 
+  'app.saving': 'Wird gespeichert \u2026',
+
+  'field.email': 'E-Mail-Adresse',
+  'field.displayName': 'Anzeigename',
+  'field.nameRequired': 'Geben Sie einen Namen ein.',
+
+  'password.new': 'Neues Passwort',
+  'password.repeat': 'Passwort wiederholen',
+  'password.hint': 'Zwischen {min} und {max} Zeichen.',
+  'password.too_short': 'Das Passwort braucht mindestens {min} Zeichen.',
+  'password.too_long': 'Das Passwort darf höchstens {max} Zeichen haben.',
+  'password.mismatch': 'Die beiden Passwörter stimmen nicht überein.',
+
+  'link.invalid': 'Dieser Link ist nicht gültig. Er ist vielleicht abgelaufen oder wurde schon benutzt. Fragen Sie nach einem neuen.',
+  'link.toSignIn': 'Zur Anmeldung',
+
+  'setup.title': 'Nyktus einrichten',
+  'setup.intro': 'Legen Sie den ersten Administrator an.',
+  'setup.invalid':
+    'Dieser Einrichtungslink ist nicht gültig. Er ist vielleicht abgelaufen oder wurde schon benutzt, oder die Installation ist bereits eingerichtet. Der Betreiber kann die Console neu starten, um einen neuen Link zu erhalten.',
+  'setup.submit': 'Administrator anlegen',
+  'setup.done': 'Der Administrator wurde angelegt. Sie können sich jetzt anmelden.',
+
+  'activate.title': 'Konto aktivieren',
+  'activate.intro': 'Wählen Sie ein Passwort für Ihr Konto.',
+  'activate.submit': 'Konto aktivieren',
+  'activate.done': 'Ihr Konto ist aktiv. Melden Sie sich mit Ihrer E-Mail-Adresse und dem neuen Passwort an.',
+
+  'reset.title': 'Neues Passwort festlegen',
+  'reset.intro': 'Legen Sie ein neues Passwort für Ihr Konto fest.',
+  'reset.submit': 'Passwort ändern',
+  'reset.done': 'Das Passwort wurde geändert. Melden Sie sich mit dem neuen Passwort an.',
+
   'notFound.title': 'Seite nicht gefunden',
   'notFound.body': 'Unter dieser Adresse gibt es keine Seite.',
   'notFound.back': 'Zurück zur Übersicht',
 
   'signIn.title': 'Anmelden',
-  'signIn.email': 'E-Mail-Adresse',
   'signIn.password': 'Passwort',
   'signIn.submit': 'Anmelden',
   'signIn.submitting': 'Anmeldung läuft …',

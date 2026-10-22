@@ -920,3 +920,65 @@ func TestRun_ServesTheWebConsole(t *testing.T) {
 		t.Errorf("exit code = %d, want %d", code, exitOK)
 	}
 }
+
+// The sign-in page learns from the options what the configuration says: with the
+// local login off and an identity provider that has not been reached, there is no
+// form for a password, and the button for the provider is not available yet.
+func TestRun_ReportsTheSignInOptionsOfItsConfiguration(t *testing.T) {
+	t.Parallel()
+
+	_, consoleURL := schematest.Console(t)
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	env := map[string]string{
+		"NYKTUS_CONSOLE_DATABASE_URL": consoleURL,
+		"NYKTUS_TRIGGER_URL":          "https://t.example.com",
+		"NYKTUS_CONSOLE_ADDR":         addr,
+		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+		"NYKTUS_ENCRYPTION_KEYS":      testKeys(t),
+		"NYKTUS_LOCAL_LOGIN":          "off",
+		"NYKTUS_OIDC_ISSUER":          "https://127.0.0.1:1",
+		"NYKTUS_OIDC_CLIENT_ID":       "nyktus",
+		"NYKTUS_OIDC_CLIENT_SECRET":   "a-client-secret-for-the-test",
+		"NYKTUS_OIDC_ADMIN_GROUPS":    "admins",
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	logR, logW := io.Pipe()
+	done := make(chan int, 1)
+	go func() {
+		done <- run(ctx, []string{"serve", "--roles=console"}, source(env), &bytes.Buffer{}, logW)
+		_ = logW.Close()
+	}()
+	lines := bufio.NewScanner(logR)
+	for lines.Scan() {
+		if strings.Contains(lines.Text(), `"msg":"console: listening"`) {
+			break
+		}
+	}
+	go func() { _, _ = io.Copy(io.Discard, logR) }()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/api/v1/sign-in-options", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || strings.TrimSpace(string(body)) != `{"password":false,"oidc":"unavailable"}` {
+		t.Errorf("GET /api/v1/sign-in-options = %d %q", res.StatusCode, body)
+	}
+
+	cancel()
+	if code := <-done; code != exitOK {
+		t.Errorf("exit code = %d, want %d", code, exitOK)
+	}
+}

@@ -25,6 +25,24 @@ export const routes: RouteRecordRaw[] = [
     meta: { public: true, title: 'signIn.title' },
   },
   {
+    path: '/setup',
+    name: 'setup',
+    component: () => import('./views/SetupView.vue'),
+    meta: { public: true, title: 'setup.title' },
+  },
+  {
+    path: '/activate',
+    name: 'activate',
+    component: () => import('./views/ActivateView.vue'),
+    meta: { public: true, title: 'activate.title' },
+  },
+  {
+    path: '/reset-password',
+    name: 'reset-password',
+    component: () => import('./views/ResetPasswordView.vue'),
+    meta: { public: true, title: 'reset.title' },
+  },
+  {
     path: '/:path(.*)*',
     name: 'not-found',
     component: () => import('./views/NotFoundView.vue'),
