@@ -5,25 +5,11 @@ package ssh
 
 import (
 	"bytes"
-	"errors"
 	"net"
 	"sync"
-	"time"
 
 	"nyktus.org/nyktus/sensor/internal/clock"
-)
-
-// Limits of a connection, the same as those of the Telnet honeypot. The
-// listener bounds the whole session in addition.
-const (
-	// idleTimeout is how long a connection may be silent.
-	idleTimeout = 30 * time.Second
-	// writeTimeout is how long a write may block on a client that does not
-	// read.
-	writeTimeout = 10 * time.Second
-	// maxReadBytes is the most that a connection may send, the key exchange
-	// included. A real login takes a few KiB.
-	maxReadBytes = 16 << 10
+	"nyktus.org/nyktus/sensor/internal/guard"
 )
 
 // The library reads the version of the client byte by byte, and gives up at a
@@ -35,22 +21,16 @@ const (
 	maxLinesBefore = 1024
 )
 
-// errTooMuch ends a connection that has sent more than it may.
-var errTooMuch = errors.New("ssh: the client sent too much")
-
 // guardedConn is the connection that the library reads and writes. The library
-// reads on its own, so the limits of the honeypot are set here: every read
-// gives the client the idle time again, every write has a deadline, and the
-// client may send a fixed number of bytes in all. It also reads the version that
-// the client announces, which the library shows only after the key exchange.
+// reads on its own, so the limits of the honeypot are set on the connection it
+// is given. It also reads the version that the client announces, which the
+// library shows only after the key exchange.
 type guardedConn struct {
-	net.Conn
-	clock clock.Clock
+	*guard.Conn
 
 	// The library reads and writes from different goroutines, and the version
 	// is read when they are done.
 	mu      sync.Mutex
-	left    int
 	line    []byte
 	lines   int
 	version string
@@ -58,35 +38,15 @@ type guardedConn struct {
 }
 
 func newGuardedConn(conn net.Conn, clk clock.Clock) *guardedConn {
-	return &guardedConn{Conn: conn, clock: clk, left: maxReadBytes}
+	return &guardedConn{Conn: guard.New(conn, clk)}
 }
 
 func (c *guardedConn) Read(p []byte) (int, error) {
-	c.mu.Lock()
-	left := c.left
-	c.mu.Unlock()
-	if left <= 0 {
-		return 0, errTooMuch
-	}
-	if err := c.SetReadDeadline(c.clock.Deadline(idleTimeout)); err != nil {
-		return 0, err
-	}
-	if len(p) > left {
-		p = p[:left]
-	}
 	n, err := c.Conn.Read(p)
 	c.mu.Lock()
-	c.left -= n
 	c.scan(p[:n])
 	c.mu.Unlock()
 	return n, err
-}
-
-func (c *guardedConn) Write(p []byte) (int, error) {
-	if err := c.SetWriteDeadline(c.clock.Deadline(writeTimeout)); err != nil {
-		return 0, err
-	}
-	return c.Conn.Write(p)
 }
 
 // scan looks for the version of the client in what it sent: the first line that
