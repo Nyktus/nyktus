@@ -2,12 +2,12 @@
 
 The sensor `nyktus-sensor` runs the [honeypots](honeypots.md) inside the network you monitor. It listens where you tell it to, answers attackers like the real service would, offers nothing behind the login, and reports every session to the [trigger](configuration.md#role-trigger). It is a separate program from the server, with a configuration file of its own and nothing to share with the server but the secrets of the honeypots: it runs on hosts that attackers can reach, and what it knows is only what it needs to report.
 
-This version emulates two services, `telnet` and `ssh`. The other services of the console follow with later versions of the sensor; a configuration that names one is refused. The console shows the entry for the configuration file of every honeypot, also for a service that this version does not run yet: keep that entry until a sensor that emulates the service is installed.
+This version emulates the four services of the console: `telnet`, `ssh`, `postgres` and `ldap`.
 
 ## What the sensor does and does not do
 
 - It runs as an ordinary user and needs no privilege except a port below 1024, if you choose one.
-- It never executes, interprets or passes on what an attacker sends. A Telnet or SSH honeypot reads a user name and a password or a public key, counts them and refuses them. There is no shell, no file, no command, no forwarded port.
+- It never executes, interprets or passes on what an attacker sends. A Telnet, SSH or PostgreSQL honeypot reads a user name and a password or a public key, counts them and refuses them, and an LDAP honeypot reads a bind and a search and answers the search with nothing. There is no shell, no file, no command, no SQL, no directory entry and no forwarded port.
 - It keeps no password. It reports the length of the password and nothing else about it. Of a public key that a client offers it reports the fingerprint.
 - It limits everything an attacker can use up: connections, bytes, time and logins. See [Limits](#limits).
 - It reads no environment variables for its configuration, loads nothing from the internet and sends nothing anywhere except the reports to your trigger.
@@ -83,10 +83,10 @@ Every entry of `honeypots`:
 | Key | Default | Description |
 |---|---|---|
 | `id` | required | The identifier of the honeypot in the console. The sensor logs it, so that a record can be tied to the honeypot. |
-| `service` | required | `telnet` or `ssh`. |
+| `service` | required | `telnet`, `ssh`, `postgres` or `ldap`. |
 | `listen` | required | `host:port` or `:port`. The host is an IP address, or empty for every address of both families. The port is written without a sign or a leading zero. `0.0.0.0` takes IPv4 addresses only and `[::]` and an empty host take both. Entries must not conflict: the same port on the same address, on an address and on a wildcard that includes it. |
 | `secret` or `secret_file` | one is required | The secret of the honeypot, 43 characters, or the file that holds it. |
-| `banner` | by service | What the service says first. For Telnet up to 256 bytes of printable ASCII, with line breaks and tabs; an empty value sends no banner. For SSH the identification string, see [SSH honeypots](#ssh-honeypots). |
+| `banner` | by service | What the service says first. For Telnet up to 256 bytes of printable ASCII, with line breaks and tabs; an empty value sends no banner. For SSH the identification string, see [SSH honeypots](#ssh-honeypots). PostgreSQL and LDAP say nothing before a login and take no banner. |
 | `login_prompt` | `login: ` | The prompt for the user name, up to 64 bytes of printable ASCII. Telnet only. |
 | `host_key_file` | required for `ssh` | The file with the private key of the server. SSH only; see [SSH honeypots](#ssh-honeypots). A relative path is relative to the directory of the configuration file. |
 
@@ -152,6 +152,26 @@ The honeypot offers the algorithms of the SSH library, not those of OpenSSH, and
 
 The library starts goroutines of its own for the key exchange and the packets of a connection, and a failure in them that panics ends the process, where the sensor catches a panic in everything else. The library is widely used and fuzzed, and the sensor cannot wrap it; run it as the [unit](#systemd) does, so that the service manager starts it again (`Restart=on-failure`) and the honeypots are `offline` in the console only for the time that takes.
 
+## PostgreSQL honeypots
+
+The honeypot speaks the protocol of PostgreSQL up to the login and refuses it. It reads the startup message of the client and records the user, the database that the client asked for and the name that it calls itself (`application_name`, which `psql` sets to `psql`), then asks for the password in clear text, counts its length, and answers with the error `28P01`, `password authentication failed for user "..."`, as a server does for a user that does not exist. The connection ends there, as it does on a real server, so a session holds at most one login: a brute force against the honeypot is one event for each connection, and the limit of [ten events a minute for each honeypot](honeypots.md#limits) keeps the first of them.
+
+There is no session behind the login. The honeypot never reads a query, never runs SQL and passes nothing on. The password is counted as it is read and dropped.
+
+The honeypot offers no encryption: it answers a request for TLS or for GSSAPI encryption with `N`, as a server does that has none, and the client goes on in clear text, as `psql` does with the default `sslmode=prefer`. A client that insists on TLS (`sslmode=require`) goes no further and is reported as a connection. A client that cancels a query, sends a protocol version that does not exist or something that is not PostgreSQL at all is reported as a connection as well, and so is a client that names no user. A real server from version 14 asks for a SCRAM password, which does not reveal its length, so a client sees a request for a clear-text password that a current server would not send: the honeypot records the length because the report needs it.
+
+`banner` has no effect and is refused. The version of a server is part of the parameters that it sends after a successful login, which this honeypot never sends, so nothing in the dialog could carry it.
+
+## LDAP honeypots
+
+The honeypot speaks the part of LDAP that a scanner or a tool that maps a domain uses: bind, search and unbind. It records the name and the password length of a bind, and the base and the filter of the first search, and answers every search with an empty result.
+
+A bind with a name or a password fails with `invalidCredentials` and is a login of the session, as many as the session keeps. A bind with neither, an anonymous bind, succeeds, so that a client that begins with one goes on to its search; it carries no credentials and is not recorded as a login. A bind with SASL is answered with `authMethodNotSupported` and not recorded. A search is answered with a result that holds no entry, whatever the base is, so also the search of the root of the directory (the RootDSE), with which most tools start. The honeypot never returns an entry and never changes anything. Any other operation, such as a request to start TLS, a change, or a request that the sensor cannot read, ends the session.
+
+The report holds the first search only. The sensor writes the filter as text, in the form that administrators know (`(&(objectClass=user)(sAMAccountName=admin*))`), with the characters that mean something in a filter, and those that do not show, as a backslash and two hexadecimal digits. A filter with an extensible match, such as `(userAccountControl:1.2.840.113556.1.4.803:=2)`, is written as `(?)`: the search is recorded, its filter is not. Filters may nest eight levels deep, and a message may be 8 KiB long; the sensor ends a session that exceeds them, as it does for a message that it cannot read, and keeps what it recorded before.
+
+There is no LDAPS and no StartTLS: a session on a port that you chose for LDAPS is plain LDAP, and a client that wants TLS goes no further. `banner` has no effect and is refused: the honeypot returns no RootDSE and therefore no vendor name or version.
+
 ## Limits
 
 The limits are fixed. They bound what an attacker can use up, and they are not settings, so that a configuration cannot lift them by mistake.
@@ -163,10 +183,12 @@ The limits are fixed. They bound what an attacker can use up, and they are not s
 | Duration of a session | 2 minutes. The sensor closes the connection and reports the session. |
 | Silence | 30 seconds without a byte from the client, or 10 seconds for a client that does not read. |
 | Data from one client | 16 KiB for the whole connection, Telnet commands and the key exchange of SSH included. |
-| Logins of a session | 6, passwords and offered SSH keys together. The sixth refusal is the last; the sensor then closes the connection. |
+| Logins of a session | 6, passwords and offered SSH keys together. The sixth refusal is the last; the sensor then closes the connection. A PostgreSQL session holds one: the connection ends with the first refusal. |
 | User name | The first 256 bytes are kept. |
 | Password | Nothing is kept except its length. |
 | Version of an SSH client | The first 128 bytes are kept. |
+| Database and application of a PostgreSQL client | The first 64 bytes of each are kept. The startup message may have 10,000 bytes, as on a real server; a longer one ends the session. |
+| LDAP message, base and filter | A message may have 8 KiB; a longer one, or one that is not well formed, ends the session. The first 256 bytes of the base and of the written filter are kept, and filters nest at most eight levels deep. |
 | Telnet negotiation | The sensor offers `ECHO` and `SUPPRESS-GO-AHEAD` once and answers nothing the client negotiates. A negotiation of more than 128 bytes ends the session. |
 
 The sensor keeps no table of sources beyond the connections that are open. A flood from many addresses costs memory in proportion to the connections it holds, which are at most 128.

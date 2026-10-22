@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"nyktus.org/nyktus/sensor/internal/report"
 )
@@ -100,5 +101,33 @@ func TestHeartbeat_WithoutVersion_OmitsTheMember(t *testing.T) {
 	}
 	if strings.Contains(string(b), "sensor_version") {
 		t.Errorf("serialized = %s, want no sensor_version", b)
+	}
+}
+
+func TestClean(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		max  int
+		want string
+	}{
+		{name: "short", in: "root", max: 8, want: "root"},
+		{name: "exact", in: "12345678", max: 8, want: "12345678"},
+		{name: "cut", in: "123456789", max: 8, want: "12345678"},
+		{name: "invalid bytes", in: "ro\xff\xfeot", max: 16, want: "ro\uFFFDot"},
+		{name: "cut in the middle of a character", in: "1234567\u00e9", max: 8, want: "1234567"},
+		{name: "cut after a character", in: "123456\u00e9x", max: 8, want: "123456\u00e9"},
+		{name: "empty", in: "", max: 8, want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := report.Clean(tt.in, tt.max)
+			if got != tt.want || !utf8.ValidString(got) {
+				t.Errorf("Clean(%q, %d) = %q, want %q", tt.in, tt.max, got, tt.want)
+			}
+		})
 	}
 }

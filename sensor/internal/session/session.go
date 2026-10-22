@@ -59,8 +59,11 @@ type Session struct {
 	clientIP netip.Addr
 	port     int
 
-	attempts      []report.Attempt
-	clientVersion string
+	attempts        []report.Attempt
+	clientVersion   string
+	database        string
+	applicationName string
+	query           *report.Query
 }
 
 // Start begins a session of the honeypot for a connection from remote to the
@@ -102,6 +105,24 @@ func (s *Session) AddAttempt(a report.Attempt) bool {
 // caller keeps it within report.MaxClientVersion.
 func (s *Session) SetClientVersion(v string) { s.clientVersion = v }
 
+// SetStartup records what a PostgreSQL client asked for in its startup message:
+// the database and the name it calls itself. The caller keeps each within its
+// limit in report.
+func (s *Session) SetStartup(database, applicationName string) {
+	s.database = database
+	s.applicationName = applicationName
+}
+
+// SetQuery records the search of a directory client. Only the first search of a
+// session is kept; it reports false for a later one.
+func (s *Session) SetQuery(q report.Query) bool {
+	if s.query != nil {
+		return false
+	}
+	s.query = &q
+	return true
+}
+
 // Attempts returns the number of logins recorded.
 func (s *Session) Attempts() int { return len(s.attempts) }
 
@@ -116,8 +137,11 @@ func (s *Session) End() {
 
 // EventType names the stage that the session reached, for the log. The server
 // decides the kind of event from the report; this is what it will find in a
-// session of a service that only logs in.
+// session of a service that logs in and, for a directory, searches.
 func (s *Session) EventType() string {
+	if s.query != nil {
+		return "directory_query"
+	}
 	if len(s.attempts) > 0 {
 		return "login_attempt"
 	}
@@ -155,6 +179,11 @@ func (s *Session) Report(now time.Duration) (report.Session, bool) {
 	}
 	attempts := make([]report.Attempt, len(s.attempts))
 	copy(attempts, s.attempts)
+	var query *report.Query
+	if s.query != nil {
+		q := *s.query
+		query = &q
+	}
 	return report.Session{
 		Version:    report.Version,
 		Type:       report.TypeSession,
@@ -164,7 +193,10 @@ func (s *Session) Report(now time.Duration) (report.Session, bool) {
 		ClientIP:   s.clientIP.String(),
 		Port:       s.port,
 
-		ClientVersion: s.clientVersion,
-		Attempts:      attempts,
+		ClientVersion:   s.clientVersion,
+		Database:        s.database,
+		ApplicationName: s.applicationName,
+		Attempts:        attempts,
+		Query:           query,
 	}, true
 }

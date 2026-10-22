@@ -136,6 +136,11 @@ func TestParse_Invalid_NamesTheRule(t *testing.T) {
 		{name: "an ssh banner with a tab", yaml: sshEntry("    banner: \"SSH-2.0-a\\tb\"\n"), want: "banner: must be an identification string"},
 		{name: "an ssh banner with a non-ASCII character", yaml: sshEntry("    banner: \"SSH-2.0-a\\u00e9\"\n"), want: "banner: must be an identification string"},
 		{name: "an ssh banner that is too long", yaml: sshEntry("    banner: SSH-2.0-" + strings.Repeat("a", 246) + "\n"), want: "banner: must be an identification string"},
+		{name: "a banner for postgres", yaml: strings.Replace(valid, "service: telnet", "service: postgres", 1) + "    banner: \"14.13\"\n", want: "banner: only for ssh and telnet"},
+		{name: "a banner for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    banner: \"x\"\n", want: "banner: only for ssh and telnet"},
+		{name: "an empty banner for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    banner: \"\"\n", want: "banner: only for ssh and telnet"},
+		{name: "a prompt for postgres", yaml: strings.Replace(valid, "service: telnet", "service: postgres", 1) + "    login_prompt: x\n", want: "login_prompt: only for telnet"},
+		{name: "a host key file for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    host_key_file: ssh_host_key\n", want: "host_key_file: only for ssh"},
 		{name: "a prompt with a line break", yaml: entry("    login_prompt: \"a\\r\\nb\"\n"), want: "login_prompt: printable ASCII only"},
 	}
 	for _, tt := range tests {
@@ -578,6 +583,31 @@ func TestParse_ConsoleEntry_IsReadBySensor(t *testing.T) {
 	if hp.ID != "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d" || hp.Service != config.Telnet || hp.Listen != ":23" ||
 		string(hp.Secret) != strings.Repeat("A", 43) {
 		t.Errorf("honeypot = %+v, want what the console wrote", hp)
+	}
+}
+
+// The entry that the console shows for the other services has the form of the
+// one for Telnet, with the service and the usual port of its own.
+func TestParse_ConsoleEntry_OfPostgresAndLDAP_IsReadBySensor(t *testing.T) {
+	t.Parallel()
+
+	golden, err := os.ReadFile("testdata/console_entry.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		service config.Service
+		port    string
+	}{{config.Postgres, ":5432"}, {config.LDAP, ":389"}} {
+		entry := strings.NewReplacer(`"telnet"`, strconv.Quote(string(tt.service)), `":23"`, strconv.Quote(tt.port)).Replace(string(golden))
+		cfg, err := config.Parse([]byte("trigger_url: https://trigger.example.com/\nhoneypots:\n" + entry))
+		if err != nil {
+			t.Errorf("%s: Parse() = %v", tt.service, err)
+			continue
+		}
+		if hp := cfg.Honeypots[0]; hp.Service != tt.service || hp.Listen != tt.port || hp.Banner != nil {
+			t.Errorf("%s: honeypot = %+v, want the service, its port and no banner", tt.service, hp)
+		}
 	}
 }
 

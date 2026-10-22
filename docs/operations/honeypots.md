@@ -68,7 +68,7 @@ The answer is the new honeypot with its secret and status `201`:
 }
 ```
 
-`sensor_config` is the entry of the honeypot for the [configuration file of the sensor](sensor.md#setting-up-a-sensor): a list item for `honeypots:` with the identifier, the service, the usual port of the service as the address to listen on, and the secret; for `ssh` also the file of the host key, which you create yourself (see [SSH honeypots](sensor.md#ssh-honeypots)). It holds the secret, so it is shown once with it. It holds neither the name nor the notes of the honeypot, which have no place on the host of a sensor. A sensor runs a service only if its version emulates it: the entry of a `postgres` or `ldap` honeypot is accepted by the sensors that follow (see [Sensor](sensor.md)).
+`sensor_config` is the entry of the honeypot for the [configuration file of the sensor](sensor.md#setting-up-a-sensor): a list item for `honeypots:` with the identifier, the service, the usual port of the service as the address to listen on, and the secret; for `ssh` also the file of the host key, which you create yourself (see [SSH honeypots](sensor.md#ssh-honeypots)). It holds the secret, so it is shown once with it. It holds neither the name nor the notes of the honeypot, which have no place on the host of a sensor. The entry of a `postgres` or `ldap` honeypot has the same keys and takes no `banner` (see [Sensor](sensor.md)).
 
 ## The secret
 

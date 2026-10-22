@@ -56,8 +56,10 @@ type Service string
 
 // Services of honeypots. The server knows the same names.
 const (
-	SSH    Service = "ssh"
-	Telnet Service = "telnet"
+	SSH      Service = "ssh"
+	Telnet   Service = "telnet"
+	Postgres Service = "postgres"
+	LDAP     Service = "ldap"
 )
 
 // Config is the configuration of the sensor.
@@ -83,7 +85,8 @@ type Honeypot struct {
 	SecretFile string        `yaml:"secret_file"`
 	// Banner is what the service says first. Nil means the default of the
 	// service. An empty value means no banner, which an SSH server cannot do:
-	// its first words are its identification string.
+	// its first words are its identification string. PostgreSQL and LDAP say
+	// nothing before a login, so they take none.
 	Banner *string `yaml:"banner"`
 	// LoginPrompt is the prompt for the user name; telnet only.
 	LoginPrompt *string `yaml:"login_prompt"`
@@ -344,7 +347,7 @@ func (hp *Honeypot) validate() []error {
 		add("id: must be the identifier of the honeypot in the console, a lowercase UUID")
 	}
 	switch hp.Service {
-	case Telnet, SSH:
+	case Telnet, SSH, Postgres, LDAP:
 	case "":
 		add("service: required")
 	default:
@@ -363,9 +366,12 @@ func (hp *Honeypot) validate() []error {
 	}
 	if hp.Banner != nil {
 		var err error
-		if hp.Service == SSH {
+		switch hp.Service {
+		case SSH:
 			err = validateSSHVersion(*hp.Banner)
-		} else {
+		case Postgres, LDAP:
+			err = errors.New("only for ssh and telnet: the service says nothing before the login")
+		default:
 			err = validateText(*hp.Banner, maxBanner, true)
 		}
 		if err != nil {
