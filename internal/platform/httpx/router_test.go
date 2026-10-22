@@ -315,3 +315,73 @@ func TestRouter_RejectsPatternsWithoutOpenAPIEquivalent(t *testing.T) {
 		rt.Handle(http.MethodGet, path, Public, http.NotFoundHandler())
 	}
 }
+
+// The fallback answers only what no route answers, and only GET and HEAD. A
+// request that a route covers by path but not by method, and every other method,
+// keeps the JSON 404.
+func TestRouter_FallbackAnswersOnlyUnmatchedGetAndHead(t *testing.T) {
+	t.Parallel()
+
+	rt := NewRouter(discardLogger(), nil)
+	rt.Handle(http.MethodPost, "/api/v1/things", Public, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	rt.Fallback(Public, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Fallback", "yes")
+		w.WriteHeader(http.StatusTeapot)
+	}))
+
+	tests := []struct {
+		method, path string
+		want         int
+		fallback     bool
+	}{
+		{http.MethodGet, "/sign-in", http.StatusTeapot, true},
+		{http.MethodHead, "/sign-in", http.StatusTeapot, true},
+		{http.MethodGet, "/api/v1/things", http.StatusTeapot, true},
+		{http.MethodPost, "/api/v1/things", http.StatusCreated, false},
+		{http.MethodPost, "/sign-in", http.StatusNotFound, false},
+		{http.MethodPut, "/sign-in", http.StatusNotFound, false},
+		{http.MethodGet, "/a//b", http.StatusNotFound, false},
+		{http.MethodGet, "/a/../b", http.StatusNotFound, false},
+		{http.MethodConnect, "/sign-in", http.StatusNotFound, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			t.Parallel()
+
+			w := httptest.NewRecorder()
+			rt.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, nil))
+			if w.Code != tt.want || (w.Header().Get("X-Fallback") == "yes") != tt.fallback {
+				t.Errorf("status = %d, fallback = %v; want %d, %v", w.Code, w.Header().Get("X-Fallback") == "yes", tt.want, tt.fallback)
+			}
+		})
+	}
+	if got := len(rt.Routes()); got != 1 {
+		t.Errorf("Routes() lists %d routes, want only the one that was registered", got)
+	}
+}
+
+func TestRouter_FallbackIsPublicAndRegisteredOnce(t *testing.T) {
+	t.Parallel()
+
+	h := http.NotFoundHandler()
+	for name, register := range map[string]func(*Router){
+		"authenticated": func(rt *Router) { rt.Fallback(Authenticated, h) },
+		"permission":    func(rt *Router) { rt.Fallback(Require("users:read"), h) },
+		"undeclared":    func(rt *Router) { rt.Fallback(Access{}, h) },
+		"nil":           func(rt *Router) { rt.Fallback(Public, nil) },
+		"twice":         func(rt *Router) { rt.Fallback(Public, h); rt.Fallback(Public, h) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			defer func() {
+				if recover() == nil {
+					t.Error("Fallback did not panic")
+				}
+			}()
+			register(NewRouter(discardLogger(), nil))
+		})
+	}
+}

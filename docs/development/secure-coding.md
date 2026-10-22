@@ -97,7 +97,7 @@ Every HTTP server sets `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout` and `I
 
 **Client IP.** Every server, including the trigger endpoints, takes the client address from the socket unless the socket address lies within the configured trusted proxy ranges. Only then is `X-Forwarded-For` evaluated, from right to left: addresses within the trusted ranges are skipped, and the first other address is the client. Entries may carry a port; an entry that is not an address ends the search. A chain of proxies works without counting hops. A fixed hop count is not used, because it trusts the header even when a client bypasses the proxy. `X-Real-IP` is ignored.
 
-Requests that match no route receive a JSON `404`, also when only the method differs. The default responses of `net/http` are not used: their plain-text bodies identify the server as written in Go, and the `Allow` header of a `405` lists the methods of a route. The same applies to the redirects of `http.ServeMux` for unclean paths and subtree patterns, which would also answer before authorization runs.
+Requests that match no route receive a JSON `404`, also when only the method differs. The one exception is the console, which answers `GET` and `HEAD` requests with its pages, see [Web console](#web-console); the API and all other methods keep the JSON `404`. The default responses of `net/http` are not used: their plain-text bodies identify the server as written in Go, and the `Allow` header of a `405` lists the methods of a route. The same applies to the redirects of `http.ServeMux` for unclean paths and subtree patterns, which would also answer before authorization runs.
 
 ## Authentication
 
@@ -321,6 +321,8 @@ The sensor runs inside the monitored network and talks to attackers directly.
 - The Content Security Policy uses `script-src 'self'` without `unsafe-eval`, and `frame-ancestors 'none'`.
 - The console loads no external resources at runtime: no CDNs, web fonts, analytics or tracking. All assets ship with the build.
 - Client-side validation exists for usability. The server is the only authority.
+- The pages are served by the console itself with the policy above, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY`. The policy has no `unsafe-inline` and no `unsafe-eval`: the build extracts scripts and styles into files and inlines no `data:` URL, and the code sets styles through the DOM. `index.html` is never cached, so that the browser shows nothing from its cache after a sign-out.
+- The fallback that serves the pages is public and answers nothing but the build of the web console. It answers neither paths under `/api/`, `/livez` or `/readyz` nor paths of files that do not exist, so that a mistyped URL of the API, of a health check or of an asset is not answered with a page: a probe with a mistyped path would otherwise report a healthy console.
 
 ## Deployment
 

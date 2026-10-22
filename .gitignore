@@ -10,6 +10,11 @@
 *.p12
 *.pfx
 
+# Web console: the build output goes into the binary, the placeholder keeps the directory
+/web/node_modules/
+/web/dist/*
+!/web/dist/.gitkeep
+
 # Go
 /bin/
 /dist/
@@ -22,7 +27,6 @@ go.work.sum
 
 # Node
 node_modules/
-web/dist/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 *.tsbuildinfo

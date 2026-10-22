@@ -141,6 +141,11 @@ Every source file starts with a license header:
 - Vue 3 with the Composition API and TypeScript in strict mode.
 - Translations are typed, so a missing key is a compile error.
 - No runtime dependency on external resources. Fonts, icons and images ship with the build.
+- `web/` is a Node.js project of its own. Its build, `web/dist`, is embedded into the server binary by the Go package `web`. The directory is not committed except for a placeholder, so that `go build` and `go test` work without Node.js; a binary built without the web console serves the API only and logs a warning at startup. `make build` builds the web console first, and releases must as well. The Node.js version is the current LTS release; `engines` names the minimum.
+- Dependencies are pinned to exact versions in `package.json` and `package-lock.json`, which is committed. Install scripts never run (`web/.npmrc`, `npm ci --ignore-scripts`), and npm resolves only versions that are at least seven days old (`min-release-age`), as the Dependabot cooldown does; when a package is added or updated by hand, regenerate the lockfile with that setting in place. A new package needs the same justification as a Go module, see [Dependencies](#dependencies).
+- The console serves its pages through the fallback of the router: a `GET` or `HEAD` request that matches no route receives `index.html`, from which the script shows the page for the path. Paths under `/api/`, `/livez` and `/readyz` (so that a misspelled probe does not receive a page and look healthy), paths of files that do not exist and all other methods keep the JSON `404`. `index.html` is never stored (`Cache-Control: no-store`), and files below `assets/`, whose names carry a hash, are cached for good.
+- The content security policy and the other headers of the pages are set in `internal/console`, not by the reverse proxy, so that they hold when the console is reached directly.
+- `web/tests/scan.ts` holds rules that a type check does not enforce, such as no `v-html`, no `innerHTML`, no `fetch` outside the client and no address of another origin. `scan.test.ts` breaks each rule on purpose, so a rule that stops firing fails. `web/dist_test.go` checks the build for inline code, other hosts and code built from text; CI sets `NYKTUS_REQUIRE_WEB_BUILD`, which turns its skip into a failure.
 
 ## Dependencies
 
