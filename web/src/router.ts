@@ -44,6 +44,24 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'honeytokens.title', permission: 'honeytokens:read' },
   },
   {
+    path: '/honeypots',
+    name: 'honeypots',
+    component: () => import('./views/HoneypotsView.vue'),
+    meta: { title: 'honeypots.title', permission: 'honeypots:read' },
+  },
+  {
+    path: '/honeypots/new',
+    name: 'honeypot-new',
+    component: () => import('./views/HoneypotNewView.vue'),
+    meta: { title: 'honeypots.create.title', permission: 'honeypots:write' },
+  },
+  {
+    path: '/honeypots/:id',
+    name: 'honeypot',
+    component: () => import('./views/HoneypotView.vue'),
+    meta: { title: 'honeypots.title', permission: 'honeypots:read' },
+  },
+  {
     path: '/forbidden',
     name: 'forbidden',
     component: () => import('./views/ForbiddenView.vue'),
