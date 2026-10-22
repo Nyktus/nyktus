@@ -1091,3 +1091,14 @@ export interface OperationTypes {
     responses: { 200: User };
   };
 }
+
+/** What each role may do. The server decides; the console only hides what a role cannot use. */
+export const rolePermissions = {
+  admin: ['alert_channels:read', 'alert_channels:write', 'api_keys:read', 'api_keys:write', 'artifacts:read', 'artifacts:write', 'audit:read', 'catalog:read', 'events:read', 'honeypots:read', 'honeypots:write', 'honeytokens:read', 'honeytokens:write', 'incidents:read', 'incidents:write', 'metrics:read', 'scenarios:read', 'scenarios:write', 'users:read', 'users:write'],
+  user: ['artifacts:read', 'artifacts:write', 'catalog:read', 'events:read', 'honeypots:read', 'honeypots:write', 'honeytokens:read', 'honeytokens:write', 'incidents:read', 'incidents:write', 'scenarios:read', 'scenarios:write'],
+  viewer: ['artifacts:read', 'catalog:read', 'events:read', 'honeypots:read', 'honeytokens:read', 'incidents:read', 'scenarios:read'],
+} as const;
+
+export type Role = keyof typeof rolePermissions;
+
+export type Permission = (typeof rolePermissions)[Role][number];

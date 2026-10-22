@@ -41,7 +41,7 @@ func TestGenerate_MatchesGoldenFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := generate(spec)
+	got, err := generate(spec, grants{{"admin", []string{"things:read", "things:write"}}, {"viewer", []string{"things:read"}}})
 	if err != nil {
 		t.Fatalf("generate() error = %v", err)
 	}
@@ -51,7 +51,7 @@ func TestGenerate_MatchesGoldenFile(t *testing.T) {
 // The types of the web console are committed, so that a change of the
 // specification shows in review. They must be the ones the specification yields.
 func TestCommittedTypes_MatchTheSpecification(t *testing.T) {
-	got, err := generate(api.OpenAPI())
+	got, err := generate(api.OpenAPI(), roleGrants())
 	if err != nil {
 		t.Fatalf("generate() error = %v", err)
 	}
@@ -116,7 +116,7 @@ func TestGenerate_RejectsWhatItCannotMap(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := generate([]byte(tt.spec))
+			_, err := generate([]byte(tt.spec), nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("generate() error = %v, want one that contains %q", err, tt.want)
 			}
