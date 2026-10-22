@@ -10,7 +10,7 @@ import type { fakeServer } from './fakeServer';
  * Starts the console against a fake server, at path, with modules of its own: the
  * session and the language are state of the module, so each test starts clean.
  */
-export async function boot(server: ReturnType<typeof fakeServer>, path = '/') {
+export async function boot(server: ReturnType<typeof fakeServer>, path = '/', navigate = true) {
   vi.resetModules();
   vi.stubGlobal('fetch', server.fetch);
   localStorage.clear();
@@ -27,8 +27,10 @@ export async function boot(server: ReturnType<typeof fakeServer>, path = '/') {
   ]);
   i18n.setLocale('en');
   const router = createConsoleRouter(session, createMemoryHistory());
-  await router.push(path);
-  await router.isReady();
+  if (navigate) {
+    await router.push(path);
+    await router.isReady();
+  }
   const wrapper = utils.mount(App, { global: { plugins: [router] }, attachTo: document.body });
   await flushPromises();
   return { wrapper, router, session, i18n, client };

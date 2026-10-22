@@ -15,6 +15,19 @@ afterEach(() => {
   history.replaceState(null, '', '/');
 });
 
+// The router asks the server for the session before it arrives at a page. Until then,
+// nothing of the frame may show, which a user without a session never sees.
+test('draws nothing before the router has arrived at a page', async () => {
+  const { wrapper } = await boot(
+    fakeServer({ 'GET /api/v1/session': signedOut, 'GET /api/v1/sign-in-options': options() }),
+    '/',
+    false,
+  );
+  expect(wrapper.find('header').exists()).toBe(false);
+  expect(wrapper.find('main').exists()).toBe(false);
+  expect(wrapper.find('button').exists()).toBe(false);
+});
+
 describe('a user who is not signed in', () => {
   test.each(['/', '/incidents/8d1c0f0e-1111-4222-8333-944444444444', '/anything'])('is sent from %s to the sign-in page', async (path) => {
     const { wrapper, router } = await boot(

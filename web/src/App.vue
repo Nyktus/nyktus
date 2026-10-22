@@ -21,9 +21,12 @@ watchEffect(() => {
 </script>
 
 <template>
-  <RouterView v-if="route.meta.public" />
-  <SessionUnavailable v-else-if="session.state.status === 'unavailable'" />
-  <AppShell v-else>
-    <RouterView />
-  </AppShell>
+  <!-- Nothing is drawn until the router has arrived at a page: it asks the server for the session first, and the frame must not flash up for a user who is not signed in. -->
+  <template v-if="route.matched.length > 0">
+    <RouterView v-if="route.meta.public" />
+    <SessionUnavailable v-else-if="session.state.status === 'unavailable'" />
+    <AppShell v-else>
+      <RouterView />
+    </AppShell>
+  </template>
 </template>
