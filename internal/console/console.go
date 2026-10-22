@@ -36,6 +36,8 @@ type Deps struct {
 	// SignIn, Session and SignOut serve the session of the caller, and
 	// ChangePassword the password of its account.
 	SignIn, Session, SignOut, ChangePassword http.Handler
+	// SignInOptions tells the sign-in page which forms of sign-in the instance offers.
+	SignInOptions http.Handler
 	// SecondFactor completes sign-ins and manages the second factor.
 	SecondFactor SecondFactor
 	// APIKeys manages the API keys of the team.
@@ -206,7 +208,7 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Honeypots.complete() || !d.Scenarios.complete() || !d.Artifacts.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
+		d.SignIn == nil || d.SignInOptions == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Honeypots.complete() || !d.Scenarios.complete() || !d.Artifacts.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
 		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, catalog, honeytoken, honeypot, scenario, artifact, incident, event and alert channel handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
@@ -217,6 +219,7 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/livez", httpx.Public, http.HandlerFunc(live))
 	rt.Handle(http.MethodGet, "/readyz", httpx.Public, ready(d.Logger, d.DB))
 	rt.Handle(http.MethodPost, "/api/v1/setup", httpx.Public, httpx.Deadline(hashDeadline)(d.Setup))
+	rt.Handle(http.MethodGet, "/api/v1/sign-in-options", httpx.Public, d.SignInOptions)
 	rt.Handle(http.MethodPost, "/api/v1/session", httpx.Public, httpx.Deadline(hashDeadline)(d.SignIn))
 	rt.Handle(http.MethodGet, "/api/v1/session", session, d.Session)
 	rt.Handle(http.MethodDelete, "/api/v1/session", session, d.SignOut)

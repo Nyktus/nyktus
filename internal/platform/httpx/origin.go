@@ -19,6 +19,10 @@ import (
 // come from clients other than browsers, which do not send cookies of their own
 // accord, and are passed on. GET and HEAD must never change state.
 //
+// The error has a code of its own, so that the web console can tell a browser
+// that reaches the console under another address than NYKTUS_CONSOLE_URL from a
+// missing permission.
+//
 // SameOrigin panics if origin is not of the form scheme://host[:port].
 func SameOrigin(origin string) Middleware {
 	u, err := url.Parse(origin)
@@ -29,7 +33,7 @@ func SameOrigin(origin string) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet && r.Method != http.MethodHead {
 				if values := r.Header.Values("Origin"); len(values) > 0 && (len(values) > 1 || values[0] != origin) {
-					WriteError(w, r, http.StatusForbidden, CodeForbidden, "cross-origin request")
+					WriteError(w, r, http.StatusForbidden, CodeCrossOrigin, "cross-origin request")
 					return
 				}
 			}
