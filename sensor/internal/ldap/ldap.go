@@ -13,7 +13,6 @@ package ldap
 import (
 	"bufio"
 	"context"
-	"errors"
 	"net"
 
 	"nyktus.org/nyktus/sensor/internal/clock"
@@ -76,6 +75,7 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 			return
 		}
 		var reply []byte
+		last := false
 		switch op.tag {
 		case tagBindRequest:
 			code, err := bind(op.content, sess)
@@ -83,16 +83,20 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 				return
 			}
 			reply = response(id, tagBindResponse, code)
+			// The sixth refused login is the last, as with OpenSSH.
+			last = sess.Attempts() >= session.MaxAttempts
 		case tagSearchRequest:
 			if err := search(op.content, sess); err != nil {
 				return
 			}
 			reply = response(id, tagSearchDone, resultSuccess)
+		case tagUnbindRequest:
+			return
 		default:
-			// An unbind ends the session; any other operation is not offered.
+			// Any other operation is not offered.
 			return
 		}
-		if _, err := g.Write(reply); err != nil {
+		if _, err := g.Write(reply); err != nil || last {
 			return
 		}
 	}
@@ -161,18 +165,14 @@ func search(op []byte, sess *session.Session) error {
 		return err
 	}
 	filter, err := filterText(f)
-	switch {
-	case errors.Is(err, errTooDeep):
-		// A filter that only nests too deep is no reason to lose the search: its
-		// base is recorded, and the session ends as for a message that cannot be
-		// read.
-		sess.SetQuery(report.Query{BaseDN: report.Clean(string(base), report.MaxBaseDN), Filter: unreadable})
-		return err
-	case err != nil:
-		return err
+	if err != nil {
+		// The base was read, and a filter that cannot be is no reason to lose the
+		// search, or to let nesting hide it: it is recorded with the filter that
+		// stands for one that is not read, and the session ends.
+		filter = unreadable
 	}
 	sess.SetQuery(report.Query{BaseDN: report.Clean(string(base), report.MaxBaseDN), Filter: filter})
-	return nil
+	return err
 }
 
 // response encodes an LDAPMessage that answers the message with the given

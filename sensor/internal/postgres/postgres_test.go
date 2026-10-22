@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"io"
 	"io/fs"
 	"net"
@@ -17,75 +16,16 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	"nyktus.org/nyktus/sensor/internal/clock/clocktest"
+	"nyktus.org/nyktus/sensor/internal/conntest"
 	"nyktus.org/nyktus/sensor/internal/postgres"
 	"nyktus.org/nyktus/sensor/internal/report"
 	"nyktus.org/nyktus/sensor/internal/session"
 )
-
-// scriptConn is a connection whose client has sent everything in advance: the
-// server reads the script and then finds the end of the stream. It records
-// what the server writes and the deadlines it sets.
-type scriptConn struct {
-	mu             sync.Mutex
-	input          *bytes.Reader
-	read           int
-	output         bytes.Buffer
-	readDeadlines  []time.Time
-	writeDeadlines []time.Time
-	failWrites     bool
-}
-
-func newScriptConn(script []byte) *scriptConn {
-	return &scriptConn{input: bytes.NewReader(script)}
-}
-
-func (c *scriptConn) Read(p []byte) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	n, err := c.input.Read(p)
-	c.read += n
-	return n, err
-}
-
-func (c *scriptConn) Write(p []byte) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.failWrites {
-		return 0, errors.New("write failed")
-	}
-	return c.output.Write(p)
-}
-
-func (c *scriptConn) SetReadDeadline(t time.Time) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.readDeadlines = append(c.readDeadlines, t)
-	return nil
-}
-
-func (c *scriptConn) SetWriteDeadline(t time.Time) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.writeDeadlines = append(c.writeDeadlines, t)
-	return nil
-}
-
-func (c *scriptConn) SetDeadline(time.Time) error { return nil }
-func (c *scriptConn) Close() error                { return nil }
-func (c *scriptConn) LocalAddr() net.Addr         { return &net.TCPAddr{} }
-func (c *scriptConn) RemoteAddr() net.Addr        { return &net.TCPAddr{} }
-
-func (c *scriptConn) written() []byte {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return append([]byte(nil), c.output.Bytes()...)
-}
 
 const secretValue = "Abcdefghijklmnopqrstuvwxyz0123456789-_ABCDE"
 
@@ -144,10 +84,10 @@ func start(t *testing.T, clk *clocktest.Fake) *session.Session {
 
 // play runs the honeypot against a client that sends script and returns the
 // finished session and the connection.
-func play(t *testing.T, script []byte) (*session.Session, *scriptConn) {
+func play(t *testing.T, script []byte) (*session.Session, *conntest.Conn) {
 	t.Helper()
 	clk := clocktest.New()
-	conn := newScriptConn(script)
+	conn := conntest.New(script)
 	s := start(t, clk)
 	postgres.New(clk).Serve(t.Context(), conn, s)
 	s.End()
@@ -209,8 +149,8 @@ func TestServe_Login_RecordsTheUserTheDatabaseAndThePasswordLength(t *testing.T)
 	if rep.Database != "app" || rep.ApplicationName != "psql" {
 		t.Errorf("database = %q, application name = %q, want app and psql", rep.Database, rep.ApplicationName)
 	}
-	if want := join(authRequest, refusal("postgres")); !bytes.Equal(conn.written(), want) {
-		t.Errorf("written = %q, want the request for a password and the refusal %q", conn.written(), want)
+	if want := join(authRequest, refusal("postgres")); !bytes.Equal(conn.Written(), want) {
+		t.Errorf("written = %q, want the request for a password and the refusal %q", conn.Written(), want)
 	}
 	if got := s.EventType(); got != "login_attempt" {
 		t.Errorf("EventType() = %q, want login_attempt", got)
@@ -227,7 +167,7 @@ func TestServe_Password_IsNeverKeptOrSentBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(body, []byte(pw)) || strings.Contains(s.Attr().Value.String(), pw) || bytes.Contains(conn.written(), []byte(pw)) {
+	if bytes.Contains(body, []byte(pw)) || strings.Contains(s.Attr().Value.String(), pw) || bytes.Contains(conn.Written(), []byte(pw)) {
 		t.Errorf("the password is in the report, the log or the answer")
 	}
 	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"root", len(pw)}}) {
@@ -266,8 +206,8 @@ func TestServe_RequestsForEncryption_AreRefusedAndTheClientGoesOnInClearText(t *
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s, conn := play(t, join(tt.prefix, startupMessage("user", "u"), passwordMessage("pw")))
-			if want := tt.refused + string(join(authRequest, refusal("u"))); string(conn.written()) != want {
-				t.Errorf("written = %q, want %q", conn.written(), want)
+			if want := tt.refused + string(join(authRequest, refusal("u"))); string(conn.Written()) != want {
+				t.Errorf("written = %q, want %q", conn.Written(), want)
 			}
 			if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"u", 2}}) {
 				t.Errorf("logins = %+v, want the login after the request", got)
@@ -280,7 +220,7 @@ func TestServe_ThreeRequestsForEncryption_EndTheSession(t *testing.T) {
 	t.Parallel()
 
 	s, conn := play(t, join(sslRequest, gssRequest, sslRequest, startupMessage("user", "u"), passwordMessage("pw")))
-	if got := string(conn.written()); got != "NNN" {
+	if got := string(conn.Written()); got != "NNN" {
 		t.Errorf("written = %q, want a refusal for each of the three requests and nothing more", got)
 	}
 	if got := logins(sessionReport(t, s)); len(got) != 0 {
@@ -306,8 +246,8 @@ func TestServe_PacketsThatAreNoStartup_EndTheSessionWithoutAnswer(t *testing.T) 
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s, conn := play(t, join(tt.script, passwordMessage("pw")))
-			if len(conn.written()) != 0 {
-				t.Errorf("written = %q, want nothing", conn.written())
+			if len(conn.Written()) != 0 {
+				t.Errorf("written = %q, want nothing", conn.Written())
 			}
 			if got := s.EventType(); got != "connection" {
 				t.Errorf("EventType() = %q, want connection", got)
@@ -321,8 +261,8 @@ func TestServe_StartupWithoutUser_IsNoLogin(t *testing.T) {
 
 	for _, params := range [][]string{nil, {"database", "app"}, {"user", ""}} {
 		s, conn := play(t, join(startupMessage(params...), passwordMessage("pw")))
-		if len(conn.written()) != 0 {
-			t.Errorf("%v: written = %q, want nothing", params, conn.written())
+		if len(conn.Written()) != 0 {
+			t.Errorf("%v: written = %q, want nothing", params, conn.Written())
 		}
 		if got := logins(sessionReport(t, s)); len(got) != 0 {
 			t.Errorf("%v: logins = %+v, want none", params, got)
@@ -365,8 +305,8 @@ func TestServe_EndOfTheStream(t *testing.T) {
 			if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("logins = %+v, want %+v", got, tt.want)
 			}
-			if !bytes.HasPrefix(conn.written(), authRequest) || bytes.Contains(conn.written(), []byte("28P01")) {
-				t.Errorf("written = %q, want the request for a password and no refusal of a password that never came", conn.written())
+			if !bytes.HasPrefix(conn.Written(), authRequest) || bytes.Contains(conn.Written(), []byte("28P01")) {
+				t.Errorf("written = %q, want the request for a password and no refusal of a password that never came", conn.Written())
 			}
 		})
 	}
@@ -400,8 +340,8 @@ func TestServe_StartupPacket_IsReadOnlyWithinTheLimitOfTheServer(t *testing.T) {
 			if got := len(logins(sessionReport(t, s))) == 1; got != tt.logged {
 				t.Errorf("login recorded = %t, want %t", got, tt.logged)
 			}
-			if tt.maxRead > 0 && conn.read > tt.maxRead {
-				t.Errorf("read %d bytes of a packet that is refused by its header, want no more than the one buffer of %d", conn.read, tt.maxRead)
+			if tt.maxRead > 0 && conn.BytesRead() > tt.maxRead {
+				t.Errorf("read %d bytes of a packet that is refused by its header, want no more than the one buffer of %d", conn.BytesRead(), tt.maxRead)
 			}
 		})
 	}
@@ -423,8 +363,8 @@ func TestServe_MalformedStartup_EndsTheSession(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s, conn := play(t, join(packet(protocol30, []byte(tt.body)...), passwordMessage("pw")))
-			if len(conn.written()) != 0 {
-				t.Errorf("written = %q, want nothing", conn.written())
+			if len(conn.Written()) != 0 {
+				t.Errorf("written = %q, want nothing", conn.Written())
 			}
 			if got := logins(sessionReport(t, s)); len(got) != 0 {
 				t.Errorf("logins = %+v, want none", got)
@@ -453,8 +393,8 @@ func TestServe_Refusal_NamesTheUserInPrintableASCIIOnly(t *testing.T) {
 	t.Parallel()
 
 	_, conn := play(t, join(startupMessage("user", "r\x01\xffo\x1b[0mo\x1f\x7f\u00e9t"), passwordMessage("pw")))
-	if want := join(authRequest, refusal("ro[0mot")); !bytes.Equal(conn.written(), want) {
-		t.Errorf("written = %q, want %q", conn.written(), want)
+	if want := join(authRequest, refusal("ro[0mot")); !bytes.Equal(conn.Written(), want) {
+		t.Errorf("written = %q, want %q", conn.Written(), want)
 	}
 }
 
@@ -464,8 +404,8 @@ func TestServe_MoreThan16KiB_EndsTheSession(t *testing.T) {
 	// A password message whose header promises 2 GiB.
 	script := join(startupMessage("user", "u"), []byte{'p', 0x7f, 0xff, 0xff, 0xff}, bytes.Repeat([]byte("a"), 64<<10))
 	s, conn := play(t, script)
-	if conn.read != 16<<10 {
-		t.Errorf("read %d bytes, want exactly the 16 KiB that a connection may send", conn.read)
+	if conn.BytesRead() != 16<<10 {
+		t.Errorf("read %d bytes, want exactly the 16 KiB that a connection may send", conn.BytesRead())
 	}
 	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"u", -1}}) {
 		t.Errorf("logins = %+v, want the login without a password", got)
@@ -476,8 +416,8 @@ func TestServe_NameEntered_IsRecordedWhenTheRequestCannotBeWritten(t *testing.T)
 	t.Parallel()
 
 	clk := clocktest.New()
-	conn := newScriptConn(startupMessage("user", "root"))
-	conn.failWrites = true
+	conn := conntest.New(startupMessage("user", "root"))
+	conn.FailAfter(0)
 	s := start(t, clk)
 	postgres.New(clk).Serve(t.Context(), conn, s)
 	s.End()
@@ -485,13 +425,17 @@ func TestServe_NameEntered_IsRecordedWhenTheRequestCannotBeWritten(t *testing.T)
 	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"root", -1}}) {
 		t.Errorf("logins = %+v, want the name without a password", got)
 	}
+	if len(conn.Written()) != 0 {
+		t.Errorf("written = %q, want nothing: the writes failed", conn.Written())
+	}
 }
 
 func TestServe_RefusalThatCannotBeWritten_KeepsThePassword(t *testing.T) {
 	t.Parallel()
 
 	clk := clocktest.New()
-	conn := &failingAfter{scriptConn: newScriptConn(join(startupMessage("user", "root"), passwordMessage("pw"))), okWrites: 1}
+	conn := conntest.New(join(startupMessage("user", "root"), passwordMessage("pw")))
+	conn.FailAfter(1)
 	s := start(t, clk)
 	postgres.New(clk).Serve(t.Context(), conn, s)
 	s.End()
@@ -501,33 +445,19 @@ func TestServe_RefusalThatCannotBeWritten_KeepsThePassword(t *testing.T) {
 	}
 }
 
-// failingAfter lets a number of writes through and fails the rest.
-type failingAfter struct {
-	*scriptConn
-	okWrites int
-}
-
-func (c *failingAfter) Write(p []byte) (int, error) {
-	if c.okWrites == 0 {
-		return 0, errors.New("write failed")
-	}
-	c.okWrites--
-	return c.scriptConn.Write(p)
-}
-
 func TestServe_CanceledContext_ReadsAndWritesNothing(t *testing.T) {
 	t.Parallel()
 
 	clk := clocktest.New()
-	conn := newScriptConn(join(startupMessage("user", "root"), passwordMessage("pw")))
+	conn := conntest.New(join(startupMessage("user", "root"), passwordMessage("pw")))
 	s := start(t, clk)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	postgres.New(clk).Serve(ctx, conn, s)
 	s.End()
 
-	if conn.read != 0 || len(conn.written()) != 0 || s.Attempts() != 0 {
-		t.Errorf("read %d bytes, wrote %q, recorded %d logins, want none", conn.read, conn.written(), s.Attempts())
+	if conn.BytesRead() != 0 || len(conn.Written()) != 0 || s.Attempts() != 0 {
+		t.Errorf("read %d bytes, wrote %q, recorded %d logins, want none", conn.BytesRead(), conn.Written(), s.Attempts())
 	}
 }
 
@@ -535,19 +465,19 @@ func TestServe_Deadlines_AreThirtySecondsToReadAndTenToWrite(t *testing.T) {
 	t.Parallel()
 
 	clk := clocktest.New()
-	conn := newScriptConn(join(startupMessage("user", "u"), passwordMessage("pw")))
+	conn := conntest.New(join(startupMessage("user", "u"), passwordMessage("pw")))
 	s := start(t, clk)
 	postgres.New(clk).Serve(t.Context(), conn, s)
 
-	if len(conn.readDeadlines) == 0 || len(conn.writeDeadlines) == 0 {
-		t.Fatalf("deadlines set: %d for reads, %d for writes", len(conn.readDeadlines), len(conn.writeDeadlines))
+	if len(conn.ReadDeadlines()) == 0 || len(conn.WriteDeadlines()) == 0 {
+		t.Fatalf("deadlines set: %d for reads, %d for writes", len(conn.ReadDeadlines()), len(conn.WriteDeadlines()))
 	}
-	for _, d := range conn.readDeadlines {
+	for _, d := range conn.ReadDeadlines() {
 		if want := clk.Deadline(30 * time.Second); !d.Equal(want) {
 			t.Errorf("read deadline = %v, want %v", d, want)
 		}
 	}
-	for _, d := range conn.writeDeadlines {
+	for _, d := range conn.WriteDeadlines() {
 		if want := clk.Deadline(10 * time.Second); !d.Equal(want) {
 			t.Errorf("write deadline = %v, want %v", d, want)
 		}
@@ -573,7 +503,7 @@ func TestServe_Report_HasTheFormOfTheGoldenFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	postgres.New(clk).Serve(t.Context(), newScriptConn(join(sslRequest,
+	postgres.New(clk).Serve(t.Context(), conntest.New(join(sslRequest,
 		startupMessage("user", "postgres", "database", "postgres", "application_name", "psql"),
 		passwordMessage("123456789012"))), s)
 	s.End()
@@ -678,16 +608,16 @@ func FuzzServe(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, script []byte) {
 		clk := clocktest.New()
-		conn := newScriptConn(script)
+		conn := conntest.New(script)
 		s := start(t, clk)
 		postgres.New(clk).Serve(t.Context(), conn, s)
 		s.End()
 
-		if conn.read > 16<<10 {
-			t.Fatalf("read %d bytes", conn.read)
+		if conn.BytesRead() > 16<<10 {
+			t.Fatalf("read %d bytes", conn.BytesRead())
 		}
-		if len(conn.written()) > 3+len(authRequest)+400 {
-			t.Fatalf("wrote %d bytes", len(conn.written()))
+		if len(conn.Written()) > 3+len(authRequest)+400 {
+			t.Fatalf("wrote %d bytes", len(conn.Written()))
 		}
 		rep := sessionReport(t, s)
 		if _, err := json.Marshal(rep); err != nil {

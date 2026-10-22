@@ -2,7 +2,7 @@
 
 A honeypot is a network service that nobody has a reason to connect to, such as an SSH server on a host that the team never uses or a directory server that no application knows. The sensor `nyktus-sensor` emulates it inside the monitored network: it answers like the real service, but offers nothing behind the login, and reports every session to the trigger.
 
-This page covers the management of honeypots in the console and what the trigger accepts from a sensor. Installing, configuring and running the sensor is described in [Sensor](sensor.md); this version of the sensor emulates `ssh` and `telnet`, and the other services follow. A honeypot that no sensor runs has the [status](#status) `never`.
+This page covers the management of honeypots in the console and what the trigger accepts from a sensor. Installing, configuring and running the sensor is described in [Sensor](sensor.md); this version of the sensor emulates all four services. A honeypot that no sensor runs has the [status](#status) `never`.
 
 ## Services
 

@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,9 +18,11 @@ import (
 // The honeypots answer the client with the protocol and nothing else: they
 // start no process, open no connection of their own, read no file, and the SSH
 // honeypot offers neither an agent nor a terminal. The check is structural, so
-// that no change can add one without failing here. A package of a service is
-// listed here when it is written; the library of the Go project is the one
-// import that speaks the SSH protocol.
+// that no change can add one without failing here. Every package of the sensor
+// is either one of the services or one of the helpers, so that a new package is
+// checked or named as not needing it; the library of the Go project is the one
+// import that speaks the SSH protocol. A service also reads and writes through
+// the limits of the guard, so that no protocol can leave one out.
 func TestServices_ImportNothingThatRunsOrForwards(t *testing.T) {
 	t.Parallel()
 
@@ -40,7 +43,18 @@ func TestServices_ImportNothingThatRunsOrForwards(t *testing.T) {
 		"golang.org/x/crypto/ssh/knownhosts": "reads files",
 		"golang.org/x/crypto/ssh/terminal":   "opens a terminal",
 	}
-	for _, service := range []string{"ssh", "telnet", "postgres", "ldap"} {
+	services := []string{"ssh", "telnet", "postgres", "ldap"}
+	helpers := []string{"clock", "config", "conntest", "guard", "listener", "report", "reporter", "secret", "sensor", "session", "version"}
+	packages, err := fs.ReadDir(os.DirFS(".."), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range packages {
+		if p.IsDir() && !slices.Contains(services, p.Name()) && !slices.Contains(helpers, p.Name()) {
+			t.Errorf("internal/%s is neither a service nor a helper: add it to the list of this test, and to the services if it speaks a protocol", p.Name())
+		}
+	}
+	for _, service := range services {
 		t.Run(service, func(t *testing.T) {
 			t.Parallel()
 			dir := os.DirFS("../" + service)
@@ -49,6 +63,7 @@ func TestServices_ImportNothingThatRunsOrForwards(t *testing.T) {
 				t.Fatalf("glob = %v, %v", files, err)
 			}
 			fset := token.NewFileSet()
+			guarded := false
 			for _, file := range files {
 				if strings.HasSuffix(file, "_test.go") {
 					continue
@@ -85,7 +100,11 @@ func TestServices_ImportNothingThatRunsOrForwards(t *testing.T) {
 					if why, bad := forbidden[path]; bad {
 						t.Errorf("%s/%s imports %s, which %s", service, file, path, why)
 					}
+					guarded = guarded || path == "nyktus.org/nyktus/sensor/internal/guard"
 				}
+			}
+			if !guarded {
+				t.Errorf("%s does not import the guard: it would read and write without the limits of a connection", service)
 			}
 		})
 	}

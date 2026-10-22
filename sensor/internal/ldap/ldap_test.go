@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"io"
 	"io/fs"
 	"net"
@@ -17,75 +16,16 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	"nyktus.org/nyktus/sensor/internal/clock/clocktest"
+	"nyktus.org/nyktus/sensor/internal/conntest"
 	"nyktus.org/nyktus/sensor/internal/ldap"
 	"nyktus.org/nyktus/sensor/internal/report"
 	"nyktus.org/nyktus/sensor/internal/session"
 )
-
-// scriptConn is a connection whose client has sent everything in advance: the
-// server reads the script and then finds the end of the stream. It records
-// what the server writes and the deadlines it sets.
-type scriptConn struct {
-	mu             sync.Mutex
-	input          *bytes.Reader
-	read           int
-	output         bytes.Buffer
-	readDeadlines  []time.Time
-	writeDeadlines []time.Time
-	failWrites     bool
-}
-
-func newScriptConn(script []byte) *scriptConn {
-	return &scriptConn{input: bytes.NewReader(script)}
-}
-
-func (c *scriptConn) Read(p []byte) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	n, err := c.input.Read(p)
-	c.read += n
-	return n, err
-}
-
-func (c *scriptConn) Write(p []byte) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.failWrites {
-		return 0, errors.New("write failed")
-	}
-	return c.output.Write(p)
-}
-
-func (c *scriptConn) SetReadDeadline(t time.Time) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.readDeadlines = append(c.readDeadlines, t)
-	return nil
-}
-
-func (c *scriptConn) SetWriteDeadline(t time.Time) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.writeDeadlines = append(c.writeDeadlines, t)
-	return nil
-}
-
-func (c *scriptConn) SetDeadline(time.Time) error { return nil }
-func (c *scriptConn) Close() error                { return nil }
-func (c *scriptConn) LocalAddr() net.Addr         { return &net.TCPAddr{} }
-func (c *scriptConn) RemoteAddr() net.Addr        { return &net.TCPAddr{} }
-
-func (c *scriptConn) written() []byte {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return append([]byte(nil), c.output.Bytes()...)
-}
 
 const secretValue = "Abcdefghijklmnopqrstuvwxyz0123456789-_ABCDE"
 
@@ -161,10 +101,10 @@ func start(t *testing.T, clk *clocktest.Fake) *session.Session {
 
 // play runs the honeypot against a client that sends script and returns the
 // finished session and the connection.
-func play(t *testing.T, script []byte) (*session.Session, *scriptConn) {
+func play(t *testing.T, script []byte) (*session.Session, *conntest.Conn) {
 	t.Helper()
 	clk := clocktest.New()
-	conn := newScriptConn(script)
+	conn := conntest.New(script)
 	s := start(t, clk)
 	ldap.New(clk).Serve(t.Context(), conn, s)
 	s.End()
@@ -206,8 +146,8 @@ func TestServe_ScannerDialog_AnonymousBindThenSearchOfTheRoot(t *testing.T) {
 		message(2, searchRequest("", present("objectClass"))),
 		unbind(3)))
 
-	if want := join(reply(1, 0x61, 0), reply(2, 0x65, 0)); !bytes.Equal(conn.written(), want) {
-		t.Errorf("written = %x, want the success of the bind and an empty result %x", conn.written(), want)
+	if want := join(reply(1, 0x61, 0), reply(2, 0x65, 0)); !bytes.Equal(conn.Written(), want) {
+		t.Errorf("written = %x, want the success of the bind and an empty result %x", conn.Written(), want)
 	}
 	rep := sessionReport(t, s)
 	if len(rep.Attempts) != 0 {
@@ -243,8 +183,8 @@ func TestServe_Bind_RecordsTheNameAndTheLengthOfThePasswordAndFails(t *testing.T
 			if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("logins = %+v, want %+v", got, tt.want)
 			}
-			if want := reply(1, 0x61, tt.wantCode); !bytes.Equal(conn.written(), want) {
-				t.Errorf("written = %x, want %x", conn.written(), want)
+			if want := reply(1, 0x61, tt.wantCode); !bytes.Equal(conn.Written(), want) {
+				t.Errorf("written = %x, want %x", conn.Written(), want)
 			}
 		})
 	}
@@ -260,7 +200,7 @@ func TestServe_Password_IsNeverKeptOrSentBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(body, []byte(pw)) || strings.Contains(s.Attr().Value.String(), pw) || bytes.Contains(conn.written(), []byte(pw)) {
+	if bytes.Contains(body, []byte(pw)) || strings.Contains(s.Attr().Value.String(), pw) || bytes.Contains(conn.Written(), []byte(pw)) {
 		t.Errorf("the password is in the report, the log or the answer")
 	}
 	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=admin", len(pw)}}) {
@@ -280,26 +220,43 @@ func TestServe_Search_KeepsTheFirstAndAnswersEveryOne(t *testing.T) {
 	if rep.Query == nil || *rep.Query != (report.Query{BaseDN: "", Filter: "(objectClass=*)"}) {
 		t.Errorf("query = %+v, want the first search", rep.Query)
 	}
-	if want := join(reply(1, 0x65, 0), reply(2, 0x65, 0)); !bytes.Equal(conn.written(), want) {
-		t.Errorf("written = %x, want an empty result for each search", conn.written())
+	if want := join(reply(1, 0x65, 0), reply(2, 0x65, 0)); !bytes.Equal(conn.Written(), want) {
+		t.Errorf("written = %x, want an empty result for each search", conn.Written())
 	}
 }
 
-func TestServe_MoreThanSixBinds_KeepsSixAndAnswersAll(t *testing.T) {
+func TestServe_SixthRefusedBind_IsTheLastAndAnswered(t *testing.T) {
 	t.Parallel()
 
 	var script []byte
 	var want []byte
 	for i := range 8 {
 		script = append(script, message(byte(i+1), bindRequest("u"+strconv.Itoa(i), "pw"))...)
-		want = append(want, reply(byte(i+1), 0x61, 49)...)
+		if i < 6 {
+			want = append(want, reply(byte(i+1), 0x61, 49)...)
+		}
 	}
 	s, conn := play(t, script)
 	if got := len(sessionReport(t, s).Attempts); got != 6 {
 		t.Errorf("attempts = %d, want the 6 that a session keeps", got)
 	}
-	if !bytes.Equal(conn.written(), want) {
-		t.Errorf("written = %x, want a failure for each of the eight binds", conn.written())
+	if !bytes.Equal(conn.Written(), want) {
+		t.Errorf("written = %x, want the failures of the first six binds and nothing after", conn.Written())
+	}
+}
+
+func TestServe_AnonymousBinds_DoNotCountAsLogins(t *testing.T) {
+	t.Parallel()
+
+	var script []byte
+	var want []byte
+	for i := range 8 {
+		script = append(script, message(byte(i+1), bindRequest("", ""))...)
+		want = append(want, reply(byte(i+1), 0x61, 0)...)
+	}
+	s, conn := play(t, script)
+	if s.Attempts() != 0 || !bytes.Equal(conn.Written(), want) {
+		t.Errorf("attempts = %d, written = %x, want eight successes and no login", s.Attempts(), conn.Written())
 	}
 }
 
@@ -338,10 +295,13 @@ func TestServe_Filters_AreWrittenAsText(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s, _ := play(t, message(1, searchRequest("", tt.filter)))
+			s, conn := play(t, message(1, searchRequest("", tt.filter)))
 			rep := sessionReport(t, s)
 			if rep.Query == nil || rep.Query.Filter != tt.want {
 				t.Errorf("filter = %+v, want %q", rep.Query, tt.want)
+			}
+			if want := reply(1, 0x65, 0); !bytes.Equal(conn.Written(), want) {
+				t.Errorf("written = %x, want the empty result %x: a filter that is read is answered", conn.Written(), want)
 			}
 		})
 	}
@@ -365,13 +325,33 @@ func nest(n int) []byte {
 	return f
 }
 
-func TestServe_FilterNestedDeeperThanEightLevels_RecordsTheBaseAndEndsTheSession(t *testing.T) {
+// A filter that cannot be read does not lose the search: its base is recorded
+// with the filter that stands for one that is not, and the session ends without
+// an answer.
+func TestServe_FilterThatCannotBeRead_RecordsTheBaseAndEndsTheSession(t *testing.T) {
 	t.Parallel()
 
-	s, conn := play(t, join(message(1, searchRequest("dc=corp,dc=local", nest(9))), message(2, searchRequest("", present("x")))))
-	q := sessionReport(t, s).Query
-	if len(conn.written()) != 0 || q == nil || *q != (report.Query{BaseDN: "dc=corp,dc=local", Filter: "(?)"}) {
-		t.Errorf("written = %x, query = %+v, want the base with a filter that is not read, and no answer", conn.written(), q)
+	tests := []struct {
+		name   string
+		filter []byte
+	}{
+		{name: "nested deeper than eight levels", filter: nest(9)},
+		{name: "unknown kind", filter: tlv(0xaf, str("a"))},
+		{name: "high tag number", filter: []byte{0x7f, 0x01, 0x00}},
+		{name: "not with two filters", filter: tlv(0xa2, present("a"), present("b"))},
+		{name: "equality without a value", filter: tlv(0xa3, str("a"))},
+		{name: "substring of an unknown kind", filter: substring("cn", tlv(0x83, []byte("a")))},
+		{name: "an element that is cut short inside", filter: tlv(0xa0, []byte{0x87, 0x05, 'a'})},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s, conn := play(t, join(message(1, searchRequest("dc=corp,dc=local", tt.filter)), message(2, searchRequest("", present("x")))))
+			q := sessionReport(t, s).Query
+			if len(conn.Written()) != 0 || q == nil || *q != (report.Query{BaseDN: "dc=corp,dc=local", Filter: "(?)"}) {
+				t.Errorf("written = %x, query = %+v, want the base with a filter that is not read, and no answer", conn.Written(), q)
+			}
+		})
 	}
 }
 
@@ -412,8 +392,8 @@ func TestServe_OperationsThatAreNotOffered_EndTheSessionWithoutAnswer(t *testing
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s, conn := play(t, join(message(1, bindRequest("cn=a", "pw")), message(2, tt.op), message(3, bindRequest("cn=b", "pw"))))
-			if want := reply(1, 0x61, 49); !bytes.Equal(conn.written(), want) {
-				t.Errorf("written = %x, want only the answer to the bind %x", conn.written(), want)
+			if want := reply(1, 0x61, 49); !bytes.Equal(conn.Written(), want) {
+				t.Errorf("written = %x, want only the answer to the bind %x", conn.Written(), want)
 			}
 			if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=a", 2}}) {
 				t.Errorf("logins = %+v, want what came before", got)
@@ -426,8 +406,8 @@ func TestServe_Unbind_EndsTheSession(t *testing.T) {
 	t.Parallel()
 
 	s, conn := play(t, join(unbind(1), message(2, bindRequest("cn=a", "pw"))))
-	if len(conn.written()) != 0 || s.Attempts() != 0 {
-		t.Errorf("written = %x, attempts = %d, want nothing after the unbind", conn.written(), s.Attempts())
+	if len(conn.Written()) != 0 || s.Attempts() != 0 {
+		t.Errorf("written = %x, attempts = %d, want nothing after the unbind", conn.Written(), s.Attempts())
 	}
 }
 
@@ -441,9 +421,12 @@ func TestServe_MalformedMessages_EndTheSessionWithoutAnswer(t *testing.T) {
 	}{
 		{name: "not a sequence", script: []byte("GET / HTTP/1.1\r\nHost: x\r\n\r\n")},
 		{name: "indefinite length", script: join([]byte{0x30, 0x80}, integer(1), tlv(0x42), []byte{0, 0})},
-		{name: "length of three octets", script: join([]byte{0x30, 0x83, 0, 0, 20}, integer(1), tlv(0x42))},
-		{name: "length of four octets", script: join([]byte{0x30, 0x84, 0, 0, 0, 20}, integer(1), tlv(0x42))},
 		{name: "length beyond the limit", script: join([]byte{0x30, 0x82, 0x20, 0x01}, make([]byte, 9<<10))},
+		{name: "length cut short inside", script: tlv(0x30, integer(1), tlv(0x60, integer(3), []byte{0x04, 0x84, 0x00}))},
+		{name: "length of five octets", script: join([]byte{0x30, 0x85, 0, 0, 0, 0, 20}, integer(1), tlv(0x42))},
+		{name: "length of four octets beyond the limit", script: join([]byte{0x30, 0x84, 0, 0, 0x20, 0x01}, make([]byte, 9<<10))},
+		{name: "length of four octets that is 4 GiB", script: join([]byte{0x30, 0x84, 0xff, 0xff, 0xff, 0xff}, make([]byte, 9<<10))},
+		{name: "length of five octets inside", script: tlv(0x30, integer(1), []byte{0x60, 0x85, 0, 0, 0, 0, 9}, integer(3), str("ab"), tlv(0x80))},
 		{name: "huge length", script: join([]byte{0x30, 0x82, 0xff, 0xff}, make([]byte, 9<<10))},
 		{name: "identifier without a value", script: tlv(0x30, tlv(0x02), bindRequest("", ""))},
 		{name: "identifier of five octets", script: tlv(0x30, tlv(0x02, []byte{1, 2, 3, 4, 5}), bindRequest("", ""))},
@@ -453,7 +436,6 @@ func TestServe_MalformedMessages_EndTheSessionWithoutAnswer(t *testing.T) {
 		{name: "indefinite length outside", script: join([]byte{0x30, 0x80}, integer(1), bindRequest(strings.Repeat("a", 116), ""))},
 		{name: "indefinite length inside that could be 128", script: tlv(0x30, integer(1), tlv(0x60, integer(3), join([]byte{0x04, 0x80}, bytes.Repeat([]byte("a"), 128)), tlv(0x80)))},
 		{name: "a set instead of a sequence", script: tlv(0x31, integer(1), bindRequest("", ""))},
-		{name: "length of three octets inside", script: tlv(0x30, integer(1), []byte{0x60, 0x83, 0x00, 0x09}, integer(3), str("ab"), tlv(0x80))},
 		{name: "search with a scope that is no enumeration", script: message(1, tlv(0x63, str(""), str("x"), tlv(0x0a, []byte{0}), integer(0), integer(0), tlv(0x01, []byte{0}), present("a"), tlv(0x30)))},
 		{name: "search with a limit that is no integer", script: message(1, tlv(0x63, str(""), tlv(0x0a, []byte{0}), tlv(0x0a, []byte{0}), str("x"), integer(0), tlv(0x01, []byte{0}), present("a"), tlv(0x30)))},
 		{name: "search with a type flag that is no boolean", script: message(1, tlv(0x63, str(""), tlv(0x0a, []byte{0}), tlv(0x0a, []byte{0}), integer(0), integer(0), str("x"), present("a"), tlv(0x30)))},
@@ -466,21 +448,51 @@ func TestServe_MalformedMessages_EndTheSessionWithoutAnswer(t *testing.T) {
 		{name: "bind with other credentials", script: message(1, tlv(0x60, integer(3), str("cn=a"), tlv(0x81, []byte("pw"))))},
 		{name: "bind cut short", script: message(1, tlv(0x60, integer(3), str("cn=a")))},
 		{name: "search without a filter", script: message(1, tlv(0x63, str(""), tlv(0x0a, []byte{0}), tlv(0x0a, []byte{0}), integer(0), integer(0), tlv(0x01, []byte{0})))},
-		{name: "search with a filter of an unknown kind", script: message(1, searchRequest("", tlv(0xaf, str("a"))))},
-		{name: "filter with a high tag number", script: message(1, searchRequest("", []byte{0x7f, 0x01, 0x00}))},
-		{name: "not with two filters", script: message(1, searchRequest("", tlv(0xa2, present("a"), present("b"))))},
-		{name: "equality without a value", script: message(1, searchRequest("", tlv(0xa3, str("a"))))},
-		{name: "substring of an unknown kind", script: message(1, searchRequest("", substring("cn", tlv(0x83, []byte("a")))))},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s, conn := play(t, join(tt.script, validBind))
-			if len(conn.written()) != 0 {
-				t.Errorf("written = %x, want nothing", conn.written())
+			if len(conn.Written()) != 0 {
+				t.Errorf("written = %x, want nothing", conn.Written())
 			}
 			if s.Attempts() != 0 || sessionReport(t, s).Query != nil {
 				t.Errorf("recorded something from a message that cannot be read")
+			}
+		})
+	}
+}
+
+// wide encodes an element with its length in the long form of the given number
+// of octets, padded with zeros, as encoders that pad every length write it.
+func wide(tag byte, octets int, content ...[]byte) []byte {
+	body := bytes.Join(content, nil)
+	out := []byte{tag, 0x80 | byte(octets)} //nolint:gosec // G115: the number of octets is at most four.
+	for i := octets - 1; i >= 0; i-- {
+		out = append(out, byte(len(body)>>(8*i))) //nolint:gosec // G115: the test elements are short.
+	}
+	return append(out, body...)
+}
+
+func TestServe_PaddedLengths_AreReadLikeShortOnes(t *testing.T) {
+	t.Parallel()
+
+	for _, octets := range []int{1, 2, 3, 4} {
+		t.Run(strconv.Itoa(octets), func(t *testing.T) {
+			t.Parallel()
+			bind := wide(0x60, octets, integer(3), wide(0x04, octets, []byte("admin")), wide(0x80, octets, []byte("pw")))
+			search := wide(0x63, octets, wide(0x04, octets, []byte("dc=x")), tlv(0x0a, []byte{0}), tlv(0x0a, []byte{0}), integer(0), integer(0),
+				tlv(0x01, []byte{0}), wide(0xa3, octets, wide(0x04, octets, []byte("cn")), wide(0x04, octets, []byte("a"))), tlv(0x30))
+			s, conn := play(t, join(wide(0x30, octets, integer(1), bind), wide(0x30, octets, integer(2), search)))
+			rep := sessionReport(t, s)
+			if got := logins(rep); !reflect.DeepEqual(got, []login{{"admin", 2}}) {
+				t.Errorf("logins = %+v, want the bind", got)
+			}
+			if rep.Query == nil || *rep.Query != (report.Query{BaseDN: "dc=x", Filter: "(cn=a)"}) {
+				t.Errorf("query = %+v, want the search", rep.Query)
+			}
+			if want := join(reply(1, 0x61, 49), reply(2, 0x65, 0)); !bytes.Equal(conn.Written(), want) {
+				t.Errorf("written = %x, want %x", conn.Written(), want)
 			}
 		})
 	}
@@ -512,8 +524,8 @@ func TestServe_MessageOfTheLongestSize_IsReadAndOneByteMoreIsNot(t *testing.T) {
 	if sessionReport(t, s).Query != nil {
 		t.Error("a message of 8193 bytes was read")
 	}
-	if conn.read > 4096 {
-		t.Errorf("read %d bytes of a message that is refused by its header, want no more than the one buffer", conn.read)
+	if conn.BytesRead() > 4096 {
+		t.Errorf("read %d bytes of a message that is refused by its header, want no more than the one buffer", conn.BytesRead())
 	}
 }
 
@@ -530,8 +542,8 @@ func TestServe_EveryPrefixOfADialog_EndsWithoutPanicAndKeepsWhatWasRead(t *testi
 		if _, err := json.Marshal(rep); err != nil {
 			t.Fatalf("prefix %d: %v", n, err)
 		}
-		if conn.read > n {
-			t.Errorf("prefix %d: read %d bytes", n, conn.read)
+		if conn.BytesRead() > n {
+			t.Errorf("prefix %d: read %d bytes", n, conn.BytesRead())
 		}
 	}
 }
@@ -544,11 +556,11 @@ func TestServe_MoreThan16KiB_EndsTheSession(t *testing.T) {
 		script = append(script, message(1, bindRequest("", ""))...)
 	}
 	_, conn := play(t, script)
-	if conn.read != 16<<10 {
-		t.Errorf("read %d bytes, want exactly the 16 KiB that a connection may send", conn.read)
+	if conn.BytesRead() != 16<<10 {
+		t.Errorf("read %d bytes, want exactly the 16 KiB that a connection may send", conn.BytesRead())
 	}
-	if len(conn.written()) == 0 || len(conn.written()) > conn.read {
-		t.Errorf("wrote %d bytes for %d read, want an answer of the same order of size", len(conn.written()), conn.read)
+	if len(conn.Written()) == 0 || len(conn.Written()) > conn.BytesRead() {
+		t.Errorf("wrote %d bytes for %d read, want an answer of the same order of size", len(conn.Written()), conn.BytesRead())
 	}
 }
 
@@ -556,13 +568,16 @@ func TestServe_BindRecorded_WhenTheAnswerCannotBeWritten(t *testing.T) {
 	t.Parallel()
 
 	clk := clocktest.New()
-	conn := newScriptConn(message(1, bindRequest("cn=admin", "pw")))
-	conn.failWrites = true
+	conn := conntest.New(message(1, bindRequest("cn=admin", "pw")))
+	conn.FailAfter(0)
 	s := start(t, clk)
 	ldap.New(clk).Serve(t.Context(), conn, s)
 	s.End()
 	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=admin", 2}}) {
 		t.Errorf("logins = %+v, want the bind", got)
+	}
+	if len(conn.Written()) != 0 {
+		t.Errorf("written = %x, want nothing: the writes failed", conn.Written())
 	}
 }
 
@@ -570,8 +585,8 @@ func TestServe_AnswerThatCannotBeWritten_EndsTheSession(t *testing.T) {
 	t.Parallel()
 
 	clk := clocktest.New()
-	conn := newScriptConn(join(message(1, bindRequest("cn=a", "pw")), message(2, bindRequest("cn=b", "pw"))))
-	conn.failWrites = true
+	conn := conntest.New(join(message(1, bindRequest("cn=a", "pw")), message(2, bindRequest("cn=b", "pw"))))
+	conn.FailAfter(0)
 	s := start(t, clk)
 	ldap.New(clk).Serve(t.Context(), conn, s)
 	s.End()
@@ -584,14 +599,14 @@ func TestServe_CanceledContext_ReadsAndWritesNothing(t *testing.T) {
 	t.Parallel()
 
 	clk := clocktest.New()
-	conn := newScriptConn(message(1, bindRequest("cn=admin", "pw")))
+	conn := conntest.New(message(1, bindRequest("cn=admin", "pw")))
 	s := start(t, clk)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	ldap.New(clk).Serve(ctx, conn, s)
 	s.End()
-	if conn.read != 0 || len(conn.written()) != 0 || s.Attempts() != 0 {
-		t.Errorf("read %d bytes, wrote %x, recorded %d logins, want none", conn.read, conn.written(), s.Attempts())
+	if conn.BytesRead() != 0 || len(conn.Written()) != 0 || s.Attempts() != 0 {
+		t.Errorf("read %d bytes, wrote %x, recorded %d logins, want none", conn.BytesRead(), conn.Written(), s.Attempts())
 	}
 }
 
@@ -599,19 +614,19 @@ func TestServe_Deadlines_AreThirtySecondsToReadAndTenToWrite(t *testing.T) {
 	t.Parallel()
 
 	clk := clocktest.New()
-	conn := newScriptConn(join(message(1, bindRequest("cn=a", "pw")), unbind(2)))
+	conn := conntest.New(join(message(1, bindRequest("cn=a", "pw")), unbind(2)))
 	s := start(t, clk)
 	ldap.New(clk).Serve(t.Context(), conn, s)
 
-	if len(conn.readDeadlines) == 0 || len(conn.writeDeadlines) == 0 {
-		t.Fatalf("deadlines set: %d for reads, %d for writes", len(conn.readDeadlines), len(conn.writeDeadlines))
+	if len(conn.ReadDeadlines()) == 0 || len(conn.WriteDeadlines()) == 0 {
+		t.Fatalf("deadlines set: %d for reads, %d for writes", len(conn.ReadDeadlines()), len(conn.WriteDeadlines()))
 	}
-	for _, d := range conn.readDeadlines {
+	for _, d := range conn.ReadDeadlines() {
 		if want := clk.Deadline(30 * time.Second); !d.Equal(want) {
 			t.Errorf("read deadline = %v, want %v", d, want)
 		}
 	}
-	for _, d := range conn.writeDeadlines {
+	for _, d := range conn.WriteDeadlines() {
 		if want := clk.Deadline(10 * time.Second); !d.Equal(want) {
 			t.Errorf("write deadline = %v, want %v", d, want)
 		}
@@ -637,7 +652,7 @@ func TestServe_Report_HasTheFormOfTheGoldenFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ldap.New(clk).Serve(t.Context(), newScriptConn(join(
+	ldap.New(clk).Serve(t.Context(), conntest.New(join(
 		message(1, bindRequest("cn=admin,dc=example,dc=com", "")),
 		message(2, searchRequest("dc=example,dc=com", present("objectClass"))))), s)
 	s.End()
@@ -729,16 +744,16 @@ func FuzzServe(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, script []byte) {
 		clk := clocktest.New()
-		conn := newScriptConn(script)
+		conn := conntest.New(script)
 		s := start(t, clk)
 		ldap.New(clk).Serve(t.Context(), conn, s)
 		s.End()
 
-		if conn.read > 16<<10 {
-			t.Fatalf("read %d bytes", conn.read)
+		if conn.BytesRead() > 16<<10 {
+			t.Fatalf("read %d bytes", conn.BytesRead())
 		}
-		if len(conn.written()) > conn.read {
-			t.Fatalf("wrote %d bytes for %d read", len(conn.written()), conn.read)
+		if len(conn.Written()) > conn.BytesRead() {
+			t.Fatalf("wrote %d bytes for %d read", len(conn.Written()), conn.BytesRead())
 		}
 		rep := sessionReport(t, s)
 		if _, err := json.Marshal(rep); err != nil {

@@ -4,8 +4,6 @@
 package ldap
 
 import (
-	"errors"
-
 	"nyktus.org/nyktus/sensor/internal/report"
 )
 
@@ -36,16 +34,11 @@ const (
 // take code for a rare form; the search is recorded all the same.
 const unreadable = "(?)"
 
-// errTooDeep is a filter that is well formed but nests deeper than the sensor
-// reads. The search is recorded without its filter, so that nesting cannot hide
-// it.
-var errTooDeep = errors.New("ldap: filter nested too deep")
-
 // filterText writes a search filter as text (RFC 4515), the form in which
 // administrators know it. The text ends where the report ends: what lies beyond
 // the limit is not read, so the work does not depend on the size of the filter.
-// A filter that nests deeper than maxFilterDepth is errTooDeep, and one that is
-// not well formed is errMalformed.
+// A filter that nests deeper than maxFilterDepth, or is not well formed, is an
+// error.
 func filterText(f element) (string, error) {
 	t := &translator{}
 	if err := t.filter(f, 0); err != nil {
@@ -62,7 +55,7 @@ func (t *translator) full() bool { return len(t.out) >= report.MaxFilter }
 
 func (t *translator) filter(e element, depth int) error {
 	if depth > maxFilterDepth {
-		return errTooDeep
+		return errMalformed
 	}
 	switch e.tag {
 	case filterAnd, filterOr:
