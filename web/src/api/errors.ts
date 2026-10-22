@@ -19,6 +19,9 @@ export type ErrorKind =
   | 'forbidden'
   | 'invalid_request'
   | 'not_found'
+  | 'conflict'
+  | 'unprocessable'
+  | 'dns_not_configured'
   | 'rate_limited'
   | 'unavailable'
   | 'server'
@@ -54,6 +57,9 @@ const codes: Record<number, Partial<Record<string, ErrorKind>>> = {
     wrong_code: 'wrong_code',
     reauthentication_required: 'reauthentication_required',
   },
+  422: {
+    dns_not_configured: 'dns_not_configured',
+  },
 };
 
 /**
@@ -77,6 +83,10 @@ export function classify(status: number, code: string | undefined): ErrorKind {
       return 'invalid_request';
     case 404:
       return 'not_found';
+    case 409:
+      return 'conflict';
+    case 422:
+      return 'unprocessable';
     case 429:
       return 'rate_limited';
     case 503:
