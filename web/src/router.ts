@@ -62,6 +62,24 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'honeypots.title', permission: 'honeypots:read' },
   },
   {
+    path: '/scenarios',
+    name: 'scenarios',
+    component: () => import('./views/ScenariosView.vue'),
+    meta: { title: 'scenarios.title', permission: 'scenarios:read' },
+  },
+  {
+    path: '/scenarios/new',
+    name: 'scenario-new',
+    component: () => import('./views/ScenarioNewView.vue'),
+    meta: { title: 'scenarios.create.title', permission: 'scenarios:write' },
+  },
+  {
+    path: '/scenarios/:id',
+    name: 'scenario',
+    component: () => import('./views/ScenarioView.vue'),
+    meta: { title: 'scenarios.title', permission: 'scenarios:read' },
+  },
+  {
     path: '/forbidden',
     name: 'forbidden',
     component: () => import('./views/ForbiddenView.vue'),

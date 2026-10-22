@@ -17,6 +17,7 @@ export const navigation: readonly NavItem[] = [
   { to: { name: 'home' }, label: 'nav.overview' },
   { to: { name: 'honeytokens' }, label: 'nav.honeytokens', permission: 'honeytokens:read' },
   { to: { name: 'honeypots' }, label: 'nav.honeypots', permission: 'honeypots:read' },
+  { to: { name: 'scenarios' }, label: 'nav.scenarios', permission: 'scenarios:read' },
 ];
 
 /** Returns the items that a user can use; the server still checks every request. */

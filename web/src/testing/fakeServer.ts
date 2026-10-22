@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Honeypot, Honeytoken, Session } from '../api/generated';
+import type { Honeypot, Honeytoken, Scenario, Session } from '../api/generated';
 
 export interface Recorded {
   method: string;
@@ -126,4 +126,21 @@ export function honeypot(overrides: Partial<Honeypot> = {}): Honeypot {
 /** What the server answers when a secret is created or replaced. */
 export function withSecret(h: Honeypot) {
   return { ...h, status: 'never' as const, last_seen_at: null, sensor_version: null, secret: honeypotSecret, sensor_config: honeypotConfig };
+}
+
+export const scenarioId = 'dec0de00-1111-4222-8333-944444444444';
+
+export function scenario(overrides: Partial<Scenario> = {}): Scenario {
+  return {
+    id: scenarioId,
+    name: 'Stolen backup',
+    notes: 'A backup that someone left on a share.',
+    engage_activities: ['EAC0005'],
+    deception_id: null,
+    language: null,
+    persona: null,
+    created_at: '2026-10-20T08:30:00Z',
+    updated_at: '2026-10-21T09:00:00Z',
+    ...overrides,
+  };
 }
