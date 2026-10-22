@@ -13,6 +13,7 @@ package ldap
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net"
 
 	"nyktus.org/nyktus/sensor/internal/clock"
@@ -160,7 +161,14 @@ func search(op []byte, sess *session.Session) error {
 		return err
 	}
 	filter, err := filterText(f)
-	if err != nil {
+	switch {
+	case errors.Is(err, errTooDeep):
+		// A filter that only nests too deep is no reason to lose the search: its
+		// base is recorded, and the session ends as for a message that cannot be
+		// read.
+		sess.SetQuery(report.Query{BaseDN: report.Clean(string(base), report.MaxBaseDN), Filter: unreadable})
+		return err
+	case err != nil:
 		return err
 	}
 	sess.SetQuery(report.Query{BaseDN: report.Clean(string(base), report.MaxBaseDN), Filter: filter})

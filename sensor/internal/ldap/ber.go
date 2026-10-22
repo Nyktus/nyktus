@@ -85,22 +85,21 @@ func readMessage(r *bufio.Reader) ([]byte, error) {
 	if tag != tagSequence {
 		return nil, errMalformed
 	}
-	var n int
-	switch {
-	case first < 0x80:
-		n = int(first)
-	case first == 0x81 || first == 0x82:
-		var octets [2]byte
-		if _, err := io.ReadFull(r, octets[:first&0x0f]); err != nil {
-			return nil, err
-		}
-		for _, o := range octets[:first&0x0f] {
-			n = n<<8 | int(o)
-		}
-	default:
-		return nil, errMalformed
+	// The octets of the length are read as far as length() will want them, and
+	// it decides what they mean, so that the two readers cannot differ.
+	header := [3]byte{first}
+	extra := 0
+	switch first {
+	case 0x81:
+		extra = 1
+	case 0x82:
+		extra = 2
 	}
-	if n > maxMessage {
+	if _, err := io.ReadFull(r, header[1:1+extra]); err != nil {
+		return nil, err
+	}
+	n, _, err := length(header[:1+extra])
+	if err != nil || n > maxMessage {
 		return nil, errMalformed
 	}
 	msg := make([]byte, n)

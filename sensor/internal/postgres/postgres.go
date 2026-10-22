@@ -34,9 +34,6 @@ const (
 	// message: a request for TLS and one for GSSAPI encryption, as libpq sends
 	// one after the other.
 	maxPackets = 3
-	// maxDatabase and maxApplicationName are the limits of the server.
-	maxDatabase        = 64
-	maxApplicationName = 64
 )
 
 // Codes of the first packet of a client. A code below 0x10000 does not exist;
@@ -76,7 +73,7 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 	if !ok {
 		return
 	}
-	sess.SetStartup(report.Clean(st.database, maxDatabase), report.Clean(st.application, maxApplicationName))
+	sess.SetStartup(report.Clean(st.database, report.MaxDatabase), report.Clean(st.application, report.MaxApplicationName))
 	if st.user == "" {
 		return
 	}

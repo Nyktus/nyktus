@@ -365,12 +365,13 @@ func nest(n int) []byte {
 	return f
 }
 
-func TestServe_FilterNestedDeeperThanEightLevels_EndsTheSession(t *testing.T) {
+func TestServe_FilterNestedDeeperThanEightLevels_RecordsTheBaseAndEndsTheSession(t *testing.T) {
 	t.Parallel()
 
-	s, conn := play(t, join(message(1, searchRequest("", nest(9))), message(2, searchRequest("", present("x")))))
-	if len(conn.written()) != 0 || sessionReport(t, s).Query != nil {
-		t.Errorf("written = %x, query = %+v, want the session to end without an answer", conn.written(), sessionReport(t, s).Query)
+	s, conn := play(t, join(message(1, searchRequest("dc=corp,dc=local", nest(9))), message(2, searchRequest("", present("x")))))
+	q := sessionReport(t, s).Query
+	if len(conn.written()) != 0 || q == nil || *q != (report.Query{BaseDN: "dc=corp,dc=local", Filter: "(?)"}) {
+		t.Errorf("written = %x, query = %+v, want the base with a filter that is not read, and no answer", conn.written(), q)
 	}
 }
 
