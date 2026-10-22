@@ -18,6 +18,7 @@ function server(role: Role = 'admin', extra: Record<string, () => Response> = {}
   return fakeServer({
     'GET /api/v1/session': () => json(200, sessionBody(role)),
     'GET /api/v1/honeypots': () => json(200, { honeypots: [honeypot()] }),
+    'GET /api/v1/scenarios': () => json(200, { scenarios: [] }),
     ...extra,
   });
 }

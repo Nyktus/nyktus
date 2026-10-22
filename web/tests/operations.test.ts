@@ -15,8 +15,6 @@ const src = join(import.meta.dirname, '..', 'src');
  */
 const pending = [
   'applyCatalogDeception',
-  'assignHoneypotScenario',
-  'assignHoneytokenScenario',
   'beginOIDCReauthentication',
   'beginTOTPSetup',
   'changePassword',
@@ -26,14 +24,10 @@ const pending = [
   'createActivationLink',
   'createAlertChannel',
   'createPasswordResetLink',
-  'createScenario',
   'createUser',
   'deleteAlertChannel',
   'deleteArtifact',
-  'deleteScenario',
   'deleteUser',
-  'detachHoneypotScenario',
-  'detachHoneytokenScenario',
   'downloadArtifact',
   'getAlertChannel',
   'getAlertDelivery',
@@ -44,7 +38,6 @@ const pending = [
   'getLiveness',
   'getMetrics',
   'getReadiness',
-  'getScenario',
   'getScenarioGuide',
   'getUser',
   'listAPIKeys',
@@ -55,7 +48,6 @@ const pending = [
   'listEvents',
   'listIncidentDeliveries',
   'listIncidents',
-  'listScenarios',
   'listUsers',
   'removeTOTP',
   'replaceRecoveryCodes',
@@ -65,7 +57,6 @@ const pending = [
   'triageIncident',
   'updateAlertChannel',
   'updateArtifact',
-  'updateScenario',
   'updateUser',
 ] as const;
 

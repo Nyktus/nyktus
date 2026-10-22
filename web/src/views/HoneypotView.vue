@@ -13,6 +13,7 @@ import { errorText } from '../api/messages';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import HoneypotForm from '../components/HoneypotForm.vue';
 import HoneypotStatusBadge from '../components/HoneypotStatusBadge.vue';
+import ScenarioAssignment from '../components/ScenarioAssignment.vue';
 import SecretReveal from '../components/SecretReveal.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
@@ -151,7 +152,15 @@ onBeforeUnmount(discard);
           <dt>{{ t('field.techniques') }}</dt>
           <dd class="mono">{{ honeypot.techniques.length === 0 ? t('common.none') : honeypot.techniques.join(', ') }}</dd>
           <dt>{{ t('field.scenario') }}</dt>
-          <dd>{{ honeypot.scenario_id === null ? t('honeytokens.standsAlone') : honeypot.scenario_id }}</dd>
+          <dd>
+            <ScenarioAssignment
+              kind="honeypot"
+              :resource-id="honeypot.id"
+              :scenario-id="honeypot.scenario_id"
+              :can-write="canWrite"
+              @changed="(scenarioId) => honeypot && (honeypot = { ...honeypot, scenario_id: scenarioId })"
+            />
+          </dd>
           <dt>{{ t('field.created') }}</dt>
           <dd><TimeStamp :value="honeypot.created_at" /></dd>
           <dt>{{ t('field.updated') }}</dt>

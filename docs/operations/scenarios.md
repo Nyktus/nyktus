@@ -6,6 +6,10 @@ A honeytoken or a [honeypot](honeypots.md) belongs to at most one scenario or st
 
 ## Creating a scenario
 
+In the web console, open Scenarios and choose New scenario. The page of a scenario lists its honeytokens and honeypots and lets you remove them from it. You add a honeytoken or a honeypot on its own page, where the field Scenario offers the scenarios that exist; one that already belongs to a scenario must be removed from it first. Deleting a scenario asks, for its honeytokens, honeypots and artifacts, whether to keep them (they then stand alone) or to delete them with it; keeping is the preselected choice.
+
+The API does the same:
+
 ```sh
 curl --fail-with-body https://nyktus.example.com/api/v1/scenarios \
   --header 'Content-Type: application/json' \
