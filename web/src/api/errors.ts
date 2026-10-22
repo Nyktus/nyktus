@@ -22,6 +22,7 @@ export type ErrorKind =
   | 'conflict'
   | 'unprocessable'
   | 'dns_not_configured'
+  | 'artifact_reveals_decoy'
   | 'rate_limited'
   | 'unavailable'
   | 'server'
@@ -59,6 +60,7 @@ const codes: Record<number, Partial<Record<string, ErrorKind>>> = {
   },
   422: {
     dns_not_configured: 'dns_not_configured',
+    artifact_reveals_decoy: 'artifact_reveals_decoy',
   },
 };
 

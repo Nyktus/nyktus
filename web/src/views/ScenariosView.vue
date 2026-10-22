@@ -29,7 +29,10 @@ onMounted(list.reload);
         <h1>{{ t('scenarios.title') }}</h1>
         <p class="lede">{{ t('scenarios.intro') }}</p>
       </div>
-      <RouterLink v-if="canWrite" class="button button-primary" :to="{ name: 'scenario-new' }">{{ t('scenarios.new') }}</RouterLink>
+      <div v-if="canWrite" class="actions-row">
+        <RouterLink class="button button-ghost" :to="{ name: 'catalog' }">{{ t('scenarios.apply') }}</RouterLink>
+        <RouterLink class="button button-primary" :to="{ name: 'scenario-new' }">{{ t('scenarios.new') }}</RouterLink>
+      </div>
     </div>
 
     <p v-if="list.error.value" class="notice notice-error" role="alert">{{ t('scenarios.loadFailed') }} {{ list.error.value }}</p>

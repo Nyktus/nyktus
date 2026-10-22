@@ -11,6 +11,7 @@ import { ApiError } from '../api/errors';
 import type { Honeypot, Honeytoken, OperationTypes, Scenario } from '../api/generated';
 import { errorText } from '../api/messages';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import MarkdownView from '../components/MarkdownView';
 import ScenarioForm from '../components/ScenarioForm.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
@@ -51,6 +52,9 @@ watch(deleting, () => {
 
 const detaching = ref(false);
 
+const guide = ref<{ language: string; content: string } | undefined>();
+const guideFailed = ref(false);
+
 const honeytokens = usePagedList<Honeytoken>(async (cursor) => {
   const { body } = await api.call('listHoneytokens', { query: { limit: 50, cursor, scenario_id: id.value } });
   return { items: body.honeytokens, next: body.next_cursor };
@@ -71,6 +75,7 @@ async function load(): Promise<void> {
     scenario.value = (await api.call('getScenario', { path: { id: id.value } })).body;
     void honeytokens.reload();
     void honeypots.reload();
+    void loadGuide();
   } catch (failure) {
     if (failure instanceof ApiError && failure.kind === 'not_found') {
       missing.value = true;
@@ -79,6 +84,20 @@ async function load(): Promise<void> {
     }
   } finally {
     loading.value = false;
+  }
+}
+
+// Only a scenario that a deception created has a guide; one put together by hand has none.
+async function loadGuide(): Promise<void> {
+  guide.value = undefined;
+  guideFailed.value = false;
+  if (scenario.value?.deception_id === null) {
+    return;
+  }
+  try {
+    guide.value = (await api.call('getScenarioGuide', { path: { id: id.value } })).body;
+  } catch {
+    guideFailed.value = true;
   }
 }
 
@@ -242,6 +261,15 @@ onMounted(load);
         <p v-if="honeypots.next.value !== undefined">
           <button class="button button-ghost small" type="button" @click="honeypots.more">{{ t('common.loadMore') }}</button>
         </p>
+      </div>
+
+      <div v-if="guide || guideFailed" class="section panel">
+        <h2>{{ t('scenarios.guide') }}</h2>
+        <p v-if="guideFailed" class="notice notice-error" role="alert">{{ t('scenarios.guideFailed') }}</p>
+        <template v-else-if="guide">
+          <p class="hint">{{ t('scenarios.guideLanguage', { language: guide.language }) }}</p>
+          <MarkdownView :source="guide.content" />
+        </template>
       </div>
 
       <div v-if="canWrite" class="section panel narrow">
