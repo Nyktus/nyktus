@@ -13,12 +13,10 @@ package telnet
 import (
 	"bufio"
 	"context"
-	"errors"
-	"io"
 	"net"
-	"time"
 
 	"nyktus.org/nyktus/sensor/internal/clock"
+	"nyktus.org/nyktus/sensor/internal/guard"
 	"nyktus.org/nyktus/sensor/internal/report"
 	"nyktus.org/nyktus/sensor/internal/session"
 )
@@ -32,20 +30,9 @@ const (
 
 const passwordPrompt = "Password: "
 
-// Limits of a connection. The listener bounds the whole session in addition.
-const (
-	// idleTimeout is how long a connection may be silent.
-	idleTimeout = 30 * time.Second
-	// writeTimeout is how long a write may block on a client that does not
-	// read.
-	writeTimeout = 10 * time.Second
-	// maxReadBytes is the most that a connection may send, commands included,
-	// so that a flood of negotiations ends the session as well.
-	maxReadBytes = 16 << 10
-	// maxRounds is the number of times that the login is offered, as many as
-	// a session keeps logins.
-	maxRounds = session.MaxAttempts
-)
+// maxRounds is the number of times that the login is offered, as many as a
+// session keeps logins. The limits of the connection are those of the guard.
+const maxRounds = session.MaxAttempts
 
 // Config holds the texts of a honeypot.
 type Config struct {
@@ -73,11 +60,8 @@ func New(cfg Config, clk clock.Clock) *Service {
 // when the client has gone, was silent for too long, sent too much or has used
 // up its logins, and leaves closing the connection to its caller.
 func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Session) {
-	w := &writer{conn: conn, clock: s.clock}
-	r := &lineReader{r: bufio.NewReader(&budgetReader{
-		r:    &idleReader{conn: conn, clock: s.clock},
-		left: maxReadBytes,
-	})}
+	w := &writer{conn: guard.New(conn, s.clock)}
+	r := &lineReader{r: bufio.NewReader(w.conn)}
 
 	// A login whose name has been entered is recorded wherever the dialog
 	// ends after that: when the prompt for the password cannot be written, the
@@ -133,16 +117,12 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 	}
 }
 
-// writer writes to the client with a deadline.
+// writer writes to the client within the limits of the connection.
 type writer struct {
-	conn  net.Conn
-	clock clock.Clock
+	conn *guard.Conn
 }
 
 func (w *writer) write(b []byte) error {
-	if err := w.conn.SetWriteDeadline(w.clock.Deadline(writeTimeout)); err != nil {
-		return err
-	}
 	_, err := w.conn.Write(b)
 	return err
 }
@@ -151,39 +131,4 @@ func (w *writer) write(b []byte) error {
 // offers to echo does.
 func (w *writer) echo(b []byte) error {
 	return w.write(b)
-}
-
-// idleReader reads from the client and gives it the idle time again with
-// every read.
-type idleReader struct {
-	conn  net.Conn
-	clock clock.Clock
-}
-
-func (r *idleReader) Read(p []byte) (int, error) {
-	if err := r.conn.SetReadDeadline(r.clock.Deadline(idleTimeout)); err != nil {
-		return 0, err
-	}
-	return r.conn.Read(p)
-}
-
-// errTooMuch ends a connection that has sent more than it may.
-var errTooMuch = errors.New("telnet: the client sent too much")
-
-// budgetReader reads at most left bytes in all.
-type budgetReader struct {
-	r    io.Reader
-	left int
-}
-
-func (b *budgetReader) Read(p []byte) (int, error) {
-	if b.left <= 0 {
-		return 0, errTooMuch
-	}
-	if len(p) > b.left {
-		p = p[:b.left]
-	}
-	n, err := b.r.Read(p)
-	b.left -= n
-	return n, err
 }
