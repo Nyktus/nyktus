@@ -264,6 +264,53 @@ export const en = {
   'scenarioAssign.noScenarios': 'There are no scenarios yet.',
   'scenarioAssign.hint': 'Its events are then correlated into the open incident of the scenario.',
   'scenarioAssign.truncated': 'Only the first {count} scenarios are offered.',
+
+  'nav.catalog': 'Catalog',
+
+  'catalog.title': 'Deception catalog',
+  'catalog.intro': 'Deceptions are blueprints. Applying one creates a scenario with its honeytokens, its artifacts and a guide.',
+  'catalog.loadFailed': 'The catalog could not be loaded.',
+  'catalog.back': 'All deceptions',
+  'catalog.filter.category': 'Category',
+  'catalog.empty': 'No deception matches the filter.',
+  'catalog.techniques': 'ATT&CK techniques',
+  'catalog.engage': 'Engage activities',
+  'catalog.creates': 'What applying it creates',
+  'catalog.honeytokens': 'Honeytokens',
+  'catalog.artifacts': 'Artifacts',
+  'catalog.secrets': 'Random values',
+  'catalog.secretsValue': '{count} generated when it is applied, such as passwords',
+  'catalog.guideOnly': 'This deception consists of its guide.',
+  'catalog.apply.title': 'Apply this deception',
+  'catalog.apply.submit': 'Create scenario',
+  'catalog.apply.language': 'Language of the guide and the names',
+  'catalog.apply.persona': 'Values for the artifacts',
+  'catalog.apply.personaHint': 'The artifacts use these values, so that they fit your environment. Choose values that are plausible there.',
+  'catalog.apply.required': 'Enter a value for {label}.',
+  'catalog.apply.host': 'A host name of lowercase letters, digits, hyphens and dots.',
+  'catalog.apply.hostInvalid': '{label} must be a host name of lowercase letters, digits, hyphens and dots.',
+  'catalog.apply.name': 'An account name.',
+  'catalog.apply.text': 'One line of text, up to 200 characters.',
+  'catalog.apply.textInvalid': '{label} must be one line of at most 200 characters.',
+  'catalog.apply.example': 'For example: {example}',
+
+  'category.identity': 'Identity',
+  'category.network': 'Network',
+  'category.data': 'Data',
+  'category.endpoint': 'Endpoint',
+  'category.application': 'Application',
+
+  'artifactFormat.text': 'Text',
+  'artifactFormat.markdown': 'Markdown',
+  'artifactFormat.html': 'HTML',
+  'artifactFormat.config': 'Configuration',
+
+  'scenarios.apply': 'Apply a deception',
+  'scenarios.guide': 'Guide',
+  'scenarios.guideLanguage': 'Language of the guide: {language}',
+  'scenarios.guideFailed': 'The guide could not be loaded.',
+
+  'error.artifact_reveals_decoy': 'One of the values would make an artifact reveal what it is, for example by naming the product or the decoy. Choose other values.',
 } as const;
 
 export type MessageKey = keyof typeof en;

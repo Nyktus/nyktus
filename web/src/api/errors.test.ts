@@ -26,6 +26,7 @@ describe('classify', () => {
     [409, 'honeytoken_in_scenario', 'conflict'],
     [422, 'dns_not_configured', 'dns_not_configured'],
     [422, 'scenario_not_found', 'unprocessable'],
+    [422, 'artifact_reveals_decoy', 'artifact_reveals_decoy'],
     [409, 'dns_not_configured', 'conflict'],
     [429, undefined, 'rate_limited'],
     [503, 'unavailable', 'unavailable'],

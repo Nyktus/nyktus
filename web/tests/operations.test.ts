@@ -14,7 +14,6 @@ const src = join(import.meta.dirname, '..', 'src');
  * and still listed fails, as does one that is neither used nor listed.
  */
 const pending = [
-  'applyCatalogDeception',
   'beginOIDCReauthentication',
   'beginTOTPSetup',
   'changePassword',
@@ -32,19 +31,16 @@ const pending = [
   'getAlertChannel',
   'getAlertDelivery',
   'getArtifact',
-  'getCatalogDeception',
   'getEvent',
   'getIncident',
   'getLiveness',
   'getMetrics',
   'getReadiness',
-  'getScenarioGuide',
   'getUser',
   'listAPIKeys',
   'listAlertChannels',
   'listArtifacts',
   'listAuditEntries',
-  'listCatalogDeceptions',
   'listEvents',
   'listIncidentDeliveries',
   'listIncidents',

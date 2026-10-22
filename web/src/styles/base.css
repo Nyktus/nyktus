@@ -338,3 +338,56 @@ a:hover {
 .table a {
   font-weight: 600;
 }
+
+.markdown {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 46rem;
+}
+
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin-top: 0.5rem;
+}
+
+.markdown h2 {
+  font-size: 1.15rem;
+}
+
+.markdown h3 {
+  font-size: 1rem;
+}
+
+.markdown ul,
+.markdown ol {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding-left: 1.4rem;
+}
+
+.markdown pre {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: #e2e9e5;
+  font-size: 0.8125rem;
+}
+
+.markdown :not(pre) > code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  font-size: 0.85em;
+}
+
+.markdown blockquote {
+  margin: 0;
+  padding-left: 0.9rem;
+  border-left: 3px solid var(--line);
+  color: var(--slate);
+}
