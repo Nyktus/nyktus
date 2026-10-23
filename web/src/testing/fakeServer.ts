@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { User, AlertChannel, AlertDelivery, Artifact, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
+import type { APIKey, CreatedAPIKey, User, AlertChannel, AlertDelivery, Artifact, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
 
 export interface Recorded {
   method: string;
@@ -339,4 +339,26 @@ export function userRecord(overrides: Partial<User> = {}): User {
 /** The account of the administrator who is signed in, as the session shows it. */
 export function ownRecord(overrides: Partial<User> = {}): User {
   return userRecord({ id: '8d1c0f0e-1111-4222-8333-944444444444', email: 'ada@example.com', display_name: 'Ada Admin', role: 'admin', ...overrides });
+}
+
+export const keyId = 'ba5e0000-1111-4222-8333-944444444444';
+// Plainly made up, so that a scan for secrets does not take it for a real key.
+export const keySecret = `test-secret-key-${'x'.repeat(30)}`;
+
+export function apiKey(overrides: Partial<APIKey> = {}): APIKey {
+  return {
+    id: keyId,
+    name: 'SIEM export',
+    created_by: '8d1c0f0e-1111-4222-8333-944444444444',
+    scopes: ['audit:read'],
+    created_at: '2026-10-20T08:30:00Z',
+    expires_at: '2027-10-20T00:00:00Z',
+    last_used_at: null,
+    ...overrides,
+  };
+}
+
+/** What the server answers when a key is created: the key itself, once. */
+export function createdKey(overrides: Partial<CreatedAPIKey> = {}): CreatedAPIKey {
+  return { ...apiKey(), last_used_at: null, key: keySecret, ...overrides };
 }

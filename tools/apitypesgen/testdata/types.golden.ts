@@ -100,3 +100,13 @@ export const rolePermissions = {
 export type Role = keyof typeof rolePermissions;
 
 export type Permission = (typeof rolePermissions)[Role][number];
+
+/** The permissions that an API key may carry as scopes. The server decides; the console offers these. */
+export const keyScopes = ['things:read', 'things:write', 'other:read'] as const;
+
+export type KeyScope = (typeof keyScopes)[number];
+
+/** The scope that a scope requires as well: a key that has the one must have the other. */
+export const keyScopeRequires: Partial<Record<KeyScope, KeyScope>> = {
+  'things:write': 'things:read',
+};

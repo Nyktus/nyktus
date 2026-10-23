@@ -29,6 +29,7 @@ describe('classify', () => {
     [409, 'last_active_admin', 'last_active_admin'],
     [409, 'own_account', 'own_account'],
     [409, 'oidc_account', 'oidc_account'],
+    [409, 'too_many_api_keys', 'too_many_api_keys'],
     [422, 'own_account', 'unprocessable'],
     [422, 'invalid_state', 'unprocessable'],
     [409, 'name_taken', 'name_taken'],

@@ -34,7 +34,7 @@ func main() {
 	out := flag.String("out", "web/src/api/generated.ts", "write the types to this file")
 	flag.Parse()
 
-	b, err := generate(api.OpenAPI(), roleGrants())
+	b, err := generate(api.OpenAPI(), roleGrants(), serverKeyScopes())
 	if err == nil {
 		err = os.WriteFile(*out, b, 0o644) //nolint:gosec // A source file of the repository, readable by everyone.
 	}
@@ -185,9 +185,28 @@ func roleGrants() grants {
 	return out
 }
 
-// generate returns the TypeScript module for the specification and the grants
-// of the roles.
-func generate(spec []byte, roles grants) ([]byte, error) {
+// keyScopes lists the scopes that an API key may carry, in order, and the scope
+// that each of them requires as well.
+type keyScopes struct {
+	scopes   []string
+	requires map[string]string
+}
+
+// serverKeyScopes returns what the server allows a key to carry.
+func serverKeyScopes() keyScopes {
+	out := keyScopes{requires: map[string]string{}}
+	for _, p := range access.KeyScopes() {
+		out.scopes = append(out.scopes, string(p))
+		if required, ok := access.KeyScopeRequires(p); ok {
+			out.requires[string(p)] = string(required)
+		}
+	}
+	return out
+}
+
+// generate returns the TypeScript module for the specification, the grants of
+// the roles and the scopes of API keys.
+func generate(spec []byte, roles grants, keys keyScopes) ([]byte, error) {
 	var doc document
 	if err := yaml.Unmarshal(spec, &doc); err != nil {
 		return nil, fmt.Errorf("parse specification: %w", err)
@@ -219,7 +238,34 @@ func generate(spec []byte, roles grants) ([]byte, error) {
 	b.WriteString(ops)
 	b.WriteString("\n")
 	b.WriteString(permissions(roles))
+	b.WriteString("\n")
+	b.WriteString(scopes(keys))
 	return b.Bytes(), nil
+}
+
+// scopes returns the scopes that an API key may carry, so that the console offers
+// the ones the server accepts and selects the ones that a scope requires.
+func scopes(keys keyScopes) string {
+	var b strings.Builder
+	b.WriteString("/** The permissions that an API key may carry as scopes. The server decides; the console offers these. */\n")
+	b.WriteString("export const keyScopes = [")
+	for i, scope := range keys.scopes {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString("'" + scope + "'")
+	}
+	b.WriteString("] as const;\n\n")
+	b.WriteString("export type KeyScope = (typeof keyScopes)[number];\n\n")
+	b.WriteString("/** The scope that a scope requires as well: a key that has the one must have the other. */\n")
+	b.WriteString("export const keyScopeRequires: Partial<Record<KeyScope, KeyScope>> = {\n")
+	for _, scope := range keys.scopes {
+		if required, ok := keys.requires[scope]; ok {
+			fmt.Fprintf(&b, "  '%s': '%s',\n", scope, required)
+		}
+	}
+	b.WriteString("};\n")
+	return b.String()
 }
 
 // permissions returns what each role may do. The server decides; the console
