@@ -10,7 +10,7 @@ Administrators create and manage the accounts of the console. There is no public
 
 Decoys, scenarios and API keys belong to the team, not to the account that created them.
 
-The examples below call the API with the session cookie of an administrator, as described in [Sign-in and sessions](sign-in.md).
+The examples below call the API with the session cookie of an administrator, as described in [Sign-in and sessions](sign-in.md). The pages that the links lead to, for activating an account and for choosing a new password, are part of the web console.
 
 ## Creating an account
 
@@ -47,7 +47,9 @@ The new user sets their own password through the activation link. Administrators
 
 - The token is in the fragment of the URL (after `#`). Browsers never send the fragment to a server, so the token does not reach the logs of the console or of your reverse proxy.
 
-Until the web console is available, the new user activates the account through the API, with the token from the link and a password of 12 to 128 characters. Write both into a file, so that the password does not end up in the shell history:
+The new user opens the link in a browser and chooses a password of 12 to 128 characters, which the page asks for twice. The page takes the token out of the address as soon as it opens and sends it in the body of the request. A user who reloads the page needs to open the link again.
+
+Without a browser, the user can activate the account through the API, with the token from the link and the password. Write both into a file, so that the password does not end up in the shell history:
 
 ```json
 {"token": "<the part of the link after #token=>", "password": "<the new password>"}
@@ -101,7 +103,11 @@ curl --fail-with-body --request POST \
 - **Creating the link changes nothing else.** The current password and the sessions stay valid until the link is used. To lock someone out at once, deactivate the account.
 - If the user changes the password themselves before using the link, the link stops working.
 
-The user sets the new password with the token from the link, in a file as for the activation:
+The user opens the link in a browser and chooses the new password, as for the activation. Without a browser, the user sends the token and the password to the API, in a file as for the activation:
+
+```json
+{"token": "<the part of the link after #token=>", "password": "<the new password>"}
+```
 
 ```sh
 curl --fail-with-body https://nyktus.example.com/api/v1/password-reset \

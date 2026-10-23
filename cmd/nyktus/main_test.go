@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"net"
@@ -38,6 +39,7 @@ import (
 	"nyktus.org/nyktus/internal/platform/smtp"
 	"nyktus.org/nyktus/internal/platform/smtp/smtptest"
 	"nyktus.org/nyktus/migrations"
+	"nyktus.org/nyktus/web"
 )
 
 func source(env map[string]string) config.Source {
@@ -824,5 +826,159 @@ func TestServeConsole_IssuesNoSetupTokenBeforeEveryRoleStarted(t *testing.T) {
 	}
 	if tokens != 0 {
 		t.Errorf("%d setup tokens issued, want none", tokens)
+	}
+}
+
+// The console serves the web console that the binary embeds next to the API, and
+// the wiring of the sign-in options and of the origin check reaches a real client.
+func TestRun_ServesTheWebConsole(t *testing.T) {
+	t.Parallel()
+
+	_, consoleURL := schematest.Console(t)
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	env := map[string]string{
+		"NYKTUS_CONSOLE_DATABASE_URL": consoleURL,
+		"NYKTUS_TRIGGER_URL":          "https://t.example.com",
+		"NYKTUS_CONSOLE_ADDR":         addr,
+		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+		"NYKTUS_ENCRYPTION_KEYS":      testKeys(t),
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	logR, logW := io.Pipe()
+	done := make(chan int, 1)
+	go func() {
+		done <- run(ctx, []string{"serve", "--roles=console"}, source(env), &bytes.Buffer{}, logW)
+		_ = logW.Close()
+	}()
+	lines := bufio.NewScanner(logR)
+	for lines.Scan() {
+		if strings.Contains(lines.Text(), `"msg":"console: listening"`) {
+			break
+		}
+	}
+	go func() { _, _ = io.Copy(io.Discard, logR) }()
+	_, built := fs.Stat(web.Dist(), "index.html")
+	embedded := built == nil
+
+	get := func(path string) (int, http.Header, string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		defer func() { _ = res.Body.Close() }()
+		body, _ := io.ReadAll(res.Body)
+		return res.StatusCode, res.Header, string(body)
+	}
+
+	status, header, body := get("/sign-in")
+	switch {
+	case embedded && (status != http.StatusOK || !strings.Contains(body, `<div id="app">`) ||
+		!strings.Contains(header.Get("Content-Security-Policy"), "script-src 'self'")):
+		t.Errorf("GET /sign-in = %d with policy %q, want the page of the web console", status, header.Get("Content-Security-Policy"))
+	case !embedded && status != http.StatusNotFound:
+		t.Errorf("GET /sign-in = %d without a build, want the JSON 404", status)
+	}
+
+	status, _, body = get("/api/v1/sign-in-options")
+	if status != http.StatusOK || strings.TrimSpace(body) != `{"password":true,"oidc":"off"}` {
+		t.Errorf("GET /api/v1/sign-in-options = %d %q", status, body)
+	}
+	if status, header, _ = get("/api/v1/nope"); status != http.StatusNotFound || header.Get("Content-Type") != "application/json" {
+		t.Errorf("GET /api/v1/nope = %d %q, want the JSON 404", status, header.Get("Content-Type"))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+"/api/v1/session", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	cross, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusForbidden || !strings.Contains(string(cross), `"code":"cross_origin"`) {
+		t.Errorf("POST from another origin = %d %s, want 403 with cross_origin", res.StatusCode, cross)
+	}
+
+	cancel()
+	if code := <-done; code != exitOK {
+		t.Errorf("exit code = %d, want %d", code, exitOK)
+	}
+}
+
+// The sign-in page learns from the options what the configuration says: with the
+// local login off and an identity provider that has not been reached, there is no
+// form for a password, and the button for the provider is not available yet.
+func TestRun_ReportsTheSignInOptionsOfItsConfiguration(t *testing.T) {
+	t.Parallel()
+
+	_, consoleURL := schematest.Console(t)
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	env := map[string]string{
+		"NYKTUS_CONSOLE_DATABASE_URL": consoleURL,
+		"NYKTUS_TRIGGER_URL":          "https://t.example.com",
+		"NYKTUS_CONSOLE_ADDR":         addr,
+		"NYKTUS_CONSOLE_URL":          "https://nyktus.example.com",
+		"NYKTUS_ENCRYPTION_KEYS":      testKeys(t),
+		"NYKTUS_LOCAL_LOGIN":          "off",
+		"NYKTUS_OIDC_ISSUER":          "https://127.0.0.1:1",
+		"NYKTUS_OIDC_CLIENT_ID":       "nyktus",
+		"NYKTUS_OIDC_CLIENT_SECRET":   "a-client-secret-for-the-test",
+		"NYKTUS_OIDC_ADMIN_GROUPS":    "admins",
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	logR, logW := io.Pipe()
+	done := make(chan int, 1)
+	go func() {
+		done <- run(ctx, []string{"serve", "--roles=console"}, source(env), &bytes.Buffer{}, logW)
+		_ = logW.Close()
+	}()
+	lines := bufio.NewScanner(logR)
+	for lines.Scan() {
+		if strings.Contains(lines.Text(), `"msg":"console: listening"`) {
+			break
+		}
+	}
+	go func() { _, _ = io.Copy(io.Discard, logR) }()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/api/v1/sign-in-options", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || strings.TrimSpace(string(body)) != `{"password":false,"oidc":"unavailable"}` {
+		t.Errorf("GET /api/v1/sign-in-options = %d %q", res.StatusCode, body)
+	}
+
+	cancel()
+	if code := <-done; code != exitOK {
+		t.Errorf("exit code = %d, want %d", code, exitOK)
 	}
 }

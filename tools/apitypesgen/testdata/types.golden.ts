@@ -88,3 +88,13 @@ export interface OperationTypes {
     responses: { 200: (Thing | string)[] };
   };
 }
+
+/** What each role may do. The server decides; the console only hides what a role cannot use. */
+export const rolePermissions = {
+  admin: ['things:read', 'things:write'],
+  viewer: ['things:read'],
+} as const;
+
+export type Role = keyof typeof rolePermissions;
+
+export type Permission = (typeof rolePermissions)[Role][number];

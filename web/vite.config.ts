@@ -22,5 +22,6 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    setupFiles: ['src/testing/warm.ts'],
   },
 });

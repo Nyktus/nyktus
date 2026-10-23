@@ -1,0 +1,41 @@
+/*
+ * SPDX-FileCopyrightText: The Nyktus Authors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/*
+ * The tokens of the Nyktus brand: a cool silver ground, ink text with a green
+ * cast, and one light mint that speaks for a signal. Mint is a fill with ink on
+ * it, never a text color on light ground. Forest carries links and focus.
+ */
+:root {
+  --silver: #eef1ef;
+  --surface: #f6f8f7;
+  --surface-raised: #ffffff;
+  --line: #cbd4cf;
+  --line-soft: #dde3df;
+  --ink: #13201a;
+  --slate: #4b5852;
+  --trace: #8a9993;
+  /* The edge of a field is part of the control, so it needs 3:1 against its ground. */
+  --field-border: #6f7d77;
+  --mint: #a8e6bd;
+  --mint-hover: #92dcab;
+  --mint-soft: #d9f3e2;
+  --forest: #1d6a45;
+  --forest-deep: #14533a;
+  /* An error is not a signal, so it does not use mint; it needs a color that
+     reads as text on silver (7:1) and on white. */
+  --danger: #8f2a2a;
+  --danger-soft: #f6e4e2;
+
+  --font-sans: 'Schibsted Grotesk Variable', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --gutter: clamp(1rem, 4vw, 3rem);
+  --measure: 76rem;
+  --nav-height: 3.5rem;
+  --shadow: 0 1px 2px rgb(19 32 26 / 0.06), 0 4px 14px rgb(19 32 26 / 0.06);
+}
