@@ -3,7 +3,7 @@
 
 import { afterEach, expect, test, vi } from 'vitest';
 import { boot } from './testing/boot';
-import { artifact, artifactId, catalogDeception, catalogSummary, event, eventId, fakeServer, honeypot, honeypotId, honeytoken, incident, incidentId, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { alertChannel, alertDelivery, artifact, artifactId, catalogDeception, catalogSummary, event, eventId, fakeServer, honeypot, honeypotId, honeytoken, incident, incidentId, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -27,6 +27,9 @@ function server() {
     'GET /api/v1/artifacts': () => json(200, { artifacts: [artifact()] }),
     [`GET /api/v1/artifacts/${artifactId}`]: () => json(200, artifact()),
     'GET /api/v1/catalog/deceptions/browser-bookmarks': () => json(200, catalogDeception()),
+    'GET /api/v1/alert-channels': () => json(200, { alert_channels: [alertChannel()] }),
+    [`GET /api/v1/alert-channels/${alertChannel().id}`]: () => json(200, alertChannel()),
+    [`GET /api/v1/incidents/${incidentId}/deliveries`]: () => json(200, { deliveries: [alertDelivery()] }),
     'GET /api/v1/incidents': () => json(200, { incidents: [incident()] }),
     [`GET /api/v1/incidents/${incidentId}`]: () => json(200, incident()),
     'GET /api/v1/events': () => json(200, { events: [event()] }),
@@ -50,6 +53,9 @@ test.each([
   '/incidents',
   `/incidents/${incidentId}`,
   `/events/${eventId}`,
+  '/alert-channels',
+  '/alert-channels/new',
+  `/alert-channels/${alertChannel().id}`,
   '/artifacts',
   `/artifacts/${artifactId}`,
   '/catalog',

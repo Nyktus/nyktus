@@ -11,6 +11,7 @@ import { ApiError } from '../api/errors';
 import type { Incident, TriageIncidentRequest } from '../api/generated';
 import { errorText } from '../api/messages';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import IncidentDeliveries from '../components/IncidentDeliveries.vue';
 import IncidentEvents from '../components/IncidentEvents.vue';
 import IncidentStatusBadge from '../components/IncidentStatusBadge.vue';
 import ResourceRef from '../components/ResourceRef.vue';
@@ -260,6 +261,12 @@ onMounted(load);
         <h2>{{ t('incident.events') }}</h2>
         <p class="hint">{{ t('event.personalData') }}</p>
         <IncidentEvents :incident-id="incident.id" :event-count="incident.event_count" />
+      </div>
+
+      <div class="section panel">
+        <h2>{{ t('deliveries.title') }}</h2>
+        <p class="hint">{{ t('deliveries.intro') }}</p>
+        <IncidentDeliveries :incident-id="incident.id" />
       </div>
 
       <ConfirmDialog
