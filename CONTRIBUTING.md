@@ -33,6 +33,25 @@ make db-down
 
 `make help` lists all targets.
 
+### Try the current state
+
+You need Docker with Compose. The development environment builds the web console and the server from your working tree and starts PostgreSQL, the migrations, the console with the worker, the trigger and the DNS role:
+
+```sh
+make dev-up     # first start takes a while; prints the setup URL of the first administrator
+make dev-down   # stop, keep the data
+make dev-reset  # stop, delete the data
+```
+
+| Service | Address |
+|---|---|
+| Console and worker | <http://localhost:8080> |
+| Trigger | <http://localhost:8081> |
+| DNS role, zone `d.nyktus.test` | `localhost:8053` over UDP and TCP |
+| PostgreSQL | `localhost:55433`, logins `nyktus_owner` and `nyktus_*_login`, password `dev` |
+
+Everything listens on the loopback address only, and the passwords are public: the environment is for development data. `make dev-up` creates the encryption key once in `deploy/dev/.env`, which Git ignores. If you lose the setup URL, run `docker compose --file deploy/dev/compose.yaml logs console`, or restart the console with `docker compose --file deploy/dev/compose.yaml restart console`.
+
 ## Pull requests
 
 - Keep a pull request focused on one change. Separate refactorings from behavior changes.
