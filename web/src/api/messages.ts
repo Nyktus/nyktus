@@ -43,6 +43,12 @@ export function errorText(error: ApiError): string {
       return t('error.oidc_account');
     case 'too_many_api_keys':
       return t('error.too_many_api_keys');
+    case 'totp_enabled':
+      return t('error.totp_enabled');
+    case 'totp_not_enabled':
+      return t('error.totp_not_enabled');
+    case 'no_totp_setup':
+      return t('error.no_totp_setup');
     case 'name_taken':
       return t('error.name_taken');
     case 'too_many_alert_channels':

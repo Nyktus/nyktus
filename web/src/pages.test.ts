@@ -3,7 +3,7 @@
 
 import { afterEach, expect, test, vi } from 'vitest';
 import { boot } from './testing/boot';
-import { apiKey, userId, userRecord, alertChannel, alertDelivery, artifact, artifactId, catalogDeception, catalogSummary, event, eventId, fakeServer, honeypot, honeypotId, honeytoken, incident, incidentId, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { auditEntry, metricsText, plain, apiKey, userId, userRecord, alertChannel, alertDelivery, artifact, artifactId, catalogDeception, catalogSummary, event, eventId, fakeServer, honeypot, honeypotId, honeytoken, incident, incidentId, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -30,6 +30,8 @@ function server() {
     'GET /api/v1/alert-channels': () => json(200, { alert_channels: [alertChannel()] }),
     [`GET /api/v1/alert-channels/${alertChannel().id}`]: () => json(200, alertChannel()),
     [`GET /api/v1/incidents/${incidentId}/deliveries`]: () => json(200, { deliveries: [alertDelivery()] }),
+    'GET /api/v1/audit-entries': () => json(200, { entries: [auditEntry()] }),
+    'GET /api/v1/metrics': () => plain(200, metricsText),
     'GET /api/v1/api-keys': () => json(200, { api_keys: [apiKey()] }),
     'GET /api/v1/users': () => json(200, { users: [userRecord()] }),
     [`GET /api/v1/users/${userId}`]: () => json(200, userRecord()),
@@ -61,6 +63,8 @@ test.each([
   `/alert-channels/${alertChannel().id}`,
   '/api-keys',
   '/api-keys/new',
+  '/audit',
+  '/metrics',
   '/users',
   '/users/new',
   `/users/${userId}`,
@@ -68,6 +72,7 @@ test.each([
   `/artifacts/${artifactId}`,
   '/catalog',
   '/catalog/browser-bookmarks',
+  '/account',
   '/forbidden',
 ])('%s has no id twice, and every label points at a field', async (path) => {
   const { wrapper } = await boot(server(), path);

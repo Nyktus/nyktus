@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { APIKey, CreatedAPIKey, User, AlertChannel, AlertDelivery, Artifact, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
+import type { AuditEntry, APIKey, CreatedAPIKey, User, AlertChannel, AlertDelivery, Artifact, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
 
 export interface Recorded {
   method: string;
@@ -26,7 +26,7 @@ export function failure(status: number, code: string, headers: Record<string, st
 
 export const noContent = (): Response => new Response(null, { status: 204 });
 
-export function sessionBody(role: 'admin' | 'user' | 'viewer' = 'admin', name = 'Ada Admin', method: 'password' | 'oidc' = 'password'): Session {
+export function sessionBody(role: 'admin' | 'user' | 'viewer' = 'admin', name = 'Ada Admin', method: 'password' | 'oidc' = 'password', totp = false): Session {
   return {
     user: {
       id: '8d1c0f0e-1111-4222-8333-944444444444',
@@ -34,7 +34,7 @@ export function sessionBody(role: 'admin' | 'user' | 'viewer' = 'admin', name = 
       display_name: name,
       role,
       status: 'active',
-      totp_enabled: false,
+      totp_enabled: totp,
       sign_in_method: method,
     },
     idle_expires_at: '2026-10-22T20:00:00Z',
@@ -361,4 +361,38 @@ export function apiKey(overrides: Partial<APIKey> = {}): APIKey {
 /** What the server answers when a key is created: the key itself, once. */
 export function createdKey(overrides: Partial<CreatedAPIKey> = {}): CreatedAPIKey {
   return { ...apiKey(), last_used_at: null, key: keySecret, ...overrides };
+}
+
+export function auditEntry(overrides: Partial<AuditEntry> = {}): AuditEntry {
+  return {
+    id: '0d17e000-1111-4222-8333-944444444444',
+    occurred_at: '2026-10-23T09:00:00Z',
+    action: 'honeytoken.update',
+    outcome: 'success',
+    actor: { kind: 'user', auth_method: 'session', user_id: '8d1c0f0e-1111-4222-8333-944444444444', email: 'ada@example.com', display_name: 'Ada Admin' },
+    resource: { type: 'honeytoken', id: 'c0ffee00-1111-4222-8333-944444444444' },
+    changed_fields: ['name', 'notes'],
+    client_ip: '203.0.113.9',
+    request_id: 'req-1234',
+    ...overrides,
+  };
+}
+
+/** The metrics as the server writes them, in the text format of Prometheus. */
+export const metricsText = [
+  '# HELP nyktus_event_jobs Jobs of events that wait to be processed.',
+  '# TYPE nyktus_event_jobs gauge',
+  'nyktus_event_jobs 3',
+  '# HELP nyktus_incidents Incidents that are not closed.',
+  '# TYPE nyktus_incidents gauge',
+  'nyktus_incidents{status="open"} 2',
+  'nyktus_incidents{status="acknowledged"} 1',
+  '# HELP nyktus_periodic_task_last_success_timestamp_seconds When a periodic task last ran to its end.',
+  '# TYPE nyktus_periodic_task_last_success_timestamp_seconds gauge',
+  'nyktus_periodic_task_last_success_timestamp_seconds{task="delete_expired_sign_in_data"} 1792746000',
+  '',
+].join('\n');
+
+export function plain(status: number, body: string): Response {
+  return new Response(body, { status, headers: { 'Content-Type': 'text/plain; version=0.0.4' } });
 }
