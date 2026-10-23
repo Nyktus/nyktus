@@ -738,6 +738,11 @@ export const en = {
   'metrics.raw': 'The text as the server wrote it',
   'metrics.other': '{count} lines of the text are none of these and are shown only in the text below, which opens.',
   'metrics.noValues': 'No value was reported.',
+
+  'menu.pages': 'Menu',
+  'nav.group.detect': 'Detect',
+  'nav.group.inventory': 'Inventory',
+  'nav.group.admin': 'Administration',
 } as const;
 
 export type MessageKey = keyof typeof en;

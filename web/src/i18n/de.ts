@@ -743,4 +743,9 @@ export const de: Record<MessageKey, string> = {
   'metrics.raw': 'Der Text, wie der Server ihn geschrieben hat',
   'metrics.other': '{count} Zeilen des Textes passen in nichts davon und stehen nur im Text darunter, der sich aufklappen lässt.',
   'metrics.noValues': 'Es wurde kein Wert gemeldet.',
+
+  'menu.pages': 'Menü',
+  'nav.group.detect': 'Erkennen',
+  'nav.group.inventory': 'Inventar',
+  'nav.group.admin': 'Verwaltung',
 };
