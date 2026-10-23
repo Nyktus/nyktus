@@ -4,6 +4,8 @@ Integrations such as a SIEM call the API with an API key instead of a session. K
 
 ## Creating a key
 
+In the web console, administrators open API keys and choose New API key. The page asks for a name, the day on which the key expires (from tomorrow to just under three years, counted in UTC; the key stops working at the start of that day) and the scopes, selects the scopes that a chosen scope requires, and confirms with your password, or sends an administrator of the identity provider to sign in again. The key is shown once, on the page that created it; copy it before you leave. The list shows the name, scopes, creation, expiry and last use of each key, never a secret, and revokes a key after a confirmation. The API does the same and is the way for scripts.
+
 An administrator creates a key while signed in with a session, and confirms the request with their password, because a key outlives the session. Administrators who sign in through the [identity provider](sign-in.md#identity-provider) have no password: they leave it out and [sign in at the provider again](sign-in.md#confirming-sensitive-actions) within the five minutes before.
 
 ```sh

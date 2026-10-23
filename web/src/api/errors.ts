@@ -19,6 +19,7 @@ export type ErrorKind =
   | 'last_active_admin'
   | 'own_account'
   | 'oidc_account'
+  | 'too_many_api_keys'
   | 'name_taken'
   | 'too_many_alert_channels'
   | 'alert_channel_enabled'
@@ -78,6 +79,7 @@ const codes: Record<number, Partial<Record<string, ErrorKind>>> = {
     last_active_admin: 'last_active_admin',
     own_account: 'own_account',
     oidc_account: 'oidc_account',
+    too_many_api_keys: 'too_many_api_keys',
     name_taken: 'name_taken',
     too_many_alert_channels: 'too_many_alert_channels',
     alert_channel_enabled: 'alert_channel_enabled',

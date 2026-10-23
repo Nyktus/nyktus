@@ -8,6 +8,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -41,7 +42,8 @@ func TestGenerate_MatchesGoldenFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := generate(spec, grants{{"admin", []string{"things:read", "things:write"}}, {"viewer", []string{"things:read"}}})
+	got, err := generate(spec, grants{{"admin", []string{"things:read", "things:write"}}, {"viewer", []string{"things:read"}}},
+		keyScopes{scopes: []string{"things:read", "things:write", "other:read"}, requires: map[string]string{"things:write": "things:read"}})
 	if err != nil {
 		t.Fatalf("generate() error = %v", err)
 	}
@@ -51,7 +53,7 @@ func TestGenerate_MatchesGoldenFile(t *testing.T) {
 // The types of the web console are committed, so that a change of the
 // specification shows in review. They must be the ones the specification yields.
 func TestCommittedTypes_MatchTheSpecification(t *testing.T) {
-	got, err := generate(api.OpenAPI(), roleGrants())
+	got, err := generate(api.OpenAPI(), roleGrants(), serverKeyScopes())
 	if err != nil {
 		t.Fatalf("generate() error = %v", err)
 	}
@@ -116,10 +118,53 @@ func TestGenerate_RejectsWhatItCannotMap(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := generate([]byte(tt.spec), nil)
+			_, err := generate([]byte(tt.spec), nil, keyScopes{})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("generate() error = %v, want one that contains %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// The scopes that the console offers are the ones that the server accepts, every
+// requirement is itself a scope, and keys never carry the permissions that would
+// let a leaked key take over accounts, keys or the alerts.
+func TestServerKeyScopes_MatchTheServer(t *testing.T) {
+	t.Parallel()
+
+	keys := serverKeyScopes()
+	if len(keys.scopes) == 0 {
+		t.Fatal("no scopes")
+	}
+	for scope, required := range keys.requires {
+		if !slices.Contains(keys.scopes, scope) || !slices.Contains(keys.scopes, required) {
+			t.Errorf("%s requires %s, and one of them is no scope", scope, required)
+		}
+	}
+	if keys.requires["incidents:write"] != "incidents:read" {
+		t.Errorf("incidents:write requires %q, want incidents:read", keys.requires["incidents:write"])
+	}
+	for _, never := range []string{"users:write", "api_keys:write", "alert_channels:write"} {
+		if slices.Contains(keys.scopes, never) {
+			t.Errorf("a key may carry %s", never)
+		}
+	}
+}
+
+func TestScopes_ListsTheScopesAndWhatTheyRequire(t *testing.T) {
+	t.Parallel()
+
+	got := scopes(keyScopes{scopes: []string{"a:read", "a:write", "b:read"}, requires: map[string]string{"a:write": "a:read", "b:read": "a:read"}})
+	for _, want := range []string{
+		"export const keyScopes = ['a:read', 'a:write', 'b:read'] as const;",
+		"export type KeyScope = (typeof keyScopes)[number];",
+		"  'a:write': 'a:read',\n  'b:read': 'a:read',\n};",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("scopes() lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "'a:read': ") {
+		t.Errorf("a scope that requires nothing is listed as requiring something:\n%s", got)
 	}
 }
