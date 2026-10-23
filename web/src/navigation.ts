@@ -24,6 +24,8 @@ export const navigation: readonly NavItem[] = [
   { to: { name: 'alert-channels' }, label: 'nav.alertChannels', permission: 'alert_channels:read' },
   { to: { name: 'users' }, label: 'nav.users', permission: 'users:read' },
   { to: { name: 'api-keys' }, label: 'nav.apiKeys', permission: 'api_keys:read' },
+  { to: { name: 'audit' }, label: 'nav.audit', permission: 'audit:read' },
+  { to: { name: 'metrics' }, label: 'nav.metrics', permission: 'metrics:read' },
 ];
 
 /** Returns the items that a user can use; the server still checks every request. */

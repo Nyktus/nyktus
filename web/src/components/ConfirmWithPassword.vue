@@ -16,7 +16,8 @@ import ConfirmDialog from './ConfirmDialog.vue';
 // A change that decides where alerts go, or who may reach the console, is confirmed
 // by the person who makes it: a local account types its password, an account of the
 // identity provider signs in there again. The password is held in this component and
-// only while the request that carries it is on its way.
+// only while the request that carries it is on its way. A page that asks for a code as
+// well puts the field in the slot and holds the code the same way.
 const props = defineProps<{
   open: boolean;
   title: string;
@@ -84,6 +85,8 @@ async function run(): Promise<void> {
     const error = failure instanceof ApiError ? failure : new ApiError('server', 0);
     if (error.kind === 'wrong_password') {
       message.value = t('confirm.wrongPassword');
+    } else if (error.kind === 'wrong_code') {
+      message.value = t('confirm.wrongCode');
     } else if (error.kind === 'account_locked') {
       message.value = errorText(error);
     } else if (error.kind === 'reauthentication_required') {

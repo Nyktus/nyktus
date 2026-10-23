@@ -9,21 +9,18 @@ import { operations } from '../src/api/generated';
 const src = join(import.meta.dirname, '..', 'src');
 
 /**
- * The operations that no page of the console uses yet. A page that starts to use one
+ * The operations that no page of the console uses. A page that starts to use one
  * removes it from the list, and the list can only shrink: an operation that is used
  * and still listed fails, as does one that is neither used nor listed.
+ *
+ * Three remain for good. The two checks of health are for orchestrators and load
+ * balancers, not for people. The callback of the identity provider is a navigation of
+ * the browser that the provider causes: no page links to it or requests it.
  */
-const pending = [
-  'beginTOTPSetup',
-  'changePassword',
+const unused = [
   'completeOIDCSignIn',
-  'confirmTOTP',
   'getLiveness',
-  'getMetrics',
   'getReadiness',
-  'listAuditEntries',
-  'removeTOTP',
-  'replaceRecoveryCodes',
 ] as const;
 
 function sources(): string {
@@ -36,7 +33,7 @@ function sources(): string {
   return parts.join('\n');
 }
 
-test('every operation of the API is used by the console or listed as not yet used', () => {
+test('every operation of the API is used by the console or listed as not used', () => {
   const text = sources();
   const used = new Set<string>();
   for (const [id, info] of Object.entries(operations)) {
@@ -47,12 +44,12 @@ test('every operation of the API is used by the console or listed as not yet use
       used.add(id);
     }
   }
-  const listed = new Set<string>(pending);
-  expect([...listed].filter((id) => used.has(id)), 'used, but still listed as pending').toEqual([]);
+  const listed = new Set<string>(unused);
+  expect([...listed].filter((id) => used.has(id)), 'used, but still listed as unused').toEqual([]);
   expect(
     Object.keys(operations).filter((id) => !used.has(id) && !listed.has(id)),
-    'neither used nor listed as pending',
+    'neither used nor listed as unused',
   ).toEqual([]);
   expect([...listed].filter((id) => !(id in operations)), 'listed, but not in the specification').toEqual([]);
-  expect(pending).toEqual([...pending].sort());
+  expect(unused).toEqual([...unused].sort());
 });

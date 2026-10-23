@@ -55,10 +55,10 @@ function chooseLocale(event: Event): void {
         <select id="language" :value="locale" @change="chooseLocale">
           <option v-for="l in locales" :key="l" :value="l" :lang="l">{{ languageNames[l as Locale] }}</option>
         </select>
-        <span v-if="user" class="who">
+        <RouterLink v-if="user" class="who" :to="{ name: 'account' }" :title="t('menu.account')">
           <bdi class="name">{{ user.display_name }}</bdi>
           <span class="role">{{ t(`role.${user.role}`) }}</span>
-        </span>
+        </RouterLink>
         <button class="button button-ghost" type="button" @click="signOut">{{ t('menu.signOut') }}</button>
       </div>
     </div>
@@ -158,7 +158,14 @@ nav a.router-link-exact-active {
 
 .who {
   display: grid;
+  color: inherit;
   line-height: 1.2;
+  text-decoration: none;
+}
+
+.who:hover .name,
+.who:focus-visible .name {
+  text-decoration: underline;
 }
 
 .name {
