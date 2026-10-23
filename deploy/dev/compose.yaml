@@ -1,0 +1,105 @@
+# SPDX-FileCopyrightText: The Nyktus Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Development environment: PostgreSQL, the migrations and every server role, built
+# from the working tree. Start it with "make dev-up". Everything listens on the
+# loopback address only, and the passwords are public: never use this file for an
+# installation that holds real data.
+#
+#   console and worker  http://localhost:8080
+#   trigger             http://localhost:8081
+#   DNS                 localhost:8053 (UDP and TCP)
+#   PostgreSQL          localhost:55433
+
+name: nyktus-dev
+
+x-nyktus: &nyktus
+  build:
+    context: ../..
+    dockerfile: deploy/dev/Dockerfile
+  image: nyktus-dev
+  restart: unless-stopped
+
+x-environment: &environment
+  NYKTUS_ENV: development
+  NYKTUS_LOG_LEVEL: debug
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - db:/var/lib/postgresql/data
+      - ../postgres/roles.sql:/docker-entrypoint-initdb.d/00-roles.sql:ro
+      - ./initdb/10-nyktus.sql:/docker-entrypoint-initdb.d/10-nyktus.sql:ro
+    ports:
+      - 127.0.0.1:55433:5432
+    healthcheck:
+      test: [CMD, pg_isready, --username, postgres, --quiet]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    <<: *nyktus
+    restart: "no"
+    command: [migrate]
+    environment:
+      <<: *environment
+      NYKTUS_DATABASE_URL: postgres://nyktus_owner:dev@db/nyktus?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  console:
+    <<: *nyktus
+    command: [serve, "--roles=console,worker"]
+    environment:
+      <<: *environment
+      NYKTUS_ENCRYPTION_KEYS: ${NYKTUS_ENCRYPTION_KEYS:?run "make dev-up", which creates deploy/dev/.env}
+      NYKTUS_CONSOLE_ADDR: 0.0.0.0:8080
+      NYKTUS_CONSOLE_URL: http://localhost:8080
+      NYKTUS_CONSOLE_DATABASE_URL: postgres://nyktus_console_login:dev@db/nyktus?sslmode=disable
+      NYKTUS_WORKER_DATABASE_URL: postgres://nyktus_worker_login:dev@db/nyktus?sslmode=disable
+      NYKTUS_TRIGGER_URL: http://localhost:8081
+      NYKTUS_DNS_ZONES: d.nyktus.test
+    ports:
+      - 127.0.0.1:8080:8080
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  trigger:
+    <<: *nyktus
+    command: [serve, --roles=trigger]
+    environment:
+      <<: *environment
+      NYKTUS_TRIGGER_ADDR: 0.0.0.0:8081
+      NYKTUS_TRIGGER_DATABASE_URL: postgres://nyktus_trigger_login:dev@db/nyktus?sslmode=disable
+      NYKTUS_TRIGGER_DEFAULT_REDIRECT: http://example.com/
+    ports:
+      - 127.0.0.1:8081:8081
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  dns:
+    <<: *nyktus
+    command: [serve, --roles=dns]
+    environment:
+      <<: *environment
+      NYKTUS_DNS_ADDR: 0.0.0.0:8053
+      NYKTUS_DNS_DATABASE_URL: postgres://nyktus_dns_login:dev@db/nyktus?sslmode=disable
+      NYKTUS_DNS_ZONES: d.nyktus.test
+      NYKTUS_DNS_NAMESERVERS: ns1.nyktus.example
+      NYKTUS_DNS_ANSWER_IPV4: 127.0.0.1
+    ports:
+      - 127.0.0.1:8053:8053/udp
+      - 127.0.0.1:8053:8053/tcp
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  db:
