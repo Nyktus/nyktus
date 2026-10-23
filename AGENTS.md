@@ -22,7 +22,7 @@ Read these before changing code. They are binding:
 |---|---|
 | Server | Go, PostgreSQL (no other infrastructure services) |
 | Sensor | Go, separate binary with a minimal dependency set |
-| Web console | Vue 3, TypeScript, Vite, embedded into the server binary |
+| Web console | Vue 3, TypeScript, Vite, embedded into the server binary (`web/`, build output in `web/dist`) |
 | Deception catalog | Data and templates in `catalog/`, embedded at build time |
 | Documentation | VitePress |
 
@@ -58,7 +58,7 @@ docs/               user documentation
 docs/development/   contributor documentation and guidelines
 ```
 
-Directories are created when their first code lands. Do not add placeholder files.
+Directories are created when their first code lands. Do not add placeholder files. The one exception is `web/dist/.gitkeep`, which keeps the directory that the embedding of the web console needs, see [Web console](docs/development/engineering.md#web-console).
 
 ## Domain language
 
@@ -102,7 +102,7 @@ Never weaken these without an explicit decision by a maintainer:
 - Comments explain *why*, in English. No history, no ticket identifiers, no commented-out code. See [Comments](docs/development/engineering.md#comments).
 - Every new source file starts with the SPDX header described in the engineering guidelines.
 - Commits follow Conventional Commits and carry a DCO sign-off (`git commit -s`).
-- Do not commit secrets, `.env` files or generated build output.
+- Do not commit secrets, `.env` files or generated build output. The types in `web/src/api/generated.ts` are committed on purpose, see [OpenAPI specification](docs/development/engineering.md#openapi-specification).
 - `.localdev/` contains private planning notes. It is not part of the repository. Never reference it from tracked files.
 
 ## Commands
@@ -116,6 +116,7 @@ Never weaken these without an explicit decision by a maintainer:
 | `make lint` | Linters and formatting checks |
 | `make fmt` | Format the code |
 | `make check` | Lint, unit tests, vulnerability scan and `go.mod` check |
-| `make build` | Build `bin/nyktus` and `bin/nyktus-sensor` |
+| `make build` | Build the web console, then `bin/nyktus` and `bin/nyktus-sensor` |
+| `make web-build` / `web-lint` / `web-test` / `web-audit` | Build, type-check and test the web console in `web/`, and audit its packages (need Node.js) |
 
 The sensor is a second Go module without a `go.work`; the targets above that check Go code run for both modules. Run `make lint` and `make test-db` before you consider a change complete. Tool versions are pinned in the `Makefile`; do not install linters globally or add tools to `go.mod`.

@@ -132,6 +132,8 @@ type Router struct {
 	logger *slog.Logger
 	authz  Authorizer
 	routes []Route
+	// fallback answers GET and HEAD requests that match no route.
+	fallback http.Handler
 }
 
 // NewRouter returns a router without routes. authz may be nil as long as only
@@ -148,9 +150,34 @@ func NewRouter(logger *slog.Logger, authz Authorizer) *Router {
 	if logger == nil {
 		panic("httpx: router needs a logger")
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", NotFound)
-	return &Router{mux: mux, logger: logger, authz: authz}
+	rt := &Router{mux: http.NewServeMux(), logger: logger, authz: authz}
+	rt.mux.HandleFunc("/", rt.unmatched)
+	return rt
+}
+
+func (rt *Router) unmatched(w http.ResponseWriter, r *http.Request) {
+	if rt.fallback != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		rt.fallback.ServeHTTP(w, r)
+		return
+	}
+	NotFound(w, r)
+}
+
+// Fallback registers h for GET and HEAD requests that match no route, such as the
+// pages of a single-page application, which the browser requests under paths that
+// only its script knows. Every other request still receives the JSON 404. h must
+// answer with NotFound for what it does not serve, such as unknown paths of the
+// API, so that they keep the JSON 404.
+//
+// The fallback is public, and the caller says so, like for a route: it is reached
+// without authentication, so it must never serve anything that is not meant for
+// everyone. Fallback panics if access is not Public, if h is nil or if a fallback
+// is already registered.
+func (rt *Router) Fallback(access Access, h http.Handler) {
+	if access.kind != accessPublic || h == nil || rt.fallback != nil {
+		panic("httpx: the fallback must be public, non-nil and registered once")
+	}
+	rt.fallback = h
 }
 
 // NotFound writes the response to a request that matches no route. A handler that
