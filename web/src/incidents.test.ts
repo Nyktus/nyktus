@@ -40,6 +40,7 @@ function server(role: Role = 'admin', extra: Record<string, Handler> = {}) {
     'GET /api/v1/session': () => json(200, sessionBody(role)),
     'GET /api/v1/incidents': () => json(200, { incidents: [incident()] }),
     [`GET ${detail}`]: () => json(200, incident()),
+    [`GET ${detail}/deliveries`]: () => json(200, { deliveries: [] }),
     'GET /api/v1/events': () => json(200, { events: [event()] }),
     [`GET /api/v1/events/${eventId}`]: () => json(200, event()),
     [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario()),
