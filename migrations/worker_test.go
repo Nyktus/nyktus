@@ -60,6 +60,7 @@ var workerGrants = []string{
 	"incidents.last_event_at: INSERT",
 	"incidents.last_event_at: UPDATE",
 	"incidents.resource_id: INSERT",
+	"incidents.resource_name: INSERT",
 	"incidents.resource_type: INSERT",
 	"incidents.severity: INSERT",
 	"incidents.severity: UPDATE",
@@ -156,7 +157,7 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM event_jobs",
 		"UPDATE event_jobs SET attempts = attempts + 1, not_before = clock_timestamp()",
 		"SELECT count(*) FROM events",
-		"INSERT INTO incidents (resource_type, resource_id, severity, techniques, first_event_at, last_event_at) SELECT resource_type, resource_id, 'medium', techniques, occurred_at, occurred_at FROM events",
+		"INSERT INTO incidents (resource_type, resource_id, resource_name, severity, techniques, first_event_at, last_event_at) SELECT resource_type, resource_id, resource_name, 'medium', techniques, occurred_at, occurred_at FROM events",
 		"UPDATE incidents SET severity = 'high', techniques = '{T1078}', event_count = 2, first_event_at = first_event_at, last_event_at = last_event_at",
 		"SELECT count(*) FROM incidents",
 		"UPDATE events SET incident_id = (SELECT id FROM incidents)",
@@ -195,13 +196,13 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"INSERT INTO event_jobs (event_id) SELECT id FROM events",
 		"UPDATE event_jobs SET created_at = now()",
 		"TRUNCATE event_jobs",
-		"INSERT INTO events (resource_type, resource_id, honeytoken_type, occurred_at, recorded_at, channel, method) VALUES ('honeytoken', gen_random_uuid(), 'web_url', now(), now(), 'http', 'GET')",
+		"INSERT INTO events (resource_type, resource_id, honeytoken_type, occurred_at, recorded_at, channel, method, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'web_url', now(), now(), 'http', 'GET', 'Name')",
 		"UPDATE events SET techniques = '{}'",
 		"UPDATE events SET client_ip = NULL",
 		"DELETE FROM events",
-		"INSERT INTO incidents (id, resource_type, resource_id, severity, first_event_at, last_event_at) VALUES (gen_random_uuid(), 'honeytoken', gen_random_uuid(), 'low', now(), now())",
-		"INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, status, closed_at) VALUES ('honeytoken', gen_random_uuid(), 'low', now(), now(), 'closed', now())",
-		"INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, opened_at) VALUES ('honeytoken', gen_random_uuid(), 'low', now(), now(), now())",
+		"INSERT INTO incidents (id, resource_type, resource_id, severity, first_event_at, last_event_at, resource_name) VALUES (gen_random_uuid(), 'honeytoken', gen_random_uuid(), 'low', now(), now(), 'Name')",
+		"INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, status, closed_at, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'low', now(), now(), 'closed', now(), 'Name')",
+		"INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, opened_at, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'low', now(), now(), now(), 'Name')",
 		"UPDATE incidents SET status = 'closed', closed_at = now()",
 		"UPDATE incidents SET notes = 'n'",
 		"UPDATE incidents SET severity_override = 'info'",
@@ -323,9 +324,9 @@ func insertIncident(t *testing.T, pool *pgxpool.Pool, resource, status string) (
 	t.Helper()
 	var id string
 	err := pool.QueryRow(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at, acknowledged_at, closed_at)
+INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at, acknowledged_at, closed_at, resource_name)
 VALUES ('honeytoken', $1, $2, 'low', now(), now(),
-	CASE WHEN $2 = 'acknowledged' THEN clock_timestamp() END, CASE WHEN $2 = 'closed' THEN clock_timestamp() END)
+	CASE WHEN $2 = 'acknowledged' THEN clock_timestamp() END, CASE WHEN $2 = 'closed' THEN clock_timestamp() END, 'Name')
 RETURNING id`, resource, status).Scan(&id)
 	return id, err
 }
@@ -400,17 +401,17 @@ func TestSchema_ChecksIncidents(t *testing.T) {
 	t.Parallel()
 	pool := incidentSchema(t)
 
-	const insert = `INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at) VALUES ('honeytoken', gen_random_uuid(), 'low', now(), now())`
+	const insert = `INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'low', now(), now(), 'Name')`
 	tests := []struct {
 		name, statement, constraint string
 	}{
 		{"unknown status", "UPDATE incidents SET status = 'resolved'", "incidents_status_check"},
 		// The trigger sets the times of an update, so only an insert can
 		// violate their check.
-		{"closed without time", "INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at) VALUES ('honeytoken', gen_random_uuid(), 'closed', 'low', now(), now())", "incidents_status_times_check"},
-		{"acknowledged without time", "INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at) VALUES ('honeytoken', gen_random_uuid(), 'acknowledged', 'low', now(), now())", "incidents_status_times_check"},
-		{"open with closing time", "INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, closed_at) VALUES ('honeytoken', gen_random_uuid(), 'low', now(), now(), now())", "incidents_status_times_check"},
-		{"closed before opened", "INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at, closed_at) VALUES ('honeytoken', gen_random_uuid(), 'closed', 'low', now(), now(), now() - interval '1 second')", "incidents_status_times_check"},
+		{"closed without time", "INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'closed', 'low', now(), now(), 'Name')", "incidents_status_times_check"},
+		{"acknowledged without time", "INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'acknowledged', 'low', now(), now(), 'Name')", "incidents_status_times_check"},
+		{"open with closing time", "INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, closed_at, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'low', now(), now(), now(), 'Name')", "incidents_status_times_check"},
+		{"closed before opened", "INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at, closed_at, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'closed', 'low', now(), now(), now() - interval '1 second', 'Name')", "incidents_status_times_check"},
 		{"info as severity", "UPDATE incidents SET severity = 'info'", "incidents_severity_check"},
 		{"unknown override", "UPDATE incidents SET severity_override = 'urgent'", "incidents_severity_override_check"},
 		{"invalid technique", "UPDATE incidents SET techniques = '{T1}'", "incidents_techniques_check"},
@@ -420,6 +421,10 @@ func TestSchema_ChecksIncidents(t *testing.T) {
 		{"no events", "UPDATE incidents SET event_count = 0", "incidents_event_count_check"},
 		{"last event before first", "UPDATE incidents SET last_event_at = first_event_at - interval '1 second'", "incidents_event_times_check"},
 		{"unknown resource type", "UPDATE incidents SET resource_type = 'artifact'", "incidents_resource_type_check"},
+		{"empty name", "UPDATE incidents SET resource_name = ''", "incidents_resource_name_check"},
+		{"long name", "UPDATE incidents SET resource_name = repeat('a', 101)", "incidents_resource_name_check"},
+		{"name with padding", "UPDATE incidents SET resource_name = ' a'", "incidents_resource_name_check"},
+		{"control character in name", "UPDATE incidents SET resource_name = E'a\\x07'", "incidents_resource_name_check"},
 	}
 	for _, tt := range tests {
 		if _, err := pool.Exec(t.Context(), insert); err != nil {

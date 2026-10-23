@@ -64,7 +64,7 @@ func TestTriggerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 
 	for _, statement := range []string{
 		"CREATE TABLE extra (id int)",
-		"INSERT INTO events (resource_type, resource_id, honeytoken_type, method) VALUES ('honeytoken', gen_random_uuid(), 'web_url', 'GET')",
+		"INSERT INTO events (resource_type, resource_id, honeytoken_type, method, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'web_url', 'GET', 'Name')",
 		"INSERT INTO event_jobs (event_id) VALUES (gen_random_uuid())",
 		"UPDATE events SET method = 'GET'",
 		"UPDATE honeytokens SET enabled = true",
@@ -175,7 +175,7 @@ func TestSchema_ChecksHeadersOfEvents(t *testing.T) {
 
 	pool := schematest.Open(t, schematest.New(t))
 	const insert = `INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method,
-	user_agent, referer, accept_language) VALUES ('honeytoken', gen_random_uuid(), 'web_url', 'medium', now(), now(), 'http', 'GET', $1, $2, $3)`
+	user_agent, referer, accept_language, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'web_url', 'medium', now(), now(), 'http', 'GET', $1, $2, $3, 'Name')`
 	headers := func(i int, v string) []any {
 		args := []any{"", "", ""}
 		args[i] = v

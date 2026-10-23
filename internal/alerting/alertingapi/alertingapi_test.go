@@ -421,8 +421,8 @@ func TestDeliveries_ListAndRetry(t *testing.T) {
 	var incidentID, deliveryID string
 	err := f.owner.QueryRow(t.Context(), `
 WITH i AS (
-	INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
-	VALUES ('honeytoken', gen_random_uuid(), 'low', clock_timestamp(), clock_timestamp()) RETURNING id
+	INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, resource_name)
+	VALUES ('honeytoken', gen_random_uuid(), 'low', clock_timestamp(), clock_timestamp(), 'Name') RETURNING id
 ), a AS (
 	INSERT INTO alerts (incident_id, severity) SELECT id, 'low' FROM i RETURNING incident_id
 )

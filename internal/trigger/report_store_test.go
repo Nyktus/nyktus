@@ -781,8 +781,8 @@ func TestSchema_ChecksSessionColumnsAndAttempts(t *testing.T) {
 	const insert = `
 INSERT INTO events (resource_type, resource_id, severity, occurred_at, recorded_at, channel, client_ip, sensor_session_id,
 	sensor_service, sensor_event_type, sensor_port, sensor_duration_ms, sensor_client_version, sensor_database,
-	sensor_application_name, sensor_base_dn, sensor_filter, honeytoken_type, method)
-VALUES ($1, gen_random_uuid(), 'medium', now(), now(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
+	sensor_application_name, sensor_base_dn, sensor_filter, honeytoken_type, method, resource_name)
+VALUES ($1, gen_random_uuid(), 'medium', now(), now(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'Name')`
 	base := []any{"honeypot", "sensor", "192.0.2.1", randomSessionID(t), "ssh", "login_attempt", 22, 1000, nil, nil, nil, nil, nil, nil, nil}
 	index := map[string]int{
 		"resource_type": 0, "channel": 1, "client_ip": 2, "session": 3, "service": 4, "event_type": 5, "port": 6,
@@ -845,8 +845,8 @@ VALUES ($1, gen_random_uuid(), 'medium', now(), now(), $2, $3, $4, $5, $6, $7, $
 	}
 	_, err := f.owner.Exec(t.Context(), `
 INSERT INTO events (resource_type, resource_id, severity, occurred_at, recorded_at, channel, client_ip, sensor_session_id,
-	sensor_service, sensor_event_type, sensor_port, sensor_duration_ms)
-VALUES ('honeypot', $1, 'medium', now(), now(), 'sensor', '192.0.2.1', $2, 'ssh', 'connection', 22, 0)`, resourceID, sessionID)
+	sensor_service, sensor_event_type, sensor_port, sensor_duration_ms, resource_name)
+VALUES ('honeypot', $1, 'medium', now(), now(), 'sensor', '192.0.2.1', $2, 'ssh', 'connection', 22, 0, 'Name')`, resourceID, sessionID)
 	if pgError(err) == nil || pgError(err).Code != "23505" || pgError(err).ConstraintName != "events_sensor_session_key" {
 		t.Errorf("session stored twice: error = %v, want a violation of events_sensor_session_key", err)
 	}
@@ -1158,5 +1158,37 @@ func TestSchema_SessionIndexCoversOnlySessions(t *testing.T) {
 	}
 	if !strings.Contains(def, "UNIQUE") || !strings.Contains(def, "WHERE (sensor_session_id IS NOT NULL)") {
 		t.Errorf("index = %s, want a unique index of the sessions only", def)
+	}
+}
+
+// A session keeps the names of its honeypot and of its scenario as they were
+// when it ended, so that the incident can name what was triggered after the
+// honeypot is renamed or deleted.
+func TestStore_SessionFreezesTheNames(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	var sc string
+	if err := f.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name) VALUES ('Finance') RETURNING id`).Scan(&sc); err != nil {
+		t.Fatal(err)
+	}
+	id, secret := f.honeypot(t, enabled("ssh"))
+	if _, err := f.owner.Exec(t.Context(), `UPDATE honeypots SET name = 'Jump host', scenario_id = $2 WHERE id = $1`, id, sc); err != nil {
+		t.Fatal(err)
+	}
+	f.session(t, secret, f.newSession(t))
+	if _, err := f.owner.Exec(t.Context(), `UPDATE honeypots SET name = 'Renamed', scenario_id = NULL WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.owner.Exec(t.Context(), `UPDATE scenarios SET name = 'Other' WHERE id = $1`, sc); err != nil {
+		t.Fatal(err)
+	}
+	f.session(t, secret, f.newSession(t))
+
+	if n := f.count(t, `SELECT count(*) FROM events WHERE resource_id = $1 AND resource_name = 'Jump host' AND scenario_name = 'Finance'`, id); n != 1 {
+		t.Errorf("%d events with the names at the time of the session, want 1", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM events WHERE resource_id = $1 AND resource_name = 'Renamed' AND scenario_name IS NULL`, id); n != 1 {
+		t.Errorf("%d events of the renamed honeypot without a scenario, want 1", n)
 	}
 }

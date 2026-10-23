@@ -69,8 +69,8 @@ func (f fixture) event(t *testing.T, resource, typ string, techniques []string, 
 	err := f.owner.QueryRow(t.Context(), `
 WITH e AS (
 	INSERT INTO events (resource_type, resource_id, honeytoken_type, techniques, severity, occurred_at, recorded_at,
-		channel, method)
-	VALUES ('honeytoken', $1, $2, $3, $5, $4, $4, 'http', 'GET')
+		channel, method, resource_name)
+	VALUES ('honeytoken', $1, $2, $3, $5, $4, $4, 'http', 'GET', 'Name')
 	RETURNING id
 )
 INSERT INTO event_jobs (event_id) SELECT id FROM e RETURNING event_id`, resource, typ, techniques, occurredAt,
@@ -638,8 +638,8 @@ func TestStore_ConcurrentEventsOfAResourceOpenOneIncident(t *testing.T) {
 	defer func() { _ = tx.Rollback(t.Context()) }()
 	var opened string
 	err = tx.QueryRow(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
-VALUES ('honeytoken', $1, 'medium', now(), now()) RETURNING id`, id).Scan(&opened)
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, resource_name)
+VALUES ('honeytoken', $1, 'medium', now(), now(), 'Name') RETURNING id`, id).Scan(&opened)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -834,9 +834,9 @@ func TestStatusesAndSeverities_MatchTheSchema(t *testing.T) {
 	f := newFixture(t)
 
 	const insert = `
-INSERT INTO incidents (resource_type, resource_id, status, severity, severity_override, first_event_at, last_event_at, acknowledged_at, closed_at)
+INSERT INTO incidents (resource_type, resource_id, status, severity, severity_override, first_event_at, last_event_at, acknowledged_at, closed_at, resource_name)
 VALUES ($1, gen_random_uuid(), $2, $3, $4, now(), now(),
-	CASE WHEN $2 <> 'open' THEN clock_timestamp() END, CASE WHEN $2 = 'closed' THEN clock_timestamp() END)`
+	CASE WHEN $2 <> 'open' THEN clock_timestamp() END, CASE WHEN $2 = 'closed' THEN clock_timestamp() END, 'Name')`
 	for _, status := range Statuses {
 		if _, err := f.owner.Exec(t.Context(), insert, honeytoken.ResourceType, status, severity.Low, nil); err != nil {
 			t.Errorf("status %s: %v", status, err)
@@ -933,5 +933,36 @@ func TestStore_OpenedIncidentEnqueuesDeliveriesOfItsAlert(t *testing.T) {
 	}
 	if n := f.count(t, "SELECT count(*) FROM alert_deliveries"); n != 2 {
 		t.Errorf("%d deliveries after a second event, want 2", n)
+	}
+}
+
+// An incident carries the name its resource had when the incident opened. A
+// later event of the renamed resource, or of a resource that was deleted, does
+// not change it.
+func TestStore_IncidentKeepsTheNameItOpenedWith(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	id, value := f.honeytoken(t, "web_url", nil)
+	f.exec(t, "UPDATE honeytokens SET name = 'Wiki' WHERE id = $1", id)
+	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')", value)
+	opened := f.process(t)
+	if opened.ResourceName != "Wiki" {
+		t.Errorf("name of the processed incident = %q, want Wiki", opened.ResourceName)
+	}
+
+	f.exec(t, "UPDATE honeytokens SET name = 'Renamed' WHERE id = $1", id)
+	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')", value)
+	if again := f.process(t); again.IncidentID != opened.IncidentID {
+		t.Fatalf("event of the renamed honeytoken = %+v, want it in %s", again, opened.IncidentID)
+	}
+	f.exec(t, "DELETE FROM honeytokens WHERE id = $1", id)
+
+	var name string
+	if err := f.owner.QueryRow(t.Context(), `SELECT resource_name FROM incidents WHERE id = $1`, opened.IncidentID).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Wiki" {
+		t.Errorf("resource_name of the incident = %q, want the name when it opened", name)
 	}
 }

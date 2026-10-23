@@ -49,10 +49,10 @@ func placeState(t *testing.T, owner *pgxpool.Pool) {
 ('ldap', '` + honeypotName + `', 'medium', sha256('c'), now() - interval '2 hours', now() - interval '1 hour')`,
 		`SELECT * FROM record_honeypot_session(sha256('b'), gen_random_uuid(), interval '0', 10, '` + attackerIP + `', 22, 'login_attempt',
 '` + clientVersion + `', NULL, NULL, NULL, NULL, '[{"username":"` + attackerName + `","password_length":3}]')`,
-		`INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, notes)
-SELECT 'honeytoken', id, 'high', now(), now(), '` + notes + `' FROM honeytokens`,
-		`INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at, acknowledged_at)
-VALUES ('honeytoken', gen_random_uuid(), 'acknowledged', 'low', now(), now(), clock_timestamp())`,
+		`INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, notes, resource_name)
+SELECT 'honeytoken', id, 'high', now(), now(), '` + notes + `', name FROM honeytokens`,
+		`INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at, acknowledged_at, resource_name)
+VALUES ('honeytoken', gen_random_uuid(), 'acknowledged', 'low', now(), now(), clock_timestamp(), 'Name')`,
 		"INSERT INTO alerts (incident_id, severity) SELECT id, severity FROM incidents",
 		`INSERT INTO alert_deliveries (alert_id, channel_id, channel_type, channel_name, not_before)
 SELECT incident_id, gen_random_uuid(), 'webhook', '` + channelName + `', clock_timestamp() - interval '90 seconds' FROM alerts WHERE severity = 'high'`,

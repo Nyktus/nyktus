@@ -47,6 +47,8 @@ type Processed struct {
 	// scenario of the event, or its resource if it stood alone.
 	ResourceType string
 	ResourceID   string
+	// ResourceName is the name that the event froze for them.
+	ResourceName string
 	// Opened reports whether the event opened the incident, together with its
 	// alert.
 	Opened bool
@@ -242,7 +244,9 @@ func (s *Store) postponeAfterBreak(ctx context.Context, eventID string, cause er
 func (s *Store) assign(ctx context.Context, tx pgx.Tx, p *Processed) error {
 	var (
 		resourceType, resourceID string
+		resourceName             string
 		scenarioID               *string
+		scenarioName             *string
 		level                    severity.Level
 		techniques               []string
 		occurredAt               time.Time
@@ -250,17 +254,18 @@ func (s *Store) assign(ctx context.Context, tx pgx.Tx, p *Processed) error {
 	// The event keeps the severity that its resource had when it arrived, as
 	// it keeps the techniques.
 	err := tx.QueryRow(ctx, `
-SELECT resource_type, resource_id, scenario_id, severity, techniques, occurred_at
-FROM public.events WHERE id = $1`, p.EventID).Scan(&resourceType, &resourceID, &scenarioID, &level, &techniques,
-		&occurredAt)
+SELECT resource_type, resource_id, resource_name, scenario_id, scenario_name, severity, techniques, occurred_at
+FROM public.events WHERE id = $1`, p.EventID).Scan(&resourceType, &resourceID, &resourceName, &scenarioID, &scenarioName,
+		&level, &techniques, &occurredAt)
 	if err != nil {
 		return fmt.Errorf("load event: %w", err)
 	}
 	// The events of a scenario share its incident; the scenario is the one
 	// that the event froze when it arrived.
-	p.ResourceType, p.ResourceID = resourceType, resourceID
+	p.ResourceType, p.ResourceID, p.ResourceName = resourceType, resourceID, resourceName
+	// The event holds the name of the scenario if and only if it holds its identifier.
 	if scenarioID != nil {
-		p.ResourceType, p.ResourceID = scenario.ResourceType, *scenarioID
+		p.ResourceType, p.ResourceID, p.ResourceName = scenario.ResourceType, *scenarioID, *scenarioName
 	}
 
 	if err := s.open(ctx, tx, p, level, techniques, occurredAt); err != nil {
@@ -318,10 +323,10 @@ WHERE id = $1`, p.IncidentID, p.Severity, union(currentTechniques, techniques), 
 		}
 
 		err = tx.QueryRow(ctx, `
-INSERT INTO public.incidents (resource_type, resource_id, severity, techniques, first_event_at, last_event_at)
-VALUES ($1, $2, $3, $4, $5, $5)
+INSERT INTO public.incidents (resource_type, resource_id, resource_name, severity, techniques, first_event_at, last_event_at)
+VALUES ($1, $2, $3, $4, $5, $6, $6)
 ON CONFLICT (resource_type, resource_id) WHERE status <> 'closed' DO NOTHING
-RETURNING id`, p.ResourceType, p.ResourceID, level, techniques, occurredAt).Scan(&p.IncidentID)
+RETURNING id`, p.ResourceType, p.ResourceID, p.ResourceName, level, techniques, occurredAt).Scan(&p.IncidentID)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			continue

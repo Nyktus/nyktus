@@ -4947,8 +4947,8 @@ components:
     Incident:
       type: object
       additionalProperties: false
-      required: [id, resource_type, resource_id, status, severity, event_severity, severity_override, techniques,
-        event_techniques, techniques_override, notes, event_count, first_event_at, last_event_at, opened_at,
+      required: [id, resource_type, resource_id, resource_name, status, severity, event_severity, severity_override,
+        techniques, event_techniques, techniques_override, notes, event_count, first_event_at, last_event_at, opened_at,
         acknowledged_at, closed_at]
       properties:
         id:
@@ -4965,6 +4965,13 @@ components:
           type: string
           format: uuid
           description: The scenario, honeytoken or honeypot of the incident. It may have been deleted since.
+        resource_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: |
+            The name of the scenario, honeytoken or honeypot when the incident opened. It is a snapshot: renaming
+            or deleting the resource does not change it.
         status:
           type: string
           enum: [open, acknowledged, closed]

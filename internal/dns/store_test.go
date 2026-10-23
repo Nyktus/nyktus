@@ -354,3 +354,39 @@ func TestStore_EventFreezesTheScenario(t *testing.T) {
 		t.Errorf("%d events in the scenario, want 1", n)
 	}
 }
+
+// An event keeps the names of its honeytoken and of its scenario as they were
+// when it was queried, so that the incident can name what was triggered after
+// the honeytoken is renamed or deleted.
+func TestStore_EventFreezesTheNames(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	id, v := f.honeytoken(t, "dns", true, nil)
+	var sc string
+	if err := f.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name) VALUES ('Finance') RETURNING id`).Scan(&sc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.owner.Exec(t.Context(), `UPDATE honeytokens SET name = 'Wiki', scenario_id = $2 WHERE id = $1`, id, sc); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := f.store.Record(t.Context(), dnsQuery(v)); err != nil || res.Outcome != OutcomeRecorded {
+		t.Fatalf("Record() in the scenario = %+v, %v", res, err)
+	}
+	if _, err := f.owner.Exec(t.Context(), `UPDATE honeytokens SET name = 'Renamed', scenario_id = NULL WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.owner.Exec(t.Context(), `UPDATE scenarios SET name = 'Other' WHERE id = $1`, sc); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := f.store.Record(t.Context(), dnsQuery(v)); err != nil || res.Outcome != OutcomeRecorded {
+		t.Fatalf("Record() alone = %+v, %v", res, err)
+	}
+
+	if n := f.count(t, `SELECT count(*) FROM events WHERE resource_id = $1 AND resource_name = 'Wiki' AND scenario_name = 'Finance'`, id); n != 1 {
+		t.Errorf("%d events with the names at the time of the query, want 1", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM events WHERE resource_id = $1 AND resource_name = 'Renamed' AND scenario_name IS NULL`, id); n != 1 {
+		t.Errorf("%d events of the renamed honeytoken without a scenario, want 1", n)
+	}
+}
