@@ -98,4 +98,83 @@ export const de: Record<MessageKey, string> = {
   'error.server': 'Auf dem Server ist ein Fehler aufgetreten.',
   'error.network': 'Der Server ist nicht erreichbar.',
   'error.sso': 'Die Anmeldung mit SSO ist fehlgeschlagen. Versuchen Sie es erneut oder wenden Sie sich an einen Administrator.',
+
+  'nav.honeytokens': 'Honeytokens',
+
+  'common.save': 'Speichern',
+  'common.cancel': 'Abbrechen',
+  'common.delete': 'Löschen',
+  'common.loadMore': 'Mehr laden',
+  'common.copy': 'Kopieren',
+  'common.copied': 'Kopiert',
+  'common.none': 'Keine',
+  'common.all': 'Alle',
+  'common.saved': 'Gespeichert.',
+
+  'state.enabled': 'Aktiv',
+  'state.disabled': 'Deaktiviert',
+
+  'severity.low': 'Niedrig',
+  'severity.medium': 'Mittel',
+  'severity.high': 'Hoch',
+  'severity.critical': 'Kritisch',
+  'severity.default': 'Standard des Typs',
+
+  'field.name': 'Name',
+  'field.notes': 'Notizen',
+  'field.enabled': 'Aktiv',
+  'field.state': 'Zustand',
+  'field.severity': 'Schweregrad',
+  'field.techniques': 'Techniken',
+  'field.type': 'Typ',
+  'field.scenario': 'Scenario',
+  'field.created': 'Erstellt',
+  'field.updated': 'Geändert',
+
+  'forbidden.title': 'Nicht erlaubt',
+  'forbidden.body': 'Ihre Rolle erlaubt es nicht, diese Seite zu öffnen.',
+
+  'honeytokens.title': 'Honeytokens',
+  'honeytokens.intro': 'Ein Honeytoken löst ein Ereignis aus, wenn jemand seine URL aufruft oder seinen Namen auflöst.',
+  'honeytokens.new': 'Neues Honeytoken',
+  'honeytokens.empty': 'Es gibt noch keine Honeytokens.',
+  'honeytokens.emptyFiltered': 'Kein Honeytoken passt zum Filter.',
+  'honeytokens.loadFailed': 'Die Honeytokens konnten nicht geladen werden.',
+  'honeytokens.back': 'Alle Honeytokens',
+  'honeytokens.standsAlone': 'Steht allein',
+  'honeytokens.change': 'Ändern',
+  'honeytokens.create.title': 'Neues Honeytoken',
+  'honeytokens.create.submit': 'Honeytoken anlegen',
+  'honeytokens.created': 'Das Honeytoken wurde angelegt. Legen Sie seine URL dort aus, wo ein Angreifer sie finden würde.',
+  'honeytokens.redirect': 'Weiterleiten nach',
+  'honeytokens.redirectHint': 'Wohin die URL führt. Ohne Angabe nutzt der Trigger sein Standardziel.',
+  'honeytokens.notesHint': 'Wo und warum es ausgelegt ist.',
+  'honeytokens.techniquesHint': 'Kennungen von MITRE-ATT&CK-Techniken, durch Kommas getrennt, etwa T1078 oder T1003.001.',
+  'honeytokens.techniquesInvalid': 'Das sind keine Kennungen von Techniken: {values}',
+  'honeytokens.typeFixed': 'Der Typ lässt sich nicht ändern.',
+  'honeytokens.place.title': 'Auslegen',
+  'honeytokens.place.fixed':
+    'Der Wert lässt sich nicht ändern. Um einen bekannt gewordenen zu ersetzen, legen Sie ein neues Honeytoken an und löschen dieses.',
+  'honeytokens.qr.label': 'QR-Code der URL des Honeytokens',
+  'honeytokens.qr.hint': 'Drucken Sie ihn aus oder zeigen Sie ihn dort, wo jemand ihn scannen würde. Wer die URL öffnet, löst ein Ereignis aus.',
+  'honeytokens.delete.title': 'Dieses Honeytoken löschen?',
+  'honeytokens.delete.body':
+    'Seine URL löst keine Ereignisse mehr aus, und der Trigger beantwortet sie wie jede unbekannte URL. Entfernen Sie auch die ausgelegte URL, damit sie Ihr eigenes Team nicht in die Irre führt.',
+  'honeytokens.delete.confirm': 'Honeytoken löschen',
+  'honeytokens.filter.type': 'Typ',
+  'honeytokens.filter.state': 'Zustand',
+
+  'honeytokenType.web_url': 'Web-URL',
+  'honeytokenType.web_image': 'Web-Bild',
+  'honeytokenType.dns': 'DNS-Name',
+  'honeytokenType.web_url.hint':
+    'Löst ein Ereignis aus, wenn die URL geöffnet wird, etwa über einen Link oder einen QR-Code, und leitet den Browser weiter.',
+  'honeytokenType.web_image.hint':
+    'Löst ein Ereignis aus, wenn die URL als Bild geladen wird, etwa wenn ein Dokument oder eine Mail geöffnet wird, die sie einbettet.',
+  'honeytokenType.dns.hint':
+    'Löst ein Ereignis aus, wenn einer seiner Namen aufgelöst wird, etwa von einem Werkzeug, das sich zu einem in einer Datei genannten Host verbindet.',
+
+  'error.conflict': 'Die Anfrage widerspricht dem aktuellen Stand. Laden Sie die Seite neu und versuchen Sie es erneut.',
+  'error.unprocessable': 'Die Anfrage lässt sich nicht ausführen.',
+  'error.dns_not_configured': 'DNS-Honeytokens brauchen eine Zone der DNS-Rolle. Der Betreiber legt sie mit NYKTUS_DNS_ZONES fest.',
 };

@@ -24,6 +24,10 @@ The value cannot be changed. If a URL has been exposed to people who should not 
 
 ## Creating a honeytoken
 
+In the web console, open Honeytokens and choose New honeytoken. The page asks for the type, the name, notes about where and why you place it, a redirect for a web URL, techniques and the severity, and shows the URL or the names to place afterwards, with a button to copy them. For a web URL it also shows a QR code of the URL, which you can print or show where someone would scan it. The URL cannot be changed in the console either; to replace an exposed one, create a new honeytoken and delete the old one.
+
+The console shows every honeytoken to every role, and lets administrators and users change and delete them. The API does the same and is the way for scripts.
+
 Administrators and users with the role `user` create honeytokens, with a session or with an [API key](api-keys.md) that carries the scope `honeytokens:write`:
 
 ```sh

@@ -13,7 +13,10 @@ export interface NavItem {
 }
 
 /** The pages of the frame. A page is added here when it exists. */
-export const navigation: readonly NavItem[] = [{ to: { name: 'home' }, label: 'nav.overview' }];
+export const navigation: readonly NavItem[] = [
+  { to: { name: 'home' }, label: 'nav.overview' },
+  { to: { name: 'honeytokens' }, label: 'nav.honeytokens', permission: 'honeytokens:read' },
+];
 
 /** Returns the items that a user can use; the server still checks every request. */
 export function visibleItems(items: readonly NavItem[], can: (permission: Permission) => boolean): NavItem[] {

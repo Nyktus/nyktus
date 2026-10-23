@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Session } from '../api/generated';
+import type { Honeytoken, Session } from '../api/generated';
 
 export interface Recorded {
   method: string;
@@ -74,5 +74,27 @@ export function fakeServer(routes: Record<string, Handler>) {
       const handler = handlers.get(`${method} ${path}`);
       return handler ? handler(recorded) : failure(404, 'not_found');
     },
+  };
+}
+
+const honeytokenId = 'c0ffee00-1111-4222-8333-944444444444';
+
+export function honeytoken(overrides: Partial<Honeytoken> = {}): Honeytoken {
+  return {
+    id: honeytokenId,
+    type: 'web_url',
+    name: 'Backup share link',
+    notes: 'In the old wiki.\nPage "Backups".',
+    enabled: true,
+    redirect_url: null,
+    techniques: ['T1078'],
+    severity: 'high',
+    trigger_value: 'abcdefghijklmnopqrstuvwxyz',
+    trigger_url: 'https://t.example.net/abcdefghijklmnopqrstuvwxyz',
+    trigger_names: [],
+    scenario_id: null,
+    created_at: '2026-10-20T08:30:00Z',
+    updated_at: '2026-10-21T09:00:00Z',
+    ...overrides,
   };
 }

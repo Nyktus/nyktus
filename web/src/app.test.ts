@@ -116,14 +116,16 @@ describe('signing in with a password', () => {
     expect(wrapper.get('[role=alert]').text()).toBe('The email address or the password is wrong.');
   });
 
+  // The overview is where a sign-in leads without a destination, so only another page shows
+  // that the destination is kept.
   test('returns to the page the user was going to', async () => {
-    const { wrapper, router } = await boot(server(), '/');
+    const { wrapper, router } = await boot(server({ 'GET /api/v1/honeytokens': () => json(200, { honeytokens: [] }) }), '/honeytokens');
     await arrive(router, 'sign-in');
     await type(wrapper, '#email', 'ada@example.com');
     await type(wrapper, '#password', 'a long password');
     await submit(wrapper);
-    await arrive(router, 'home');
-    expect(router.currentRoute.value.fullPath).toBe('/');
+    await arrive(router, 'honeytokens');
+    expect(router.currentRoute.value.fullPath).toBe('/honeytokens');
   });
 
   test('does not return to a page that does not exist', async () => {
@@ -370,9 +372,10 @@ describe('a user who is signed in', () => {
     expect(wrapper.get('[role=alert]').text()).toBe('The server is busy. Try again in a moment.');
   });
 
-  test('is sent to the sign-in page when the session ends, and back after signing in again', async () => {
+  test('is sent to the sign-in page when the session ends, and back to the page after signing in again', async () => {
     const s = server();
-    const { wrapper, router, client, session } = await boot(s, '/');
+    s.on('GET /api/v1/honeytokens', () => json(200, { honeytokens: [] }));
+    const { wrapper, router, client, session } = await boot(s, '/honeytokens');
     s.on('GET /api/v1/incidents', () => failure(401, 'unauthenticated'));
     await client.api.call('listIncidents', {}).catch(() => undefined);
     await flushPromises();
@@ -383,7 +386,23 @@ describe('a user who is signed in', () => {
     await type(wrapper, '#email', 'ada@example.com');
     await type(wrapper, '#password', 'a long password');
     await submit(wrapper);
+    await arrive(router, 'honeytokens');
+  });
+
+  test('does not return a user who signed out on purpose to the page they left', async () => {
+    const s = server();
+    s.on('GET /api/v1/honeytokens', () => json(200, { honeytokens: [] }));
+    s.on('DELETE /api/v1/session', noContent);
+    const { wrapper, router } = await boot(s, '/honeytokens');
+    await wrapper.findAll('button').find((b) => b.text() === 'Sign out')!.trigger('click');
+    await flushPromises();
+    await arrive(router, 'sign-in');
+    s.on('POST /api/v1/session', () => json(200, sessionBody()));
+    await type(wrapper, '#email', 'ada@example.com');
+    await type(wrapper, '#password', 'a long password');
+    await submit(wrapper);
     await arrive(router, 'home');
+    expect(router.currentRoute.value.fullPath).toBe('/');
   });
 
   test('chooses the language, which the page then speaks', async () => {

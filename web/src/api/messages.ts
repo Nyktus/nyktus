@@ -29,6 +29,12 @@ export function errorText(error: ApiError): string {
       return t('error.invalid_request');
     case 'not_found':
       return t('error.not_found');
+    case 'conflict':
+      return t('error.conflict');
+    case 'unprocessable':
+      return t('error.unprocessable');
+    case 'dns_not_configured':
+      return t('error.dns_not_configured');
     case 'rate_limited':
       return t('error.rate_limited');
     case 'unavailable':
