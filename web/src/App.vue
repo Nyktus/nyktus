@@ -26,7 +26,8 @@ watchEffect(() => {
     <RouterView v-if="route.meta.public" />
     <SessionUnavailable v-else-if="session.state.status === 'unavailable'" />
     <AppShell v-else>
-      <RouterView />
+      <!-- A page of a resource loads it once; another resource at the same page is another page. -->
+      <RouterView :key="route.path" />
     </AppShell>
   </template>
 </template>
