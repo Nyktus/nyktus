@@ -15,6 +15,8 @@ Most channels are a URL that receives an HTTP `POST` for every alert, and a chan
 
 Only administrators manage channels, and only with a session: API keys never manage channels, because a leaked key could redirect the alerts or stop them.
 
+In the web console, open Alert channels. The list shows every channel with its type, state and target. A channel has a page of its own, where an administrator renames it, disables or enables it, replaces its URL, header or recipients, sends a test and deletes it. The API does the same and is the way for scripts.
+
 ### The URL is a secret
 
 Whoever knows the URL of a Slack or Teams webhook can post into the channel, and many receivers of webhooks accept requests by a token in the URL. Nyktus therefore treats the whole URL, with its path and query, as a secret, and so the value of the header of a webhook:
@@ -44,6 +46,8 @@ To deliver to a receiver in one of your internal networks, such as a self-hosted
 Any port is allowed, because self-hosted receivers often listen on one of their own, such as `8088` for the HTTP Event Collector of Splunk. An administrator could thereby make Nyktus connect to an arbitrary port of a public host. This is accepted: the request carries only the alert, Nyktus follows no redirect and never shows the response.
 
 ### Creating a channel
+
+In the console, choose New alert channel, fill in the type, the name and the URL, header or recipients, and confirm with your password; an administrator of the identity provider is sent there to sign in again, comes back to the page and repeats the change. The URL and the value of the header are written and never shown again: the page that replaces them asks for the new value and empties the field once it is saved. Through the API:
 
 Creating a channel is confirmed with the password of the administrator, as is every change other than renaming it. Write the request into a file, so that the URL and the password do not end up in the shell history:
 
@@ -198,9 +202,13 @@ It starts again with a new count of attempts. The retry is recorded in the audit
 
 ### Reading deliveries
 
+Every incident in the console lists the deliveries of its alert, with the channel, the status, the attempts and the result of the last one. An administrator sends a failed delivery again from there.
+
 `GET /api/v1/incidents/{id}/deliveries` lists the deliveries of the alert of an incident, for every user who reads incidents and for API keys with `incidents:read`. Each names its channel, its `status` (`pending`, `delivered`, `dead` or `canceled`), the number of `attempts`, `next_attempt_at` while it is pending, and the last attempt: when it was, the `last_status_code` of the response or, for mail, the reply code of a refusal, if there was one, the class of its failure in `last_error` and how long it took. Administrators read a single delivery with `GET /api/v1/alert-deliveries/{id}`. Deliveries are kept as receipts: the deliveries of an alert as long as its incident, which the worker deletes after the [retention](incidents.md#retention) of closed incidents, and tests of channels for the same number of days after they were requested, once they are no longer waiting.
 
 ### Testing a channel
+
+In the console, the page of a channel has a button Send a test. It asks for the outcome every two seconds for 30 seconds and shows whether the message was delivered or why it was not; if the worker has not sent it by then, check again later.
 
 `POST /api/v1/alert-channels/{id}/test` asks the worker to send a test message to the channel, also to a disabled one, so that it can be tried before it receives alerts. The response (`202`) names the delivery; read its outcome with `GET /api/v1/alert-deliveries/{id}` a few seconds later. A test is attempted once. A channel has at most one test waiting (`409`, code `test_pending`). The worker sends the test, not the console, so that only the worker needs to reach the receivers, and the answer of the console reveals nothing about the network. Tests are recorded in the audit log as `alert_channel.test`.
 

@@ -33,6 +33,32 @@ export function errorText(error: ApiError): string {
       return t('error.conflict');
     case 'invalid_state':
       return t('error.invalid_state');
+    case 'email_taken':
+      return t('error.email_taken');
+    case 'last_active_admin':
+      return t('error.last_active_admin');
+    case 'own_account':
+      return t('error.own_account');
+    case 'oidc_account':
+      return t('error.oidc_account');
+    case 'name_taken':
+      return t('error.name_taken');
+    case 'too_many_alert_channels':
+      return t('error.too_many_alert_channels');
+    case 'alert_channel_enabled':
+      return t('error.alert_channel_enabled');
+    case 'test_pending':
+      return t('error.test_pending');
+    case 'delivery_not_dead':
+      return t('error.delivery_not_dead');
+    case 'target_not_allowed':
+      return t('error.target_not_allowed');
+    case 'header_not_allowed':
+      return t('error.header_not_allowed');
+    case 'url_not_allowed':
+      return t('error.url_not_allowed');
+    case 'recipients_not_allowed':
+      return t('error.recipients_not_allowed');
     case 'unprocessable':
       return t('error.unprocessable');
     case 'dns_not_configured':

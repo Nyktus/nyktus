@@ -122,6 +122,42 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'artifacts.title', permission: 'artifacts:read' },
   },
   {
+    path: '/alert-channels',
+    name: 'alert-channels',
+    component: () => import('./views/AlertChannelsView.vue'),
+    meta: { title: 'alerts.title', permission: 'alert_channels:read' },
+  },
+  {
+    path: '/alert-channels/new',
+    name: 'alert-channel-new',
+    component: () => import('./views/AlertChannelNewView.vue'),
+    meta: { title: 'alerts.create.title', permission: 'alert_channels:write' },
+  },
+  {
+    path: '/alert-channels/:id',
+    name: 'alert-channel',
+    component: () => import('./views/AlertChannelView.vue'),
+    meta: { title: 'alerts.title', permission: 'alert_channels:read' },
+  },
+  {
+    path: '/users',
+    name: 'users',
+    component: () => import('./views/UsersView.vue'),
+    meta: { title: 'users.title', permission: 'users:read' },
+  },
+  {
+    path: '/users/new',
+    name: 'user-new',
+    component: () => import('./views/UserNewView.vue'),
+    meta: { title: 'users.create.title', permission: 'users:write' },
+  },
+  {
+    path: '/users/:id',
+    name: 'user',
+    component: () => import('./views/UserView.vue'),
+    meta: { title: 'users.title', permission: 'users:read' },
+  },
+  {
     path: '/forbidden',
     name: 'forbidden',
     component: () => import('./views/ForbiddenView.vue'),
