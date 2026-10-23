@@ -26,6 +26,24 @@ declare module 'vue-router' {
 export const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: () => import('./views/HomeView.vue'), meta: { title: 'home.title' } },
   {
+    path: '/incidents',
+    name: 'incidents',
+    component: () => import('./views/IncidentsView.vue'),
+    meta: { title: 'incidents.title', permission: 'incidents:read' },
+  },
+  {
+    path: '/incidents/:id',
+    name: 'incident',
+    component: () => import('./views/IncidentView.vue'),
+    meta: { title: 'incidents.title', permission: 'incidents:read' },
+  },
+  {
+    path: '/events/:id',
+    name: 'event',
+    component: () => import('./views/EventView.vue'),
+    meta: { title: 'event.title', permission: 'events:read' },
+  },
+  {
     path: '/honeytokens',
     name: 'honeytokens',
     component: () => import('./views/HoneytokensView.vue'),

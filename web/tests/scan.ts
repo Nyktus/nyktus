@@ -4,12 +4,37 @@
 export interface Rule {
   name: string;
   pattern: RegExp;
+  /** Text that is cut from a line before the pattern is tried, such as quoted keys of texts. */
+  strip?: RegExp;
+  /** A match of the pattern inside a match of this is no violation, such as a field handed to its component. */
+  within?: RegExp;
   /** The rule holds if this matches within `window` lines around the line of the match. */
   unless?: RegExp;
   window?: number;
   /** Files, by path below src, that may break the rule, with the reason. */
   allowed?: Record<string, string>;
 }
+
+/**
+ * What an attacker chooses in the events of the console: the headers of a request, what a
+ * session sent and asked for, the name that a query asked for. A test compares the list with the
+ * text members of these types in the specification.
+ */
+export const attackerFields = [
+  'user_agent',
+  'referer',
+  'accept_language',
+  'client_version',
+  'database',
+  'application_name',
+  'username',
+  'key_fingerprint',
+  'zone',
+  'prefix',
+  'qtype',
+  'base_dn',
+  'filter',
+] as const;
 
 /**
  * The rules of the web console that a type check does not enforce. A rule is
@@ -43,6 +68,23 @@ export const rules: Rule[] = [
   { name: 'sendBeacon sends data without the client', pattern: /\bsendBeacon\b/ },
   { name: 'the console loads nothing from another origin', pattern: /https?:\/\//, allowed: {} },
   {
+    // Text that an attacker sent is drawn by one component, which isolates its direction
+    // and shows the characters that draw nothing. Every place that names such a field must
+    // hand it to that component. The keys of texts, in single quotes, are not fields, and
+    // asking whether a member is there shows nothing.
+    name: 'text that an attacker sent is shown only by UntrustedText',
+    strip: /'[^']*'/g,
+    pattern: new RegExp(`\\.(${attackerFields.join('|')})\\b(?!\\(|\\s*[!=]==\\s*null)`),
+    within: /<UntrustedText\b[^>]*>/,
+  },
+  {
+    // A rule that looks for `.user_agent` cannot see a field that was taken out of its object.
+    name: 'text that an attacker sent is not taken out of its object by name',
+    pattern: new RegExp(
+      `\\{[\\w$\\s,:]*\\b(${attackerFields.join('|')})\\b[\\w$\\s,:]*\\}\\s*(?:=[^=>]|\\)|in\\s|of\\s)|\\[\\s*['"](${attackerFields.join('|')})['"]\\s*\\]`,
+    ),
+  },
+  {
     // A template names it as an attribute, a render function as a member; the
     // attributes of an element stand on several lines, in either order.
     name: 'a link that opens a window needs rel="noopener noreferrer"',
@@ -51,6 +93,8 @@ export const rules: Rule[] = [
     window: 3,
   },
 ];
+
+const everywhere = (pattern: RegExp): RegExp => new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`);
 
 export interface Violation {
   file: string;
@@ -65,11 +109,14 @@ export function scan(files: Record<string, string>): Violation[] {
     const lines = text.split('\n');
     lines.forEach((content, i) => {
       for (const rule of rules) {
-        if (!rule.pattern.test(content) || (rule.allowed && file in rule.allowed)) {
+        if (rule.allowed && file in rule.allowed) {
           continue;
         }
+        const seen = rule.strip ? content.replace(rule.strip, "''") : content;
+        const spans = rule.within ? [...seen.matchAll(everywhere(rule.within))].map((m) => [m.index, m.index + m[0].length] as const) : [];
+        const outside = [...seen.matchAll(everywhere(rule.pattern))].filter((m) => !spans.some(([from, to]) => m.index >= from && m.index < to));
         const near = lines.slice(Math.max(0, i - (rule.window ?? 0)), i + (rule.window ?? 0) + 1).join('\n');
-        if (!(rule.unless && rule.unless.test(near))) {
+        if (outside.length > 0 && !(rule.unless && rule.unless.test(near))) {
           out.push({ file, line: i + 1, rule: rule.name });
         }
       }

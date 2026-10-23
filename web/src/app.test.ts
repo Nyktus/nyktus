@@ -214,7 +214,7 @@ describe('the second factor', () => {
     await type(wrapper, '#code', '123456');
     await submit(wrapper);
     await arrive(router, 'home');
-    expect(s.requests.at(-1)?.body).toEqual({ code: '123456' });
+    expect(s.requests.filter((r) => r.method === 'POST').at(-1)?.body).toEqual({ code: '123456' });
   });
 
   test('takes a recovery code instead', async () => {
@@ -222,7 +222,7 @@ describe('the second factor', () => {
     await wrapper.findAll('button.link')[0]?.trigger('click');
     await type(wrapper, '#code', 'abcd-efgh-ijkl-mnop');
     await submit(wrapper);
-    expect(s.requests.at(-1)?.body).toEqual({ recovery_code: 'abcd-efgh-ijkl-mnop' });
+    expect(s.requests.filter((r) => r.method === 'POST').at(-1)?.body).toEqual({ recovery_code: 'abcd-efgh-ijkl-mnop' });
     await arrive(router, 'home');
   });
 
@@ -376,8 +376,8 @@ describe('a user who is signed in', () => {
     const s = server();
     s.on('GET /api/v1/honeytokens', () => json(200, { honeytokens: [] }));
     const { wrapper, router, client, session } = await boot(s, '/honeytokens');
-    s.on('GET /api/v1/incidents', () => failure(401, 'unauthenticated'));
-    await client.api.call('listIncidents', {}).catch(() => undefined);
+    s.on('GET /api/v1/users', () => failure(401, 'unauthenticated'));
+    await client.api.call('listUsers', {}).catch(() => undefined);
     await flushPromises();
     expect(session.state.status).toBe('signed-out');
     await arrive(router, 'sign-in');
