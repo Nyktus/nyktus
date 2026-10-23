@@ -98,8 +98,8 @@ func (f deliveryFixture) alert(t *testing.T) string {
 	t.Helper()
 	var id string
 	err := f.owner.QueryRow(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, techniques, first_event_at, last_event_at)
-VALUES ('honeytoken', gen_random_uuid(), 'medium', '{T1078}', clock_timestamp(), clock_timestamp())
+INSERT INTO incidents (resource_type, resource_id, severity, techniques, first_event_at, last_event_at, resource_name)
+VALUES ('honeytoken', gen_random_uuid(), 'medium', '{T1078}', clock_timestamp(), clock_timestamp(), 'Name')
 RETURNING id`).Scan(&id)
 	if err != nil {
 		t.Fatal(err)
@@ -944,8 +944,8 @@ func TestLoadAlert_NamesTheScenarioOfAnIncident(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := f.owner.QueryRow(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
-VALUES ('scenario', $1, 'low', clock_timestamp(), clock_timestamp()) RETURNING id`, scenarioID).Scan(&incidentID)
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, resource_name)
+VALUES ('scenario', $1, 'low', clock_timestamp(), clock_timestamp(), 'Name') RETURNING id`, scenarioID).Scan(&incidentID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -995,8 +995,8 @@ VALUES ('ssh', 'Jump host', 'rack4', 'high', sha256('x')) RETURNING id`).Scan(&h
 		t.Fatal(err)
 	}
 	err := f.owner.QueryRow(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
-VALUES ('honeypot', $1, 'high', clock_timestamp(), clock_timestamp()) RETURNING id`, honeypotID).Scan(&incidentID)
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, resource_name)
+VALUES ('honeypot', $1, 'high', clock_timestamp(), clock_timestamp(), 'Name') RETURNING id`, honeypotID).Scan(&incidentID)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -47,8 +47,8 @@ func TestIncidents_FollowRolesAndKeyScopes(t *testing.T) {
 
 	var id string
 	if err := d.owner.QueryRow(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
-VALUES ('honeytoken', gen_random_uuid(), 'medium', now(), now()) RETURNING id`).Scan(&id); err != nil {
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, resource_name)
+VALUES ('honeytoken', gen_random_uuid(), 'medium', now(), now(), 'Name') RETURNING id`).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	incident := "/api/v1/incidents/" + id

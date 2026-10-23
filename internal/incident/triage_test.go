@@ -92,8 +92,8 @@ INSERT INTO users (email, display_name, role, status) VALUES ('u@example.com', '
 		t.Fatal(err)
 	}
 	err = owner.QueryRow(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
-VALUES ('honeytoken', gen_random_uuid(), 'medium', now(), now()) RETURNING id`).Scan(&id)
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, resource_name)
+VALUES ('honeytoken', gen_random_uuid(), 'medium', now(), now(), 'Name') RETURNING id`).Scan(&id)
 	if err != nil {
 		t.Fatal(err)
 	}

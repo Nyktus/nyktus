@@ -24,6 +24,8 @@ Close an incident once its triage is finished. As long as it stays open, new eve
 
 The [worker](database.md#periodic-tasks) closes incidents, open or acknowledged, whose last event was more than `NYKTUS_INCIDENT_AUTO_CLOSE_DAYS` ago, 14 by default, every 15 minutes, so that a forgotten incident does not swallow the alerts of later intrusions. A triage does not count as activity: what keeps an incident open is a new event. Set the variable to `0` to leave every incident open until it is triaged; otherwise it is between 1 and 365 days. The [audit log](audit-log.md) records each closing as `incident.update` of the field `status` by the system, and the log of the worker as `incident: closed`. An event that arrives while its incident closes opens a new incident with a new alert.
 
+An incident names what it correlates in `resource_name`: the name of the scenario, honeytoken or honeypot at the moment the incident opened. Each event keeps the names of its honeytoken or honeypot and of its scenario when it is recorded, and the first event gives the incident its name. The name is a snapshot: renaming or deleting the resource does not change it, and later events do not either, so an incident still says what was triggered. Look at `resource_id` to find the resource itself, if it still exists.
+
 An event is processed once and belongs to exactly one incident. Events outlive their honeytoken or honeypot, and so do incidents: deleting a honeytoken, a honeypot or a scenario keeps both.
 
 ## Severity

@@ -467,6 +467,7 @@ export interface Incident {
   id: string;
   resource_type: 'honeypot' | 'honeytoken' | 'scenario';
   resource_id: string;
+  resource_name: string;
   status: 'open' | 'acknowledged' | 'closed';
   severity: 'info' | 'low' | 'medium' | 'high' | 'critical';
   event_severity: 'low' | 'medium' | 'high' | 'critical';

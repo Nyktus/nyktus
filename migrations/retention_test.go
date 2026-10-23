@@ -120,9 +120,9 @@ func (d incidentData) event(resource string, age time.Duration, incident string,
 	var id string
 	err := d.owner.QueryRow(d.t.Context(), `
 INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method, client_ip,
-	incident_id)
+	incident_id, resource_name)
 VALUES ('honeytoken', $1, 'web_url', 'medium', clock_timestamp() - $2::interval, clock_timestamp() - $2::interval, 'http', 'GET',
-	'192.0.2.1', nullif($3, '')::uuid)
+	'192.0.2.1', nullif($3, '')::uuid, 'Name')
 RETURNING id`, resource, age, incident).Scan(&id)
 	if err != nil {
 		d.t.Fatalf("insert event: %v", err)
@@ -141,10 +141,10 @@ func (d incidentData) incident(resource string, age, closedAge time.Duration) st
 	d.t.Helper()
 	var id string
 	err := d.owner.QueryRow(d.t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, opened_at, status, closed_at)
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, opened_at, status, closed_at, resource_name)
 VALUES ('honeytoken', $1, 'medium', clock_timestamp() - $2::interval, clock_timestamp() - $2::interval, clock_timestamp() - $2::interval,
 	CASE WHEN $3::interval < interval '0' THEN 'open' ELSE 'closed' END,
-	CASE WHEN $3::interval < interval '0' THEN NULL ELSE clock_timestamp() - $3::interval END)
+	CASE WHEN $3::interval < interval '0' THEN NULL ELSE clock_timestamp() - $3::interval END, 'Name')
 RETURNING id`, resource, age, closedAge).Scan(&id)
 	if err != nil {
 		d.t.Fatalf("insert incident: %v", err)
@@ -327,22 +327,22 @@ FROM generate_series(0, $2::int) AS i`, beyond, kept); err != nil {
 		t.Fatalf("insert audit entries: %v", err)
 	}
 	if _, err := owner.Exec(t.Context(), `
-INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method)
-SELECT 'honeytoken', gen_random_uuid(), 'web_url', 'medium', t, t, 'http', 'GET'
+INSERT INTO events (resource_type, resource_id, resource_name, honeytoken_type, severity, occurred_at, recorded_at, channel, method)
+SELECT 'honeytoken', gen_random_uuid(), 'Name', 'web_url', 'medium', t, t, 'http', 'GET'
 FROM generate_series(0, $2::int) AS i, LATERAL (SELECT clock_timestamp() - CASE WHEN i = 0 THEN $1::interval ELSE interval '0' END) AS c (t)`,
 		beyond, kept); err != nil {
 		t.Fatalf("insert events: %v", err)
 	}
 	if _, err := owner.Exec(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, opened_at, status, closed_at)
-SELECT 'honeytoken', gen_random_uuid(), 'low', t, t, t, 'closed', t
+INSERT INTO incidents (resource_type, resource_id, resource_name, severity, first_event_at, last_event_at, opened_at, status, closed_at)
+SELECT 'honeytoken', gen_random_uuid(), 'Name', 'low', t, t, t, 'closed', t
 FROM generate_series(0, $2::int) AS i, LATERAL (SELECT clock_timestamp() - CASE WHEN i = 0 THEN $1::interval ELSE interval '0' END) AS c (t)`,
 		beyond, kept); err != nil {
 		t.Fatalf("insert incidents: %v", err)
 	}
 	if _, err := owner.Exec(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, opened_at)
-SELECT 'honeytoken', gen_random_uuid(), 'low', t, t, t
+INSERT INTO incidents (resource_type, resource_id, resource_name, severity, first_event_at, last_event_at, opened_at)
+SELECT 'honeytoken', gen_random_uuid(), 'Name', 'low', t, t, t
 FROM generate_series(0, $2::int) AS i,
 	LATERAL (SELECT clock_timestamp() - CASE WHEN i = 0 THEN $1::interval ELSE interval '0' END) AS c (t)`,
 		days(config.MaxAutoCloseDays)+margin, kept); err != nil {

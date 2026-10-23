@@ -29,7 +29,7 @@ func (f fixture) scenario(t *testing.T) string {
 func (f fixture) scenarioEvent(t *testing.T, resource, scenarioID string) string {
 	t.Helper()
 	id := f.event(t, resource, "web_url", nil, time.Now())
-	f.exec(t, "UPDATE events SET scenario_id = $2 WHERE id = $1", id, scenarioID)
+	f.exec(t, "UPDATE events SET scenario_id = $2, scenario_name = 'Scenario' WHERE id = $1", id, scenarioID)
 	return id
 }
 
@@ -51,7 +51,7 @@ func TestStore_EventsOfAScenarioShareOneIncident(t *testing.T) {
 	}
 
 	first := f.process(t)
-	if !first.Opened || first.ResourceType != scenario.ResourceType || first.ResourceID != sc || first.Severity != severity.Low {
+	if !first.Opened || first.ResourceType != scenario.ResourceType || first.ResourceID != sc || first.ResourceName != "s" || first.Severity != severity.Low {
 		t.Fatalf("first event = %+v, want an opened incident of the scenario with severity low", first)
 	}
 	second := f.process(t)
@@ -59,7 +59,7 @@ func TestStore_EventsOfAScenarioShareOneIncident(t *testing.T) {
 		t.Errorf("event of another honeytoken of the scenario = %+v, want it in %s with severity medium", second, first.IncidentID)
 	}
 	own := f.process(t)
-	if !own.Opened || own.ResourceType != honeytoken.ResourceType || own.ResourceID != alone || own.IncidentID == first.IncidentID {
+	if !own.Opened || own.ResourceType != honeytoken.ResourceType || own.ResourceID != alone || own.ResourceName != "h" || own.IncidentID == first.IncidentID {
 		t.Errorf("event of a honeytoken that stands alone = %+v, want an incident of its own", own)
 	}
 	if again := f.process(t); again.Opened || again.IncidentID != first.IncidentID {
@@ -238,15 +238,15 @@ func TestStore_ConcurrentEventsOfAScenarioOpenOneIncident(t *testing.T) {
 	defer func() { _ = tx.Rollback(t.Context()) }()
 	var opened string
 	err = tx.QueryRow(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
-VALUES ('scenario', $1, 'medium', now(), now()) RETURNING id`, sc).Scan(&opened)
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, resource_name)
+VALUES ('scenario', $1, 'medium', now(), now(), 'Name') RETURNING id`, sc).Scan(&opened)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(t.Context(), `
 INSERT INTO events (resource_type, resource_id, scenario_id, honeytoken_type, severity, occurred_at, recorded_at, channel,
-	method, incident_id)
-VALUES ('honeytoken', $1, $2, 'web_url', 'medium', now(), now(), 'http', 'GET', $3)`, other, sc, opened); err != nil {
+	method, incident_id, resource_name, scenario_name)
+VALUES ('honeytoken', $1, $2, 'web_url', 'medium', now(), now(), 'http', 'GET', $3, 'Name', 'Scenario')`, other, sc, opened); err != nil {
 		t.Fatal(err)
 	}
 
@@ -339,14 +339,14 @@ func TestResourceTypes_MatchTheSchema(t *testing.T) {
 
 	for _, typ := range ResourceTypes {
 		if _, err := f.owner.Exec(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
-VALUES ($1, gen_random_uuid(), 'low', now(), now())`, typ); err != nil {
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, resource_name)
+VALUES ($1, gen_random_uuid(), 'low', now(), now(), 'Name')`, typ); err != nil {
 			t.Errorf("resource type %s: %v", typ, err)
 		}
 	}
 	if _, err := f.owner.Exec(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
-VALUES ('artifact', gen_random_uuid(), 'low', now(), now())`); err == nil {
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, resource_name)
+VALUES ('artifact', gen_random_uuid(), 'low', now(), now(), 'Name')`); err == nil {
 		t.Error("the schema accepts incidents of artifacts, which raise no events")
 	}
 }

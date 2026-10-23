@@ -1494,9 +1494,11 @@ CREATE FUNCTION public.untrusted_text_valid(value text, max_bytes integer) RETUR
 -- that a sensor reported for a honeypot. It is evidence and outlives the
 -- resource: it names it by type and identifier without a foreign key, as the
 -- audit log names resources, and keeps a copy of the type, the techniques, the
--- severity and the scenario that the resource had when it was requested.
--- Name and notes are not copied, so that events do not become a second copy of
--- the inventory, and neither is the trigger value.
+-- severity, the scenario and the names of the resource and of the scenario that
+-- the resource had when it was requested. The names let the worker give an
+-- incident the name of what raised it without reading the inventory. Notes are
+-- not copied, so that events do not become a second copy of the inventory, and
+-- neither is the trigger value.
 CREATE TABLE public.events (
 	id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 	resource_type   text NOT NULL,
@@ -1506,6 +1508,11 @@ CREATE TABLE public.events (
 	-- resource that changes its scenario afterwards does not move the events
 	-- it already raised. Without a foreign key, like the resource.
 	scenario_id     uuid,
+	-- The names of the resource and of its scenario at the same moment. They
+	-- are no secret, but an operator chose them, so the checks are those of the
+	-- inventory.
+	resource_name   text NOT NULL,
+	scenario_name   text,
 	honeytoken_type text,
 	techniques      text[] NOT NULL DEFAULT '{}',
 	-- The severity of the resource when the request arrived, which the worker
@@ -1576,6 +1583,19 @@ CREATE TABLE public.events (
 	sensor_filter           text,
 
 	CONSTRAINT events_resource_type_check CHECK (resource_type IN ('honeytoken', 'honeypot')),
+	CONSTRAINT events_resource_name_check CHECK (
+		char_length(resource_name) BETWEEN 1 AND 100
+		AND resource_name = btrim(resource_name)
+		AND resource_name !~ '[\x01-\x1f\x7f]'
+	),
+	CONSTRAINT events_scenario_name_check CHECK (
+		(scenario_id IS NULL) = (scenario_name IS NULL)
+		AND (scenario_name IS NULL OR (
+			char_length(scenario_name) BETWEEN 1 AND 100
+			AND scenario_name = btrim(scenario_name)
+			AND scenario_name !~ '[\x01-\x1f\x7f]'
+		))
+	),
 	CONSTRAINT events_honeytoken_type_check CHECK (
 		(resource_type = 'honeytoken') = (honeytoken_type IS NOT NULL)
 		AND honeytoken_type IN ('web_url', 'web_image', 'dns')
@@ -1764,7 +1784,8 @@ DECLARE
 	new_event_id uuid;
 	now_at timestamptz := clock_timestamp();
 BEGIN
-	SELECT t.id, t.type, t.enabled, t.techniques, t.severity, t.scenario_id, t.redirect_url INTO h
+	SELECT t.id, t.type, t.name, t.enabled, t.techniques, t.severity, t.scenario_id, t.redirect_url,
+		(SELECT s.name FROM public.scenarios AS s WHERE s.id = t.scenario_id) AS scenario_name INTO h
 	FROM public.honeytokens AS t
 	WHERE t.trigger_value = requested_value;
 	IF NOT FOUND THEN
@@ -1783,9 +1804,9 @@ BEGIN
 		RETURN;
 	END IF;
 
-	INSERT INTO public.events (resource_type, resource_id, scenario_id, honeytoken_type, techniques, severity,
-		occurred_at, recorded_at, channel, client_ip, method, user_agent, referer, accept_language)
-	VALUES ('honeytoken', h.id, h.scenario_id, h.type, h.techniques, h.severity, now_at, now_at,
+	INSERT INTO public.events (resource_type, resource_id, resource_name, scenario_id, scenario_name, honeytoken_type,
+		techniques, severity, occurred_at, recorded_at, channel, client_ip, method, user_agent, referer, accept_language)
+	VALUES ('honeytoken', h.id, h.name, h.scenario_id, h.scenario_name, h.type, h.techniques, h.severity, now_at, now_at,
 		'http', request_client_ip, request_method, request_user_agent, request_referer, request_accept_language)
 	RETURNING id INTO new_event_id;
 	INSERT INTO public.event_jobs (event_id) VALUES (new_event_id);
@@ -1824,7 +1845,8 @@ DECLARE
 	new_event_id uuid;
 	now_at timestamptz := clock_timestamp();
 BEGIN
-	SELECT t.id, t.type, t.enabled, t.techniques, t.severity, t.scenario_id INTO h
+	SELECT t.id, t.type, t.name, t.enabled, t.techniques, t.severity, t.scenario_id,
+		(SELECT s.name FROM public.scenarios AS s WHERE s.id = t.scenario_id) AS scenario_name INTO h
 	FROM public.honeytokens AS t
 	WHERE t.trigger_value = requested_value;
 	IF NOT FOUND THEN
@@ -1842,9 +1864,9 @@ BEGIN
 		RETURN;
 	END IF;
 
-	INSERT INTO public.events (resource_type, resource_id, scenario_id, honeytoken_type, techniques, severity,
-		occurred_at, recorded_at, channel, client_ip, dns_zone, dns_prefix, dns_qtype, dns_transport)
-	VALUES ('honeytoken', h.id, h.scenario_id, h.type, h.techniques, h.severity,
+	INSERT INTO public.events (resource_type, resource_id, resource_name, scenario_id, scenario_name, honeytoken_type,
+		techniques, severity, occurred_at, recorded_at, channel, client_ip, dns_zone, dns_prefix, dns_qtype, dns_transport)
+	VALUES ('honeytoken', h.id, h.name, h.scenario_id, h.scenario_name, h.type, h.techniques, h.severity,
 		now_at - least(greatest(coalesce(query_delay, interval '0'), interval '0'), interval '5 minutes'), now_at,
 		'dns', query_resolver_ip, query_zone, query_prefix, query_type, query_transport)
 	RETURNING id INTO new_event_id;
@@ -1909,7 +1931,8 @@ BEGIN
 	-- is recorded: a secret that was replaced meanwhile finds no honeypot, so
 	-- the old secret stops working at once and cannot mark the honeypot as
 	-- reported again after the replacement cleared it.
-	SELECT p.id, p.service, p.enabled, p.techniques, p.severity, p.scenario_id INTO h
+	SELECT p.id, p.name, p.service, p.enabled, p.techniques, p.severity, p.scenario_id,
+		(SELECT s.name FROM public.scenarios AS s WHERE s.id = p.scenario_id) AS scenario_name INTO h
 	FROM public.honeypots AS p
 	WHERE p.secret_hash = report_secret_hash
 	FOR KEY SHARE OF p;
@@ -1962,10 +1985,11 @@ BEGIN
 		LIMIT 20
 	) AS u;
 
-	INSERT INTO public.events (resource_type, resource_id, scenario_id, techniques, severity, occurred_at, recorded_at,
-		channel, client_ip, sensor_session_id, sensor_service, sensor_event_type, sensor_port, sensor_duration_ms,
-		sensor_client_version, sensor_database, sensor_application_name, sensor_base_dn, sensor_filter)
-	VALUES ('honeypot', h.id, h.scenario_id, event_techniques, h.severity,
+	INSERT INTO public.events (resource_type, resource_id, resource_name, scenario_id, scenario_name, techniques,
+		severity, occurred_at, recorded_at, channel, client_ip, sensor_session_id, sensor_service, sensor_event_type,
+		sensor_port, sensor_duration_ms, sensor_client_version, sensor_database, sensor_application_name,
+		sensor_base_dn, sensor_filter)
+	VALUES ('honeypot', h.id, h.name, h.scenario_id, h.scenario_name, event_techniques, h.severity,
 		now_at - least(greatest(coalesce(report_age, interval '0'), interval '0'), interval '5 minutes'), now_at,
 		'sensor', report_client_ip, report_session_id, h.service, report_event_type, report_port, report_duration_ms,
 		report_client_version, report_database, report_application_name, report_base_dn, report_filter)
@@ -2044,6 +2068,10 @@ CREATE TABLE public.incidents (
 	id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 	resource_type       text NOT NULL,
 	resource_id         uuid NOT NULL,
+	-- The name of the resource when the incident opened, from the first event.
+	-- A snapshot: renaming or deleting the resource does not change it, so the
+	-- incident still says what was triggered.
+	resource_name       text NOT NULL,
 	-- An acknowledged incident is still open: it collects the events of its
 	-- resource until it is closed.
 	status              text NOT NULL DEFAULT 'open',
@@ -2064,6 +2092,11 @@ CREATE TABLE public.incidents (
 	closed_at           timestamptz,
 
 	CONSTRAINT incidents_resource_type_check CHECK (resource_type IN ('honeytoken', 'honeypot', 'scenario')),
+	CONSTRAINT incidents_resource_name_check CHECK (
+		char_length(resource_name) BETWEEN 1 AND 100
+		AND resource_name = btrim(resource_name)
+		AND resource_name !~ '[\x01-\x1f\x7f]'
+	),
 	CONSTRAINT incidents_status_check CHECK (status IN ('open', 'acknowledged', 'closed')),
 	-- An incident can be closed without having been acknowledged.
 	CONSTRAINT incidents_status_times_check CHECK (
@@ -2970,7 +3003,7 @@ GRANT UPDATE (attempts, not_before) ON public.event_jobs TO nyktus_worker;
 GRANT SELECT ON public.events TO nyktus_worker;
 GRANT UPDATE (incident_id) ON public.events TO nyktus_worker;
 GRANT SELECT ON public.incidents TO nyktus_worker;
-GRANT INSERT (resource_type, resource_id, severity, techniques, first_event_at, last_event_at)
+GRANT INSERT (resource_type, resource_id, resource_name, severity, techniques, first_event_at, last_event_at)
 	ON public.incidents TO nyktus_worker;
 GRANT UPDATE (severity, techniques, event_count, first_event_at, last_event_at) ON public.incidents TO nyktus_worker;
 GRANT INSERT (incident_id, severity, techniques) ON public.alerts TO nyktus_worker;
@@ -3015,6 +3048,7 @@ BEGIN
 			('events', NULL, 'SELECT'), ('events', 'incident_id', 'UPDATE'),
 			('incidents', NULL, 'SELECT'),
 			('incidents', 'resource_type', 'INSERT'), ('incidents', 'resource_id', 'INSERT'),
+			('incidents', 'resource_name', 'INSERT'),
 			('incidents', 'severity', 'INSERT'), ('incidents', 'techniques', 'INSERT'),
 			('incidents', 'first_event_at', 'INSERT'), ('incidents', 'last_event_at', 'INSERT'),
 			('incidents', 'severity', 'UPDATE'), ('incidents', 'techniques', 'UPDATE'),

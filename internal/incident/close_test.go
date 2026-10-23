@@ -233,8 +233,8 @@ func TestCloseInactive_StepsInBatches(t *testing.T) {
 	f := newFixture(t)
 
 	if _, err := f.owner.Exec(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, opened_at)
-SELECT 'honeytoken', gen_random_uuid(), 'low', t, t, t
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, opened_at, resource_name)
+SELECT 'honeytoken', gen_random_uuid(), 'low', t, t, t, 'Name'
 FROM generate_series(1, $1::int), LATERAL (SELECT clock_timestamp() - interval '2 days') AS c (t)`, worker.BatchSize+1); err != nil {
 		t.Fatal(err)
 	}
