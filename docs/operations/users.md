@@ -10,9 +10,11 @@ Administrators create and manage the accounts of the console. There is no public
 
 Decoys, scenarios and API keys belong to the team, not to the account that created them.
 
-The examples below call the API with the session cookie of an administrator, as described in [Sign-in and sessions](sign-in.md). The pages that the links lead to, for activating an account and for choosing a new password, are part of the web console.
+In the web console, administrators open Accounts: the list shows every account with its role, status and sign-in, and an account has a page of its own for changing it, handing out links, removing its second factor and deleting it. A new role or status asks first, because it ends every session of the account. You cannot demote, deactivate or delete your own account, nor change the role of an account of the identity provider; the page says so and disables those fields. The examples below call the API with the session cookie of an administrator, as described in [Sign-in and sessions](sign-in.md); the console does the same, and the API is the way for scripts. The pages that the links lead to, for activating an account and for choosing a new password, are part of the web console.
 
 ## Creating an account
+
+In the console, choose New account, enter the address, the display name and the role, and copy the activation link that the page shows once. Through the API:
 
 Create the account with its address, display name and role:
 
@@ -123,6 +125,8 @@ A reset leaves the second factor in place: whoever gets hold of the link still n
 An administrator can reset the password of another administrator and then act as that administrator. The audit log shows who created the link.
 
 ## Removing a second factor
+
+In the console, the page of the account has a button Remove the second factor, which asks for your password (or sends an administrator of the identity provider to sign in again). Through the API:
 
 A user who lost both the authenticator and the recovery codes cannot sign in. An administrator removes the factor and confirms it with their own password. Write the request into a file, so that the password does not end up in the shell history:
 

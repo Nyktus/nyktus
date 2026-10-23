@@ -15,6 +15,10 @@ export type ErrorKind =
   | 'wrong_password'
   | 'wrong_code'
   | 'invalid_state'
+  | 'email_taken'
+  | 'last_active_admin'
+  | 'own_account'
+  | 'oidc_account'
   | 'name_taken'
   | 'too_many_alert_channels'
   | 'alert_channel_enabled'
@@ -70,6 +74,10 @@ const codes: Record<number, Partial<Record<string, ErrorKind>>> = {
   },
   409: {
     invalid_state: 'invalid_state',
+    email_taken: 'email_taken',
+    last_active_admin: 'last_active_admin',
+    own_account: 'own_account',
+    oidc_account: 'oidc_account',
     name_taken: 'name_taken',
     too_many_alert_channels: 'too_many_alert_channels',
     alert_channel_enabled: 'alert_channel_enabled',
