@@ -4,13 +4,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script setup lang="ts">
-import { useTemplateRef, watch } from 'vue';
+import { useId, useTemplateRef, watch } from 'vue';
 import { t } from '../i18n';
 
 const props = defineProps<{ open: boolean; title: string; confirm: string; busy?: boolean }>();
 const emit = defineEmits<{ confirm: []; cancel: [] }>();
 
 const dialog = useTemplateRef<HTMLDialogElement>('dialog');
+// A page can hold several dialogs, so each names its title by an id of its own.
+const titleId = useId();
 
 // A request that is on its way cannot be called back, so the dialog stays until it is answered:
 // closing it would look like an abort, and the change would happen all the same.
@@ -43,8 +45,8 @@ watch(
 </script>
 
 <template>
-  <dialog ref="dialog" class="dialog panel" aria-labelledby="dialog-title" @cancel.prevent="cancel">
-    <h2 id="dialog-title">{{ title }}</h2>
+  <dialog ref="dialog" class="dialog panel" :aria-labelledby="titleId" @cancel.prevent="cancel">
+    <h2 :id="titleId">{{ title }}</h2>
     <div class="body"><slot /></div>
     <div class="actions">
       <button class="button button-ghost" type="button" :disabled="busy" @click="cancel">{{ t('common.cancel') }}</button>

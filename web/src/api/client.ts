@@ -84,8 +84,7 @@ export function createClient(options: ClientOptions) {
 
     if (response.ok) {
       const status = response.status;
-      const body: unknown = status === 204 ? undefined : await readJSON(response);
-      return { status, body } as Result<K>;
+      return { status, body: await readBody(response, info.binary) } as Result<K>;
     }
 
     const failure = await readError(response);
@@ -99,7 +98,19 @@ export function createClient(options: ClientOptions) {
   return { call };
 }
 
-async function readJSON(response: Response): Promise<unknown> {
+/**
+ * Reads what a successful response carries: nothing for a 204, the file itself
+ * for a download, which is never parsed or shown as markup, and otherwise JSON.
+ * What an operation returns is a fact of the specification, not of the response:
+ * an answer that is not what the operation promises is a failure.
+ */
+async function readBody(response: Response, binary: boolean): Promise<unknown> {
+  if (response.status === 204) {
+    return undefined;
+  }
+  if (binary) {
+    return response.blob();
+  }
   try {
     return await response.json();
   } catch {
