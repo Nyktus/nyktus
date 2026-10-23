@@ -22,6 +22,8 @@ Reads of the audit log and of [events](incidents.md#personal-data), which contai
 
 ## Reading the audit log
 
+In the web console, administrators open Audit log: the entries come newest first, 50 at a time, with the time, the action, the result, the actor as it was recorded, the resource by type and identifier (a link where the console has a page for it, except for an entry that records its deletion), the changed fields and the client address. The page offers no filter yet; read the entries through the API to collect or search them. Opening the page is itself recorded as `audit.read`.
+
 Administrators read the audit log through `GET /api/v1/audit-entries`, with a session or with an [API key](api-keys.md) that carries the scope `audit:read`. Every read is recorded as `audit.read`, because the entries contain personal data. It returns entries from the newest to the oldest, 50 per page by default and at most 200 (`limit`). To read the next page, pass the `next_cursor` of the response as `cursor`. Entries recorded meanwhile do not shift the following pages.
 
 Entries are ordered by the time they were written, not by the time their action was committed. An action that took long to complete can therefore appear behind entries you have already read. If you collect entries regularly, for example into a SIEM, read again from a few minutes before the newest entry you have and skip the identifiers you already know.

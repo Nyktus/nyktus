@@ -170,6 +170,18 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'apiKeys.create.title', permission: 'api_keys:write' },
   },
   {
+    path: '/audit',
+    name: 'audit',
+    component: () => import('./views/AuditView.vue'),
+    meta: { title: 'audit.title', permission: 'audit:read' },
+  },
+  {
+    path: '/metrics',
+    name: 'metrics',
+    component: () => import('./views/MetricsView.vue'),
+    meta: { title: 'metrics.title', permission: 'metrics:read' },
+  },
+  {
     path: '/account',
     name: 'account',
     component: () => import('./views/AccountView.vue'),
