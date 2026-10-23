@@ -18,15 +18,12 @@ const pending = [
   'changePassword',
   'completeOIDCSignIn',
   'confirmTOTP',
-  'createAPIKey',
   'getLiveness',
   'getMetrics',
   'getReadiness',
-  'listAPIKeys',
   'listAuditEntries',
   'removeTOTP',
   'replaceRecoveryCodes',
-  'revokeAPIKey',
 ] as const;
 
 function sources(): string {

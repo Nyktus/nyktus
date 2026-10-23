@@ -41,6 +41,8 @@ export function errorText(error: ApiError): string {
       return t('error.own_account');
     case 'oidc_account':
       return t('error.oidc_account');
+    case 'too_many_api_keys':
+      return t('error.too_many_api_keys');
     case 'name_taken':
       return t('error.name_taken');
     case 'too_many_alert_channels':
