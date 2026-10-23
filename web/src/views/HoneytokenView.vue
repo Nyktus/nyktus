@@ -14,6 +14,7 @@ import ConfirmDialog from '../components/ConfirmDialog.vue';
 import CopyButton from '../components/CopyButton.vue';
 import HoneytokenForm from '../components/HoneytokenForm.vue';
 import QrCode from '../components/QrCode.vue';
+import ScenarioAssignment from '../components/ScenarioAssignment.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
 import TimeStamp from '../components/TimeStamp.vue';
@@ -148,7 +149,15 @@ onMounted(load);
           <dt>{{ t('field.techniques') }}</dt>
           <dd class="mono">{{ honeytoken.techniques.length === 0 ? t('common.none') : honeytoken.techniques.join(', ') }}</dd>
           <dt>{{ t('field.scenario') }}</dt>
-          <dd>{{ honeytoken.scenario_id === null ? t('honeytokens.standsAlone') : honeytoken.scenario_id }}</dd>
+          <dd>
+            <ScenarioAssignment
+              kind="honeytoken"
+              :resource-id="honeytoken.id"
+              :scenario-id="honeytoken.scenario_id"
+              :can-write="canWrite"
+              @changed="(scenarioId) => honeytoken && (honeytoken = { ...honeytoken, scenario_id: scenarioId })"
+            />
+          </dd>
           <dt>{{ t('field.created') }}</dt>
           <dd><TimeStamp :value="honeytoken.created_at" /></dd>
           <dt>{{ t('field.updated') }}</dt>
@@ -163,6 +172,7 @@ onMounted(load);
       </div>
 
       <ConfirmDialog
+        v-if="canWrite"
         :open="confirming"
         :title="t('honeytokens.delete.title')"
         :confirm="t('honeytokens.delete.confirm')"
