@@ -3,7 +3,7 @@
 
 import { afterEach, expect, test, vi } from 'vitest';
 import { boot } from './testing/boot';
-import { artifact, artifactId, catalogDeception, catalogSummary, fakeServer, honeypot, honeypotId, honeytoken, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { artifact, artifactId, catalogDeception, catalogSummary, event, eventId, fakeServer, honeypot, honeypotId, honeytoken, incident, incidentId, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -27,6 +27,10 @@ function server() {
     'GET /api/v1/artifacts': () => json(200, { artifacts: [artifact()] }),
     [`GET /api/v1/artifacts/${artifactId}`]: () => json(200, artifact()),
     'GET /api/v1/catalog/deceptions/browser-bookmarks': () => json(200, catalogDeception()),
+    'GET /api/v1/incidents': () => json(200, { incidents: [incident()] }),
+    [`GET /api/v1/incidents/${incidentId}`]: () => json(200, incident()),
+    'GET /api/v1/events': () => json(200, { events: [event()] }),
+    [`GET /api/v1/events/${eventId}`]: () => json(200, event()),
   });
 }
 
@@ -43,6 +47,9 @@ test.each([
   '/scenarios',
   '/scenarios/new',
   `/scenarios/${scenarioId}`,
+  '/incidents',
+  `/incidents/${incidentId}`,
+  `/events/${eventId}`,
   '/artifacts',
   `/artifacts/${artifactId}`,
   '/catalog',
