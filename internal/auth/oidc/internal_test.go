@@ -42,6 +42,21 @@ func TestProvider_RefusesRequestsWithoutTLS(t *testing.T) {
 	}
 }
 
+// The sign-in page offers the provider only once a sign-in through it can succeed.
+func TestProvider_IsAvailableOnceDiscovered(t *testing.T) {
+	t.Parallel()
+
+	p := NewProvider(ProviderConfig{Issuer: "https://sso.example.com", ClientID: "c", RedirectURL: "https://nyktus.example.com/cb"},
+		slog.New(slog.DiscardHandler))
+	if p.Available() {
+		t.Error("Available() = true before the discovery, want false")
+	}
+	p.current.Store(&endpoints{})
+	if !p.Available() {
+		t.Error("Available() = false after the discovery, want true")
+	}
+}
+
 func TestGroupsClaim(t *testing.T) {
 	t.Parallel()
 

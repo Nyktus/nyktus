@@ -39,7 +39,7 @@ func (denyAll) Authorize(*http.Request, httpx.Access) (*http.Request, error) {
 func deps(db Pinger) Deps {
 	return Deps{
 		Logger: slog.New(slog.DiscardHandler), DB: db, Setup: http.NotFoundHandler(),
-		Authorizer: denyAll{}, SignIn: http.NotFoundHandler(), Session: http.NotFoundHandler(), SignOut: http.NotFoundHandler(),
+		Authorizer: denyAll{}, SignIn: http.NotFoundHandler(), SignInOptions: http.NotFoundHandler(), Session: http.NotFoundHandler(), SignOut: http.NotFoundHandler(),
 		ChangePassword: http.NotFoundHandler(), AuditEntries: http.NotFoundHandler(), Metrics: http.NotFoundHandler(),
 		SecondFactor: SecondFactor{
 			CompleteSignIn: http.NotFoundHandler(), Begin: http.NotFoundHandler(), Confirm: http.NotFoundHandler(),

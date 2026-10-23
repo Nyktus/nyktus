@@ -1,0 +1,140 @@
+openapi: 3.1.0
+info: {title: Fixture, version: "1"}
+paths:
+  /things/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: getThing
+      x-access: things:read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: The thing.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Thing"}
+        "401": {description: No.}
+    delete:
+      operationId: deleteThing
+      x-access: things:write
+      responses:
+        "204": {description: Gone.}
+  /things:
+    get:
+      operationId: listThings
+      x-access: things:read
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1}
+        - name: kind
+          in: query
+          required: true
+          schema: {type: string, enum: [a, b]}
+      responses:
+        "200":
+          description: The things.
+          content:
+            application/json:
+              schema: {type: array, items: {oneOf: [{$ref: "#/components/schemas/Thing"}, {type: string}]}}
+    post:
+      operationId: createThing
+      x-access: things:write
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Thing"}
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Thing"}
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Status"}
+  /things/{id}/content:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: downloadThing
+      x-access: things:read
+      responses:
+        "200":
+          description: The content.
+          content:
+            text/plain: {schema: {type: string}}
+            application/octet-stream: {schema: {type: string}}
+  /go:
+    get:
+      operationId: goThere
+      x-access: public
+      responses:
+        "302": {description: Elsewhere.}
+        "404": {description: Nowhere.}
+components:
+  schemas:
+    Status:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, const: ok}
+    Thing:
+      type: object
+      additionalProperties: false
+      required: [id, tags, owner]
+      properties:
+        id: {type: string, format: uuid}
+        tags:
+          type: array
+          items: {type: string, enum: [x, "it's", y]}
+        owner:
+          type: [string, "null"]
+        level: {type: [string, "null"], enum: [low, high, null]}
+        size: {type: integer}
+        nested:
+          type: object
+          additionalProperties: false
+          required: [on]
+          properties:
+            on: {type: boolean}
+            "odd-name": {type: number}
+        by_key:
+          type: object
+          additionalProperties:
+            type: array
+            items: {type: string}
+        mixed:
+          type: array
+          items: {oneOf: [{type: string}, {type: integer}]}
+        pairs:
+          type: array
+          items:
+            type: [object, "null"]
+            additionalProperties: false
+            required: [a]
+            properties:
+              a: {type: string}
+        quoted:
+          type: array
+          items: {type: string, enum: ["a | b"]}
+    Free:
+      type: object
+      additionalProperties: true
+    Alias:
+      type: string
+      enum: [one, two]

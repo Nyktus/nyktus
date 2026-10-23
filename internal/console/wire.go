@@ -68,6 +68,17 @@ type Options struct {
 	Catalog fs.FS
 }
 
+// signInOptionsOf answers what the sign-in page offers for the configuration. A
+// provider that is nil would still make an interface non-nil, so it is passed on
+// only if there is one.
+func signInOptionsOf(o Options) http.Handler {
+	var provider Provider
+	if o.OIDC != nil {
+		provider = o.OIDC
+	}
+	return SignInOptionsHandler(o.Sessions.LocalLogin != session.LocalLoginOff, provider)
+}
+
 // New wires the console and returns its HTTP handler. It computes the dummy
 // password hash of the sign-in, so it takes as long as one password hash.
 func New(ctx context.Context, o Options) (http.Handler, error) {
@@ -112,6 +123,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 		Setup:          setup.NewHandler(o.Logger, o.Setup, o.Hasher),
 		Authorizer:     authz.New(o.DB, sessions),
 		SignIn:         http.HandlerFunc(h.SignIn),
+		SignInOptions:  signInOptionsOf(o),
 		Session:        http.HandlerFunc(h.Current),
 		SignOut:        http.HandlerFunc(h.SignOut),
 		ChangePassword: http.HandlerFunc(h.ChangePassword),

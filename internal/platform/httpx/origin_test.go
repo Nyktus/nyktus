@@ -4,6 +4,7 @@
 package httpx
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -47,6 +48,12 @@ func TestSameOrigin(t *testing.T) {
 			h.ServeHTTP(w, r)
 			if w.Code != tt.want || reached != (tt.want == http.StatusNoContent) {
 				t.Errorf("status = %d, handler reached = %v; want %d", w.Code, reached, tt.want)
+			}
+			if tt.want == http.StatusForbidden {
+				var body ErrorResponse
+				if err := json.NewDecoder(w.Body).Decode(&body); err != nil || body.Error.Code != CodeCrossOrigin {
+					t.Errorf("error code = %q (%v), want %q", body.Error.Code, err, CodeCrossOrigin)
+				}
 			}
 		})
 	}

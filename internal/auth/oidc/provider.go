@@ -145,6 +145,12 @@ func (p *Provider) discover(ctx context.Context) error {
 	return nil
 }
 
+// Available reports whether the provider has been discovered, so that a
+// sign-in through it can succeed.
+func (p *Provider) Available() bool {
+	return p.current.Load() != nil
+}
+
 func (p *Provider) endpoints() (*endpoints, error) {
 	e := p.current.Load()
 	if e == nil {
