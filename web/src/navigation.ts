@@ -15,6 +15,7 @@ export interface NavItem {
 /** The pages of the frame. A page is added here when it exists. */
 export const navigation: readonly NavItem[] = [
   { to: { name: 'home' }, label: 'nav.overview' },
+  { to: { name: 'incidents' }, label: 'nav.incidents', permission: 'incidents:read' },
   { to: { name: 'honeytokens' }, label: 'nav.honeytokens', permission: 'honeytokens:read' },
   { to: { name: 'honeypots' }, label: 'nav.honeypots', permission: 'honeypots:read' },
   { to: { name: 'scenarios' }, label: 'nav.scenarios', permission: 'scenarios:read' },

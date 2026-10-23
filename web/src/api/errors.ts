@@ -14,6 +14,7 @@ export type ErrorKind =
   | 'cross_origin'
   | 'wrong_password'
   | 'wrong_code'
+  | 'invalid_state'
   | 'reauthentication_required'
   | 'unauthenticated'
   | 'forbidden'
@@ -57,6 +58,9 @@ const codes: Record<number, Partial<Record<string, ErrorKind>>> = {
     wrong_password: 'wrong_password',
     wrong_code: 'wrong_code',
     reauthentication_required: 'reauthentication_required',
+  },
+  409: {
+    invalid_state: 'invalid_state',
   },
   422: {
     dns_not_configured: 'dns_not_configured',
