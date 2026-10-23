@@ -33,6 +33,14 @@ export function errorText(error: ApiError): string {
       return t('error.conflict');
     case 'invalid_state':
       return t('error.invalid_state');
+    case 'email_taken':
+      return t('error.email_taken');
+    case 'last_active_admin':
+      return t('error.last_active_admin');
+    case 'own_account':
+      return t('error.own_account');
+    case 'oidc_account':
+      return t('error.oidc_account');
     case 'name_taken':
       return t('error.name_taken');
     case 'too_many_alert_channels':

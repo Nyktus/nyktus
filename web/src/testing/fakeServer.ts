@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { AlertChannel, AlertDelivery, Artifact, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
+import type { User, AlertChannel, AlertDelivery, Artifact, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
 
 export interface Recorded {
   method: string;
@@ -318,4 +318,25 @@ export function alertDelivery(overrides: Partial<AlertDelivery> = {}): AlertDeli
     created_at: '2026-10-22T07:00:05Z',
     ...overrides,
   };
+}
+
+export const userId = 'a5e70000-1111-4222-8333-944444444444';
+
+/** The account of another person than the one who is signed in. */
+export function userRecord(overrides: Partial<User> = {}): User {
+  return {
+    id: userId,
+    email: 'jane@example.com',
+    display_name: 'Jane Doe',
+    role: 'user',
+    status: 'active',
+    totp_enabled: false,
+    sign_in_method: 'password',
+    ...overrides,
+  };
+}
+
+/** The account of the administrator who is signed in, as the session shows it. */
+export function ownRecord(overrides: Partial<User> = {}): User {
+  return userRecord({ id: '8d1c0f0e-1111-4222-8333-944444444444', email: 'ada@example.com', display_name: 'Ada Admin', role: 'admin', ...overrides });
 }
