@@ -26,7 +26,7 @@ export function failure(status: number, code: string, headers: Record<string, st
 
 export const noContent = (): Response => new Response(null, { status: 204 });
 
-export function sessionBody(role: 'admin' | 'user' | 'viewer' = 'admin', name = 'Ada Admin', method: 'password' | 'oidc' = 'password'): Session {
+export function sessionBody(role: 'admin' | 'user' | 'viewer' = 'admin', name = 'Ada Admin', method: 'password' | 'oidc' = 'password', totp = false): Session {
   return {
     user: {
       id: '8d1c0f0e-1111-4222-8333-944444444444',
@@ -34,7 +34,7 @@ export function sessionBody(role: 'admin' | 'user' | 'viewer' = 'admin', name = 
       display_name: name,
       role,
       status: 'active',
-      totp_enabled: false,
+      totp_enabled: totp,
       sign_in_method: method,
     },
     idle_expires_at: '2026-10-22T20:00:00Z',

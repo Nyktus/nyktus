@@ -14,16 +14,11 @@ const src = join(import.meta.dirname, '..', 'src');
  * and still listed fails, as does one that is neither used nor listed.
  */
 const pending = [
-  'beginTOTPSetup',
-  'changePassword',
   'completeOIDCSignIn',
-  'confirmTOTP',
   'getLiveness',
   'getMetrics',
   'getReadiness',
   'listAuditEntries',
-  'removeTOTP',
-  'replaceRecoveryCodes',
 ] as const;
 
 function sources(): string {

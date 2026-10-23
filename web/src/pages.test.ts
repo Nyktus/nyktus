@@ -68,6 +68,7 @@ test.each([
   `/artifacts/${artifactId}`,
   '/catalog',
   '/catalog/browser-bookmarks',
+  '/account',
   '/forbidden',
 ])('%s has no id twice, and every label points at a field', async (path) => {
   const { wrapper } = await boot(server(), path);

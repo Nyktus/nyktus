@@ -83,6 +83,8 @@ The sign-in page asks `GET /api/v1/sign-in-options`, which needs no sign-in, whi
 
 ## Changing the password
 
+In the web console, choose your name in the header to open your account: the form asks for the current password and the new one twice, and empties its fields once the request is answered. The other sessions of the account end, and you stay signed in. Through the API:
+
 Signed-in users change their own password with the current one. Write both into a file, so that they do not end up in the shell history:
 
 ```json
@@ -109,6 +111,8 @@ A user who forgot the password receives a reset link from an administrator, see 
 Every account can add a second factor: a time-based one-time password (TOTP, RFC 6238) from an authenticator app, such as those of password managers or phones. It is optional, but recommended for every account and in particular for administrators.
 
 ### Setting it up
+
+In the console, your account page has a button Set up a second factor. It asks for your password, then shows a QR code and the key as text, valid for ten minutes; enter the code that your app shows, and the page shows the ten recovery codes once, to copy or save as a text file. If the time runs out, the page says so and you start again. Through the API:
 
 1. Start the setup with the password, written into a file as for the change of password (`{"password": "..."}`):
 
@@ -148,6 +152,8 @@ curl --fail-with-body https://nyktus.example.com/api/v1/session/second-factor \
 - A change of password, a reset, the removal of the factor, a change of role and the deactivation end every sign-in that waits for its code.
 
 ### Recovery codes and removal
+
+In the console, the account page replaces the recovery codes and removes the factor; both ask for your password and a code of the app or a recovery code, in a dialog that keeps neither. Through the API:
 
 - `POST /api/v1/session/totp/recovery-codes` replaces the recovery codes with ten new ones. It takes the password and a code or a recovery code, as `{"password": "...", "code": "123456"}` or `{"password": "...", "recovery_code": "..."}`.
 - `DELETE /api/v1/session/totp` with the same body removes the factor and the recovery codes. Every session of the account ends; the answer sets a new session cookie for the session that removed it.
