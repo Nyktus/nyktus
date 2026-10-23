@@ -50,6 +50,13 @@ With a provider, only administrators sign in with a password by default (`NYKTUS
 - Signing out ends the session in Nyktus only, not the session at the provider. The next sign-in may therefore complete without a password prompt.
 - The requests to the provider bypass the protection against requests to internal addresses that other outgoing requests receive, because the provider is often only reachable internally. They use HTTPS, which is required outside development.
 
+## What the sign-in page offers
+
+The sign-in page asks `GET /api/v1/sign-in-options`, which needs no sign-in, which forms of sign-in to offer: the form for the email address and password (`password`), and the button for the identity provider (`oidc`). The answer describes the instance and nothing about an account, so it is the same for every caller.
+
+- `password` is `false` only with `NYKTUS_LOCAL_LOGIN=off`. With `admins` it is `true`: the page does not tell which accounts may sign in with a password.
+- `oidc` is `off` without an identity provider, `available` once the console has reached the provider, and `unavailable` until then. The page shows the button disabled in that case instead of sending the browser to an error.
+
 ## Sessions
 
 - A session ends after a period without requests (`NYKTUS_SESSION_IDLE_TIMEOUT`, default one hour) and at the latest after its maximum age (`NYKTUS_SESSION_MAX_AGE`, default 12 hours), and when the user signs out. See [Configuration](configuration.md).
@@ -62,6 +69,7 @@ With a provider, only administrators sign in with a password by default (`NYKTUS
 ## Reverse proxy
 
 - `NYKTUS_CONSOLE_URL` must be exactly the address that users open in the browser, including the port if it is not the default. Requests that change state, such as a sign-in, are rejected with `403` if the browser reports another origin. This protects sessions against requests from other sites, including pages on other subdomains of your domain.
+  The answer carries the code `cross_origin`, which the web console shows as a notice that the address in the browser differs from the configured one.
 - Pass the `Origin` header to the console unchanged.
 - Rate-limit the sign-in endpoints `POST /api/v1/session`, `POST /api/v1/session/second-factor`, `GET /api/v1/oidc/authorize` and `GET /api/v1/oidc/callback` and the endpoints `POST /api/v1/activation` and `POST /api/v1/password-reset` at the proxy, per client address. Each request to `GET /api/v1/oidc/authorize` stores a sign-in for ten minutes, which the [worker](database.md#periodic-tasks) removes within five minutes after it expires.
 

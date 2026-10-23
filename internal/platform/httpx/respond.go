@@ -35,6 +35,7 @@ const (
 	CodeInvalidRequest   = "invalid_request"
 	CodeUnauthenticated  = "unauthenticated"
 	CodeForbidden        = "forbidden"
+	CodeCrossOrigin      = "cross_origin"
 	CodeNotFound         = "not_found"
 	CodeBodyTooLarge     = "body_too_large"
 	CodeUnsupportedMedia = "unsupported_media_type"

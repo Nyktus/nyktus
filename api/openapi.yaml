@@ -34,7 +34,7 @@ info:
     Browsers authenticate with a session cookie, which `POST /api/v1/session`
     sets, or, for users of an identity provider, the sign-in that
     `GET /api/v1/oidc/authorize` starts. Requests that change state and carry an `Origin` header must come from
-    the origin of the console, otherwise they receive `403`.
+    the origin of the console, otherwise they receive `403` with the code `cross_origin`.
 
     Integrations authenticate with an API key in the header
     `Authorization: Bearer <key>`. A request with a key authenticates with it
@@ -159,6 +159,34 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/sign-in-options:
+    get:
+      operationId: getSignInOptions
+      summary: Return the forms of sign-in that the instance offers
+      description: |
+        Tells the sign-in page what to offer. The answer describes the
+        configuration of the instance and nothing about an account, so it is the
+        same for every caller.
+
+        `password` is `false` only while no account may sign in with a password
+        (`NYKTUS_LOCAL_LOGIN=off`). It is `true` otherwise, also when only
+        administrators may, because naming those would tell an intruder which
+        accounts matter.
+
+        `oidc` is `off` without an identity provider, `available` once the
+        console has reached the provider, and `unavailable` while it has not,
+        for example after a start while the provider was down. A sign-in through
+        it fails with `503` in that case.
+      tags: [session]
+      x-access: public
+      responses:
+        "200":
+          description: The forms of sign-in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignInOptions"
+
   /api/v1/session:
     post:
       operationId: signIn
@@ -224,7 +252,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: The password is correct, but the account is locked (`account_locked`), or the request comes from another origin.
+          description: The password is correct, but the account is locked (`account_locked`), or the request comes from another origin (`cross_origin`).
           headers:
             Retry-After:
               description: Seconds until the lock ends. Only sent for a locked account.
@@ -545,7 +573,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: The account is locked (`account_locked`), or the request comes from another origin.
+          description: The account is locked (`account_locked`), or the request comes from another origin (`cross_origin`).
           headers:
             Retry-After:
               description: Seconds until the lock ends. Only sent for a locked account.
@@ -3485,6 +3513,19 @@ components:
           maxLength: 128
           description: Counted in Unicode code points after NFC normalization.
 
+    SignInOptions:
+      type: object
+      additionalProperties: false
+      required: [password, oidc]
+      properties:
+        password:
+          type: boolean
+          description: Whether the page offers the form for the email address and password.
+        oidc:
+          type: string
+          enum: [off, available, unavailable]
+          description: Whether the page offers the sign-in through the identity provider.
+
     SignInRequest:
       type: object
       additionalProperties: false
@@ -5263,7 +5304,7 @@ components:
       description: |
         The password is wrong (`wrong_password`), the code is wrong (`wrong_code`), the password is
         correct but the account is locked (`account_locked`), the request is not made with a session
-        (`forbidden`), or the request comes from another origin.
+        (`forbidden`), or the request comes from another origin (`cross_origin`).
       headers:
         Retry-After:
           description: Seconds until the lock ends. Only sent for a locked account.
@@ -5274,7 +5315,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     SessionRequired:
-      description: The request is not made with a session, or it changes state and comes from another origin than the console.
+      description: The request is not made with a session, or it changes state and comes from another origin than the console (`cross_origin`).
       content:
         application/json:
           schema:
@@ -5286,13 +5327,16 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     ForbiddenWrite:
-      description: The caller lacks the permission that the operation requires, or the request comes from another origin than the console. A denial for a missing permission is recorded in the audit log, at most once per user, permission and minute, and separately for each API key.
+      description: The caller lacks the permission that the operation requires, or the request comes from another origin than the console (`cross_origin`). A denial for a missing permission is recorded in the audit log, at most once per user, permission and minute, and separately for each API key.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     CrossOrigin:
-      description: The request changes state and comes from another origin than the console.
+      description: |
+        The request changes state and comes from another origin than the console
+        (`cross_origin`). A browser that reaches the console under another
+        address than `NYKTUS_CONSOLE_URL` receives it for every such request.
       content:
         application/json:
           schema:

@@ -182,6 +182,8 @@ linters:
             - "!$test"
             - "!**/sensor/**"
             - "!**/internal/platform/apispec/*.go"
+            # The generators run on a developer machine and are not shipped.
+            - "!**/tools/apitypesgen/*.go"
             - "!**/internal/platform/schematest/*.go"
             - "!**/internal/platform/secretbox/secretboxtest/*.go"
             - "!**/internal/platform/smtp/smtptest/*.go"
