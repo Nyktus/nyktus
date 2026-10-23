@@ -4,7 +4,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { rules, scan } from './scan';
+import { attackerFields, rules, scan } from './scan';
 
 const src = join(import.meta.dirname, '..', 'src');
 
@@ -47,6 +47,8 @@ describe('every rule fires on a violation', () => {
     'EventSource is not part of the API': "new EventSource('/events');",
     'sendBeacon sends data without the client': "navigator.sendBeacon('/a', data);",
     'the console loads nothing from another origin': "import('https://cdn.example.com/a.js');",
+    'text that an attacker sent is shown only by UntrustedText': '<td>{{ event.http.user_agent }}</td>',
+    'text that an attacker sent is not taken out of its object by name': 'const { username } = attempt;',
     'a link that opens a window needs rel="noopener noreferrer"': '<a href="/x" target="_blank">x</a>',
   };
 
@@ -59,6 +61,51 @@ describe('every rule fires on a violation', () => {
       expect(scan({ 'a.ts': code }).map((v) => v.rule)).toContain(rule);
     });
   }
+
+  test('a field handed to UntrustedText passes, and so does the key of a text', () => {
+    expect(scan({ 'a.vue': '<dd><UntrustedText :value="event.http.user_agent" /></dd>' })).toEqual([]);
+    expect(scan({ 'a.ts': "'event.database': 'Database'," })).toEqual([]);
+    expect(scan({ 'a.vue': "{{ t('event.database') }}" })).toEqual([]);
+    expect(scan({ 'a.ts': 'items.filter((i) => i.ok);' })).toEqual([]);
+    expect(scan({ 'a.vue': '<template v-if="event.sensor.database !== null">' })).toEqual([]);
+  });
+
+  test.each(attackerFields)('the field %s is found outside UntrustedText, and not inside', (field) => {
+    expect(scan({ 'a.vue': `<td>{{ row.${field} }}</td>` }).map((v) => v.rule)).toContain('text that an attacker sent is shown only by UntrustedText');
+    expect(scan({ 'a.vue': `<td><UntrustedText :value="row.${field}" /></td>` })).toEqual([]);
+  });
+
+  test('a second field on the line of a first, which is handed over, is found', () => {
+    expect(scan({ 'a.vue': '<dd><UntrustedText :value="e.http.user_agent" /> {{ e.http.referer }}</dd>' }).map((v) => v.rule)).toContain(
+      'text that an attacker sent is shown only by UntrustedText',
+    );
+    expect(scan({ 'a.vue': '<dd><UntrustedText :value="e.http.user_agent" /><UntrustedText :value="e.http.referer" /></dd>' })).toEqual([]);
+  });
+
+  test.each([
+    'const { username } = attempt;',
+    'const { id, key_fingerprint, other } = attempt;',
+    'attempts.map(({ key_fingerprint }) => key_fingerprint);',
+    '<tr v-for="{ filter } in rows">',
+    'const user = event.http["user_agent"];',
+    "const user = event.http[ 'user_agent' ];",
+  ])('a field that is taken out of its object by name fails: %s', (code) => {
+    expect(scan({ 'a.vue': code }).map((v) => v.rule)).toContain('text that an attacker sent is not taken out of its object by name');
+  });
+
+  test.each(['const { user, role } = session;', 'api.call(x, { body: { email, password } });', 'const filterAll = 1;', 'items.filter((i) => i.ok);', 'groups.map((group) => ({ group, items: usable.filter((item) => item.group === group) }));'])(
+    'what is not a field of an attacker passes: %s',
+    (code) => {
+      expect(scan({ 'a.ts': code })).toEqual([]);
+    },
+  );
+
+  test.each(['{{ event.sensor.database }}', ':title="attempt.username"', 'const name = event.dns.prefix;', 'show(event.sensor.query.filter)'])(
+    'a field outside UntrustedText fails: %s',
+    (code) => {
+      expect(scan({ 'a.vue': code }).map((v) => v.rule)).toContain('text that an attacker sent is shown only by UntrustedText');
+    },
+  );
 
   test('a link with rel passes', () => {
     expect(scan({ 'a.vue': '<a href="/x" target="_blank" rel="noopener noreferrer">x</a>' })).toEqual([]);

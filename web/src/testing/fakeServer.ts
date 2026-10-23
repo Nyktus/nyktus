@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Artifact, CatalogDeception, CatalogDeceptionSummary, Honeypot, Honeytoken, Scenario, Session } from '../api/generated';
+import type { Artifact, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
 
 export interface Recorded {
   method: string;
@@ -187,4 +187,92 @@ export function artifact(overrides: Partial<Artifact> = {}): Artifact {
     updated_at: '2026-10-21T09:00:00Z',
     ...overrides,
   };
+}
+
+export const incidentId = 'f00dfeed-1111-4222-8333-944444444444';
+
+export function incident(overrides: Partial<Incident> = {}): Incident {
+  return {
+    id: incidentId,
+    resource_type: 'scenario',
+    resource_id: scenarioId,
+    status: 'open',
+    severity: 'high',
+    event_severity: 'high',
+    severity_override: null,
+    techniques: ['T1078'],
+    event_techniques: ['T1078'],
+    techniques_override: null,
+    notes: '',
+    event_count: 2,
+    first_event_at: '2026-10-22T07:00:00Z',
+    last_event_at: '2026-10-22T07:05:00Z',
+    opened_at: '2026-10-22T07:00:05Z',
+    acknowledged_at: null,
+    closed_at: null,
+    ...overrides,
+  };
+}
+
+export const eventId = 'e7e47000-1111-4222-8333-944444444444';
+
+/** An event of a web honeytoken, which a client requested. */
+export function event(overrides: Partial<Event> = {}): Event {
+  return {
+    id: eventId,
+    resource_type: 'honeytoken',
+    resource_id: honeytokenId,
+    scenario_id: scenarioId,
+    honeytoken_type: 'web_url',
+    techniques: ['T1078'],
+    severity: 'high',
+    incident_id: incidentId,
+    occurred_at: '2026-10-22T07:00:00Z',
+    recorded_at: '2026-10-22T07:00:05Z',
+    channel: 'http',
+    client_ip: '203.0.113.7',
+    http: { method: 'GET', user_agent: 'curl/8.4.0', referer: '', accept_language: 'en' },
+    dns: null,
+    sensor: null,
+    ...overrides,
+  };
+}
+
+/** An event of a honeypot: a session in which someone tried to log in. */
+export function sensorEvent(overrides: Partial<Event> = {}): Event {
+  return event({
+    id: 'e7e47000-2222-4222-8333-944444444444',
+    resource_type: 'honeypot',
+    resource_id: honeypotId,
+    honeytoken_type: null,
+    channel: 'sensor',
+    http: null,
+    sensor: {
+      service: 'ssh',
+      event_type: 'login_attempt',
+      port: 22,
+      duration_ms: 4200,
+      client_version: 'SSH-2.0-libssh_0.9',
+      database: null,
+      application_name: null,
+      query: null,
+      attempts: [
+        { username: 'root', password_length: 8, key_fingerprint: null },
+        { username: 'admin', password_length: null, key_fingerprint: 'SHA256:abc' },
+      ],
+    },
+    ...overrides,
+  });
+}
+
+/** An event of a DNS honeytoken. */
+export function dnsEvent(overrides: Partial<Event> = {}): Event {
+  return event({
+    id: 'e7e47000-3333-4222-8333-944444444444',
+    honeytoken_type: 'dns',
+    channel: 'dns',
+    http: null,
+    dns: { zone: 't.example.net', prefix: 'abcdefghijklmnopqrstuvwxyz', qtype: 'A', transport: 'udp' },
+    ...overrides,
+  });
 }

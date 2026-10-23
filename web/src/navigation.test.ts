@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'vitest';
 import { rolePermissions, type Permission, type Role } from './api/generated';
 import { navigation, visibleItems, type NavItem } from './navigation';
+import { routes } from './router';
 
 const items: NavItem[] = [
   { to: '/a', label: 'nav.overview' },
@@ -30,4 +31,21 @@ describe('visibleItems', () => {
 
 test('the frame links to the overview', () => {
   expect(navigation.map((i) => i.label)).toContain('nav.overview');
+});
+
+test('every page of the frame needs the permission that its route needs', () => {
+  for (const item of navigation) {
+    const to = item.to as { name: string };
+    const route = routes.find((r) => r.name === to.name);
+    expect(route, to.name).toBeDefined();
+    expect(item.permission, to.name).toBe(route?.meta?.permission);
+  }
+});
+
+test.each([
+  ['incidents', 'incidents:read'],
+  ['incident', 'incidents:read'],
+  ['event', 'events:read'],
+])('the page %s needs %s', (name, permission) => {
+  expect(routes.find((r) => r.name === name)?.meta?.permission).toBe(permission);
 });
