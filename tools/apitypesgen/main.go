@@ -471,7 +471,7 @@ func key(name string) string {
 func operations(doc *document) (string, error) {
 	type described struct {
 		id, method, path, access string
-		redirect                 bool
+		redirect, binary         bool
 		types                    string
 	}
 	var (
@@ -506,12 +506,12 @@ func operations(doc *document) (string, error) {
 				continue
 			}
 			seen[op.OperationID] = true
-			types, redirect, err := operationTypes(&op, path, mergeParameters(shared, op.Parameters))
+			types, redirect, binary, err := operationTypes(&op, path, mergeParameters(shared, op.Parameters))
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s %s: %w", strings.ToUpper(method), path, err))
 				continue
 			}
-			ops = append(ops, described{op.OperationID, strings.ToUpper(method), path, op.Access, redirect, types})
+			ops = append(ops, described{op.OperationID, strings.ToUpper(method), path, op.Access, redirect, binary, types})
 		}
 	}
 	if err := errors.Join(errs...); err != nil {
@@ -522,10 +522,11 @@ func operations(doc *document) (string, error) {
 	var b strings.Builder
 	b.WriteString("/** How an operation is reached: its method, path and the access the server requires. */\n")
 	b.WriteString("export interface OperationInfo {\n  method: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE' | 'HEAD';\n  path: string;\n")
-	b.WriteString("  access: string;\n  /** The browser navigates to the operation; the page does not request it. */\n  navigation: boolean;\n}\n\n")
+	b.WriteString("  access: string;\n  /** The browser navigates to the operation; the page does not request it. */\n  navigation: boolean;\n")
+	b.WriteString("  /** The successful answer is a file, not JSON. */\n  binary: boolean;\n}\n\n")
 	b.WriteString("export const operations = {\n")
 	for _, o := range ops {
-		fmt.Fprintf(&b, "  %s: { method: '%s', path: '%s', access: '%s', navigation: %t },\n", o.id, o.method, o.path, o.access, o.redirect)
+		fmt.Fprintf(&b, "  %s: { method: '%s', path: '%s', access: '%s', navigation: %t, binary: %t },\n", o.id, o.method, o.path, o.access, o.redirect, o.binary)
 	}
 	b.WriteString("} as const satisfies Record<string, OperationInfo>;\n\n")
 	b.WriteString("export type OperationId = keyof typeof operations;\n\n")
@@ -552,16 +553,17 @@ func mergeParameters(shared, own []parameter) []parameter {
 }
 
 // operationTypes returns the type of the parameters, the body and the
-// successful responses of an operation, and whether it answers with a redirect.
-func operationTypes(op *operation, route string, params []parameter) (string, bool, error) {
+// successful responses of an operation, whether it answers with a redirect and
+// whether its answer is a file.
+func operationTypes(op *operation, route string, params []parameter) (string, bool, bool, error) {
 	var path, query []string
 	for _, p := range params {
 		if p.Schema == nil {
-			return "", false, fmt.Errorf("parameter %s has no schema", p.Name)
+			return "", false, false, fmt.Errorf("parameter %s has no schema", p.Name)
 		}
 		t, err := tsType(p.Schema, 2)
 		if err != nil {
-			return "", false, fmt.Errorf("parameter %s: %w", p.Name, err)
+			return "", false, false, fmt.Errorf("parameter %s: %w", p.Name, err)
 		}
 		switch p.In {
 		case "path":
@@ -573,32 +575,32 @@ func operationTypes(op *operation, route string, params []parameter) (string, bo
 			}
 			query = append(query, key(p.Name)+optional+": "+t)
 		default:
-			return "", false, fmt.Errorf("parameter %s is in %q, which is not supported", p.Name, p.In)
+			return "", false, false, fmt.Errorf("parameter %s is in %q, which is not supported", p.Name, p.In)
 		}
 	}
 
 	if err := checkPathParameters(route, params); err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
 
 	body := "undefined"
 	if op.RequestBody != nil {
 		mt, ok := op.RequestBody.Content.values["application/json"]
 		if !ok || len(op.RequestBody.Content.keys) != 1 || mt.Schema == nil {
-			return "", false, errors.New("only a request body of application/json is supported")
+			return "", false, false, errors.New("only a request body of application/json is supported")
 		}
 		t, err := tsType(mt.Schema, 2)
 		if err != nil {
-			return "", false, fmt.Errorf("request body: %w", err)
+			return "", false, false, fmt.Errorf("request body: %w", err)
 		}
 		body = t
 	}
 
 	var responses []string
-	redirect := false
+	redirect, binary := false, false
 	for _, code := range op.Responses.keys {
 		if code != "default" && !isStatus(code) {
-			return "", false, fmt.Errorf("response %q is no status code; ranges such as 2XX are not supported", code)
+			return "", false, false, fmt.Errorf("response %q is no status code; ranges such as 2XX are not supported", code)
 		}
 		if strings.HasPrefix(code, "3") {
 			redirect = true
@@ -613,15 +615,16 @@ func operationTypes(op *operation, route string, params []parameter) (string, bo
 		case len(r.Content.keys) == 1 && r.Content.keys[0] == "application/json" && r.Content.values["application/json"].Schema != nil:
 			var err error
 			if t, err = tsType(r.Content.values["application/json"].Schema, 2); err != nil {
-				return "", false, fmt.Errorf("response %s: %w", code, err)
+				return "", false, false, fmt.Errorf("response %s: %w", code, err)
 			}
 		default:
 			t = "Blob"
+			binary = true
 		}
 		responses = append(responses, code+": "+t)
 	}
 	if len(responses) == 0 && !redirect {
-		return "", false, errors.New("no successful response")
+		return "", false, false, errors.New("no successful response")
 	}
 
 	var b strings.Builder
@@ -631,7 +634,7 @@ func operationTypes(op *operation, route string, params []parameter) (string, bo
 	b.WriteString("    body: " + body + ";\n")
 	b.WriteString("    responses: " + object(responses) + ";\n")
 	b.WriteString("  }")
-	return b.String(), redirect, nil
+	return b.String(), redirect, binary, nil
 }
 
 // isStatus reports whether code is a status of three digits, as the types write

@@ -6,6 +6,8 @@ The catalog is part of the server binary and the same in every installation. Nyk
 
 ## Reading the catalog
 
+In the web console, the catalog is a page of its own: it lists the deceptions, shows what applying one creates, and applies it with a form that asks for the name, the language and one value for each value of the persona. The console checks the form of each value before it sends it; the server decides. The guide of a scenario that a deception created is shown on the page of the scenario, as text: the console draws its Markdown as elements, so a value that someone typed into the persona is never read as markup. A guide of more than 64 KiB is shown as it is, as one block of text, instead of being read.
+
 Every role reads the catalog, as do [API keys](api-keys.md) with the scope `catalog:read`. The catalog holds no inventory: it says what deceptions exist, not which ones you use.
 
 - `GET /api/v1/catalog/deceptions` lists every deception, ordered by identifier. The list is complete and not paged.

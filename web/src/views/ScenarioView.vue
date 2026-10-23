@@ -8,9 +8,11 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
-import type { Honeypot, Honeytoken, OperationTypes, Scenario } from '../api/generated';
+import type { Artifact, Honeypot, Honeytoken, OperationTypes, Scenario } from '../api/generated';
 import { errorText } from '../api/messages';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import FileSize from '../components/FileSize.vue';
+import MarkdownView from '../components/MarkdownView';
 import ScenarioForm from '../components/ScenarioForm.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
@@ -51,9 +53,16 @@ watch(deleting, () => {
 
 const detaching = ref(false);
 
+const guide = ref<{ language: string; content: string } | undefined>();
+const guideFailed = ref(false);
+
 const honeytokens = usePagedList<Honeytoken>(async (cursor) => {
   const { body } = await api.call('listHoneytokens', { query: { limit: 50, cursor, scenario_id: id.value } });
   return { items: body.honeytokens, next: body.next_cursor };
+});
+const artifacts = usePagedList<Artifact>(async (cursor) => {
+  const { body } = await api.call('listArtifacts', { query: { limit: 50, cursor, scenario_id: id.value } });
+  return { items: body.artifacts, next: body.next_cursor };
 });
 const honeypots = usePagedList<Honeypot>(async (cursor) => {
   const { body } = await api.call('listHoneypots', { query: { limit: 50, cursor, scenario_id: id.value } });
@@ -71,6 +80,8 @@ async function load(): Promise<void> {
     scenario.value = (await api.call('getScenario', { path: { id: id.value } })).body;
     void honeytokens.reload();
     void honeypots.reload();
+    void artifacts.reload();
+    void loadGuide();
   } catch (failure) {
     if (failure instanceof ApiError && failure.kind === 'not_found') {
       missing.value = true;
@@ -79,6 +90,20 @@ async function load(): Promise<void> {
     }
   } finally {
     loading.value = false;
+  }
+}
+
+// Only a scenario that a deception created has a guide; one put together by hand has none.
+async function loadGuide(): Promise<void> {
+  guide.value = undefined;
+  guideFailed.value = false;
+  if (scenario.value?.deception_id === null) {
+    return;
+  }
+  try {
+    guide.value = (await api.call('getScenarioGuide', { path: { id: id.value } })).body;
+  } catch {
+    guideFailed.value = true;
   }
 }
 
@@ -214,7 +239,7 @@ onMounted(load);
           </table>
         </div>
         <p v-if="honeytokens.next.value !== undefined">
-          <button class="button button-ghost small" type="button" @click="honeytokens.more">{{ t('common.loadMore') }}</button>
+          <button class="button button-ghost small" type="button" :disabled="honeytokens.loading.value" @click="honeytokens.more">{{ t('common.loadMore') }}</button>
         </p>
       </div>
 
@@ -240,8 +265,38 @@ onMounted(load);
           </table>
         </div>
         <p v-if="honeypots.next.value !== undefined">
-          <button class="button button-ghost small" type="button" @click="honeypots.more">{{ t('common.loadMore') }}</button>
+          <button class="button button-ghost small" type="button" :disabled="honeypots.loading.value" @click="honeypots.more">{{ t('common.loadMore') }}</button>
         </p>
+      </div>
+
+      <div class="section panel">
+        <h2>{{ t('artifacts.ofScenario') }}</h2>
+        <p v-if="artifacts.error.value" class="notice notice-error" role="alert">{{ t('artifacts.loadFailed') }}</p>
+        <p v-else-if="!artifacts.loaded.value && artifacts.items.value.length === 0" role="status">{{ t('app.loading') }}</p>
+        <p v-else-if="artifacts.loaded.value && artifacts.items.value.length === 0" class="hint">{{ t('artifacts.none') }}</p>
+        <div v-else-if="artifacts.items.value.length > 0" class="table-wrap">
+          <table class="table">
+            <tbody>
+              <tr v-for="artifact in artifacts.items.value" :key="artifact.id">
+                <td><RouterLink class="mono" :to="{ name: 'artifact', params: { id: artifact.id } }">{{ artifact.file_name }}</RouterLink></td>
+                <td>{{ t(`artifactFormat.${artifact.format}`) }}</td>
+                <td><FileSize :bytes="artifact.size" /></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-if="artifacts.next.value !== undefined">
+          <button class="button button-ghost small" type="button" :disabled="artifacts.loading.value" @click="artifacts.more">{{ t('common.loadMore') }}</button>
+        </p>
+      </div>
+
+      <div v-if="guide || guideFailed" class="section panel">
+        <h2>{{ t('scenarios.guide') }}</h2>
+        <p v-if="guideFailed" class="notice notice-error" role="alert">{{ t('scenarios.guideFailed') }}</p>
+        <template v-else-if="guide">
+          <p class="hint">{{ t('scenarios.guideLanguage', { language: guide.language }) }}</p>
+          <MarkdownView :source="guide.content" />
+        </template>
       </div>
 
       <div v-if="canWrite" class="section panel narrow">

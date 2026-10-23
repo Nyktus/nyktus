@@ -35,6 +35,8 @@ export function errorText(error: ApiError): string {
       return t('error.unprocessable');
     case 'dns_not_configured':
       return t('error.dns_not_configured');
+    case 'artifact_reveals_decoy':
+      return t('error.artifact_reveals_decoy');
     case 'rate_limited':
       return t('error.rate_limited');
     case 'unavailable':

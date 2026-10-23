@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Honeypot, Honeytoken, Scenario, Session } from '../api/generated';
+import type { Artifact, CatalogDeception, CatalogDeceptionSummary, Honeypot, Honeytoken, Scenario, Session } from '../api/generated';
 
 export interface Recorded {
   method: string;
@@ -139,6 +139,50 @@ export function scenario(overrides: Partial<Scenario> = {}): Scenario {
     deception_id: null,
     language: null,
     persona: null,
+    created_at: '2026-10-20T08:30:00Z',
+    updated_at: '2026-10-21T09:00:00Z',
+    ...overrides,
+  };
+}
+
+export function catalogSummary(overrides: Partial<CatalogDeceptionSummary> = {}): CatalogDeceptionSummary {
+  return {
+    id: 'browser-bookmarks',
+    category: 'data',
+    title: 'Browser bookmarks',
+    summary: 'An export of bookmarks with a link that leads to a honeytoken.',
+    techniques: ['T1217'],
+    engage_activities: ['EAC0005'],
+    ...overrides,
+  };
+}
+
+export function catalogDeception(overrides: Partial<CatalogDeception> = {}): CatalogDeception {
+  return {
+    ...catalogSummary(),
+    honeytokens: [{ key: 'portal', type: 'web_url', label: 'Portal link', techniques: ['T1217'], severity: 'high' }],
+    persona: [
+      { key: 'company', kind: 'text', label: 'Company', example: 'Acme Corp' },
+      { key: 'host', kind: 'host', label: 'Portal host', example: 'portal.acme.example' },
+    ],
+    secrets: [{ key: 'password', length: 16 }],
+    artifacts: [{ key: 'bookmarks', file_name: 'bookmarks.html', format: 'html' }],
+    ...overrides,
+  };
+}
+
+export const artifactId = 'a11fac70-1111-4222-8333-944444444444';
+
+export function artifact(overrides: Partial<Artifact> = {}): Artifact {
+  return {
+    id: artifactId,
+    scenario_id: scenarioId,
+    deception_artifact: 'bookmarks',
+    file_name: 'bookmarks.html',
+    format: 'html',
+    media_type: 'text/html',
+    size: 2048,
+    placement_notes: 'On the share \\\\fs01\\it.',
     created_at: '2026-10-20T08:30:00Z',
     updated_at: '2026-10-21T09:00:00Z',
     ...overrides,
