@@ -39,6 +39,7 @@ import (
 	"nyktus.org/nyktus/internal/trigger"
 	"nyktus.org/nyktus/internal/worker"
 	"nyktus.org/nyktus/migrations"
+	"nyktus.org/nyktus/web"
 )
 
 const usage = `Usage: nyktus <command> [flags]
@@ -296,6 +297,7 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 		OIDC:           provider,
 		OIDCGroups:     groups,
 		Catalog:        embedded.Deceptions(),
+		UI:             web.Dist(),
 	})
 	if err != nil {
 		_ = ln.Close()

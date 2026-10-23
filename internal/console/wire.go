@@ -66,6 +66,10 @@ type Options struct {
 	// Catalog holds the deceptions of the catalog, one directory each, such
 	// as those that the package nyktus.org/nyktus/catalog embeds.
 	Catalog fs.FS
+	// UI holds the files of the build of the web console, with index.html at
+	// its root. Without an index.html, as in a build that skipped the web
+	// console, the console serves the API only and logs a warning.
+	UI fs.FS
 }
 
 // signInOptionsOf answers what the sign-in page offers for the configuration. A
@@ -117,6 +121,13 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 	art := artifactapi.NewHandler(o.Logger, o.DB)
 	i := incidentapi.NewHandler(o.Logger, o.DB)
 	c := alertingapi.NewHandler(o.Logger, o.DB, o.Keys, sessions, o.Outbound)
+	var pages http.Handler
+	if o.UI != nil {
+		var uiErr error
+		if pages, uiErr = newUIHandler(o.UI); uiErr != nil {
+			o.Logger.WarnContext(ctx, "console: web console not embedded; the console serves the API only")
+		}
+	}
 	return NewHandler(Deps{
 		Logger:         o.Logger,
 		DB:             o.DB,
@@ -215,6 +226,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			RetryDelivery:      http.HandlerFunc(c.RetryDelivery),
 			IncidentDeliveries: http.HandlerFunc(c.IncidentDeliveries),
 		},
+		Fallback:       pages,
 		Origin:         o.ConsoleURL,
 		TrustedProxies: o.TrustedProxies,
 	}), nil

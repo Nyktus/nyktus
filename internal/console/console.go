@@ -66,6 +66,9 @@ type Deps struct {
 	Events Events
 	// AlertChannels manages the channels that alerts are delivered to.
 	AlertChannels AlertChannels
+	// Fallback answers GET and HEAD requests that match no route, with the pages
+	// of the web console. Nil if the binary does not contain it.
+	Fallback http.Handler
 	// Origin is the origin under which users reach the console, such as
 	// "https://nyktus.example.com". Requests that change state must come from it.
 	Origin string
@@ -315,6 +318,9 @@ func NewRouter(d Deps) *httpx.Router {
 	// Whoever reads incidents may see whether their alerts went out.
 	rt.Handle(http.MethodGet, "/api/v1/incidents/{id}/deliveries", httpx.Require("incidents:read"),
 		d.AlertChannels.IncidentDeliveries)
+	if d.Fallback != nil {
+		rt.Fallback(httpx.Public, d.Fallback)
+	}
 	return rt
 }
 

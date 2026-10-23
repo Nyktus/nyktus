@@ -29,8 +29,34 @@ TEST_DB_ENV := NYKTUS_TEST_DATABASE_URL='$(TEST_DB_URL)' NYKTUS_REQUIRE_DB_TESTS
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+# The web console is a Node.js project of its own (web/). Its build is embedded
+# into the server binary, so "build" runs it first; "go build" and "go test" work
+# without it and serve no pages.
+WEB_DIR := web
+
+$(WEB_DIR)/node_modules: $(WEB_DIR)/package-lock.json
+	cd $(WEB_DIR) && npm ci --ignore-scripts
+	touch $@
+
+.PHONY: web-build
+web-build: $(WEB_DIR)/node_modules ## Build the web console into web/dist
+	rm -rf $(WEB_DIR)/dist/*
+	cd $(WEB_DIR) && npm run build
+
+.PHONY: web-lint
+web-lint: $(WEB_DIR)/node_modules ## Type-check the web console
+	cd $(WEB_DIR) && npm run lint
+
+.PHONY: web-test
+web-test: $(WEB_DIR)/node_modules ## Run the tests of the web console
+	cd $(WEB_DIR) && npm test
+
+.PHONY: web-audit
+web-audit: $(WEB_DIR)/node_modules ## Report known vulnerabilities in the packages of the web console
+	cd $(WEB_DIR) && npm audit --audit-level=high
+
 .PHONY: build
-build: ## Build the nyktus and nyktus-sensor binaries into bin/
+build: web-build ## Build the web console, then the nyktus and nyktus-sensor binaries into bin/
 	go build -trimpath -o bin/nyktus ./cmd/nyktus
 	cd $(SENSOR_DIR) && go build -trimpath -o ../bin/nyktus-sensor ./cmd/nyktus-sensor
 
@@ -96,4 +122,4 @@ tidy: ## Verify that go.mod and go.sum are tidy
 	cd $(SENSOR_DIR) && go mod tidy -diff
 
 .PHONY: check
-check: lint test vuln tidy ## Run all checks that do not need a database
+check: lint test vuln tidy web-lint web-test web-audit ## Run all checks that do not need a database
