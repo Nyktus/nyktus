@@ -54,6 +54,8 @@ type Incident struct {
 	ID           string
 	ResourceType string
 	ResourceID   string
+	// ResourceName is the name of the resource when the incident opened.
+	ResourceName string
 	Status       Status
 	// EventSeverity and EventTechniques are what the events suggest: the
 	// highest severity and every technique of them.
@@ -156,12 +158,12 @@ func mapWriteError(err error) error {
 	return err
 }
 
-const incidentColumns = `id, resource_type, resource_id, status, severity, techniques, severity_override,
+const incidentColumns = `id, resource_type, resource_id, resource_name, status, severity, techniques, severity_override,
 	techniques_override, notes, event_count, first_event_at, last_event_at, opened_at, acknowledged_at, closed_at`
 
 func scanIncident(row pgx.Row) (Incident, error) {
 	var i Incident
-	err := row.Scan(&i.ID, &i.ResourceType, &i.ResourceID, &i.Status, &i.EventSeverity, &i.EventTechniques,
+	err := row.Scan(&i.ID, &i.ResourceType, &i.ResourceID, &i.ResourceName, &i.Status, &i.EventSeverity, &i.EventTechniques,
 		&i.SeverityOverride, &i.TechniquesOverride, &i.Notes, &i.EventCount, &i.FirstEventAt, &i.LastEventAt,
 		&i.OpenedAt, &i.AcknowledgedAt, &i.ClosedAt)
 	return i, err

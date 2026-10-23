@@ -144,8 +144,8 @@ func TestStore_Create_StoresEveryTypeAndSeverity(t *testing.T) {
 	// takes every level as well, and info as little as that of honeytokens.
 	for _, l := range severity.Levels {
 		_, err := d.owner.Exec(t.Context(), `
-INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method)
-VALUES ('honeytoken', gen_random_uuid(), 'web_url', $1, now(), now(), 'http', 'GET')`, l)
+INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method, resource_name)
+VALUES ('honeytoken', gen_random_uuid(), 'web_url', $1, now(), now(), 'http', 'GET', 'Name')`, l)
 		var pgErr *pgconn.PgError
 		switch {
 		case l == severity.Info && (!errors.As(err, &pgErr) || pgErr.ConstraintName != "events_severity_check"):

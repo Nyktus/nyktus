@@ -64,6 +64,7 @@ type incidentResponse struct {
 	ID                 string          `json:"id"`
 	ResourceType       string          `json:"resource_type"`
 	ResourceID         string          `json:"resource_id"`
+	ResourceName       string          `json:"resource_name"`
 	Status             incident.Status `json:"status"`
 	Severity           severity.Level  `json:"severity"`
 	EventSeverity      severity.Level  `json:"event_severity"`
@@ -93,6 +94,7 @@ func newIncidentResponse(i incident.Incident) incidentResponse {
 		ID:                 i.ID,
 		ResourceType:       i.ResourceType,
 		ResourceID:         i.ResourceID,
+		ResourceName:       i.ResourceName,
 		Status:             i.Status,
 		Severity:           i.Severity(),
 		EventSeverity:      i.EventSeverity,

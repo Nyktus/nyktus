@@ -65,7 +65,7 @@ func TestDNSRole_HasOnlyGrantedPrivileges(t *testing.T) {
 	pool := schematest.Open(t, dnsURL)
 	for _, statement := range []string{
 		"CREATE TABLE extra (id int)",
-		"INSERT INTO events (resource_type, resource_id, honeytoken_type, channel, dns_zone, dns_prefix, dns_qtype, dns_transport) VALUES ('honeytoken', gen_random_uuid(), 'dns', 'dns', 'd.example.com', '', 'A', 'udp')",
+		"INSERT INTO events (resource_type, resource_id, honeytoken_type, channel, dns_zone, dns_prefix, dns_qtype, dns_transport, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'dns', 'dns', 'd.example.com', '', 'A', 'udp', 'Name')",
 		"INSERT INTO event_jobs (event_id) VALUES (gen_random_uuid())",
 		"UPDATE honeytokens SET enabled = true",
 		recordRequest,
@@ -119,7 +119,7 @@ func TestSchema_ChecksEventsOfChannels(t *testing.T) {
 
 	pool := schematest.Open(t, schematest.New(t))
 	const insert = `INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method,
-	user_agent, dns_zone, dns_prefix, dns_qtype, dns_transport) VALUES ('honeytoken', gen_random_uuid(), 'dns', 'medium', now() - $8::interval, now(), $1, $2, $3, $4, $5, $6, $7)`
+	user_agent, dns_zone, dns_prefix, dns_qtype, dns_transport, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'dns', 'medium', now() - $8::interval, now(), $1, $2, $3, $4, $5, $6, $7, 'Name')`
 	httpRow := []any{"http", "GET", "", nil, nil, nil, nil, "0s"}
 	dnsRow := []any{"dns", nil, "", "d.example.com", "vpn", "A", "udp", "5m"}
 	with := func(row []any, i int, v any) []any {
@@ -166,6 +166,49 @@ func TestSchema_ChecksEventsOfChannels(t *testing.T) {
 	for name, row := range map[string][]any{"HTTP": httpRow, "DNS": dnsRow, "DNS without prefix labels": with(dnsRow, 4, "")} {
 		if _, err := pool.Exec(t.Context(), insert, row...); err != nil {
 			t.Errorf("valid %s row: %v", name, err)
+		}
+	}
+}
+
+// The names that an event copies from the inventory follow the rules of the
+// inventory, and a scenario has a name exactly when the event has a scenario.
+func TestSchema_ChecksTheNamesOfEvents(t *testing.T) {
+	t.Parallel()
+
+	pool := schematest.Open(t, schematest.New(t))
+	const insert = `INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method,
+	resource_name, scenario_id, scenario_name) VALUES ('honeytoken', gen_random_uuid(), 'web_url', 'medium', now(), now(), 'http', 'GET', $1, $2, $3)`
+	scenario := "00000000-0000-4000-8000-000000000001"
+	for _, tt := range []struct {
+		name       string
+		args       []any
+		constraint string
+	}{
+		{"empty name", []any{"", nil, nil}, "events_resource_name_check"},
+		{"long name", []any{strings.Repeat("a", 101), nil, nil}, "events_resource_name_check"},
+		{"name with padding", []any{" a", nil, nil}, "events_resource_name_check"},
+		{"control character in name", []any{"a\x07", nil, nil}, "events_resource_name_check"},
+		{"scenario without a name", []any{"Name", scenario, nil}, "events_scenario_name_check"},
+		{"name of a scenario that is none", []any{"Name", nil, "Scenario"}, "events_scenario_name_check"},
+		{"empty scenario name", []any{"Name", scenario, ""}, "events_scenario_name_check"},
+		{"long scenario name", []any{"Name", scenario, strings.Repeat("a", 101)}, "events_scenario_name_check"},
+		{"scenario name with padding", []any{"Name", scenario, "a "}, "events_scenario_name_check"},
+		{"control character in scenario name", []any{"Name", scenario, "a\x07"}, "events_scenario_name_check"},
+	} {
+		_, err := pool.Exec(t.Context(), insert, tt.args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23514" || pgErr.ConstraintName != tt.constraint {
+			t.Errorf("%s: error = %v, want a violation of %s", tt.name, err, tt.constraint)
+		}
+	}
+	for name, args := range map[string][]any{
+		"alone":                  {"Name", nil, nil},
+		"in a scenario":          {"Name", scenario, "Scenario"},
+		"names of the longest":   {strings.Repeat("a", 100), scenario, strings.Repeat("b", 100)},
+		"name with inner spaces": {"a b", nil, nil},
+	} {
+		if _, err := pool.Exec(t.Context(), insert, args...); err != nil {
+			t.Errorf("valid event %s: %v", name, err)
 		}
 	}
 }

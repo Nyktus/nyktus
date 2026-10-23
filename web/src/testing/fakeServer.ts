@@ -196,6 +196,7 @@ export function incident(overrides: Partial<Incident> = {}): Incident {
     id: incidentId,
     resource_type: 'scenario',
     resource_id: scenarioId,
+    resource_name: 'Stolen backup',
     status: 'open',
     severity: 'high',
     event_severity: 'high',

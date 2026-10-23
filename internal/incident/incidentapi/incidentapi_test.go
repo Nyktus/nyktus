@@ -101,9 +101,9 @@ func (f fixture) incident(t *testing.T, resource, status string, openedAt time.T
 	var id string
 	err := f.owner.QueryRow(t.Context(), `
 INSERT INTO incidents (resource_type, resource_id, status, severity, techniques, first_event_at, last_event_at,
-	opened_at, acknowledged_at, closed_at)
+	opened_at, acknowledged_at, closed_at, resource_name)
 VALUES ('honeytoken', $1, $2, 'medium', '{T1213}', $3, $3, $3,
-	CASE WHEN $2 = 'acknowledged' THEN $3::timestamptz END, CASE WHEN $2 = 'closed' THEN $3::timestamptz END)
+	CASE WHEN $2 = 'acknowledged' THEN $3::timestamptz END, CASE WHEN $2 = 'closed' THEN $3::timestamptz END, 'Name')
 RETURNING id`, resource, status, openedAt).Scan(&id)
 	if err != nil {
 		t.Fatalf("insert incident: %v", err)
@@ -125,16 +125,16 @@ func (f fixture) event(t *testing.T, resource, incident, channel string, occurre
 	case "http":
 		err = f.owner.QueryRow(t.Context(), `
 INSERT INTO events (resource_type, resource_id, honeytoken_type, techniques, severity, occurred_at, recorded_at, channel,
-	client_ip, method, user_agent, referer, accept_language, incident_id)
-VALUES ('honeytoken', $1, 'web_url', '{T1213}', 'high', $2, $2, 'http', '192.0.2.7', 'GET', 'curl/8.0', 'https://a.example.com/', 'de', $3)
+	client_ip, method, user_agent, referer, accept_language, incident_id, resource_name)
+VALUES ('honeytoken', $1, 'web_url', '{T1213}', 'high', $2, $2, 'http', '192.0.2.7', 'GET', 'curl/8.0', 'https://a.example.com/', 'de', $3, 'Name')
 RETURNING id`, resource, occurredAt, incidentID).Scan(&id)
 	case "sensor":
 		err = f.owner.QueryRow(t.Context(), `
 INSERT INTO events (resource_type, resource_id, techniques, severity, occurred_at, recorded_at, channel, client_ip,
 	sensor_session_id, sensor_service, sensor_event_type, sensor_port, sensor_duration_ms, sensor_client_version,
-	sensor_database, sensor_application_name, sensor_base_dn, sensor_filter, incident_id)
+	sensor_database, sensor_application_name, sensor_base_dn, sensor_filter, incident_id, resource_name)
 VALUES ('honeypot', $1, '{T1110,T1021.004}', 'critical', $2, $2, 'sensor', '198.51.100.4', gen_random_uuid(), 'ssh',
-	'login_attempt', 22, 4200, 'SSH-2.0-OpenSSH_9.6', NULL, NULL, NULL, NULL, $3)
+	'login_attempt', 22, 4200, 'SSH-2.0-OpenSSH_9.6', NULL, NULL, NULL, NULL, $3, 'Name')
 RETURNING id`, resource, occurredAt, incidentID).Scan(&id)
 		if err == nil {
 			_, err = f.owner.Exec(t.Context(), `
@@ -144,8 +144,8 @@ INSERT INTO event_attempts (event_id, ordinal, username, password_length, key_fi
 	default:
 		err = f.owner.QueryRow(t.Context(), `
 INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, client_ip,
-	dns_zone, dns_prefix, dns_qtype, dns_transport, incident_id)
-VALUES ('honeytoken', $1, 'dns', 'medium', $2, $2, 'dns', NULL, 'd.example.com', 'vpn', 'AAAA', 'udp', $3)
+	dns_zone, dns_prefix, dns_qtype, dns_transport, incident_id, resource_name)
+VALUES ('honeytoken', $1, 'dns', 'medium', $2, $2, 'dns', NULL, 'd.example.com', 'vpn', 'AAAA', 'udp', $3, 'Name')
 RETURNING id`, resource, occurredAt, incidentID).Scan(&id)
 	}
 	if err != nil {
@@ -228,7 +228,7 @@ func TestGetIncident(t *testing.T) {
 
 	rec := f.serve(t, f.h.GetIncident, http.MethodGet, "/", id, "")
 	got := decode[incidentResponse](t, rec)
-	if rec.Code != http.StatusOK || got.ID != id || got.ResourceID != resourceA || got.Status != "open" || got.Severity != "medium" ||
+	if rec.Code != http.StatusOK || got.ID != id || got.ResourceID != resourceA || got.ResourceName != "Name" || got.Status != "open" || got.Severity != "medium" ||
 		!slices.Equal(got.Techniques, []string{"T1213"}) || got.SeverityOverride != nil || got.TechniquesOverride != nil || got.EventCount != 1 {
 		t.Errorf("GET = %d %s", rec.Code, rec.Body)
 	}
@@ -498,14 +498,14 @@ func TestResponses_MatchTheSpecification(t *testing.T) {
 	session := f.event(t, resourceA, incidentID, "sensor", time.Now())
 	var scenarioIncident, scenarioEvent string
 	if err := f.owner.QueryRow(t.Context(), `
-INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at)
-VALUES ('scenario', $1, 'low', now(), now()) RETURNING id`, resourceB).Scan(&scenarioIncident); err != nil {
+INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, resource_name)
+VALUES ('scenario', $1, 'low', now(), now(), 'Name') RETURNING id`, resourceB).Scan(&scenarioIncident); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.owner.QueryRow(t.Context(), `
 INSERT INTO events (resource_type, resource_id, scenario_id, honeytoken_type, severity, occurred_at, recorded_at, channel,
-	method, incident_id)
-VALUES ('honeytoken', $1, $2, 'web_image', 'low', now(), now(), 'http', 'HEAD', $3) RETURNING id`, resourceA, resourceB, scenarioIncident).Scan(&scenarioEvent); err != nil {
+	method, incident_id, resource_name, scenario_name)
+VALUES ('honeytoken', $1, $2, 'web_image', 'low', now(), now(), 'http', 'HEAD', $3, 'Name', 'Scenario') RETURNING id`, resourceA, resourceB, scenarioIncident).Scan(&scenarioEvent); err != nil {
 		t.Fatal(err)
 	}
 
