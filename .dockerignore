@@ -1,0 +1,11 @@
+.git
+.github
+.localdev
+.env
+.env.*
+bin
+docs
+sensor
+web/node_modules
+web/dist/*
+!web/dist/.gitkeep

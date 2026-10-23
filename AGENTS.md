@@ -116,6 +116,7 @@ Never weaken these without an explicit decision by a maintainer:
 | `make lint` | Linters and formatting checks |
 | `make fmt` | Format the code |
 | `make check` | Lint, unit tests, vulnerability scan and `go.mod` check |
+| `make dev-up` / `make dev-down` / `make dev-reset` | Start, stop or reset the development environment in `deploy/dev/` (Docker Compose: PostgreSQL and all server roles, built from the working tree) |
 | `make build` | Build the web console, then `bin/nyktus` and `bin/nyktus-sensor` |
 | `make web-build` / `web-lint` / `web-test` / `web-audit` | Build, type-check and test the web console in `web/`, and audit its packages (need Node.js) |
 

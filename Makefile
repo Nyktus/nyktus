@@ -97,6 +97,28 @@ db-up: ## Start the disposable test database
 db-down: ## Stop and remove the test database
 	docker stop $(TEST_DB_CONTAINER)
 
+# The development environment: PostgreSQL and every server role, built from the
+# working tree. The encryption key is generated once and kept in a file that Git
+# ignores.
+DEV_COMPOSE := docker compose --file deploy/dev/compose.yaml
+
+deploy/dev/.env:
+	umask 077 && echo "NYKTUS_ENCRYPTION_KEYS=1:$$(openssl rand -base64 32)" > $@
+
+.PHONY: dev-up
+dev-up: deploy/dev/.env ## Build and start the development environment (console on http://localhost:8080)
+	$(DEV_COMPOSE) up --build --detach --wait
+	@echo "Setup URL of the first administrator, if none exists yet:"
+	@$(DEV_COMPOSE) logs console | grep -o 'http://localhost:8080/setup#token=[^ ]*' | tail -1 || true
+
+.PHONY: dev-down
+dev-down: ## Stop the development environment and keep its data
+	$(DEV_COMPOSE) down
+
+.PHONY: dev-reset
+dev-reset: ## Stop the development environment and delete its data
+	$(DEV_COMPOSE) down --volumes
+
 .PHONY: lint
 lint: ## Run linters and formatting checks
 	$(GOLANGCI_LINT) run
