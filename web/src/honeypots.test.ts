@@ -186,7 +186,8 @@ describe('a honeypot', () => {
     const s = fakeServer({ 'GET /api/v1/session': () => json(200, sessionBody('viewer')), [`GET ${detail}`]: () => json(200, honeypot()) });
     const { wrapper } = await boot(s, path);
     expect(wrapper.find('form').exists()).toBe(false);
-    expect(wrapper.findAll('button').map((b) => b.text())).toEqual(['Sign out']);
+    // The frame has two buttons of its own: the one that opens the menu on a narrow screen, and the sign-out.
+    expect(wrapper.findAll('button').map((b) => b.text())).toEqual(['Menu', 'Sign out']);
   });
 
   test('cannot change its service', async () => {

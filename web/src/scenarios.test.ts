@@ -167,7 +167,8 @@ describe('a scenario', () => {
     const s = server('viewer', { 'GET /api/v1/honeytokens': () => json(200, { honeytokens: [honeytoken({ scenario_id: scenarioId })] }) });
     const { wrapper } = await boot(s, path);
     expect(wrapper.find('form').exists()).toBe(false);
-    expect(wrapper.findAll('button').map((b) => b.text())).toEqual(['Sign out']);
+    // The frame has two buttons of its own: the one that opens the menu on a narrow screen, and the sign-out.
+    expect(wrapper.findAll('button').map((b) => b.text())).toEqual(['Menu', 'Sign out']);
   });
 
   test('sends only what changed', async () => {
