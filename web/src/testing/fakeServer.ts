@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Artifact, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
+import type { AlertChannel, AlertDelivery, Artifact, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
 
 export interface Recorded {
   method: string;
@@ -26,7 +26,7 @@ export function failure(status: number, code: string, headers: Record<string, st
 
 export const noContent = (): Response => new Response(null, { status: 204 });
 
-export function sessionBody(role: 'admin' | 'user' | 'viewer' = 'admin', name = 'Ada Admin'): Session {
+export function sessionBody(role: 'admin' | 'user' | 'viewer' = 'admin', name = 'Ada Admin', method: 'password' | 'oidc' = 'password'): Session {
   return {
     user: {
       id: '8d1c0f0e-1111-4222-8333-944444444444',
@@ -35,7 +35,7 @@ export function sessionBody(role: 'admin' | 'user' | 'viewer' = 'admin', name = 
       role,
       status: 'active',
       totp_enabled: false,
-      sign_in_method: 'password',
+      sign_in_method: method,
     },
     idle_expires_at: '2026-10-22T20:00:00Z',
     expires_at: '2026-10-23T08:00:00Z',
@@ -275,4 +275,47 @@ export function dnsEvent(overrides: Partial<Event> = {}): Event {
     dns: { zone: 't.example.net', prefix: 'abcdefghijklmnopqrstuvwxyz', qtype: 'A', transport: 'udp' },
     ...overrides,
   });
+}
+
+export const channelId = 'cafe0000-1111-4222-8333-944444444444';
+
+export function alertChannel(overrides: Partial<AlertChannel> = {}): AlertChannel {
+  return {
+    id: channelId,
+    name: 'SOAR',
+    type: 'webhook',
+    enabled: true,
+    target: 'https://soar.example.com',
+    header_name: 'Authorization',
+    recipients: null,
+    created_at: '2026-10-20T08:30:00Z',
+    updated_at: '2026-10-21T09:00:00Z',
+    ...overrides,
+  };
+}
+
+export function emailChannel(overrides: Partial<AlertChannel> = {}): AlertChannel {
+  return alertChannel({ id: 'cafe0000-2222-4222-8333-944444444444', name: 'SOC mailbox', type: 'email', target: null, header_name: null, recipients: ['soc@example.com', 'it@example.com'], ...overrides });
+}
+
+export const deliveryId = 'de11be00-1111-4222-8333-944444444444';
+
+export function alertDelivery(overrides: Partial<AlertDelivery> = {}): AlertDelivery {
+  return {
+    id: deliveryId,
+    incident_id: incidentId,
+    channel_id: channelId,
+    channel_type: 'webhook',
+    channel_name: 'SOAR',
+    status: 'delivered',
+    attempts: 1,
+    next_attempt_at: null,
+    last_attempt_at: '2026-10-22T07:00:10Z',
+    last_status_code: 200,
+    last_error: null,
+    last_duration_ms: 120,
+    delivered_at: '2026-10-22T07:00:10Z',
+    created_at: '2026-10-22T07:00:05Z',
+    ...overrides,
+  };
 }

@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { useId, useTemplateRef, watch } from 'vue';
 import { t } from '../i18n';
 
-const props = defineProps<{ open: boolean; title: string; confirm: string; busy?: boolean }>();
+const props = defineProps<{ open: boolean; title: string; confirm: string; busy?: boolean; neutral?: boolean }>();
 const emit = defineEmits<{ confirm: []; cancel: [] }>();
 
 const dialog = useTemplateRef<HTMLDialogElement>('dialog');
@@ -50,7 +50,7 @@ watch(
     <div class="body"><slot /></div>
     <div class="actions">
       <button class="button button-ghost" type="button" :disabled="busy" @click="cancel">{{ t('common.cancel') }}</button>
-      <button class="button danger" type="button" :disabled="busy" @click="emit('confirm')">{{ confirm }}</button>
+      <button class="button" :class="neutral ? 'button-primary' : 'danger'" type="button" :disabled="busy" @click="emit('confirm')">{{ confirm }}</button>
     </div>
   </dialog>
 </template>

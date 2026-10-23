@@ -122,6 +122,24 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'artifacts.title', permission: 'artifacts:read' },
   },
   {
+    path: '/alert-channels',
+    name: 'alert-channels',
+    component: () => import('./views/AlertChannelsView.vue'),
+    meta: { title: 'alerts.title', permission: 'alert_channels:read' },
+  },
+  {
+    path: '/alert-channels/new',
+    name: 'alert-channel-new',
+    component: () => import('./views/AlertChannelNewView.vue'),
+    meta: { title: 'alerts.create.title', permission: 'alert_channels:write' },
+  },
+  {
+    path: '/alert-channels/:id',
+    name: 'alert-channel',
+    component: () => import('./views/AlertChannelView.vue'),
+    meta: { title: 'alerts.title', permission: 'alert_channels:read' },
+  },
+  {
     path: '/forbidden',
     name: 'forbidden',
     component: () => import('./views/ForbiddenView.vue'),

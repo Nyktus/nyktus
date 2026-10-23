@@ -15,6 +15,15 @@ export type ErrorKind =
   | 'wrong_password'
   | 'wrong_code'
   | 'invalid_state'
+  | 'name_taken'
+  | 'too_many_alert_channels'
+  | 'alert_channel_enabled'
+  | 'test_pending'
+  | 'delivery_not_dead'
+  | 'target_not_allowed'
+  | 'header_not_allowed'
+  | 'url_not_allowed'
+  | 'recipients_not_allowed'
   | 'reauthentication_required'
   | 'unauthenticated'
   | 'forbidden'
@@ -61,10 +70,19 @@ const codes: Record<number, Partial<Record<string, ErrorKind>>> = {
   },
   409: {
     invalid_state: 'invalid_state',
+    name_taken: 'name_taken',
+    too_many_alert_channels: 'too_many_alert_channels',
+    alert_channel_enabled: 'alert_channel_enabled',
+    test_pending: 'test_pending',
+    delivery_not_dead: 'delivery_not_dead',
   },
   422: {
     dns_not_configured: 'dns_not_configured',
     artifact_reveals_decoy: 'artifact_reveals_decoy',
+    target_not_allowed: 'target_not_allowed',
+    header_not_allowed: 'header_not_allowed',
+    url_not_allowed: 'url_not_allowed',
+    recipients_not_allowed: 'recipients_not_allowed',
   },
 };
 
