@@ -33,11 +33,15 @@ A new installation has no accounts. The first administrator is created through a
 
    The log, which goes to standard error, only records `console: setup pending` with the expiry time, never the URL. In a container, both streams usually end up in the container log, for example in `docker logs`.
 
-2. Create the administrator with the token from the URL, the part after `#token=`. Send a request to the setup endpoint of the console API. Put the request into a file that only you can read, so that the password does not appear in your shell history:
+2. Open the setup URL in a browser. The page asks for the email address, the display name and the password of the first administrator, with the password twice. The administrator is active when the page confirms it, and [signs in](sign-in.md) with the email address and the password. Further accounts are created by administrators, see [Managing accounts](users.md).
+
+   The page takes the token out of the address as soon as it opens, so that it does not stay in the history of the browser, and sends it in the body of the request. If you reload the page, the token is gone: open the setup URL again.
+
+   Without a browser, send a request to the setup endpoint of the console API instead. Put the request into a file that only you can read, so that the password does not appear in your shell history:
 
    ```json
    {
-     "token": "<token from the setup URL>",
+     "token": "<token from the setup URL, the part after #token=>",
      "email": "admin@example.com",
      "display_name": "Ada Admin",
      "password": "<at least 12 characters>"
@@ -51,7 +55,7 @@ A new installation has no accounts. The first administrator is created through a
    rm setup.json
    ```
 
-   A successful request answers with `201 Created` and the new account. The administrator is active and [signs in](sign-in.md) with the email address and the password. Further accounts are created by administrators, see [Managing accounts](users.md).
+   A successful request answers with `201 Created` and the new account.
 
 The password must have between 12 and 128 characters. The email address is stored in lower case.
 

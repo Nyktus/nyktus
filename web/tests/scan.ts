@@ -28,14 +28,14 @@ export const rules: Rule[] = [
   {
     name: 'localStorage outlives the session and is read by every script of the origin',
     pattern: /\blocalStorage\b/,
-    allowed: {},
+    allowed: { 'i18n/preference.ts': 'it keeps the language the user chose, which is neither a secret nor a credential' },
   },
   { name: 'sessionStorage is read by every script of the origin', pattern: /\bsessionStorage\b/ },
   { name: 'indexedDB is read by every script of the origin', pattern: /\bindexedDB\b/ },
   {
     name: 'requests go through the client, which maps their errors',
     pattern: /\bfetch\s*\(/,
-    allowed: {},
+    allowed: { 'api/client.ts': 'it is the client' },
   },
   { name: 'XMLHttpRequest bypasses the client', pattern: /\bXMLHttpRequest\b/ },
   { name: 'WebSocket is not part of the API', pattern: /\bWebSocket\b/ },

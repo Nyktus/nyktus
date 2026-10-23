@@ -26,13 +26,15 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"nyktus.org/nyktus/api"
+	"nyktus.org/nyktus/internal/auth/access"
+	"nyktus.org/nyktus/internal/user"
 )
 
 func main() {
 	out := flag.String("out", "web/src/api/generated.ts", "write the types to this file")
 	flag.Parse()
 
-	b, err := generate(api.OpenAPI())
+	b, err := generate(api.OpenAPI(), roleGrants())
 	if err == nil {
 		err = os.WriteFile(*out, b, 0o644) //nolint:gosec // A source file of the repository, readable by everyone.
 	}
@@ -158,8 +160,34 @@ type document struct {
 // methods are the methods of an operation in the order in which they are listed.
 var methods = []string{"get", "put", "post", "patch", "delete", "head"}
 
-// generate returns the TypeScript module for the specification.
-func generate(spec []byte) ([]byte, error) {
+// grants lists the permissions of each role, in the order in which the roles
+// are generated.
+type grants []struct {
+	role        string
+	permissions []string
+}
+
+// roleGrants returns what the server grants to each role.
+func roleGrants() grants {
+	var out grants
+	for _, role := range []user.Role{user.RoleAdmin, user.RoleUser, user.RoleViewer} {
+		g := struct {
+			role        string
+			permissions []string
+		}{role: string(role)}
+		for _, p := range access.Permissions() {
+			if access.Allowed(role, p) {
+				g.permissions = append(g.permissions, string(p))
+			}
+		}
+		out = append(out, g)
+	}
+	return out
+}
+
+// generate returns the TypeScript module for the specification and the grants
+// of the roles.
+func generate(spec []byte, roles grants) ([]byte, error) {
 	var doc document
 	if err := yaml.Unmarshal(spec, &doc); err != nil {
 		return nil, fmt.Errorf("parse specification: %w", err)
@@ -189,7 +217,28 @@ func generate(spec []byte) ([]byte, error) {
 		return nil, err
 	}
 	b.WriteString(ops)
+	b.WriteString("\n")
+	b.WriteString(permissions(roles))
 	return b.Bytes(), nil
+}
+
+// permissions returns what each role may do. The server decides; the console
+// uses the table to hide what a role cannot use.
+func permissions(roles grants) string {
+	var b strings.Builder
+	b.WriteString("/** What each role may do. The server decides; the console only hides what a role cannot use. */\n")
+	b.WriteString("export const rolePermissions = {\n")
+	for _, g := range roles {
+		quoted := make([]string, len(g.permissions))
+		for i, p := range g.permissions {
+			quoted[i] = "'" + p + "'"
+		}
+		fmt.Fprintf(&b, "  %s: [%s],\n", g.role, strings.Join(quoted, ", "))
+	}
+	b.WriteString("} as const;\n\n")
+	b.WriteString("export type Role = keyof typeof rolePermissions;\n\n")
+	b.WriteString("export type Permission = (typeof rolePermissions)[Role][number];\n")
+	return b.String()
 }
 
 // declaration returns the declaration of a schema of the components: an

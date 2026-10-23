@@ -2,6 +2,14 @@
 
 Users sign in to the console with their email address and password, and with a code if they set up a [second factor](#second-factor), or through your [identity provider](#identity-provider) with OpenID Connect. A successful sign-in starts a session, which the browser keeps in a cookie.
 
+## The web console
+
+The server serves the web console at the address of `NYKTUS_CONSOLE_URL`; open that address in a browser. The sign-in page offers what the server is set up for, see [What the sign-in page offers](#what-the-sign-in-page-offers): the form for the email address and password, with a second step for the code of an authenticator app or a recovery code, and the button for the identity provider. The language of the console follows the browser, German or English, and can be changed in the header. The pages for the [first start](first-start.md), for the [activation of an account and for the reset of a password](users.md) are part of it as well. The console keeps nothing but the choice of language in the browser; the session is a cookie that scripts cannot read. When the server does not answer as the console asks whether you are signed in, the console does not send you to the sign-in page, because that says nothing about your session: it says so and offers to ask again.
+
+If a page tells you that it was opened at an address other than the one the server expects, open the console at the address of `NYKTUS_CONSOLE_URL`, see [Reverse proxy](#reverse-proxy).
+
+A binary that was built without the web console, as `go build` does, serves the API only and logs a warning when it starts. The releases contain the web console.
+
 To sign in without the web console, for example to check the installation, send the address and password to the API and keep the cookie:
 
 ```sh

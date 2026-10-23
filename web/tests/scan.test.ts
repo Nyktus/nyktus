@@ -11,9 +11,10 @@ const src = join(import.meta.dirname, '..', 'src');
 function sources(): Record<string, string> {
   const files: Record<string, string> = {};
   for (const name of readdirSync(src, { recursive: true, encoding: 'utf8' })) {
-    // The tests name the constructs that the rules forbid, and the generated
-    // types hold the paths of the API.
-    if (/\.(ts|vue)$/.test(name) && !name.endsWith('.test.ts') && !name.endsWith('generated.ts')) {
+    // The tests name the constructs that the rules forbid, the helpers of the tests
+    // clear the storage, and the generated types hold the paths of the API.
+    const test = name.endsWith('.test.ts') || name.startsWith('testing/') || name.endsWith('generated.ts');
+    if (/\.(ts|vue)$/.test(name) && !test) {
       files[name] = readFileSync(join(src, name), 'utf8');
     }
   }

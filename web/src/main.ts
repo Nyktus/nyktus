@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createApp } from 'vue';
-import App from './App.vue';
+import { createConsole } from './app';
+import './styles/fonts.css';
+import './styles/tokens.css';
+import './styles/base.css';
 
-createApp(App).mount('#app');
+createConsole().app.mount('#app');
