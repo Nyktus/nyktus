@@ -8,6 +8,7 @@ import { computed, onMounted, ref } from 'vue';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
 import { errorText } from '../api/messages';
+import DocsHint from '../components/DocsHint.vue';
 import TimeStamp from '../components/TimeStamp.vue';
 import { t } from '../i18n';
 import { parseMetrics, type Family } from '../metrics';
@@ -48,7 +49,7 @@ onMounted(load);
     <div class="page-head">
       <div>
         <h1>{{ t('metrics.title') }}</h1>
-        <p class="lede">{{ t('metrics.intro') }}</p>
+        <DocsHint />
       </div>
       <button class="button button-ghost" type="button" :disabled="loading" @click="load">{{ t('common.refresh') }}</button>
     </div>
@@ -88,11 +89,6 @@ onMounted(load);
         </div>
       </div>
 
-      <p v-if="parsed.other.length > 0" class="notice" role="status">{{ t('metrics.other', { count: parsed.other.length }) }}</p>
-      <details class="section panel">
-        <summary>{{ t('metrics.raw') }}</summary>
-        <pre class="mono raw">{{ raw }}</pre>
-      </details>
     </template>
   </section>
 </template>
@@ -106,19 +102,5 @@ onMounted(load);
 
 .label {
   display: block;
-}
-
-.raw {
-  max-height: 24rem;
-  margin: 0.75rem 0 0;
-  overflow: auto;
-  font-size: 0.8125rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-summary {
-  cursor: pointer;
-  font-weight: 600;
 }
 </style>

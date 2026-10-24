@@ -64,7 +64,8 @@ describe('a server that does not answer when the page asks for the session', () 
     await wrapper.get('button').trigger('click');
     await flushPromises();
     await arrive(router, 'home');
-    expect(wrapper.text()).toContain('Signed in as Ada Admin.');
+    expect(wrapper.get('h1').text()).toBe('Overview');
+    expect(wrapper.get('.who').text()).toContain('Ada Admin');
   });
 
   test('sends the user to sign in when the server then says that there is no session', async () => {
@@ -99,8 +100,9 @@ describe('signing in with a password', () => {
     await type(wrapper, '#password', 'a long password');
     await submit(wrapper);
     await arrive(router, 'home');
-    expect(wrapper.text()).toContain('Signed in as Ada Admin.');
-    expect(wrapper.text()).toContain('Role: Administrator');
+    expect(wrapper.get('h1').text()).toBe('Overview');
+    expect(wrapper.get('.who').text()).toContain('Ada Admin');
+    expect(wrapper.get('.who').text()).toContain('Administrator');
     const posts = s.requests.filter((r) => r.method === 'POST');
     expect(posts).toHaveLength(1);
     expect(posts[0]?.body).toEqual({ email: 'ada@example.com', password: 'a long password' });
@@ -405,10 +407,11 @@ describe('a user who is signed in', () => {
     expect(router.currentRoute.value.fullPath).toBe('/');
   });
 
-  test('chooses the language, which the page then speaks', async () => {
-    const { wrapper } = await boot(server());
-    await wrapper.get('select').setValue('de');
-    expect(wrapper.get('h1').text()).toBe('\u00DCbersicht');
+  test('chooses the language on the account page, which the page then speaks', async () => {
+    const { wrapper } = await boot(server(), '/account');
+    expect(wrapper.find('header select').exists(), 'the frame has no language choice').toBe(false);
+    await wrapper.get('#language').setValue('de');
+    expect(wrapper.get('h1').text()).toBe('Ihr Konto');
     expect(document.documentElement.lang).toBe('de');
     expect(wrapper.get('.account button').text()).toBe('Abmelden');
   });

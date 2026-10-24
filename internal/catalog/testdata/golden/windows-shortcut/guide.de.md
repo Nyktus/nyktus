@@ -11,7 +11,7 @@ Die Datei `Portal.url` ist eine Windows-Verknüpfung zur URL `https://t.example.
 
 ## Testen
 
-Öffnen Sie die Verknüpfung auf einem Rechner mit Zugang zum Internet. Innerhalb einer Minute zeigt das Scenario einen Incident. Schließen Sie den Incident nach dem Test.
+Öffnen Sie die Verknüpfung auf einem Rechner mit Zugang zum Internet. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
 ## Grenzen
 

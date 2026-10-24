@@ -107,6 +107,12 @@ describe('every rule fires on a violation', () => {
     },
   );
 
+  test('the address of the documentation is allowed in its own file and nowhere else', () => {
+    const code = "export const docsUrl = 'https://docs.nyktus.org';";
+    expect(scan({ 'docs.ts': code })).toEqual([]);
+    expect(scan({ 'other.ts': code }).map((v) => v.rule)).toContain('the console loads nothing from another origin');
+  });
+
   test('a link with rel passes', () => {
     expect(scan({ 'a.vue': '<a href="/x" target="_blank" rel="noopener noreferrer">x</a>' })).toEqual([]);
   });

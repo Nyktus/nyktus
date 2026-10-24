@@ -10,6 +10,7 @@ import { ApiError } from '../api/errors';
 import type { APIKey } from '../api/generated';
 import { errorText } from '../api/messages';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import DocsHint from '../components/DocsHint.vue';
 import TimeStamp from '../components/TimeStamp.vue';
 import { t } from '../i18n';
 import { session } from '../session';
@@ -67,7 +68,7 @@ async function revoke(): Promise<void> {
     <div class="page-head">
       <div>
         <h1>{{ t('apiKeys.title') }}</h1>
-        <p class="lede">{{ t('apiKeys.intro') }}</p>
+        <DocsHint />
       </div>
       <RouterLink v-if="canWrite" class="button button-primary" :to="{ name: 'api-key-new' }">{{ t('apiKeys.new') }}</RouterLink>
     </div>

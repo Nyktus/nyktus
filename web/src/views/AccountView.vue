@@ -14,7 +14,7 @@ import NewPasswordFields from '../components/NewPasswordFields.vue';
 import QrCode from '../components/QrCode.vue';
 import RecoveryCodes from '../components/RecoveryCodes.vue';
 import TimeStamp from '../components/TimeStamp.vue';
-import { t } from '../i18n';
+import { languageNames, locale, locales, setLocale, t, type Locale } from '../i18n';
 import { checkNewPassword, passwordLength } from '../session/passwordRules';
 
 type Confirmation = OperationTypes['removeTOTP']['body'];
@@ -28,6 +28,14 @@ const error = ref<string | undefined>();
 const totpEnabled = ref(false);
 
 const local = computed(() => user.value?.sign_in_method === 'password');
+
+function chooseLocale(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value;
+  const chosen = locales.find((l) => l === value);
+  if (chosen !== undefined) {
+    setLocale(chosen);
+  }
+}
 
 function show(failure: unknown): string {
   return errorText(failure instanceof ApiError ? failure : new ApiError('server', 0));
@@ -201,6 +209,16 @@ function refused(failure: ApiError): void {
       </div>
     </div>
 
+    <div class="section panel">
+      <h2>{{ t('account.language.title') }}</h2>
+      <div class="field language">
+        <label for="language">{{ t('account.language.label') }}</label>
+        <select id="language" :value="locale" @change="chooseLocale">
+          <option v-for="l in locales" :key="l" :value="l" :lang="l">{{ languageNames[l as Locale] }}</option>
+        </select>
+      </div>
+    </div>
+
     <p v-if="loading" role="status">{{ t('app.loading') }}</p>
     <p v-else-if="error" class="notice notice-error" role="alert">{{ error }}</p>
 
@@ -210,7 +228,6 @@ function refused(failure: ApiError): void {
       <template v-else>
         <div class="section panel">
           <h2>{{ t('account.password.title') }}</h2>
-          <p class="hint">{{ t('account.password.hint') }}</p>
           <p v-if="passwordChanged" class="notice notice-ok" role="status">{{ t('account.password.done') }}</p>
           <p v-if="passwordError" class="notice notice-error" role="alert">{{ passwordError }}</p>
           <form class="stack" @submit.prevent="changePassword">
@@ -270,7 +287,6 @@ function refused(failure: ApiError): void {
 
           <template v-else>
             <p v-if="setupExpired" class="notice notice-error" role="alert">{{ t('account.setup.expired') }}</p>
-            <p>{{ t('account.factor.off') }}</p>
             <div class="actions-row">
               <button class="button button-primary" type="button" @click="beginning = true">{{ setupExpired ? t('account.setup.restart') : t('account.factor.setup') }}</button>
             </div>
@@ -327,6 +343,10 @@ function refused(failure: ApiError): void {
 <style scoped>
 .narrow {
   max-width: 44rem;
+}
+
+.language {
+  max-width: 16rem;
 }
 
 .setup {

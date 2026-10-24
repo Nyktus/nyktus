@@ -96,7 +96,7 @@ describe('the list of alert channels', () => {
 
   test('offers a new channel to an administrator', async () => {
     const { wrapper } = await boot(server(), '/alert-channels');
-    expect(wrapper.get('.page-head a').attributes('href')).toBe('/alert-channels/new');
+    expect(wrapper.get('.page-head a.button').attributes('href')).toBe('/alert-channels/new');
   });
 
   test('says so when there are none, and when they cannot be loaded', async () => {

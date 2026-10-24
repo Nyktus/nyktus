@@ -10,6 +10,7 @@ import { ApiError } from '../api/errors';
 import type { CatalogDeceptionSummary } from '../api/generated';
 import { errorText } from '../api/messages';
 import { locale, t } from '../i18n';
+import DocsHint from '../components/DocsHint.vue';
 
 const deceptions = ref<CatalogDeceptionSummary[]>([]);
 const loaded = ref(false);
@@ -38,7 +39,7 @@ watch(locale, load);
     <div class="page-head">
       <div>
         <h1>{{ t('catalog.title') }}</h1>
-        <p class="lede">{{ t('catalog.intro') }}</p>
+        <DocsHint />
       </div>
     </div>
 

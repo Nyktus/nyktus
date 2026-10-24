@@ -11,7 +11,7 @@ Die Datei `config` ist eine SSH-Client-Konfiguration. Sie leitet jede Verbindung
 
 ## Testen
 
-Führen Sie `ssh -F config jump` auf einem Rechner aus, der Namen über das Internet auflöst. Innerhalb einer Minute zeigt das Scenario einen Incident. Schließen Sie den Incident nach dem Test.
+Führen Sie `ssh -F config jump` auf einem Rechner aus, der Namen über das Internet auflöst. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
 ## Grenzen
 

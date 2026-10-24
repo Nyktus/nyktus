@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { api } from '../api/client';
 import type { Incident } from '../api/generated';
+import DocsHint from '../components/DocsHint.vue';
 import IncidentStatusBadge from '../components/IncidentStatusBadge.vue';
 import ResourceRef from '../components/ResourceRef.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
@@ -78,7 +79,7 @@ watch(list.items, (incidents) => void names.resolve(incidents));
     <div class="page-head">
       <div>
         <h1>{{ t('incidents.title') }}</h1>
-        <p class="lede">{{ t('incidents.intro') }}</p>
+        <DocsHint />
       </div>
       <button class="button button-ghost" type="button" :disabled="list.loading.value" @click="refresh">{{ t('incidents.refresh') }}</button>
     </div>

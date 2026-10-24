@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, onMounted, ref, watch } from 'vue';
 import { api } from '../api/client';
 import type { Honeytoken } from '../api/generated';
+import DocsHint from '../components/DocsHint.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
 import TimeStamp from '../components/TimeStamp.vue';
@@ -41,7 +42,7 @@ watch([type, state], list.reload);
     <div class="page-head">
       <div>
         <h1>{{ t('honeytokens.title') }}</h1>
-        <p class="lede">{{ t('honeytokens.intro') }}</p>
+        <DocsHint />
       </div>
       <RouterLink v-if="canWrite" class="button button-primary" :to="{ name: 'honeytoken-new' }">{{ t('honeytokens.new') }}</RouterLink>
     </div>

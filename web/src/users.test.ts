@@ -82,7 +82,7 @@ describe('the list of accounts', () => {
 
   test('offers a new account to an administrator, and is in the navigation', async () => {
     const { wrapper } = await boot(server(), '/users');
-    expect(wrapper.get('.page-head a').attributes('href')).toBe('/users/new');
+    expect(wrapper.get('.page-head a.button').attributes('href')).toBe('/users/new');
     expect(wrapper.findAll('nav a').map((a) => a.text())).toContain('Accounts');
   });
 

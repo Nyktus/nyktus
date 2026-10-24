@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, onMounted } from 'vue';
 import { api } from '../api/client';
 import type { Scenario } from '../api/generated';
+import DocsHint from '../components/DocsHint.vue';
 import TimeStamp from '../components/TimeStamp.vue';
 import { t } from '../i18n';
 import { session } from '../session';
@@ -27,7 +28,7 @@ onMounted(list.reload);
     <div class="page-head">
       <div>
         <h1>{{ t('scenarios.title') }}</h1>
-        <p class="lede">{{ t('scenarios.intro') }}</p>
+        <DocsHint />
       </div>
       <div v-if="canWrite" class="actions-row">
         <RouterLink class="button button-ghost" :to="{ name: 'catalog' }">{{ t('scenarios.apply') }}</RouterLink>

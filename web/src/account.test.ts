@@ -507,7 +507,6 @@ describe('the second factor', () => {
         const { wrapper } = await open(s, 'Remove the second factor');
         await confirm(wrapper, '654321');
         expect(requestsOf(s, 'DELETE').map((r) => r.body)).toEqual([{ password: typed, code: '654321' }]);
-        expect(wrapper.text()).toContain('It is not set up.');
         expect(button(wrapper, 'Set up a second factor')).toBeDefined();
         expect(button(wrapper, 'Remove the second factor')).toBeUndefined();
       });

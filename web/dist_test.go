@@ -100,12 +100,13 @@ func TestIndex_NamesOnlyFilesOfTheBuild(t *testing.T) {
 }
 
 // The console loads nothing from outside: no script, style, font or image names
-// another host. Two strings are no address that anyone requests: the SVG
-// namespace, and the link to its documentation that Vue puts into the message
-// of an error in the console of the browser. The second is allowed only with
-// that path.
+// another host. Three strings are no address that anyone requests: the SVG
+// namespace, the link to its documentation that Vue puts into the message of an
+// error in the console of the browser, and the address of the documentation of
+// Nyktus, which the pages offer as a link that the user follows. The second is
+// allowed only with that path.
 func TestBuild_NamesNoOtherHost(t *testing.T) {
-	allowed := map[string]string{"//www.w3.org": "", "//vuejs.org": "/error-reference/"}
+	allowed := map[string]string{"//www.w3.org": "", "//vuejs.org": "/error-reference/", "//docs.nyktus.org": ""}
 	each(t, built(t), func(name, text string) {
 		for _, loc := range absoluteURL.FindAllStringIndex(text, -1) {
 			m := text[loc[0]:loc[1]]

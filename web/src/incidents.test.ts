@@ -296,28 +296,6 @@ describe('the list of incidents', () => {
   });
 });
 
-describe('the overview', () => {
-  test('says that incidents wait, without a number, and links to them', async () => {
-    const s = server();
-    const { wrapper } = await boot(s, '/');
-    expect(urls(s, '/api/v1/incidents')).toEqual(['/api/v1/incidents?limit=1&status=open']);
-    expect(wrapper.get('[role=status]').text()).toContain('Incidents are waiting for triage.');
-    expect(wrapper.get('[role=status] a').attributes('href')).toBe('/incidents');
-    expect(wrapper.get('[role=status]').text()).not.toMatch(/\d/);
-  });
-
-  test('says nothing when none are open', async () => {
-    const { wrapper } = await boot(server('admin', { 'GET /api/v1/incidents': () => json(200, { incidents: [] }) }), '/');
-    expect(wrapper.text()).not.toContain('waiting');
-  });
-
-  test('works without the hint when the incidents cannot be read', async () => {
-    const { wrapper } = await boot(server('admin', { 'GET /api/v1/incidents': () => failure(500, 'internal_error') }), '/');
-    expect(wrapper.get('h1').text()).toBe('Overview');
-    expect(wrapper.find('[role=alert]').exists()).toBe(false);
-  });
-});
-
 describe('an incident', () => {
   const path = `/incidents/${incidentId}`;
 
@@ -383,13 +361,13 @@ describe('an incident', () => {
       await button(wrapper, 'Close')!.trigger('click');
       await flushPromises();
       expect(wrapper.get('dialog[open] h2').text()).toBe('Close this incident?');
-      expect(wrapper.get('dialog[open]').text()).toContain('never opens again');
+      expect(wrapper.get('dialog[open]').text()).toContain('cannot be reopened');
       expect(patches(s)).toHaveLength(0);
       await wrapper.get('dialog[open] .danger').trigger('click');
       await flushPromises();
       expect(patches(s).map((r) => r.body)).toEqual([{ status: 'closed' }]);
       expect(wrapper.get('.badges').text()).toContain('Closed');
-      expect(wrapper.text()).toContain('This incident is closed and stays closed.');
+      expect(wrapper.text()).toContain('This incident is closed. You can still change the notes and the severity.');
       expect(button(wrapper, 'Close')).toBeUndefined();
       expect(button(wrapper, 'Acknowledge')).toBeUndefined();
     });
@@ -821,10 +799,9 @@ describe('an event', () => {
     }
   });
 
-  test('is shown to a viewer, and the page says that it holds personal data', async () => {
+  test('is shown to a viewer', async () => {
     const { wrapper } = await boot(one(event(), 'viewer'), at(eventId));
     expect(wrapper.get('h1').text()).toBe('Event');
-    expect(wrapper.text()).toContain('Every read is recorded in the audit log.');
   });
 
   test('says when it does not exist', async () => {
