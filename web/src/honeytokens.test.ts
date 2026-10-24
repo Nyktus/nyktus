@@ -248,14 +248,14 @@ describe('a honeytoken', () => {
 
   test('has no QR code for an image', async () => {
     const { wrapper } = await boot(one(honeytoken({ type: 'web_image', trigger_url: 'https://t.example.net/abcdefghijklmnopqrstuvwxyz.gif' })), path);
-    expect(wrapper.find('svg').exists()).toBe(false);
+    expect(wrapper.find('main svg').exists()).toBe(false);
     expect(wrapper.get('.value').text()).toContain('.gif');
   });
 
   test('shows the names of a DNS honeytoken', async () => {
     const { wrapper } = await boot(one(other), path);
     expect(wrapper.findAll('.names .value').map((n) => n.text())).toEqual(other.trigger_names);
-    expect(wrapper.find('svg').exists()).toBe(false);
+    expect(wrapper.find('main svg').exists()).toBe(false);
   });
 
   test('shows the notes and the times, and a name that is markup as text', async () => {

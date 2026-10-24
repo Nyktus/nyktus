@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import { ApiError } from '../api/errors';
 import type { AlertChannel } from '../api/generated';
 import { errorText } from '../api/messages';
+import DocsHint from '../components/DocsHint.vue';
 import StateBadge from '../components/StateBadge.vue';
 import TimeStamp from '../components/TimeStamp.vue';
 import { t } from '../i18n';
@@ -34,7 +35,7 @@ onMounted(async () => {
     <div class="page-head">
       <div>
         <h1>{{ t('alerts.title') }}</h1>
-        <p class="lede">{{ t('alerts.intro') }}</p>
+        <DocsHint />
       </div>
       <RouterLink v-if="canWrite" class="button button-primary" :to="{ name: 'alert-channel-new' }">{{ t('alerts.new') }}</RouterLink>
     </div>

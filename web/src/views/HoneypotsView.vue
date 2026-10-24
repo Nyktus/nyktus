@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, onMounted, ref, watch } from 'vue';
 import { api } from '../api/client';
 import type { Honeypot } from '../api/generated';
+import DocsHint from '../components/DocsHint.vue';
 import HoneypotStatusBadge from '../components/HoneypotStatusBadge.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
@@ -42,7 +43,7 @@ watch([service, state], list.reload);
     <div class="page-head">
       <div>
         <h1>{{ t('honeypots.title') }}</h1>
-        <p class="lede">{{ t('honeypots.intro') }}</p>
+        <DocsHint />
       </div>
       <RouterLink v-if="canWrite" class="button button-primary" :to="{ name: 'honeypot-new' }">{{ t('honeypots.new') }}</RouterLink>
     </div>

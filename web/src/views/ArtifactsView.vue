@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { onMounted } from 'vue';
 import { api } from '../api/client';
 import type { Artifact } from '../api/generated';
+import DocsHint from '../components/DocsHint.vue';
 import FileSize from '../components/FileSize.vue';
 import TimeStamp from '../components/TimeStamp.vue';
 import { t } from '../i18n';
@@ -25,7 +26,7 @@ onMounted(list.reload);
     <div class="page-head">
       <div>
         <h1>{{ t('artifacts.title') }}</h1>
-        <p class="lede">{{ t('artifacts.intro') }}</p>
+        <DocsHint />
       </div>
     </div>
 

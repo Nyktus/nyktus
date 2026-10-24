@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, onMounted } from 'vue';
 import { api } from '../api/client';
 import type { User } from '../api/generated';
+import DocsHint from '../components/DocsHint.vue';
 import UserStatusBadge from '../components/UserStatusBadge.vue';
 import { t } from '../i18n';
 import { session } from '../session';
@@ -27,7 +28,7 @@ onMounted(list.reload);
     <div class="page-head">
       <div>
         <h1>{{ t('users.title') }}</h1>
-        <p class="lede">{{ t('users.intro') }}</p>
+        <DocsHint />
       </div>
       <RouterLink v-if="canWrite" class="button button-primary" :to="{ name: 'user-new' }">{{ t('users.new') }}</RouterLink>
     </div>

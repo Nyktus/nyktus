@@ -66,7 +66,11 @@ export const rules: Rule[] = [
   { name: 'WebSocket is not part of the API', pattern: /\bWebSocket\b/ },
   { name: 'EventSource is not part of the API', pattern: /\bEventSource\b/ },
   { name: 'sendBeacon sends data without the client', pattern: /\bsendBeacon\b/ },
-  { name: 'the console loads nothing from another origin', pattern: /https?:\/\//, allowed: {} },
+  {
+    name: 'the console loads nothing from another origin',
+    pattern: /https?:\/\//,
+    allowed: { 'docs.ts': 'it names the documentation, which only a link that the user follows opens' },
+  },
   {
     // Text that an attacker sent is drawn by one component, which isolates its direction
     // and shows the characters that draw nothing. Every place that names such a field must

@@ -9,7 +9,6 @@ describe('parseMetrics', () => {
     const text = '# HELP nyktus_event_jobs Jobs of events that wait to be processed.\n# TYPE nyktus_event_jobs gauge\nnyktus_event_jobs 3\n';
     expect(parseMetrics(text)).toEqual({
       families: [{ name: 'nyktus_event_jobs', help: 'Jobs of events that wait to be processed.', type: 'gauge', samples: [{ labels: [], value: '3' }] }],
-      other: [],
     });
   });
 
@@ -61,8 +60,8 @@ describe('parseMetrics', () => {
     ['a stray comment', '# a comment'],
     ['markup', '<img src=x onerror=alert(1)>'],
     ['a value with trailing text', 'a 1 x'],
-  ])('keeps %s apart, as it is', (_, line) => {
-    expect(parseMetrics(`${line}\n`)).toEqual({ families: [], other: [line] });
+  ])('leaves out %s', (_, line) => {
+    expect(parseMetrics(`${line}\n`)).toEqual({ families: [] });
   });
 
   // A label list that has something in it that is none of a name and a quoted value is not read "as far as it goes".
@@ -71,22 +70,21 @@ describe('parseMetrics', () => {
     ['junk between labels', 'a{k="v",!!j="w"} 1'],
     ['junk after the last label', 'a{k="v",j="w"!!} 1'],
     ['a label without a name', 'a{="v"} 1'],
-  ])('keeps %s apart, as it is', (_, line) => {
-    expect(parseMetrics(`${line}\n`)).toEqual({ families: [], other: [line] });
+  ])('leaves out %s', (_, line) => {
+    expect(parseMetrics(`${line}\n`)).toEqual({ families: [] });
   });
 
   test('reads the line ends of Windows', () => {
     expect(parseMetrics('# TYPE a gauge\r\na 1\r\n')).toEqual({
       families: [{ name: 'a', help: '', type: 'gauge', samples: [{ labels: [], value: '1' }] }],
-      other: [],
     });
   });
 
   test('skips empty lines', () => {
-    expect(parseMetrics('\n\n  \n')).toEqual({ families: [], other: [] });
+    expect(parseMetrics('\n\n  \n')).toEqual({ families: [] });
   });
 
-  test('takes nothing for a family from a line that is kept apart', () => {
+  test('takes nothing for a family from a line that does not fit', () => {
     expect(parseMetrics('# TYPE a gauge\na nope\n').families[0]?.samples).toEqual([]);
   });
 });

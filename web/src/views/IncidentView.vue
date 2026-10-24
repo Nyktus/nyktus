@@ -219,17 +219,15 @@ onMounted(load);
         <form class="stack" @submit.prevent="save">
           <div class="field">
             <label for="notes">{{ t('field.notes') }}</label>
-            <textarea id="notes" v-model="notes" maxlength="10000" aria-describedby="notes-hint"></textarea>
-            <span id="notes-hint" class="hint">{{ t('incident.notesHint') }}</span>
+            <textarea id="notes" v-model="notes" maxlength="10000"></textarea>
           </div>
 
           <div class="field">
             <label for="severity">{{ t('incident.severityOverride') }}</label>
-            <select id="severity" v-model="severity" aria-describedby="severity-hint">
+            <select id="severity" v-model="severity">
               <option value="">{{ t('incident.severityNone') }}</option>
               <option v-for="option in severities" :key="option" :value="option">{{ t(`severity.${option}`) }}</option>
             </select>
-            <span id="severity-hint" class="hint">{{ t('incident.severityHint', { severity: t(`severity.${incident.event_severity}`) }) }}</span>
           </div>
 
           <div class="field">
@@ -259,7 +257,6 @@ onMounted(load);
 
       <div class="section panel">
         <h2>{{ t('incident.events') }}</h2>
-        <p class="hint">{{ t('event.personalData') }}</p>
         <IncidentEvents :incident-id="incident.id" :event-count="incident.event_count" />
       </div>
 

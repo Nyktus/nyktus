@@ -83,7 +83,7 @@ The sign-in page asks `GET /api/v1/sign-in-options`, which needs no sign-in, whi
 
 ## Changing the password
 
-In the web console, choose your name in the header to open your account: the form asks for the current password and the new one twice, and empties its fields once the request is answered. The other sessions of the account end, and you stay signed in. Through the API:
+In the web console, choose your name in the header to open your account. The page also holds the language of the console, which the console remembers in the browser and not in the account. The form asks for the current password and the new one twice, and empties its fields once the request is answered. The other sessions of the account end, and you stay signed in. Through the API:
 
 Signed-in users change their own password with the current one. Write both into a file, so that they do not end up in the shell history:
 

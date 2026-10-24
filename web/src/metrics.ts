@@ -16,8 +16,6 @@ export interface Family {
 
 export interface Metrics {
   families: Family[];
-  /** The lines that are none of these: they are shown as they are, never interpreted. */
-  other: string[];
 }
 
 const sample = /^([A-Za-z_:][A-Za-z0-9_:]*)(?:\{(.*)\})?[ \t]+(\S+)(?:[ \t]+-?\d+)?$/;
@@ -51,13 +49,11 @@ function labelsOf(inner: string): [string, string][] | undefined {
 
 /**
  * Reads the text format of Prometheus, version 0.0.4, as far as Nyktus writes it:
- * gauges, with help and type lines and labels. A line that does not fit is kept
- * apart, so that nothing the server wrote is lost and nothing is taken for more
- * than it is.
+ * gauges, with help and type lines and labels. A line that does not fit is left
+ * out, so that nothing is taken for more than it is.
  */
 export function parseMetrics(text: string): Metrics {
   const families = new Map<string, Family>();
-  const other: string[] = [];
   const family = (name: string): Family => {
     let found = families.get(name);
     if (found === undefined) {
@@ -84,10 +80,9 @@ export function parseMetrics(text: string): Metrics {
     const match = sample.exec(line);
     const labels = match === null ? undefined : match[2] === undefined ? [] : labelsOf(match[2]);
     if (match === null || labels === undefined || !number.test(match[3] ?? '')) {
-      other.push(line);
       continue;
     }
     family(match[1] ?? '').samples.push({ labels, value: match[3] ?? '' });
   }
-  return { families: [...families.values()], other };
+  return { families: [...families.values()] };
 }

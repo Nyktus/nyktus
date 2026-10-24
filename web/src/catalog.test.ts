@@ -37,8 +37,8 @@ describe('the catalog', () => {
 
   test('asks again when the language changes', async () => {
     const s = server();
-    const { wrapper } = await boot(s, '/catalog');
-    await wrapper.get('select#language').setValue('de');
+    const { i18n } = await boot(s, '/catalog');
+    i18n.setLocale('de');
     await flushPromises();
     expect(s.requests.at(-1)?.url).toBe('/api/v1/catalog/deceptions?lang=de');
   });

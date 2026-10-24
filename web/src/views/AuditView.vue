@@ -8,6 +8,7 @@ import { onMounted } from 'vue';
 import { api } from '../api/client';
 import type { AuditEntry } from '../api/generated';
 import AuditResource from '../components/AuditResource.vue';
+import DocsHint from '../components/DocsHint.vue';
 import TimeStamp from '../components/TimeStamp.vue';
 import { t } from '../i18n';
 import { usePagedList } from '../usePagedList';
@@ -25,7 +26,7 @@ onMounted(list.reload);
     <div class="page-head">
       <div>
         <h1>{{ t('audit.title') }}</h1>
-        <p class="lede">{{ t('audit.intro') }}</p>
+        <DocsHint />
       </div>
       <button class="button button-ghost" type="button" :disabled="list.loading.value" @click="list.reload">{{ t('common.refresh') }}</button>
     </div>
