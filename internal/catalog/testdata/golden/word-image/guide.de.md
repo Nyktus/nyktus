@@ -27,11 +27,11 @@ Geben Sie dem Dokument einen Inhalt, den ein Eindringling an diesem Ort lesen wi
 
 ## Dokument ablegen
 
-Legen Sie es dort ab, wo ein Eindringling nach wertvollen Daten sucht, etwa auf einer Dateifreigabe der Finanz- oder Personalabteilung, in einem Dokumentenmanagementsystem oder in einer Sicherung. Halten Sie in den Notizen des Scenarios fest, wo Sie es abgelegt haben.
+Legen Sie es dort ab, wo ein Eindringling nach wertvollen Daten sucht, etwa auf einer Dateifreigabe der Finanz- oder Personalabteilung, in einem Dokumentenmanagementsystem oder in einer Sicherung. Halten Sie in den Notizen des Szenarien fest, wo Sie es abgelegt haben.
 
 ## Testen
 
-Öffnen Sie das Dokument in Word auf einem Rechner mit Zugang zum Internet und aktivieren Sie die Bearbeitung. Innerhalb einer Minute zeigt das Scenario einen Incident. Schließen Sie den Incident nach dem Test.
+Öffnen Sie das Dokument in Word auf einem Rechner mit Zugang zum Internet und aktivieren Sie die Bearbeitung. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
 ## Grenzen
 

@@ -182,10 +182,10 @@ describe('the metrics', () => {
     expect(wrapper.findAll('.family')[0]!.find('time').exists()).toBe(false);
   });
 
-  test('keeps the text as the server wrote it, to fold open', async () => {
+  test('shows the families only, and no copy of the text', async () => {
     const { wrapper } = await boot(server(), '/metrics');
-    expect(wrapper.get('details').attributes('open')).toBeUndefined();
-    expect(wrapper.get('details pre').element.textContent).toBe(metricsText);
+    expect(wrapper.find('details').exists()).toBe(false);
+    expect(wrapper.find('pre').exists()).toBe(false);
   });
 
   test('says that a family without a value reported none, instead of showing an empty table', async () => {
@@ -197,13 +197,6 @@ describe('the metrics', () => {
   test('reads a text with the line ends of Windows', async () => {
     const { wrapper } = await boot(server('admin', { 'GET /api/v1/metrics': () => plain(200, metricsText.replaceAll('\n', '\r\n')) }), '/metrics');
     expect(wrapper.findAll('.family')).toHaveLength(3);
-    expect(wrapper.text()).not.toContain('lines of the text are none of these');
-  });
-
-  test('puts the note about lines that it did not understand before the text that holds them', async () => {
-    const { wrapper } = await boot(server('admin', { 'GET /api/v1/metrics': () => plain(200, 'a 1\nnot a sample\n') }), '/metrics');
-    const html = wrapper.html();
-    expect(html.indexOf('lines of the text are none of these')).toBeLessThan(html.indexOf('<details'));
   });
 
   test('has a button for another reading that does not borrow its name from the incidents', async () => {
@@ -213,20 +206,14 @@ describe('the metrics', () => {
     expect(button(audit.wrapper, 'Refresh')).toBeDefined();
   });
 
-  test('draws help, labels and unknown lines as text', async () => {
+  test('draws help and labels as text, and leaves lines that it does not understand out', async () => {
     const hostile = '# HELP a <img src=x onerror=alert(1)>\n# TYPE a gauge\na{k="<b>x</b>"} 1\n<img src=x onerror=alert(2)>\n';
     const { wrapper } = await boot(server('admin', { 'GET /api/v1/metrics': () => plain(200, hostile) }), '/metrics');
     expect(wrapper.find('img[src=x]').exists()).toBe(false);
     expect(wrapper.find('.family b').exists()).toBe(false);
     expect(wrapper.get('.family').text()).toContain('<img src=x onerror=alert(1)>');
     expect(wrapper.get('.family').text()).toContain('k: <b>x</b>');
-    expect(wrapper.text()).toContain('1 lines of the text are none of these');
-    expect(wrapper.get('details pre').text()).toContain('<img src=x onerror=alert(2)>');
-  });
-
-  test('says nothing about lines that it understood', async () => {
-    const { wrapper } = await boot(server(), '/metrics');
-    expect(wrapper.text()).not.toContain('lines of the text are none of these');
+    expect(wrapper.text()).not.toContain('onerror=alert(2)');
   });
 
   test('reads again on request, and shows the new values', async () => {
@@ -297,7 +284,7 @@ describe('the pages for the administration', () => {
     expect(wrapper.text()).toContain('honeytoken.update');
     await router.push('/metrics');
     await arrive(router, 'metrics');
-    expect(wrapper.text()).toContain('Der Text, wie der Server ihn geschrieben hat');
+    expect(wrapper.get('h1').text()).toBe('Metriken');
     expect(wrapper.text()).toContain('nyktus_event_jobs');
   });
 });

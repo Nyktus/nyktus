@@ -11,7 +11,7 @@ Die Datei `bookmarks.html` ist ein Export von Browser-Lesezeichen in dem Format,
 
 ## Testen
 
-Öffnen Sie die Datei in einem Browser und folgen Sie dem Link, oder importieren Sie sie und öffnen Sie das Lesezeichen. Innerhalb einer Minute zeigt das Scenario einen Incident. Schließen Sie den Incident nach dem Test.
+Öffnen Sie die Datei in einem Browser und folgen Sie dem Link, oder importieren Sie sie und öffnen Sie das Lesezeichen. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
 ## Grenzen
 

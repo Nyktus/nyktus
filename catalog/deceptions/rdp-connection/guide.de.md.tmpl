@@ -10,7 +10,7 @@ Die Datei `Server.rdp` ist eine gespeicherte Verbindung des Remotedesktop-Client
 
 ## Testen
 
-Öffnen Sie die Datei auf einem Windows-Rechner mit Zugang zum Internet und klicken Sie auf „Verbinden“. Innerhalb einer Minute zeigt das Scenario einen Incident. Schließen Sie den Incident nach dem Test.
+Öffnen Sie die Datei auf einem Windows-Rechner mit Zugang zum Internet und klicken Sie auf „Verbinden“. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
 ## Grenzen
 

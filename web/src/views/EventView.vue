@@ -67,7 +67,7 @@ onMounted(load);
         </div>
       </div>
 
-      <p class="hint">{{ t('event.personalData') }} {{ t('event.attackerText') }}</p>
+      <p class="hint">{{ t('event.attackerText') }}</p>
 
       <div class="section panel">
         <dl class="definition">

@@ -4,7 +4,7 @@ The console reports the state of Nyktus to a monitoring system such as Prometheu
 
 ## Reading the metrics
 
-In the web console, administrators open Metrics: the page shows every family with its help text, labels and values, a time next to the metrics that report one, and the text as the server wrote it to fold open. It reads the values when it opens and when you choose Refresh, and draws no charts; use your monitoring system for those.
+In the web console, administrators open Metrics: the page shows every family with its help text, labels and values, and a time next to the metrics that report one. Lines that belong to no family are not shown; read the whole text through the API. It reads the values when it opens and when you choose Refresh, and draws no charts; use your monitoring system for those.
 
 `GET /api/v1/metrics` returns the metrics in the text format of Prometheus, version 0.0.4. Administrators read it with a session, a monitoring system with an [API key](api-keys.md) that carries the scope `metrics:read`. Other roles and keys receive `403`. Whether incidents are open tells an intruder whether they were noticed, so give the scope only to the monitoring system and keep its key in its secret store.
 

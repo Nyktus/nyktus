@@ -161,6 +161,13 @@ a:hover {
   color: var(--ink);
 }
 
+/* A note on a page keeps its distance from the panel, the table or the note that follows it. */
+.notice + .panel,
+.notice + .table-wrap,
+.notice + .notice {
+  margin-top: 1rem;
+}
+
 .notice-error {
   border-color: var(--danger);
   background: var(--danger-soft);

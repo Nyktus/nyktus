@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { flushPromises } from '@vue/test-utils';
 import { afterEach, expect, test, vi } from 'vitest';
+import { navigation } from './navigation';
 import { boot } from './testing/boot';
 import { auditEntry, metricsText, plain, apiKey, userId, userRecord, alertChannel, alertDelivery, artifact, artifactId, catalogDeception, catalogSummary, event, eventId, fakeServer, honeypot, honeypotId, honeytoken, incident, incidentId, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
@@ -107,4 +109,29 @@ test.each(['/sign-in', '/setup', '/activate', '/reset-password'])('%s has no id 
       expect(document.getElementById(target), `the description ${target}`).not.toBeNull();
     }
   }
+});
+
+// Every page of the navigation points to the documentation instead of explaining itself, and the
+// link opens a new tab, so that the console stays where it is.
+const menuPages = ['/', '/incidents', '/honeytokens', '/honeypots', '/scenarios', '/artifacts', '/catalog', '/alert-channels', '/users', '/api-keys', '/audit', '/metrics'];
+
+test('the list of pages with a link to the documentation is the navigation', () => {
+  expect(menuPages).toHaveLength(navigation.length);
+});
+
+test.each(menuPages)('%s links to the documentation under its title, and opens it in a new tab', async (path) => {
+  const { wrapper } = await boot(server(), path);
+  const links = wrapper.findAll('main a[href="https://docs.nyktus.org"]');
+  expect(links).toHaveLength(1);
+  expect(links[0]!.attributes('target')).toBe('_blank');
+  expect(links[0]!.attributes('rel')).toBe('noopener noreferrer');
+  expect(links[0]!.text()).toBe('More in the documentation (opens in a new tab)');
+  expect(wrapper.get('.page-head').element.contains(links[0]!.element)).toBe(true);
+});
+
+test('the link to the documentation is in German as well', async () => {
+  const { wrapper, i18n } = await boot(server(), '/incidents');
+  i18n.setLocale('de');
+  await flushPromises();
+  expect(wrapper.get('main a[href="https://docs.nyktus.org"]').text()).toBe('Mehr dazu in der Dokumentation (öffnet in einem neuen Tab)');
 });

@@ -80,7 +80,7 @@ describe('the list of API keys', () => {
 
   test('offers a new key to an administrator, and is in the navigation', async () => {
     const { wrapper } = await boot(server(), '/api-keys');
-    expect(wrapper.get('.page-head a').attributes('href')).toBe('/api-keys/new');
+    expect(wrapper.get('.page-head a.button').attributes('href')).toBe('/api-keys/new');
     expect(wrapper.findAll('nav a').map((a) => a.text())).toContain('API keys');
   });
 
