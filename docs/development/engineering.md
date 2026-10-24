@@ -158,7 +158,7 @@ Prefer the standard library. A new dependency needs the justification described 
 
 ## Documentation
 
-- Behavior, configuration and API changes update the documentation in the same pull request.
+- Behavior, configuration and API changes update the documentation. The user documentation is in the repository `Nyktus/nyktus-docs`, so a pull request here has a matching one there, and each links the other. The OpenAPI specification and the published catalog are copied from here by a script there, which needs a new pinned commit after a change.
 - Architecture decisions that are not obvious from the code are recorded in `docs/development/`.
 
 ## Working on a change

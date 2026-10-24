@@ -24,7 +24,7 @@ Read these before changing code. They are binding:
 | Sensor | Go, separate binary with a minimal dependency set |
 | Web console | Vue 3, TypeScript, Vite, embedded into the server binary (`web/`, build output in `web/dist`) |
 | Deception catalog | Data and templates in `catalog/`, embedded at build time |
-| Documentation | VitePress |
+| Documentation | VitePress, in its own repository [`Nyktus/nyktus-docs`](https://github.com/Nyktus/nyktus-docs), published at docs.nyktus.org |
 
 One instance serves one organization. There is no multi-tenancy.
 
@@ -54,8 +54,8 @@ migrations/         PostgreSQL migrations
 web/                web console
 deploy/             reference deployment configuration
 tools/              generators for embedded data and web types, run by developers, never by the server
-docs/               user documentation
 docs/development/   contributor documentation and guidelines
+docs/public/        the published deception catalog, generated; the documentation site copies it
 ```
 
 Directories are created when their first code lands. Do not add placeholder files. The one exception is `web/dist/.gitkeep`, which keeps the directory that the embedding of the web console needs, see [Web console](docs/development/engineering.md#web-console).
@@ -98,7 +98,7 @@ Never weaken these without an explicit decision by a maintainer:
 - Keep changes within the scope of the task. Report unrelated problems instead of fixing them on the side.
 - Do not add a dependency without asking. Explain why the standard library is not enough.
 - Write or update tests with every change. A bug fix includes a regression test that fails without the fix.
-- Update documentation in the same change when behavior, configuration or the API changes.
+- Update the documentation when behavior, configuration or the API changes. The user documentation lives in `Nyktus/nyktus-docs`: open the matching pull request there and link the two. That repository copies `api/openapi.yaml` and `docs/public/deception-catalog.json` from a pinned commit of this one, so a change to either needs a new pin there.
 - Comments explain *why*, in English. No history, no ticket identifiers, no commented-out code. See [Comments](docs/development/engineering.md#comments).
 - Every new source file starts with the SPDX header described in the engineering guidelines.
 - Commits follow Conventional Commits and carry a DCO sign-off (`git commit -s`).
