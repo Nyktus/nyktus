@@ -56,7 +56,7 @@ Everything listens on the loopback address only, and the passwords are public: t
 
 - Keep a pull request focused on one change. Separate refactorings from behavior changes.
 - Add or update tests. A bug fix includes a regression test that fails without the fix.
-- Update the documentation in the same pull request when behavior, configuration or the API changes.
+- Update the documentation when behavior, configuration or the API changes. It lives in [`Nyktus/nyktus-docs`](https://github.com/Nyktus/nyktus-docs): open a matching pull request there and link the two.
 - Describe the security impact in the pull request, even if it is "none".
 - All checks must pass before review.
 
