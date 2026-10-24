@@ -11,7 +11,7 @@ Die Datei `config.ini` konfiguriert die Datenbankverbindung einer Anwendung: den
 
 ## Testen
 
-Lösen Sie den Host auf einem Rechner mit Zugang zum Internet auf, zum Beispiel mit `nslookup databaseq3xwz7a2kfm4ub6tyc5nre.d.example.net`. Innerhalb einer Minute zeigt das Scenario einen Incident. Schließen Sie den Incident nach dem Test.
+Lösen Sie den Host auf einem Rechner mit Zugang zum Internet auf, zum Beispiel mit `nslookup databaseq3xwz7a2kfm4ub6tyc5nre.d.example.net`. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
 ## Grenzen
 

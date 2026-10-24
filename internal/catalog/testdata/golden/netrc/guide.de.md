@@ -10,7 +10,7 @@ Die Datei `netrc` enthält das Konto `deploy` und ein zufälliges Passwort für 
 
 ## Testen
 
-Führen Sie `curl --netrc https://hostq3xwz7a2kfm4ub6tyc5nre.d.example.net/` auf einem Rechner mit Zugang zum Internet aus. Innerhalb einer Minute zeigt das Scenario einen Incident. Schließen Sie den Incident nach dem Test.
+Führen Sie `curl --netrc https://hostq3xwz7a2kfm4ub6tyc5nre.d.example.net/` auf einem Rechner mit Zugang zum Internet aus. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
 ## Grenzen
 
