@@ -9,6 +9,6 @@
 ## Checklist
 
 - [ ] Tests cover the change, including the security-relevant paths.
-- [ ] Documentation is updated where behavior, configuration or the API changed.
+- [ ] Documentation is updated where behavior, configuration or the API changed (a linked pull request in `Nyktus/nyktus-docs`).
 - [ ] The [review checklist](https://github.com/nyktus/nyktus/blob/main/docs/development/secure-coding.md#review-checklist) has been applied.
 - [ ] All commits are signed off (`git commit -s`).
