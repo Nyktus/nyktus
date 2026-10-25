@@ -1,0 +1,6 @@
+$server = '{{.Honeytokens.VCenter.Host}}'
+$user = '{{.Persona.Account}}@{{.Persona.SsoDomain}}'
+$password = ConvertTo-SecureString '{{.Secrets.Password}}' -AsPlainText -Force
+$credential = New-Object System.Management.Automation.PSCredential($user, $password)
+Connect-VIServer -Server $server -Credential $credential
+Get-VM | Select-Object Name, PowerState

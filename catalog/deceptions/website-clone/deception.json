@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "id": "website-clone",
+  "category": "application",
+  "title": {
+    "en": "Script that detects a copy of your website",
+    "de": "Skript, das eine Kopie Ihrer Website erkennt"
+  },
+  "summary": {
+    "en": "A small script for your own website. Served from another host, as on a cloned page, it loads an invisible image and raises an event.",
+    "de": "Ein kleines Skript für Ihre eigene Website. Wird es von einem anderen Host ausgeliefert, etwa auf einer kopierten Seite, lädt es ein unsichtbares Bild und löst ein Event aus."
+  },
+  "techniques": ["T1566.002", "T1684.001"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Beacon",
+      "type": "web_image",
+      "label": {"en": "Image", "de": "Bild"},
+      "techniques": ["T1566.002", "T1684.001"],
+      "severity": "medium"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Site",
+      "kind": "host",
+      "label": {"en": "Host name of your website", "de": "Host-Name Ihrer Website"},
+      "example": "www.example.com"
+    }
+  ],
+  "secrets": [],
+  "artifacts": [
+    {"key": "script", "file_name": "site.js", "format": "config", "line_endings": "lf", "template": "site.js.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

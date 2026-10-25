@@ -1,0 +1,52 @@
+# PDF-Dokument mit Link und Namensabfrage
+
+Diese Deception hat keine Datei zum Herunterladen: Sie schreiben das PDF selbst, damit es zu dem Ort passt, an dem Sie es ablegen, und fügen zwei Dinge hinzu. Ein PDF kann beim Darstellen kein entferntes Bild laden, es gibt also kein Bild einzupflanzen; der Trigger ist ein Link und eine Aktion.
+
+## Der Link
+
+Legen Sie einen Link über die ganze erste Seite. Wer irgendwo auf die Seite klickt, löst ein Event aus und wird auf das Weiterleitungsziel des Honeytokens weitergeleitet:
+
+```
+{{.Honeytokens.Link.URL}}
+```
+
+Nutzen Sie in Adobe Acrobat, LibreOffice Draw oder einem anderen Editor das Werkzeug für Links, ziehen Sie ein Rechteck über die ganze Seite und wählen Sie „Webseite öffnen“ mit dieser URL. Machen Sie den Rahmen unsichtbar. In der Datei ist der Link eine Annotation der Seite:
+
+```
+<< /Type /Annot /Subtype /Link
+   /Rect [0 0 595 842]
+   /Border [0 0 0]
+   /A << /S /URI /URI ({{.Honeytokens.Link.URL}}) >>
+>>
+```
+
+## Die Aktion beim Öffnen
+
+Eine zweite Aktion startet, wenn das Dokument sich öffnet. Sie nennt diesen Host, ein DNS-Honeytoken:
+
+```
+{{.Honeytokens.Host.Host}}
+```
+
+Öffnen Sie in Acrobat die Seiteneigenschaften, wählen Sie „Aktionen“, den Auslöser „Seite öffnen“ und die Aktion „Weblink öffnen“ mit der Adresse `https://{{.Honeytokens.Host.Host}}/`. In der Datei gehört die Aktion zum Katalogobjekt des Dokuments:
+
+```
+/OpenAction << /S /URI /URI (https://{{.Honeytokens.Host.Host}}/) >>
+```
+
+Ein Werkzeug wie `qpdf` oder `mutool` zeigt und bearbeitet die Objekte.
+
+## Dokument schreiben
+
+Geben Sie dem Dokument einen Inhalt, den ein Eindringling an diesem Ort lesen will, etwa eine Rechnung, den Entwurf eines Vertrags oder einen Netzplan, und einen passenden Namen. Legen Sie es dort ab, wo ein Eindringling nach wertvollen Daten sucht, und halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
+
+## Testen
+
+Öffnen Sie das PDF auf einem Rechner mit Zugang zum Internet und klicken Sie auf die Seite. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Grenzen
+
+- Die Programme unterscheiden sich. Viele fragen nach, bevor sie einen Link aus einer Aktion öffnen, und manche lösen den Host-Namen vor der Frage auf, andere nicht. Sehen Sie die Abfrage als Zugabe; der Klick auf den Link ist der verlässliche Trigger.
+- Ein Programm, das alle Verbindungen von Dokumenten sperrt, oder ein Betrachter im Browser, der Aktionen ignoriert, löst kein Event aus.
+- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.
+- Wer das PDF in einem Editor öffnet, sieht die URL und den Host-Namen.

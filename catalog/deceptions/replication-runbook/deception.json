@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "replication-runbook",
+  "category": "network",
+  "title": {
+    "en": "Runbook for checking replication",
+    "de": "Runbook zur Prüfung der Replikation"
+  },
+  "summary": {
+    "en": "A runbook that names a domain controller for the replication check. Querying that controller resolves the name of a DNS honeytoken.",
+    "de": "Ein Runbook, das einen Domänencontroller für die Replikationsprüfung nennt. Wer diesen Controller abfragt, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1018"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Controller",
+      "type": "dns",
+      "label": {"en": "Domain controller", "de": "Domänencontroller"},
+      "techniques": ["T1018"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Internal domain", "de": "Interne Domain"},
+      "example": "corp.example.com"
+    },
+    {
+      "key": "Contact",
+      "kind": "text",
+      "label": {"en": "Contact", "de": "Ansprechpartner"},
+      "example": "Infrastructure team"
+    }
+  ],
+  "secrets": [],
+  "artifacts": [
+    {"key": "runbook", "file_name": "Replication-check.txt", "format": "text", "line_endings": "lf", "template": "replication-check.txt.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

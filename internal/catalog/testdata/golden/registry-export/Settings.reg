@@ -1,0 +1,7 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\BackupPro\Backup]
+"Server"="serverq3xwz7a2kfm4ub6tyc5nre.d.example.net"
+"Port"=dword:000001bd
+"User"="svc-backup"
+"Password"="Xy7Xy7Xy7Xy7Xy7Xy7Xy"

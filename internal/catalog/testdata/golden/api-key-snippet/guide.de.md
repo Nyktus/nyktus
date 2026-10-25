@@ -1,0 +1,18 @@
+# curl-Befehl mit API-Schlüssel
+
+Die Datei `api-call.txt` ist eine Notiz mit einem `curl`-Befehl für den internen Dienst `Inventory service`: Er ruft `https://apiq3xwz7a2kfm4ub6tyc5nre.d.example.net/v1/users` mit einem zufälligen Bearer-Token auf. Der Host-Name gehört zu einem DNS-Honeytoken: Wer den Befehl ausführt, löst ihn auf, was ein Event auslöst. Dahinter steht kein Dienst, der Befehl scheitert also, und das Token gibt es nirgends.
+
+## Datei platzieren
+
+1. Legen Sie die Datei dort ab, wo Administratoren Befehle für später liegen lassen: in den Notizen eines Kontos auf einem Server, in einem Ordner mit Skripten oder in einem Wiki-Export.
+2. Ändern Sie `Product` auf einen Dienst, den Ihre Organisation hat, damit die Notiz zu ihrer Umgebung passt.
+3. Halten Sie in den Platzierungsnotizen des Artefakts fest, wo Sie es abgelegt haben.
+
+## Testen
+
+Führen Sie den Befehl auf einem Rechner mit Zugang zum Internet aus. Er scheitert nach der Abfrage. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Grenzen
+
+- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.
+- Der Host-Name ist ein zufälliges Label unter der Zone Ihrer DNS-Rolle. Ein Eindringling, der die Datei genau liest, kann ihn ungewöhnlich finden.

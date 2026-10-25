@@ -1,0 +1,19 @@
+# Docker-Konfiguration mit Registry-Zugangsdaten
+
+Die Datei `config.json` ist die Konfiguration des Docker-Clients. Sie enthält das Konto `ci-pull` und ein zufälliges Passwort für die Registry `registryq3xwz7a2kfm4ub6tyc5nre.d.example.net`. Der Name gehört zu einem DNS-Honeytoken: Wer ein Image aus der Registry zieht, dorthin schreibt oder sich anmeldet, löst den Namen auf, was ein Event auslöst. Dahinter steht keine Registry, und Konto und Passwort gibt es nirgends.
+
+## Datei platzieren
+
+1. Legen Sie die Datei als `~/.docker/config.json` im Home-Verzeichnis eines Kontos auf einem Build-Server oder Arbeitsplatz ab, am besten eines Kontos, das nur diesem Zweck dient, oder in einer Sicherung eines solchen Verzeichnisses.
+2. Hat das Konto schon eine `config.json`, ergänzen Sie deren Objekt `auths` um den Eintrag für die Registry, statt die Datei zu ersetzen.
+3. Legen Sie sie nicht dort ab, wo ein laufender Build sie liest. Der Build würde den Namen bei jedem Lauf auflösen und Events auslösen.
+4. Halten Sie in den Platzierungsnotizen des Artefakts fest, wo Sie es abgelegt haben.
+
+## Testen
+
+Führen Sie `docker pull registryq3xwz7a2kfm4ub6tyc5nre.d.example.net/app:latest` auf einem Rechner mit Zugang zum Internet aus. Der Befehl scheitert nach der Abfrage. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Grenzen
+
+- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.
+- Der Name der Registry ist ein zufälliges Label unter der Zone Ihrer DNS-Rolle. Ein Eindringling, der die Datei genau liest, kann ihn ungewöhnlich finden.

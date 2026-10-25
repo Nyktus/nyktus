@@ -1,0 +1,19 @@
+# Runbook for checking replication
+
+The file `Replication-check.txt` is a runbook of an administrator for the replication of the domain `corp.example.com`. Two of its commands name the domain controller `controllerq3xwz7a2kfm4ub6tyc5nre.d.example.net`. The name belongs to a DNS honeytoken: whoever runs one of the commands resolves it, which raises an event. There is no controller behind it.
+
+## Placing the file
+
+1. Place the file where an intruder looks for the structure of the domain: on a domain controller or administration server, on a file share of the IT department, in the documents of an account that exists only for this purpose.
+2. Change `Contact` to a team that exists.
+3. Record where you placed it in the placement notes of the artifact.
+
+## Testing
+
+Resolve the name with `nslookup controllerq3xwz7a2kfm4ub6tyc5nre.d.example.net` on a computer with access to the internet. Within a minute, the scenario shows an incident. Close the incident after the test.
+
+## Limits
+
+- Only a lookup that reaches the DNS role of Nyktus raises an event. A network without name resolution to the internet, or a resolver that answers from its cache, prevents it.
+- The name of the controller is a random label under the zone of your DNS role. An intruder who reads the file carefully can find it unusual.
+- The controller is not part of your domain. An intruder who compares the name with the list of controllers can find it unusual.

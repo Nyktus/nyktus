@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "id": "qr-labels",
+  "category": "data",
+  "title": {
+    "en": "QR code labels in the server room",
+    "de": "QR-Code-Etiketten im Serverraum"
+  },
+  "summary": {
+    "en": "Three printed QR codes for a rack, a device and a patch panel. Whoever scans one raises an event, which shows that somebody stands in the room with a phone.",
+    "de": "Drei gedruckte QR-Codes für ein Rack, ein Gerät und ein Patchfeld. Wer einen scannt, löst ein Event aus; das zeigt, dass jemand mit einem Telefon im Raum steht."
+  },
+  "techniques": ["T1592.001"],
+  "engage_activities": ["EAC0005", "EAC0011", "EAC0022"],
+  "honeytokens": [
+    {
+      "key": "Rack",
+      "type": "web_url",
+      "label": {"en": "Rack label", "de": "Rack-Etikett"},
+      "techniques": ["T1592.001"]
+    },
+    {
+      "key": "Device",
+      "type": "web_url",
+      "label": {"en": "Device label", "de": "Geräte-Etikett"},
+      "techniques": ["T1592.001"]
+    },
+    {
+      "key": "PatchPanel",
+      "type": "web_url",
+      "label": {"en": "Patch panel label", "de": "Patchfeld-Etikett"},
+      "techniques": ["T1592.001"]
+    }
+  ],
+  "persona": [],
+  "secrets": [],
+  "artifacts": [],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

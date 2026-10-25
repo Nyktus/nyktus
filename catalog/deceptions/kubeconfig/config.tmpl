@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Config
+clusters:
+- name: "{{.Persona.Cluster}}"
+  cluster:
+    server: "https://{{.Honeytokens.Api.Host}}:6443"
+    insecure-skip-tls-verify: true
+contexts:
+- name: "{{.Persona.Cluster}}"
+  context:
+    cluster: "{{.Persona.Cluster}}"
+    user: "{{.Persona.Account}}"
+current-context: "{{.Persona.Cluster}}"
+users:
+- name: "{{.Persona.Account}}"
+  user:
+    token: "{{.Secrets.Token}}"

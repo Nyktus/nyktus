@@ -1,0 +1,20 @@
+# Gespeicherte E-Mail mit Link und Bild
+
+Die Datei `message.html` ist eine E-Mail als HTML, wie ein Mailprogramm sie speichert oder exportiert. Sie hat den Betreff `{{.Persona.Subject}}`, einen Link mit dem Text `{{.Persona.LinkText}}` auf `{{.Honeytokens.Link.URL}}` und ein unsichtbares Bild aus einem Pixel von `{{.Honeytokens.Pixel.URL}}`. Beide URLs gehören zu Honeytokens: Wer dem Link folgt, löst ein Event aus und wird auf das Weiterleitungsziel des Honeytokens weitergeleitet, und auch das Laden des Bildes löst ein Event aus.
+
+## Datei platzieren
+
+1. Geben Sie dem Link ein Weiterleitungsziel, das zum Text des Links passt, etwa die öffentliche Anmeldeseite eines Dienstes, den Sie nutzen.
+2. Legen Sie die Datei dort ab, wo ein Eindringling nach Mails sucht: in einem Export eines Postfachs, in einem Ordner mit gespeicherten Nachrichten in den Dokumenten eines Kontos, das nur diesem Zweck dient, oder auf einer Freigabe mit Mailsicherungen.
+3. Benennen Sie sie wie die Exporte an diesem Ort, zum Beispiel nach dem Betreff.
+4. Halten Sie in den Platzierungsnotizen des Artefakts fest, wo Sie es abgelegt haben.
+
+## Testen
+
+Öffnen Sie die Datei in einem Browser auf einem Rechner mit Zugang zum Internet. Der Browser lädt das Bild sofort; folgen Sie zusätzlich dem Link. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Grenzen
+
+- Schon das Öffnen der Datei in einem Browser löst ein Event aus, weil der Browser das Bild lädt. Das Öffnen in einem Editor löst keines aus.
+- Mail-Gateways und Vorschauen können das Bild und den Link laden, ohne dass jemand die Nachricht liest. Versenden Sie die Datei nicht per Mail.
+- Wer die Datei liest, sieht die URL. Sie nennt die Adresse Ihres Triggers und einen Zufallswert.

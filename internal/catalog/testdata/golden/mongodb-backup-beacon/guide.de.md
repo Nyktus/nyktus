@@ -1,0 +1,21 @@
+# MongoDB-Dokument mit Verbindungszeichenfolge
+
+Die Datei `endpoints.js` ist ein Skript für `mongosh`. Es fügt in die Collection `endpoints` der Datenbank `integrations` ein Dokument ein, das den Dienst `sync-service` nennt und eine Verbindungszeichenfolge mit dem Konto `svc-sync`, einem zufälligen Passwort und dem Host `databaseq3xwz7a2kfm4ub6tyc5nre.d.example.net` enthält. Der Host gehört zu einem DNS-Honeytoken. Jede Sicherung der Datenbank trägt das Dokument. Ein Eindringling, der eine Sicherung stiehlt, die Dokumente liest und sich mit der Zeichenfolge verbindet, löst den Namen auf, was ein Event auslöst. Dahinter steht keine Datenbank, und Konto und Passwort gibt es nirgends.
+
+## Datei platzieren
+
+1. Wählen Sie eine Datenbank und eine Collection, die es gibt und die ein Eindringling bei der Suche nach Verbindungsdaten liest. Eine Collection mit Integrationen oder Diensten passt. Ändern Sie `DatabaseName`, `CollectionName` und den Namen des Dienstes passend zu Ihren Daten.
+2. Führen Sie das Skript einmal aus: `mongosh "mongodb://HOST" --file endpoints.js`, mit der Verbindungszeichenfolge Ihres Servers. Das Login braucht das Recht, in die Collection einzufügen.
+3. Verwenden Sie je Datenbank, deren Sicherungen Sie schützen, ein eigenes Skript.
+4. Halten Sie in den Platzierungsnotizen des Artefakts fest, wo Sie es abgelegt haben.
+
+## Testen
+
+Lösen Sie den Namen mit `nslookup databaseq3xwz7a2kfm4ub6tyc5nre.d.example.net` auf einem Rechner mit Zugang zum Internet auf, oder verbinden Sie sich mit `mongosh` mit der Zeichenfolge im Dokument. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Grenzen
+
+- Die Wiederherstellung einer Sicherung führt nichts aus. Ein Event entsteht nur, wenn jemand die Verbindungszeichenfolge nutzt.
+- Das Passwort steht im Dokument als Klartext, wie in vielen echten Collections mit Verbindungsdaten. Anwendungen, die diese Collection über einen Treiber lesen, würden den Namen ebenfalls auflösen; wählen Sie eine Collection, die keine liest.
+- Eine Wiederherstellung in einem Netz, das keine Namen im Internet auflösen kann, erreicht die DNS-Rolle nicht. Das gilt für jedes Beacon in einer Sicherung: Es erwischt den Eindringling, der Ihre Sicherung auf einem eigenen Rechner wiederherstellt, nicht den, der in einem abgeschotteten Labor arbeitet.
+- Wer den Dump nach Host-Namen durchsucht oder die Objekte der wiederhergestellten Datenbank ansieht, kann den Namen ungewöhnlich finden.

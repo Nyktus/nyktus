@@ -1,0 +1,14 @@
+Active Directory replication - check
+
+Domain: corp.example.com
+
+1. Summary of all domain controllers:
+   repadmin /replsummary
+
+2. Details of the controller that reports errors:
+   repadmin /showrepl controllerq3xwz7a2kfm4ub6tyc5nre.d.example.net
+
+3. Start a replication by hand:
+   repadmin /syncall controllerq3xwz7a2kfm4ub6tyc5nre.d.example.net /AdeP
+
+If the errors remain, call Infrastructure team.
