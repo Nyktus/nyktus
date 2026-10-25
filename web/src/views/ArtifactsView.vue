@@ -10,6 +10,7 @@ import type { Artifact } from '../api/generated';
 import DocsHint from '../components/DocsHint.vue';
 import FileSize from '../components/FileSize.vue';
 import TimeStamp from '../components/TimeStamp.vue';
+import { carriesHoneytoken } from '../artifactRole';
 import { t } from '../i18n';
 import { usePagedList } from '../usePagedList';
 
@@ -51,7 +52,7 @@ onMounted(list.reload);
               <RouterLink class="mono" :to="{ name: 'artifact', params: { id: artifact.id } }"><bdi>{{ artifact.file_name }}</bdi></RouterLink>
             </td>
             <td>{{ t(`artifactFormat.${artifact.format}`) }}</td>
-            <td>{{ Object.keys(artifact.bindings).length > 0 ? t('artifacts.role.lure') : t('artifacts.role.litter') }}</td>
+            <td>{{ carriesHoneytoken(artifact) ? t('artifacts.role.lure') : t('artifacts.role.litter') }}</td>
             <td><FileSize :bytes="artifact.size" /></td>
             <td><TimeStamp :value="artifact.created_at" /></td>
           </tr>

@@ -15,7 +15,7 @@ import PersonaFields from '../components/PersonaFields.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import { locale, t, type Locale } from '../i18n';
 import { personaProblems, personaToSend } from '../personaRules';
-import { personaProblemText } from '../personaText';
+import { personaProblemTexts } from '../personaText';
 import { session } from '../session';
 
 const route = useRoute();
@@ -80,14 +80,7 @@ async function load(): Promise<void> {
 
 function check(): Record<string, string> {
   const fields = deception.value?.persona ?? [];
-  const found: Record<string, string> = {};
-  for (const [key, problem] of Object.entries(personaProblems(fields, persona.value))) {
-    const field = fields.find((f) => f.key === key);
-    if (field !== undefined) {
-      found[key] = personaProblemText(field, problem);
-    }
-  }
-  return found;
+  return personaProblemTexts(fields, personaProblems(fields, persona.value));
 }
 
 async function apply(): Promise<void> {

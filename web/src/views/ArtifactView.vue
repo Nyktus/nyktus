@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
+import { carriesHoneytoken } from '../artifactRole';
 import { ApiError } from '../api/errors';
 import type { Artifact } from '../api/generated';
 import { errorText } from '../api/messages';
@@ -38,7 +39,7 @@ const preview = ref<{ text: string; cut: boolean } | undefined>();
 const previewing = ref(false);
 const canWrite = computed(() => session.can('artifacts:write'));
 // A file bound to a honeytoken of its scenario is a lure; one without a binding is pocket litter.
-const carries = computed(() => artifact.value !== undefined && Object.keys(artifact.value.bindings).length > 0);
+const carries = computed(() => artifact.value !== undefined && carriesHoneytoken(artifact.value));
 // Only text is shown, and as text; a file that is not text is only downloaded.
 const previewable = computed(() => artifact.value !== undefined && artifact.value.media_type.startsWith('text/'));
 

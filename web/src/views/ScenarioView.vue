@@ -17,6 +17,7 @@ import ScenarioForm from '../components/ScenarioForm.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
 import TimeStamp from '../components/TimeStamp.vue';
+import { carriesHoneytoken } from '../artifactRole';
 import { t } from '../i18n';
 import { session } from '../session';
 import { usePagedList } from '../usePagedList';
@@ -112,11 +113,6 @@ async function loadGuide(): Promise<void> {
 
 function guideOf(deceptionId: string): string | undefined {
   return guides.value.find((g) => g.deception_id === deceptionId)?.content;
-}
-
-// A file that carries a honeytoken of the scenario is a lure; one that carries none is pocket litter.
-function carriesHoneytoken(file: Artifact): boolean {
-  return Object.keys(file.bindings).length > 0;
 }
 
 async function update(body: OperationTypes['updateScenario']['body']): Promise<void> {

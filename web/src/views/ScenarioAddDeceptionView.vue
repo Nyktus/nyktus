@@ -14,7 +14,7 @@ import FileChoice from '../components/FileChoice.vue';
 import PersonaFields from '../components/PersonaFields.vue';
 import { locale, t, type Locale } from '../i18n';
 import { personaProblems, personaToSend } from '../personaRules';
-import { personaProblemText } from '../personaText';
+import { personaProblemTexts } from '../personaText';
 
 const route = useRoute();
 const router = useRouter();
@@ -80,9 +80,13 @@ async function loadDetail(): Promise<void> {
     if (mine !== asked) {
       return;
     }
-    // What was typed stays, so that a key that two deceptions ask for is asked once.
+    // What was typed stays, so that a key that two deceptions ask for is asked once. A new language
+    // keeps the files that were taken away; only another deception starts with all of its files.
+    const sameDeception = deception.value?.id === body.id;
     deception.value = body;
-    selected.value = body.artifacts.map((a) => a.key);
+    if (!sameDeception) {
+      selected.value = body.artifacts.map((a) => a.key);
+    }
   } catch (failure) {
     if (mine === asked) {
       deception.value = undefined;
@@ -93,14 +97,7 @@ async function loadDetail(): Promise<void> {
 
 function check(): Record<string, string> {
   const fields = deception.value?.persona ?? [];
-  const found: Record<string, string> = {};
-  for (const [key, problem] of Object.entries(personaProblems(fields, persona.value, scenario.value?.persona))) {
-    const field = fields.find((f) => f.key === key);
-    if (field !== undefined) {
-      found[key] = personaProblemText(field, problem);
-    }
-  }
-  return found;
+  return personaProblemTexts(fields, personaProblems(fields, persona.value, scenario.value?.persona));
 }
 
 async function submit(): Promise<void> {
@@ -129,10 +126,28 @@ async function submit(): Promise<void> {
   }
 }
 
+// Only the texts of the catalog depend on the language; the scenario is not read again. The answer
+// to the last question is the one that counts.
+let askedChoices = 0;
+
+async function reloadChoices(): Promise<void> {
+  const mine = ++askedChoices;
+  try {
+    const body = (await api.call('listCatalogDeceptions', { query: { lang: locale.value } })).body.deceptions;
+    if (mine === askedChoices) {
+      choices.value = body;
+    }
+  } catch (failure) {
+    if (mine === askedChoices) {
+      loadError.value = show(failure);
+    }
+  }
+}
+
 onMounted(load);
 watch(chosen, loadDetail);
 watch(locale, () => {
-  void load();
+  void reloadChoices();
   void loadDetail();
 });
 </script>

@@ -241,6 +241,31 @@ describe('adding a deception', () => {
     }
   });
 
+  test('keeps the files that were taken away when the language changes, and does not read the scenario again', async () => {
+    const s = server();
+    const { wrapper, i18n } = await boot(s, path);
+    await choose(wrapper);
+    await wrapper.get('fieldset.files input[type=checkbox]').setValue(false);
+    const before = s.requests.filter((r) => r.url === detail).length;
+    i18n.setLocale('de');
+    await flushPromises();
+    expect((wrapper.get('fieldset.files input[type=checkbox]').element as HTMLInputElement).checked).toBe(false);
+    expect(s.requests.filter((r) => r.url === detail)).toHaveLength(before);
+    expect(s.requests.at(-1)?.url).toContain('lang=de');
+  });
+
+  test('starts with all the files of another deception when it is chosen', async () => {
+    const second = server('admin', {
+      'GET /api/v1/catalog/deceptions': () => json(200, { deceptions: [catalogSummary(), catalogSummary({ id: 'second', title: 'Second' })] }),
+      'GET /api/v1/catalog/deceptions/second': () => json(200, catalogDeception({ id: 'second' })),
+    });
+    const { wrapper } = await boot(second, path);
+    await choose(wrapper);
+    await wrapper.get('fieldset.files input[type=checkbox]').setValue(false);
+    await choose(wrapper, 'second');
+    expect((wrapper.get('fieldset.files input[type=checkbox]').element as HTMLInputElement).checked).toBe(true);
+  });
+
   test('says when the scenario does not exist', async () => {
     const { wrapper } = await boot(server('admin', { [`GET ${detail}`]: () => failure(404, 'not_found') }), path);
     expect(wrapper.get('[role=status]').text()).toBe('This does not exist.');
@@ -407,6 +432,31 @@ describe('adding an artifact', () => {
     await flushPromises();
     expect(wrapper.text()).toContain('Chosen last.');
     expect(wrapper.text()).not.toContain('Chosen first.');
+  });
+
+  test('keeps the honeytokens that were chosen when the language changes, and reads only the catalog again', async () => {
+    const s = server();
+    const { wrapper, i18n } = await boot(s, path);
+    await choose(wrapper);
+    await wrapper.get('#slot-portal').setValue(webToken.id);
+    const before = s.requests.length;
+    i18n.setLocale('de');
+    await flushPromises();
+    expect((wrapper.get('#slot-portal').element as HTMLSelectElement).value).toBe(webToken.id);
+    expect(wrapper.get('.verdict').text()).toContain('Lure-Tr\u00e4ger');
+    expect(s.requests.slice(before).map((r) => r.url.split('?')[0])).toEqual(
+      expect.arrayContaining(['/api/v1/catalog/artifacts', '/api/v1/catalog/artifacts/bookmarks']),
+    );
+    expect(s.requests.slice(before).some((r) => r.url.startsWith('/api/v1/honeytokens') || r.url === detail)).toBe(false);
+  });
+
+  test('starts with empty slots for another artifact', async () => {
+    const other = server('admin', { 'GET /api/v1/catalog/artifacts/notes': () => json(200, catalogArtifact({ id: 'notes' })) });
+    const { wrapper } = await boot(other, path);
+    await choose(wrapper);
+    await wrapper.get('#slot-portal').setValue(webToken.id);
+    await choose(wrapper, 'notes');
+    expect((wrapper.get('#slot-portal').element as HTMLSelectElement).value).toBe('');
   });
 
   test('says when the catalog has no artifact', async () => {

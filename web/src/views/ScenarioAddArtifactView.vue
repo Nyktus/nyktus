@@ -14,7 +14,7 @@ import PersonaFields from '../components/PersonaFields.vue';
 import { isolate } from '../format';
 import { locale, t, type Locale } from '../i18n';
 import { personaProblems, personaToSend } from '../personaRules';
-import { personaProblemText } from '../personaText';
+import { personaProblemTexts } from '../personaText';
 
 /** The most pages of honeytokens that the page reads, so that it cannot loop without end. */
 const maxPages = 10;
@@ -86,10 +86,10 @@ async function load(): Promise<void> {
     const [found, list] = await Promise.all([
       api.call('getScenario', { path: { id: id.value } }),
       api.call('listCatalogArtifacts', { query: { lang: locale.value } }),
+      loadHoneytokens(),
     ]);
     scenario.value = found.body;
     choices.value = list.body.artifacts;
-    await loadHoneytokens();
   } catch (failure) {
     if (failure instanceof ApiError && failure.kind === 'not_found') {
       missing.value = true;
@@ -120,7 +120,10 @@ async function loadDetail(): Promise<void> {
       return;
     }
     // A slot starts empty: binding a file to a honeytoken makes it a lure, and that is for the person to choose.
-    bound.value = Object.fromEntries(body.slots.map((slot) => [slot.key, '']));
+    // A new language keeps what was chosen for the same file.
+    if (artifact.value?.id !== body.id) {
+      bound.value = Object.fromEntries(body.slots.map((slot) => [slot.key, '']));
+    }
     artifact.value = body;
   } catch (failure) {
     if (mine === asked) {
@@ -132,13 +135,7 @@ async function loadDetail(): Promise<void> {
 
 function check(): boolean {
   const fields = artifact.value?.persona ?? [];
-  const found: Record<string, string> = {};
-  for (const [key, problem] of Object.entries(personaProblems(fields, persona.value, scenario.value?.persona))) {
-    const field = fields.find((f) => f.key === key);
-    if (field !== undefined) {
-      found[key] = personaProblemText(field, problem);
-    }
-  }
+  const found = personaProblemTexts(fields, personaProblems(fields, persona.value, scenario.value?.persona));
   problems.value = found;
   const missingSlots: Record<string, string> = {};
   for (const slot of artifact.value?.slots ?? []) {
@@ -176,10 +173,28 @@ async function submit(): Promise<void> {
   }
 }
 
+// Only the texts of the catalog depend on the language; the scenario and its honeytokens are not read
+// again. The answer to the last question is the one that counts.
+let askedChoices = 0;
+
+async function reloadChoices(): Promise<void> {
+  const mine = ++askedChoices;
+  try {
+    const body = (await api.call('listCatalogArtifacts', { query: { lang: locale.value } })).body.artifacts;
+    if (mine === askedChoices) {
+      choices.value = body;
+    }
+  } catch (failure) {
+    if (mine === askedChoices) {
+      loadError.value = show(failure);
+    }
+  }
+}
+
 onMounted(load);
 watch(chosen, loadDetail);
 watch(locale, () => {
-  void load();
+  void reloadChoices();
   void loadDetail();
 });
 </script>
