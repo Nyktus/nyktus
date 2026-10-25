@@ -20,7 +20,7 @@ import (
 //     same name, with a required slot, a value of the persona and a secret.
 //   - pair recommends both artifacts.
 //   - memo has an optional slot and nothing else: pocket litter without it.
-//   - note asks for the company as text, hostco as a host name.
+//   - note asks for the company as text.
 //   - ssh says where to place it.
 
 const testDeception = `{
@@ -102,12 +102,10 @@ func testCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
 	file := func(content string) *fstest.MapFile { return &fstest.MapFile{Data: []byte(content)} }
 	fsys := fstest.MapFS{
-		"artifacts/memo/artifact.json":   file(testMemo),
-		"artifacts/memo/memo.txt.tmpl":   file("Reminder{{if .Honeytokens.Image.URL}}: {{.Honeytokens.Image.URL}}{{end}}\n"),
-		"artifacts/note/artifact.json":   file(personaArtifact("note", "text", "Example Ltd")),
-		"artifacts/note/file.txt.tmpl":   file("Company: {{.Persona.Company}}\n"),
-		"artifacts/hostco/artifact.json": file(personaArtifact("hostco", "host", "example.com")),
-		"artifacts/hostco/file.txt.tmpl": file("Company: {{.Persona.Company}}\n"),
+		"artifacts/memo/artifact.json": file(testMemo),
+		"artifacts/memo/memo.txt.tmpl": file("Reminder{{if .Honeytokens.Image.URL}}: {{.Honeytokens.Image.URL}}{{end}}\n"),
+		"artifacts/note/artifact.json": file(personaArtifact("note", "text", "Example Ltd")),
+		"artifacts/note/file.txt.tmpl": file("Company: {{.Persona.Company}}\n"),
 	}
 	for id, def := range map[string]struct{ persona, artifacts string }{
 		"ssh":  {"", `"ssh"`},

@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"errors"
 	"maps"
 	"slices"
@@ -189,5 +190,47 @@ func TestPersonaConflictError(t *testing.T) {
 	err := error(&PersonaConflictError{Key: "Domain"})
 	if !errors.Is(err, ErrPersonaConflict) || errors.Is(err, ErrInvalidPersona) || !strings.Contains(err.Error(), "Domain") {
 		t.Errorf("error = %v", err)
+	}
+}
+
+// The database counts the text of the jsonb, which has a space after every
+// colon and comma, so a persona that fits as compact JSON can still exceed it.
+func TestPersonaSize(t *testing.T) {
+	t.Parallel()
+	for name, tt := range map[string]struct {
+		persona map[string]string
+		want    int
+	}{
+		"empty":         {map[string]string{}, len(`{}`)},
+		"one entry":     {map[string]string{"Domain": "a.b"}, len(`{"Domain": "a.b"}`)},
+		"two entries":   {map[string]string{"A": "x", "B": "y"}, len(`{"A": "x", "B": "y"}`)},
+		"html and utf8": {map[string]string{"A": "<&>ä"}, len("{\"A\": \"<&>ä\"}")},
+		"escapes":       {map[string]string{"A": "a\"b\\c"}, len(`{"A": "a\"b\\c"}`)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := personaSize(tt.persona); got != tt.want {
+				t.Errorf("personaSize() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+
+	d := Deception{Persona: []PersonaField{{Key: "Domain", Kind: KindHost}}}
+	given := map[string]string{"Domain": "corp.example.com"}
+	stored := map[string]string{}
+	for i := range 100 {
+		stored["K"+string(rune('a'+i/26))+string(rune('a'+i%26))] = strings.Repeat("v", 150)
+	}
+	// Pad one value so that the merged persona is exactly as long as the limit
+	// as compact JSON, which is shorter than the text of the jsonb.
+	merged := maps.Clone(stored)
+	maps.Copy(merged, given)
+	compact, err := json.Marshal(merged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored["Kaa"] += strings.Repeat("v", MaxPersonaBytes-len(compact))
+	if _, _, err := d.MergePersona(stored, given); !errors.Is(err, ErrInvalidPersona) {
+		t.Errorf("MergePersona() error = %v, want ErrInvalidPersona for a persona that is too large as jsonb text", err)
 	}
 }

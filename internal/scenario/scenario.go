@@ -85,11 +85,11 @@ type Scenario struct {
 // AppliedDeception is a deception that joined a scenario.
 type AppliedDeception struct {
 	// DeceptionID is the identifier of the deception in the catalog.
-	DeceptionID string
+	DeceptionID string `json:"deception_id"`
 	// Language is the language of its guide and of the names of its
 	// honeytokens.
-	Language  string
-	CreatedAt time.Time
+	Language  string    `json:"language"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Guide is the guide of a deception of a scenario, as it was rendered.

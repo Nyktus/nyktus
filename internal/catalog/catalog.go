@@ -43,9 +43,48 @@ func Load(fsys fs.FS) (*Catalog, error) {
 	}); err != nil {
 		return nil, err
 	}
+	if err := c.checkPersonaKinds(); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidDeception, err)
+	}
 	// An artifact that no deception recommends is valid: it is offered on its
 	// own.
 	return c, nil
+}
+
+// checkPersonaKinds fails if a key of the persona is of one kind in one entry
+// and of another in another. The persona belongs to the scenario and only
+// grows, so a value that a scenario has must fit the kind of every entry that
+// joins it later; with one kind for a key, it always does.
+func (c *Catalog) checkPersonaKinds() error {
+	type owner struct {
+		kind Kind
+		id   string
+	}
+	first := map[string]owner{}
+	check := func(id string, fields []PersonaField) error {
+		for _, f := range fields {
+			prev, ok := first[f.Key]
+			switch {
+			case !ok:
+				first[f.Key] = owner{f.Kind, id}
+			case prev.kind != f.Kind:
+				return fmt.Errorf("the persona value %s is %s in %s and %s in %s: a key has one kind in the catalog",
+					f.Key, prev.kind, prev.id, f.Kind, id)
+			}
+		}
+		return nil
+	}
+	for _, a := range c.artifacts {
+		if err := check(a.ID, a.Persona); err != nil {
+			return err
+		}
+	}
+	for _, d := range c.deceptions {
+		if err := check(d.ID, d.Persona); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // loadAll loads the entry in each directory of dir, which holds nothing else.

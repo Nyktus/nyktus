@@ -202,6 +202,15 @@ func (j Join) join(ctx context.Context, tx pgx.Tx, actor audit.Actor, id string,
 		return Applied{}, err
 	}
 	dec := j.Deception
+	// The lock has loaded the deceptions the scenario holds, so a repeat or a
+	// full scenario is told before anything is created or the persona is
+	// judged. The schema enforces both rules all the same.
+	if slices.ContainsFunc(sc.Deceptions, func(d AppliedDeception) bool { return d.DeceptionID == dec.ID }) {
+		return Applied{}, ErrDeceptionAdded
+	}
+	if len(sc.Deceptions) >= MaxDeceptions {
+		return Applied{}, ErrTooManyDeceptions
+	}
 	chosen, err := j.selected()
 	if err != nil {
 		return Applied{}, err

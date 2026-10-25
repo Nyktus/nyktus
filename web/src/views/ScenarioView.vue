@@ -18,6 +18,7 @@ import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
 import TimeStamp from '../components/TimeStamp.vue';
 import { t } from '../i18n';
+import { sourceLabel } from '../scenarioSource';
 import { session } from '../session';
 import { usePagedList } from '../usePagedList';
 
@@ -192,7 +193,7 @@ onMounted(load);
           <dt>{{ t('field.notes') }}</dt>
           <dd class="notes">{{ scenario.notes === '' ? t('common.none') : scenario.notes }}</dd>
           <dt>{{ t('scenarios.source') }}</dt>
-          <dd>{{ scenario.deceptions.length === 0 ? t('scenarios.byHand') : scenario.deceptions.map((d) => t('scenarios.fromDeception', { id: d.deception_id })).join('; ') }}</dd>
+          <dd>{{ sourceLabel(scenario) }}</dd>
           <template v-if="scenario.deceptions.length > 0">
             <dt>{{ t('scenarios.language') }}</dt>
             <dd>{{ [...new Set(scenario.deceptions.map((d) => d.language))].join(', ') }}</dd>
@@ -295,7 +296,7 @@ onMounted(load);
         <p v-if="guideFailed" class="notice notice-error" role="alert">{{ t('scenarios.guideFailed') }}</p>
         <template v-else>
           <template v-for="g in guides" :key="g.deception_id">
-            <p class="hint">{{ guides.length > 1 ? `${g.deception_id}: ` : '' }}{{ t('scenarios.guideLanguage', { language: g.language }) }}</p>
+            <p class="hint">{{ guides.length > 1 ? t('scenarios.guideOf', { id: g.deception_id, language: g.language }) : t('scenarios.guideLanguage', { language: g.language }) }}</p>
             <MarkdownView :source="g.content" />
           </template>
         </template>

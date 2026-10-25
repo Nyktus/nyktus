@@ -365,3 +365,21 @@ describe('the scenario of a honeypot', () => {
     expect(wrapper.get('.assign a').text()).toBe('Stolen backup');
   });
 });
+
+describe('where a scenario came from', () => {
+  test('names every deception that joined it, and the guide of each', async () => {
+    const detail = `/api/v1/scenarios/${scenarioId}`;
+    const s = server('admin', {
+      [`GET ${detail}`]: () => json(200, scenario({ deceptions: [joined('ssh-jump-host'), joined('browser-bookmarks', 'de')] })),
+      [`GET ${detail}/guide`]: () => json(200, { guides: [
+        { deception_id: 'ssh-jump-host', language: 'en', content: '# One' },
+        { deception_id: 'browser-bookmarks', language: 'de', content: '# Two' },
+      ] }),
+    });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+    expect(wrapper.text()).toContain('From the deception ssh-jump-host; From the deception browser-bookmarks');
+    expect(wrapper.text()).toContain('Guide of ssh-jump-host. Language: en');
+    expect(wrapper.text()).toContain('Guide of browser-bookmarks. Language: de');
+    expect(wrapper.findAll('.markdown')).toHaveLength(2);
+  });
+});

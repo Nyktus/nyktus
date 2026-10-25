@@ -540,3 +540,92 @@ func TestGuides_AreInTheOrderTheDeceptionsJoined(t *testing.T) {
 		t.Errorf("Get() deceptions = %v, %v; want the same order", joined, err)
 	}
 }
+
+// A deception that is part of the scenario already, or a scenario that holds
+// the most it may, is told before the persona is judged: a repeat with another
+// value is a repeat, not a conflict of the persona.
+func TestAddDeception_TellsARepeatBeforeThePersona(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	actor := createUser(t, d)
+	c := testCatalog(t)
+	sc := create(t, d, scenario.Spec{Name: "s"})
+	addDeception(t, d, actor, sc.ID, join(t, c, "ssh", domain))
+
+	other := map[string]string{"Domain": "other.example.com"}
+	_, err := scenario.AddDeception(t.Context(), d.console, actor, scenario.Addition{ScenarioID: sc.ID, Join: join(t, c, "ssh", other)})
+	if !errors.Is(err, scenario.ErrDeceptionAdded) || errors.Is(err, catalog.ErrPersonaConflict) {
+		t.Errorf("AddDeception(repeat with another value) error = %v, want ErrDeceptionAdded", err)
+	}
+
+	// At the limit, a repeat is still a repeat.
+	if _, err := d.owner.Exec(t.Context(), `
+INSERT INTO scenario_deceptions (scenario_id, deception_id, language, guide)
+SELECT $1, 'filler-' || n, 'en', 'g' FROM generate_series(1, $2::int - 1) AS n`, sc.ID, scenario.MaxDeceptions); err != nil {
+		t.Fatal(err)
+	}
+	_, err = scenario.AddDeception(t.Context(), d.console, actor, scenario.Addition{ScenarioID: sc.ID, Join: join(t, c, "ssh", domain)})
+	if !errors.Is(err, scenario.ErrDeceptionAdded) {
+		t.Errorf("AddDeception(repeat at the limit) error = %v, want ErrDeceptionAdded", err)
+	}
+	// A scenario that is full is told so before the persona is judged.
+	_, err = scenario.AddDeception(t.Context(), d.console, actor, scenario.Addition{ScenarioID: sc.ID, Join: join(t, c, "rdp", nil)})
+	if !errors.Is(err, scenario.ErrTooManyDeceptions) {
+		t.Errorf("AddDeception(at the limit, without a persona) error = %v, want ErrTooManyDeceptions", err)
+	}
+	// Nothing was created by the refusals.
+	if n := count(t, d, `SELECT count(*) FROM honeytokens`); n != 2 {
+		t.Errorf("%d honeytokens, want the 2 of the first deception", n)
+	}
+}
+
+// The largest persona that the code accepts is the largest that the schema
+// accepts: the schema counts the text of the jsonb, which has a space after
+// every colon and comma.
+func TestMergePersona_LimitIsTheLimitOfTheSchema(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	c := testCatalog(t)
+	sc := create(t, d, scenario.Spec{Name: "s"})
+	dec, _ := c.Lookup("ssh")
+
+	// Ten keys that the deception does not ask for hold the rest, with
+	// characters that JSON writes in more than one byte or escapes.
+	padded := func(n int) map[string]string {
+		stored := map[string]string{}
+		for i := range 10 {
+			stored["Pad"+string(rune('A'+i))] = strings.Repeat("v", n/10) + strings.Repeat("\"", i)
+		}
+		return stored
+	}
+	size := 0
+	for n := 10000; ; n += 10 {
+		if _, _, err := dec.MergePersona(padded(n), domain); err != nil {
+			break
+		}
+		size = n
+	}
+	if size == 0 {
+		t.Fatal("no persona fits")
+	}
+	merged, _, err := dec.MergePersona(padded(size), domain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.owner.Exec(t.Context(), `UPDATE scenarios SET persona = $2 WHERE id = $1`, sc.ID, merged); err != nil {
+		t.Errorf("a persona that the code accepts: %v", err)
+	}
+	var length int
+	if err := d.owner.QueryRow(t.Context(), `SELECT octet_length(persona::text) FROM scenarios WHERE id = $1`, sc.ID).Scan(&length); err != nil ||
+		length > catalog.MaxPersonaBytes || length < catalog.MaxPersonaBytes-200 {
+		t.Errorf("persona has %d bytes as text, %v; want just below %d", length, err, catalog.MaxPersonaBytes)
+	}
+	// A little more than the code accepts is more than the schema accepts.
+	over := padded(size + 400)
+	for k, v := range domain {
+		over[k] = v
+	}
+	if _, err := d.owner.Exec(t.Context(), `UPDATE scenarios SET persona = $2 WHERE id = $1`, sc.ID, over); err == nil {
+		t.Error("a persona beyond the limit was stored")
+	}
+}

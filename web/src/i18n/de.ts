@@ -322,6 +322,7 @@ export const de: Record<MessageKey, string> = {
   'scenarios.apply': 'Deception anwenden',
   'scenarios.guide': 'Leitfaden',
   'scenarios.guideLanguage': 'Sprache des Leitfadens: {language}',
+  'scenarios.guideOf': 'Leitfaden von {id}. Sprache: {language}',
   'scenarios.guideFailed': 'Der Leitfaden konnte nicht geladen werden.',
 
   'error.artifact_reveals_decoy':

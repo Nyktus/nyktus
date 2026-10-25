@@ -10,6 +10,7 @@ import type { Scenario } from '../api/generated';
 import DocsHint from '../components/DocsHint.vue';
 import TimeStamp from '../components/TimeStamp.vue';
 import { t } from '../i18n';
+import { sourceLabel } from '../scenarioSource';
 import { session } from '../session';
 import { usePagedList } from '../usePagedList';
 
@@ -54,7 +55,7 @@ onMounted(list.reload);
             <td>
               <RouterLink :to="{ name: 'scenario', params: { id: scenario.id } }">{{ scenario.name }}</RouterLink>
             </td>
-            <td>{{ scenario.deceptions.length === 0 ? t('scenarios.byHand') : scenario.deceptions.map((d) => t('scenarios.fromDeception', { id: d.deception_id })).join('; ') }}</td>
+            <td>{{ sourceLabel(scenario) }}</td>
             <td><TimeStamp :value="scenario.created_at" /></td>
           </tr>
         </tbody>

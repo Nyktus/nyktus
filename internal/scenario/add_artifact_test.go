@@ -265,8 +265,8 @@ func TestAddArtifact_ChecksTheMarkersOfTheScenario(t *testing.T) {
 	}
 }
 
-// An artifact adds the keys of its persona that the scenario lacks, keeps the
-// values it has, and takes the kind of the key from the artifact.
+// An artifact adds the keys of its persona that the scenario lacks and keeps the
+// values it has.
 func TestAddArtifact_PersonaOnlyGrows(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
@@ -291,9 +291,6 @@ func TestAddArtifact_PersonaOnlyGrows(t *testing.T) {
 		{"left out", "note", nil, nil},
 		{"repeated", "note", map[string]string{"Company": "Example Ltd"}, nil},
 		{"another value", "note", map[string]string{"Company": "Other Ltd"}, catalog.ErrPersonaConflict},
-		// The stored value is no host name, whatever the scenario says.
-		{"another kind", "hostco", nil, catalog.ErrInvalidPersona},
-		{"another kind with a new value", "hostco", map[string]string{"Company": "example.com"}, catalog.ErrPersonaConflict},
 		{"unknown key", "note", map[string]string{"Zone": "x"}, catalog.ErrInvalidPersona},
 	} {
 		_, err := scenario.AddArtifact(t.Context(), d.console, actor, artifactAddition(t, c, sc.ID, tt.artifact, nil, tt.persona))

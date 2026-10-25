@@ -75,7 +75,8 @@ A deception binds its honeytokens to the slots of its artifacts by key: the slot
 - every required slot has a honeytoken of its key, of a type that the slot accepts; an optional slot without a honeytoken stays empty,
 - every value of the persona that an artifact asks for is a value of the deception, of the same kind (labels and examples may differ),
 - every honeytoken and every value of the persona is referenced by the guide or by an artifact, so that nothing is asked for in vain, and
-- no artifact contains the identifier of the deception: it is the same in every installation, like the identifier of the artifact.
+- no artifact contains the identifier of the deception: it is the same in every installation, like the identifier of the artifact, and
+- a value of the persona has one kind in the whole catalog: the persona belongs to the scenario and only grows, so a value that a scenario holds must fit every entry that joins it later.
 
 ### Engage activities of a scenario
 

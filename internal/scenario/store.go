@@ -64,48 +64,18 @@ func NewStore(q db.Querier) *Store {
 	return &Store{db: q}
 }
 
-// columns are the columns of a scenario without its guide, which only a read
-// of the guide needs.
-const columns = `id, name, notes, engage_activities, persona, created_at, updated_at`
+// columns are the columns of a scenario with its deceptions, which are kept in
+// a table of their own and read in the same statement, so that the persona and
+// the deceptions of a scenario come from one snapshot.
+const columns = `id, name, notes, engage_activities, persona, created_at, updated_at,
+COALESCE((SELECT jsonb_agg(jsonb_build_object('deception_id', d.deception_id, 'language', d.language,
+	'created_at', d.created_at) ORDER BY d.created_at, d.deception_id)
+	FROM scenario_deceptions d WHERE d.scenario_id = scenarios.id), '[]')`
 
 func scan(row pgx.Row) (Scenario, error) {
 	var s Scenario
-	err := row.Scan(&s.ID, &s.Name, &s.Notes, &s.EngageActivities, &s.Persona, &s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.Name, &s.Notes, &s.EngageActivities, &s.Persona, &s.CreatedAt, &s.UpdatedAt, &s.Deceptions)
 	return s, err
-}
-
-// withDeceptions sets the deceptions of the scenarios, which are kept in a
-// table of their own.
-func (s *Store) withDeceptions(ctx context.Context, list ...*Scenario) error {
-	ids := make([]string, len(list))
-	byID := make(map[string]*Scenario, len(list))
-	for i, sc := range list {
-		ids[i] = sc.ID
-		sc.Deceptions = []AppliedDeception{}
-		byID[sc.ID] = sc
-	}
-	rows, err := s.db.Query(ctx, `
-SELECT scenario_id, deception_id, language, created_at FROM scenario_deceptions
-WHERE scenario_id = ANY($1::uuid[])
-ORDER BY created_at, deception_id`, ids)
-	if err != nil {
-		return fmt.Errorf("list deceptions of scenarios: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var (
-			id string
-			d  AppliedDeception
-		)
-		if err := rows.Scan(&id, &d.DeceptionID, &d.Language, &d.CreatedAt); err != nil {
-			return fmt.Errorf("list deceptions of scenarios: %w", err)
-		}
-		byID[id].Deceptions = append(byID[id].Deceptions, d)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("list deceptions of scenarios: %w", err)
-	}
-	return nil
 }
 
 // Create validates spec and stores a new scenario. The fields are validated
@@ -126,7 +96,6 @@ RETURNING `+columns, spec.Name, spec.Notes, activities))
 	if err != nil {
 		return Scenario{}, fmt.Errorf("create scenario: %w", mapWriteError(err))
 	}
-	sc.Deceptions = []AppliedDeception{}
 	return sc, nil
 }
 
@@ -170,9 +139,6 @@ func (s *Store) Get(ctx context.Context, id string) (Scenario, error) {
 	}
 	if err != nil {
 		return Scenario{}, fmt.Errorf("get scenario %s: %w", id, err)
-	}
-	if err := s.withDeceptions(ctx, &sc); err != nil {
-		return Scenario{}, err
 	}
 	return sc, nil
 }
@@ -221,15 +187,6 @@ func (s *Store) List(ctx context.Context, size int, after *Cursor) (list []Scena
 		last := list[size-1]
 		next = &Cursor{CreatedAt: last.CreatedAt, ID: last.ID}
 	}
-	if len(list) > 0 {
-		pointers := make([]*Scenario, len(list))
-		for i := range list {
-			pointers[i] = &list[i]
-		}
-		if err := s.withDeceptions(ctx, pointers...); err != nil {
-			return nil, nil, err
-		}
-	}
 	return list, next, nil
 }
 
@@ -252,9 +209,6 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (Scenario, []st
 	}
 	if err != nil {
 		return Scenario{}, nil, fmt.Errorf("lock scenario %s: %w", id, err)
-	}
-	if err := s.withDeceptions(ctx, &current); err != nil {
-		return Scenario{}, nil, err
 	}
 
 	updated := current
@@ -287,7 +241,6 @@ RETURNING `+columns, id, updated.Name, updated.Notes, updated.EngageActivities))
 	if err != nil {
 		return Scenario{}, nil, fmt.Errorf("update scenario %s: %w", id, mapWriteError(err))
 	}
-	sc.Deceptions = current.Deceptions
 	return sc, changed, nil
 }
 
@@ -497,9 +450,6 @@ func (s *Store) Lock(ctx context.Context, id string) (Scenario, error) {
 	}
 	if err != nil {
 		return Scenario{}, fmt.Errorf("lock scenario %s: %w", id, err)
-	}
-	if err := s.withDeceptions(ctx, &sc); err != nil {
-		return Scenario{}, err
 	}
 	return sc, nil
 }

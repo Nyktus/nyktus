@@ -4,11 +4,13 @@
 package catalog
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 
 	"nyktus.org/nyktus/internal/honeytoken"
 )
@@ -327,8 +329,8 @@ func (e *PersonaConflictError) Is(target error) bool {
 	return target == ErrPersonaConflict
 }
 
-// MaxPersonaBytes is the largest persona of a scenario, as its JSON, as the
-// database enforces it.
+// MaxPersonaBytes is the largest persona of a scenario, as the text of its
+// jsonb, as the database enforces it.
 const MaxPersonaBytes = 16384
 
 // MergePersona returns the persona of a scenario that holds stored after the
@@ -381,8 +383,34 @@ func mergePersona(fields []PersonaField, owner string, stored, given map[string]
 		}
 		merged[f.Key] = v
 	}
-	if b, err := json.Marshal(merged); err != nil || len(b) > MaxPersonaBytes {
+	if personaSize(merged) > MaxPersonaBytes {
 		return nil, nil, &PersonaError{Key: "", Reason: "the persona of the scenario would be too large"}
 	}
 	return merged, added, nil
+}
+
+// personaSize returns the length in bytes of the text that the database makes
+// of the persona, which is what its check counts: jsonb writes a space after
+// every colon and comma, and leaves "<", ">" and "&" as they are.
+func personaSize(persona map[string]string) int {
+	size := 2 // the braces
+	if len(persona) > 1 {
+		size += 2 * (len(persona) - 1) // ", " between the entries
+	}
+	for k, v := range persona {
+		size += len(jsonString(k)) + len(": ") + len(jsonString(v))
+	}
+	return size
+}
+
+// jsonString returns s as the database writes a string of a jsonb: as JSON,
+// but with "<", ">" and "&" as they are, and the separators of lines and
+// paragraphs too.
+func jsonString(s string) []byte {
+	b, _ := json.Marshal(s) //nolint:errchkjson // a string always encodes
+	for _, escaped := range []string{`\u003c`, `\u003e`, `\u0026`, `\u2028`, `\u2029`} {
+		r, _ := strconv.Unquote(`"` + escaped + `"`)
+		b = bytes.ReplaceAll(b, []byte(escaped), []byte(r))
+	}
+	return b
 }
