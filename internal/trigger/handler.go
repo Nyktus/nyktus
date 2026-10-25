@@ -31,6 +31,8 @@ const (
 	// recordTimeout bounds the wait for the database. A request that takes
 	// longer is answered as if its value were unknown.
 	recordTimeout = 2 * time.Second
+	// bodyReadTimeout bounds the wait for the start of the body of a POST.
+	bodyReadTimeout = 2 * time.Second
 	// limitLogInterval is how often the requests that the limit of events of a
 	// honeytoken or honeypot kept from being recorded are logged.
 	limitLogInterval = time.Minute
@@ -83,6 +85,7 @@ type Handler struct {
 	reporter        Reporter
 	defaultRedirect string
 	next            http.Handler
+	bodyTimeout     time.Duration
 	limited         limitedRequests
 	limitedReports  limitedRequests
 }
@@ -98,6 +101,7 @@ func New(o Options) *Handler {
 		recorder:        o.Recorder,
 		reporter:        o.Reporter,
 		defaultRedirect: o.DefaultRedirect,
+		bodyTimeout:     bodyReadTimeout,
 		limited: limitedRequests{counts: map[string]int{}, warn: func(ctx context.Context, l *slog.Logger, id string, n int) {
 			l.WarnContext(ctx, "trigger: requests not recorded", slog.String("honeytoken_id", id), slog.Int("requests", n))
 		}},
@@ -147,6 +151,9 @@ type answerWriter struct {
 	answered bool
 }
 
+// Unwrap lets http.ResponseController reach the connection.
+func (w *answerWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func (w *answerWriter) WriteHeader(status int) {
 	w.answered = true
 	w.ResponseWriter.WriteHeader(status)
@@ -187,9 +194,18 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	// its way, for example in the alphanumeric mode of a QR code.
 	path := strings.ToLower(r.URL.Path)
 	value, ok := triggerValue(path)
-	// The body of every POST is read, whichever path it goes to: net/http sends
-	// the interim response to Expect: 100-continue only when the handler reads,
-	// so a request that was not read would be answered differently.
+	isReport := r.Method == http.MethodPost && path == reportPath
+	var secret string
+	if isReport {
+		secret, _ = bearerSecret(r.Header.Get("Authorization"))
+	}
+	// Every POST is read, whichever path it goes to: net/http sends the interim
+	// response to Expect: 100-continue only when the handler reads, so a request
+	// that was not read would be answered differently. The report of a sensor,
+	// which carries the form of a secret, is read whole. Of any other body only
+	// the start is read, within a short time, so that a client that stalls
+	// cannot delay the recording, and with it the time of the event, until the
+	// read timeout of the server. net/http discards what remains.
 	var (
 		body    string
 		report  []byte
@@ -197,16 +213,21 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	)
 	switch {
 	case r.Method != http.MethodPost:
-	case path == reportPath:
+	case isReport && secret != "":
 		report, readErr = io.ReadAll(r.Body)
 	default:
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(h.bodyTimeout))
 		body = readBodyExcerpt(r.Body)
 	}
 	switch {
-	case r.Method == http.MethodPost && path == reportPath:
+	case isReport:
 		// A sensor reports here. The answer is the one that every other POST
 		// receives, whatever became of the report.
-		attrs = h.report(r, report, readErr, attrs)
+		if secret == "" {
+			attrs = append(attrs, slog.String("outcome", "not_looked_up"))
+		} else {
+			attrs = h.report(r, secret, report, readErr, attrs)
+		}
 	case !ok || !recordedMethod(r.Method):
 		attrs = append(attrs, slog.String("outcome", "not_looked_up"))
 	default:
@@ -291,16 +312,12 @@ func recordingContext(ctx context.Context) (context.Context, context.CancelFunc)
 // reportPath is where sensors send their reports.
 const reportPath = "/"
 
-// report records the report of a sensor, if the request carries the form of
-// one, and returns the attributes of the log. It writes no response. body and
-// readErr are what reading the body of the request gave. The log
-// names the honeypot, its service and the type of the event, never the secret
-// or anything that the sensor chose.
-func (h *Handler) report(r *http.Request, body []byte, readErr error, attrs []slog.Attr) []slog.Attr {
-	secret, ok := bearerSecret(r.Header.Get("Authorization"))
-	if !ok {
-		return append(attrs, slog.String("outcome", "not_looked_up"))
-	}
+// report records the report of a sensor, which the request sent with secret
+// as its bearer token, and returns the attributes of the log. It writes no
+// response. body and readErr are what reading the body of the request gave.
+// The log names the honeypot, its service and the type of the event, never the
+// secret or anything that the sensor chose.
+func (h *Handler) report(r *http.Request, secret string, body []byte, readErr error, attrs []slog.Attr) []slog.Attr {
 	if readErr != nil {
 		return append(attrs, slog.String("outcome", "rejected"), slog.String("reason", "invalid_report"))
 	}
@@ -386,13 +403,12 @@ func readBodyExcerpt(body io.Reader) string {
 	// A few bytes more than the excerpt let a character that crosses its end be
 	// kept or cut as a whole, instead of ending in a replacement character.
 	raw, _ := io.ReadAll(io.LimitReader(body, maxBodyExcerptBytes+utf8.UTFMax-1))
-	return untrusted(strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\r' || r == '\t' {
-			return ' '
-		}
-		return r
-	}, string(raw)), maxBodyExcerptBytes)
+	return untrusted(blankLineBreaks.Replace(string(raw)), maxBodyExcerptBytes)
 }
+
+// blankLineBreaks turns the characters that JSON and log lines hold, and that
+// untrusted would replace, into spaces.
+var blankLineBreaks = strings.NewReplacer("\n", " ", "\r", " ", "\t", " ")
 
 // untrusted prepares a header value for the database: invalid UTF-8 and every
 // character that is not printable are replaced, so that a value cannot break

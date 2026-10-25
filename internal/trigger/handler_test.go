@@ -395,6 +395,8 @@ func TestTrigger_PostRecordsTheBodyAsCleanedExcerpt(t *testing.T) {
 		{"control characters", "a\x00b\x1bc\x7fd", "a\uFFFDb\uFFFDc\uFFFDd"},
 		{"override of the writing direction", "a\u202Eb\u2028c", "a\uFFFDb\uFFFDc"},
 		{"invalid UTF-8", "a\xffb", "a\uFFFDb"},
+		// A run of invalid bytes becomes one replacement character, as in a header.
+		{"a run of invalid UTF-8", "a\xff\xfe\xfdb", "a\uFFFDb"},
 		{"exactly the limit", strings.Repeat("a", maxBodyExcerptBytes), strings.Repeat("a", maxBodyExcerptBytes)},
 		{"beyond the limit", strings.Repeat("a", maxBodyExcerptBytes+1), strings.Repeat("a", maxBodyExcerptBytes)},
 		// Two bytes each: 2048 characters fit exactly, a character that crosses the limit is cut as a whole.
@@ -740,4 +742,55 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
 	c.n += n
 	return n, err
+}
+
+// A client that sends the start of a body and then stalls does not hold the
+// recording back until the read timeout of the server: the body is read within
+// a short time, and what arrived is recorded while the connection is still
+// open.
+func TestTrigger_PostStallingBodyIsRecordedAfterAShortWait(t *testing.T) {
+	t.Parallel()
+
+	rec := &fakeRecorder{}
+	var log bytes.Buffer
+	h := New(Options{Logger: slog.New(slog.NewJSONHandler(&log, nil)), Recorder: rec, Reporter: &fakeReporter{}, DefaultRedirect: defaultRedirect})
+	h.bodyTimeout = 50 * time.Millisecond
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(t.Context(), "tcp", strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := io.WriteString(conn, "POST /"+value+" HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\nuser="); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for len(rec.recorded()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the request was not recorded while its body stalled")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := rec.recorded(); len(got) != 1 || got[0].Body != "user=" {
+		t.Errorf("recorded %+v, want one POST with the body that arrived", got)
+	}
+}
+
+// A POST is never read beyond the start of its body, except the report of a
+// sensor, which carries the form of a secret: a client without the form of one
+// cannot make the trigger buffer 64 KiB.
+func TestTrigger_PostIsReadOnlyAsFarAsItsExcerpt(t *testing.T) {
+	t.Parallel()
+
+	h := New(Options{Logger: slog.New(slog.DiscardHandler), Recorder: &fakeRecorder{}, Reporter: &fakeReporter{}, DefaultRedirect: defaultRedirect})
+	for _, path := range []string{"/", "/" + value, "/robots.txt"} {
+		body := &countingReader{r: strings.NewReader(strings.Repeat("a", 1<<20))}
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, path, body)
+		h.ServeHTTP(httptest.NewRecorder(), req)
+		if limit := maxBodyExcerptBytes + utf8.UTFMax + 1; body.n > limit {
+			t.Errorf("POST %s: read %d bytes, want at most %d", path, body.n, limit)
+		}
+	}
 }

@@ -5,6 +5,7 @@ package migrations_test
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -266,16 +267,11 @@ func TestSchema_ChecksTheBodyOfEvents(t *testing.T) {
 	if _, err := pool.Exec(t.Context(), insert, "POST", strings.Repeat("a", 4095)+string(rune(0xe9))); !violation(err, "events_body_check") {
 		t.Errorf("body of 4097 bytes: error = %v, want a violation of events_body_check", err)
 	}
-	for _, r := range append(refusedInText, struct {
+	lineBreaks := []struct {
 		name string
 		cp   rune
-	}{"line feed", '\n'}, struct {
-		name string
-		cp   rune
-	}{"carriage return", '\r'}, struct {
-		name string
-		cp   rune
-	}{"tab", '\t'}) {
+	}{{"line feed", '\n'}, {"carriage return", '\r'}, {"tab", '\t'}}
+	for _, r := range slices.Concat(refusedInText, lineBreaks) {
 		if _, err := pool.Exec(t.Context(), insert, "POST", "a"+string(r.cp)+"b"); !violation(err, "events_body_check") {
 			t.Errorf("body with %s: error = %v, want a violation of events_body_check", r.name, err)
 		}
