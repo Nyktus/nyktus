@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "word-template",
+  "category": "data",
+  "title": {
+    "en": "Word document with a template on a remote host",
+    "de": "Word-Dokument mit einer Vorlage auf einem entfernten Host"
+  },
+  "summary": {
+    "en": "A document of your own that names a template on a remote host. Word resolves the host when someone opens the document, also on the computer of an intruder who copied it.",
+    "de": "Ein eigenes Dokument, das eine Vorlage auf einem entfernten Host nennt. Word löst den Host auf, wenn jemand das Dokument öffnet, auch auf dem Rechner eines Eindringlings, der es kopiert hat."
+  },
+  "techniques": ["T1005", "T1039"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Host",
+      "type": "dns",
+      "label": {"en": "Host", "de": "Host"},
+      "techniques": ["T1005", "T1039"]
+    }
+  ],
+  "persona": [],
+  "secrets": [],
+  "artifacts": [],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

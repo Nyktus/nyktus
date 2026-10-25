@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "terraform-backend",
+  "category": "application",
+  "title": {
+    "en": "Terraform backend with credentials",
+    "de": "Terraform-Backend mit Zugangsdaten"
+  },
+  "summary": {
+    "en": "A Terraform file that stores the state on an HTTP backend with an account and password. terraform init and plan resolve the name of a DNS honeytoken.",
+    "de": "Eine Terraform-Datei, die den State in einem HTTP-Backend mit Konto und Passwort speichert. terraform init und plan lösen den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1552.001"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "State",
+      "type": "dns",
+      "label": {"en": "State backend", "de": "State-Backend"},
+      "techniques": ["T1552.001", "T1078"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Project",
+      "kind": "name",
+      "label": {"en": "Name of the project", "de": "Name des Projekts"},
+      "example": "platform-prod"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "terraform"
+    }
+  ],
+  "secrets": [{"key": "Password", "length": 24}],
+  "artifacts": [
+    {"key": "backend", "file_name": "backend.tf", "format": "config", "line_endings": "lf", "template": "backend.tf.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

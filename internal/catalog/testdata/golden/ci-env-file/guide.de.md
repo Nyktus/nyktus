@@ -1,0 +1,19 @@
+# Umgebungsdatei mit Geheimnissen eines Dienstes
+
+Die Datei `production.env` ist die Umgebungsdatei eines Dienstes. Sie enthält eine Datenbank-URL mit dem Host `databaseq3xwz7a2kfm4ub6tyc5nre.d.example.net`, der Datenbank `orders`, dem Konto `orders_app` und einem zufälligen Passwort sowie zwei weitere zufällige Geheimnisse. Der Host-Name gehört zu einem DNS-Honeytoken: Ein Client, der sich mit der Datenbank verbindet, löst ihn auf, was ein Event auslöst. Dahinter steht keine Datenbank, und die Geheimnisse gibt es nirgends.
+
+## Datei platzieren
+
+1. Benennen Sie die Datei an dem Ort, an dem Sie sie ablegen, in `.env` um oder in den Namen, den Ihre Deployments verwenden. Der Katalog kann keine Datei mit führendem Punkt benennen.
+2. Legen Sie sie dort ab, wo ein Eindringling nach Geheimnissen von Diensten sucht: in einem Repository eines Dienstes, in einem Deployment-Verzeichnis auf einem Server, in einer Sicherung eines solchen Verzeichnisses.
+3. Legen Sie sie nicht dort ab, wo ein laufender Dienst sie liest. Der Dienst würde den Namen bei jedem Start auflösen und Events auslösen.
+4. Halten Sie in den Platzierungsnotizen des Artefakts fest, wo Sie es abgelegt haben.
+
+## Testen
+
+Lösen Sie den Namen mit `nslookup databaseq3xwz7a2kfm4ub6tyc5nre.d.example.net` auf einem Rechner mit Zugang zum Internet auf, oder verbinden Sie sich mit `psql` mit der URL. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Grenzen
+
+- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.
+- Der Host-Name der Datenbank ist ein zufälliges Label unter der Zone Ihrer DNS-Rolle. Ein Eindringling, der die Datei genau liest, kann ihn ungewöhnlich finden.

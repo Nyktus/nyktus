@@ -1,0 +1,7 @@
+[ldap]
+host = {{.Honeytokens.Directory.Host}}
+port = 636
+use_ssl = true
+bind_user = {{.Persona.Account}}@{{.Persona.Domain}}
+bind_password = {{.Secrets.Password}}
+user_filter = (sAMAccountName=%s)

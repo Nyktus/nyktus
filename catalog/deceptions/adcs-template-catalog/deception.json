@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "id": "adcs-template-catalog",
+  "category": "identity",
+  "title": {
+    "en": "Catalog of certificate templates",
+    "de": "Katalog der Zertifikatvorlagen"
+  },
+  "summary": {
+    "en": "An internal page that lists the certificate templates of a certification authority and links to the enrollment, plus the same link as a bookmark. Following it raises an event.",
+    "de": "Eine interne Seite, die die Zertifikatvorlagen einer Zertifizierungsstelle auflistet und auf die Anforderung verweist, dazu derselbe Link als Lesezeichen. Wer ihm folgt, löst ein Event aus."
+  },
+  "techniques": ["T1649"],
+  "engage_activities": ["EAC0005", "EAC0011", "EAC0022"],
+  "honeytokens": [
+    {
+      "key": "Enrollment",
+      "type": "web_url",
+      "label": {"en": "Enrollment page", "de": "Anforderungsseite"},
+      "techniques": ["T1649"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Company",
+      "kind": "text",
+      "label": {"en": "Name of the organization", "de": "Name der Organisation"},
+      "example": "Example Corp"
+    },
+    {
+      "key": "Authority",
+      "kind": "text",
+      "label": {"en": "Name of the certification authority", "de": "Name der Zertifizierungsstelle"},
+      "example": "Example Issuing CA 01"
+    }
+  ],
+  "secrets": [],
+  "artifacts": [
+    {"key": "catalog", "file_name": "Certificate-templates.html", "format": "html", "line_endings": "lf", "template": "certificate-templates.html.tmpl"},
+    {"key": "bookmark", "file_name": "Certificate-enrollment.html", "format": "html", "line_endings": "lf", "template": "certificate-enrollment.html.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

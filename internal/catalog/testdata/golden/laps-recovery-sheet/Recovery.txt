@@ -1,0 +1,10 @@
+Local administrator - break glass
+
+Host:      hostq3xwz7a2kfm4ub6tyc5nre.d.example.net
+Account:   Administrator
+Password:  Xy7Xy7Xy7Xy7Xy7Xy7Xy
+
+Use only when the domain is not available. Connect with RDP or WinRM.
+Change the password afterwards and print a new sheet.
+
+Contact: Service desk, extension 4711

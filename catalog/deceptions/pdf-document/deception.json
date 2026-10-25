@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "id": "pdf-document",
+  "category": "data",
+  "title": {
+    "en": "PDF document with a link and a lookup",
+    "de": "PDF-Dokument mit Link und Namensabfrage"
+  },
+  "summary": {
+    "en": "A PDF of your own with a link over the whole first page and an action when it opens. Clicking raises an event, and opening may resolve the name of a DNS honeytoken.",
+    "de": "Ein eigenes PDF mit einem Link über die ganze erste Seite und einer Aktion beim Öffnen. Ein Klick löst ein Event aus, und das Öffnen kann den Namen eines DNS-Honeytokens auflösen."
+  },
+  "techniques": ["T1005", "T1039"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Link",
+      "type": "web_url",
+      "label": {"en": "Link", "de": "Link"},
+      "techniques": ["T1005", "T1039"]
+    },
+    {
+      "key": "Host",
+      "type": "dns",
+      "label": {"en": "Host", "de": "Host"},
+      "techniques": ["T1005", "T1039"]
+    }
+  ],
+  "persona": [],
+  "secrets": [],
+  "artifacts": [],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

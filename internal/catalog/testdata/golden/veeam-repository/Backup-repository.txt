@@ -1,0 +1,9 @@
+Backup repository
+
+Share:     \\repositoryq3xwz7a2kfm4ub6tyc5nre.d.example.net\Repository
+Account:   CORP\svc-backup
+Password:  Xy7Xy7Xy7Xy7Xy7Xy7Xy
+
+The repository holds the full backups of all servers. Do not delete files by hand.
+
+Contact: Backup team

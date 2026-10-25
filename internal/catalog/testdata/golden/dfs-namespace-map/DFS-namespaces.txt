@@ -1,0 +1,6 @@
+DFS namespaces
+
+Namespace                         Target                                               Owner
+\\corp.example.com\Shared      \\fileserverq3xwz7a2kfm4ub6tyc5nre.d.example.net\Shared      Infrastructure team
+\\corp.example.com\Finance     \\fileserverq3xwz7a2kfm4ub6tyc5nre.d.example.net\Finance     Infrastructure team
+\\corp.example.com\Archive     \\fileserverq3xwz7a2kfm4ub6tyc5nre.d.example.net\Archive     Infrastructure team

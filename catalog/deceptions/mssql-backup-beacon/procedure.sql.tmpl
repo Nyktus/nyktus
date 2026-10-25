@@ -1,0 +1,6 @@
+CREATE PROCEDURE [dbo].[{{.Persona.ProcedureName}}]
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC master.sys.xp_dirtree N'\\{{.Honeytokens.Share.Host}}\{{.Persona.ShareName}}', 1, 1;
+END

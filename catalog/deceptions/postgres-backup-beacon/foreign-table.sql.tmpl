@@ -1,0 +1,13 @@
+CREATE EXTENSION IF NOT EXISTS postgres_fdw WITH SCHEMA public;
+
+CREATE SERVER "{{.Persona.ServerName}}" FOREIGN DATA WRAPPER postgres_fdw
+  OPTIONS (host '{{.Honeytokens.Database.Host}}', port '5432', dbname '{{.Persona.DatabaseName}}', connect_timeout '3');
+
+CREATE USER MAPPING FOR PUBLIC SERVER "{{.Persona.ServerName}}"
+  OPTIONS (user '{{.Persona.Account}}', password '{{.Secrets.Password}}');
+
+CREATE FOREIGN TABLE public."{{.Persona.TableName}}" (
+  id bigint,
+  customer_id bigint,
+  provider_token text
+) SERVER "{{.Persona.ServerName}}" OPTIONS (schema_name 'public', table_name '{{.Persona.TableName}}');

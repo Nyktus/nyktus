@@ -1,0 +1,19 @@
+# Verbindungsprofil für ein Verzeichnis
+
+Die Datei `ldap.ini` konfiguriert, wie eine Anwendung sich mit ihrem Verzeichnis verbindet: den Server `{{.Honeytokens.Directory.Host}}`, das Bind-Konto `{{.Persona.Account}}@{{.Persona.Domain}}` und ein zufälliges Passwort. Der Servername gehört zu einem DNS-Honeytoken: Wer sich mit diesen Werten verbindet, löst ihn auf, was ein Event auslöst. Dahinter steht kein Verzeichnis, die Verbindung scheitert also, und Konto und Passwort gibt es nirgends.
+
+## Datei platzieren
+
+1. Legen Sie die Datei dort ab, wo ein Eindringling nach Zugangsdaten von Anwendungen sucht: neben einer Anwendung auf einem Server, in einem Repository mit Konfiguration, in einer Sicherung eines Deployment-Verzeichnisses.
+2. Benennen Sie sie um, wenn der Ort einen anderen Namen nahelegt, etwa `directory.ini`.
+3. Legen Sie sie nicht dort ab, wo eine laufende Anwendung sie liest. Die Anwendung würde den Namen bei jedem Start auflösen und Events auslösen.
+4. Halten Sie in den Platzierungsnotizen des Artefakts fest, wo Sie es abgelegt haben.
+
+## Testen
+
+Lösen Sie den Namen mit `nslookup {{.Honeytokens.Directory.Host}}` auf einem Rechner mit Zugang zum Internet auf. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Grenzen
+
+- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.
+- Der Name des Servers ist ein zufälliges Label unter der Zone Ihrer DNS-Rolle. Ein Eindringling, der die Datei genau liest, kann ihn ungewöhnlich finden.

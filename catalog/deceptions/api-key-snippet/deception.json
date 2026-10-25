@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "id": "api-key-snippet",
+  "category": "application",
+  "title": {
+    "en": "curl command with an API key",
+    "de": "curl-Befehl mit API-Schlüssel"
+  },
+  "summary": {
+    "en": "A note with a curl command that calls an internal API with a bearer token. Running it resolves the name of a DNS honeytoken.",
+    "de": "Eine Notiz mit einem curl-Befehl, der eine interne API mit einem Bearer-Token aufruft. Wer ihn ausführt, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1552.001"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Api",
+      "type": "dns",
+      "label": {"en": "API host", "de": "API-Host"},
+      "techniques": ["T1552.001", "T1078"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Product",
+      "kind": "text",
+      "label": {"en": "Name of the internal service", "de": "Name des internen Dienstes"},
+      "example": "Inventory service"
+    }
+  ],
+  "secrets": [{"key": "Token", "length": 40}],
+  "artifacts": [
+    {"key": "snippet", "file_name": "api-call.txt", "format": "text", "line_endings": "lf", "template": "api-call.txt.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

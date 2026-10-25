@@ -1,0 +1,18 @@
+# Notes on the backup repository
+
+The file `Backup-repository.txt` is a note of an administrator about the repository of the backups. It names the share `\\{{.Honeytokens.Repository.Host}}\Repository` and the account `{{.Persona.Netbios}}\{{.Persona.Account}}` with a random password. The server name belongs to a DNS honeytoken: whoever opens the share resolves it, which raises an event. There is no server behind it, and the account and password exist nowhere. Intruders who prepare ransomware look for exactly this.
+
+## Placing the file
+
+1. Place the file where an intruder looks for the backups: on the backup server, on an administration server, on a file share of the IT department.
+2. Change `Contact` to a team that exists.
+3. Record where you placed it in the placement notes of the artifact.
+
+## Testing
+
+Open `\\{{.Honeytokens.Repository.Host}}\Repository` in the Windows Explorer of a computer with access to the internet, or resolve the name with `nslookup {{.Honeytokens.Repository.Host}}`. Within a minute, the scenario shows an incident. Close the incident after the test.
+
+## Limits
+
+- Only a lookup that reaches the DNS role of Nyktus raises an event. A network without name resolution to the internet, or a resolver that answers from its cache, prevents it.
+- The server name is a random label under the zone of your DNS role. An intruder who reads the file carefully can find it unusual.
