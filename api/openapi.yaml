@@ -5227,22 +5227,28 @@ components:
     EventRequest:
       type: object
       additionalProperties: false
-      required: [method, user_agent, referer, accept_language]
+      required: [method, user_agent, referer, accept_language, body_excerpt]
       description: |
-        The headers were chosen by the client. They are shortened, and invalid and non-printable characters
-        (control characters, line separators, characters that change the writing direction, spaces other
-        than the ordinary space) are replaced;
+        The headers and the body were chosen by the client. They are shortened, and invalid and non-printable
+        characters (control characters, line separators, characters that change the writing direction, spaces
+        other than the ordinary space) are replaced;
         treat them as claims, not facts.
       properties:
         method:
           type: string
-          enum: [GET, HEAD]
+          enum: [GET, HEAD, POST]
         user_agent:
           type: string
         referer:
           type: string
         accept_language:
           type: string
+        body_excerpt:
+          type: string
+          description: |
+            The first 4096 bytes of the body of a `POST` request; empty for every other method. Line breaks and tabs
+            are replaced with spaces. The server does not parse it. It is what a log shipper or a webhook sent, and
+            may hold personal data, such as account names and addresses.
 
     EventQuery:
       type: object

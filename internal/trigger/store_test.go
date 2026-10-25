@@ -295,6 +295,42 @@ func TestStore_AcceptsWhatTheHandlerProduces(t *testing.T) {
 	}
 }
 
+// A POST is recorded with the start of its body. The schema accepts what the
+// handler makes of the worst body a client can send: the longest excerpt, made
+// of characters that the handler replaces and of multi-byte characters at its
+// end. The other methods are not recorded.
+func TestStore_RecordsAPostWithItsBody(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	id, value := f.honeytoken(t, "web_url", true, nil, nil)
+	refused := string([]rune{0x85, 0xad, 0x61c, 0x180e, 0x200b, 0x2028, 0x202e, 0x2066, 0xfeff, 0xfff9, 0xe0041})
+	worst := readBodyExcerpt(strings.NewReader(strings.Repeat("\x01\xff\r\n\t\u00e4\U0001F600a"+refused, 1000)))
+	if len(worst) < maxBodyExcerptBytes-4 {
+		t.Fatalf("the worst body has %d bytes, want one that fills the excerpt", len(worst))
+	}
+	res, err := f.store.Record(t.Context(), Request{Value: value, Method: http.MethodPost, Body: worst})
+	if err != nil || res.Outcome != OutcomeRecorded || res.HoneytokenID != id {
+		t.Fatalf("Record() = %+v, %v; want recorded", res, err)
+	}
+	var method, body string
+	if err := f.owner.QueryRow(t.Context(), `SELECT method, body FROM events`).Scan(&method, &body); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodPost || body != worst {
+		t.Errorf("event = %s %q, want a POST with the body of %d bytes", method, body, len(worst))
+	}
+
+	for _, method := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions} {
+		if _, err := f.store.Record(t.Context(), Request{Value: value, Method: method}); err == nil {
+			t.Errorf("Record(%s) recorded the request, want an error", method)
+		}
+	}
+	if n := f.count(t, "SELECT count(*) FROM events"); n != 1 {
+		t.Errorf("%d events, want only the POST", n)
+	}
+}
+
 // The invariant over the real database role: a client cannot tell an enabled
 // honeytoken from an unknown, disabled or failing one, or from one of another
 // type, by status, headers or body.
@@ -329,9 +365,29 @@ func TestTrigger_IdenticalResponsesWithTheDatabase(t *testing.T) {
 			}
 		}
 	}
+	// Every POST receives the same empty answer, whether the value is live or not.
+	body := `{"TargetUserName":"svc-backup"}`
+	for _, suffix := range []string{"", ".gif"} {
+		want := fetch(t, srv, http.MethodPost, "/"+strings.Repeat("a", 26)+suffix, strings.NewReader(body), nil)
+		for name, got := range map[string]response{
+			"enabled url":         fetch(t, srv, http.MethodPost, "/"+enabledURL+suffix, strings.NewReader(body), nil),
+			"disabled url":        fetch(t, srv, http.MethodPost, "/"+disabledURL+suffix, strings.NewReader(body), nil),
+			"enabled image":       fetch(t, srv, http.MethodPost, "/"+enabledImage+suffix, strings.NewReader(body), nil),
+			"disabled image":      fetch(t, srv, http.MethodPost, "/"+disabledImage+suffix, strings.NewReader(body), nil),
+			"database failure":    fetch(t, failing, http.MethodPost, "/"+enabledURL+suffix, strings.NewReader(body), nil),
+			"no value in the URL": fetch(t, srv, http.MethodPost, "/favicon.ico"+suffix, strings.NewReader(body), nil),
+		} {
+			if !got.equal(want) {
+				t.Errorf("POST %q, %s: response %+v, want %+v", suffix, name, got, want)
+			}
+		}
+	}
 	// Requests of enabled honeytokens are recorded whatever the form of the URL.
-	if n := f.count(t, "SELECT count(*) FROM events"); n != 8 {
-		t.Errorf("%d events, want 8", n)
+	if n := f.count(t, "SELECT count(*) FROM events"); n != 12 {
+		t.Errorf("%d events, want 12", n)
+	}
+	if n := f.count(t, "SELECT count(*) FROM events WHERE method = 'POST' AND body = '"+body+"'"); n != 4 {
+		t.Errorf("%d events of a POST with its body, want 4", n)
 	}
 }
 

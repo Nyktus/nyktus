@@ -32,7 +32,7 @@ func NewStore(q db.Querier) *Store {
 // recordFunctions are the database functions through which the trigger
 // records requests and reports, the only privileges of its database role.
 var recordFunctions = []string{
-	"public.record_honeytoken_request(text, text, inet, text, text, text)",
+	"public.record_honeytoken_request(text, text, inet, text, text, text, text)",
 	"public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb)",
 	"public.record_honeypot_heartbeat(bytea, text)",
 }
@@ -57,8 +57,8 @@ func (s *Store) Record(ctx context.Context, r Request) (Result, error) {
 	)
 	err := s.q.QueryRow(ctx, `
 SELECT outcome, honeytoken_id, redirect_url
-FROM public.record_honeytoken_request($1, $2, $3, $4, $5, $6)`,
-		r.Value, r.Method, ip, r.UserAgent, r.Referer, r.AcceptLanguage,
+FROM public.record_honeytoken_request($1, $2, $3, $4, $5, $6, $7)`,
+		r.Value, r.Method, ip, r.UserAgent, r.Referer, r.AcceptLanguage, r.Body,
 	).Scan(&outcome, &honeytokenID, &redirectURL)
 	if err != nil {
 		return Result{}, fmt.Errorf("record request: %w", err)

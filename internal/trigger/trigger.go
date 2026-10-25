@@ -31,6 +31,9 @@ type Request struct {
 	UserAgent      string
 	Referer        string
 	AcceptLanguage string
+	// Body is the start of the body of a POST request, empty for every other
+	// method. It is untrusted like the headers, and may hold personal data.
+	Body string
 }
 
 // Outcome says what became of a request.

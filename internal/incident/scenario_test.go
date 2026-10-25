@@ -47,7 +47,7 @@ func TestStore_EventsOfAScenarioShareOneIncident(t *testing.T) {
 	alone, aloneValue := f.honeytoken(t, "web_url", nil)
 	f.exec(t, "UPDATE honeytokens SET scenario_id = $1 WHERE id = ANY($2)", sc, []string{image, url})
 	for _, v := range []string{imageValue, urlValue, aloneValue, imageValue} {
-		f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')", v)
+		f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '', '')", v)
 	}
 
 	first := f.process(t)
@@ -109,7 +109,7 @@ func TestStore_HoneytokenAndHoneypotOfAScenarioShareOneIncident(t *testing.T) {
 	f.exec(t, "UPDATE honeytokens SET scenario_id = $1 WHERE id = $2", sc, url)
 	f.exec(t, "UPDATE honeypots SET scenario_id = $1 WHERE id = $2", sc, pot)
 
-	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')", urlValue)
+	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '', '')", urlValue)
 	f.exec(t, inScenario)
 	f.exec(t, standalone)
 	f.exec(t, inScenario)
