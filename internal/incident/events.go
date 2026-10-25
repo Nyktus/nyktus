@@ -53,8 +53,9 @@ type Event struct {
 	// ClientIP is the address of the client, or of the resolver for DNS, or
 	// the zero Addr if it is unknown.
 	ClientIP netip.Addr
-	// The request of an event of the channel http.
-	Method, UserAgent, Referer, AcceptLanguage string
+	// The request of an event of the channel http. Body is the start of the body
+	// of a POST request, and empty for every other method.
+	Method, UserAgent, Referer, AcceptLanguage, Body string
 	// The query of an event of the channel dns.
 	DNSZone, DNSPrefix, DNSQType, DNSTransport string
 	// Sensor is the session of an event of the channel sensor, or nil.
@@ -98,7 +99,7 @@ type Attempt struct {
 }
 
 const eventColumns = `id, resource_type, resource_id, scenario_id, honeytoken_type, techniques, severity, incident_id,
-	occurred_at, recorded_at, channel, client_ip, coalesce(method, ''), user_agent, referer, accept_language, coalesce(dns_zone, ''),
+	occurred_at, recorded_at, channel, client_ip, coalesce(method, ''), user_agent, referer, accept_language, body, coalesce(dns_zone, ''),
 	coalesce(dns_prefix, ''), coalesce(dns_qtype, ''), coalesce(dns_transport, ''),
 	sensor_service, sensor_event_type, sensor_port, sensor_duration_ms, sensor_client_version, sensor_database,
 	sensor_application_name, sensor_base_dn, sensor_filter`
@@ -115,7 +116,7 @@ func scanEvent(row pgx.Row) (Event, error) {
 		baseDN, filter *string
 	)
 	err := row.Scan(&e.ID, &e.ResourceType, &e.ResourceID, &e.ScenarioID, &honeytokenType, &e.Techniques, &e.Severity, &e.IncidentID,
-		&e.OccurredAt, &e.RecordedAt, &e.Channel, &clientIP, &e.Method, &e.UserAgent, &e.Referer, &e.AcceptLanguage,
+		&e.OccurredAt, &e.RecordedAt, &e.Channel, &clientIP, &e.Method, &e.UserAgent, &e.Referer, &e.AcceptLanguage, &e.Body,
 		&e.DNSZone, &e.DNSPrefix, &e.DNSQType, &e.DNSTransport,
 		&service, &kind, &port, &duration, &client, &dbname, &appName, &baseDN, &filter)
 	if honeytokenType != nil {

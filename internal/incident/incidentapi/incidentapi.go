@@ -225,6 +225,8 @@ type httpResponse struct {
 	UserAgent      string `json:"user_agent"`
 	Referer        string `json:"referer"`
 	AcceptLanguage string `json:"accept_language"`
+	// BodyExcerpt is named so that it says what it is: the start of the body.
+	BodyExcerpt string `json:"body_excerpt"`
 }
 
 type dnsResponse struct {
@@ -299,7 +301,7 @@ func newEventResponse(e incident.Event) eventResponse {
 	}
 	switch e.Channel {
 	case incident.ChannelHTTP:
-		out.HTTP = &httpResponse{Method: e.Method, UserAgent: e.UserAgent, Referer: e.Referer, AcceptLanguage: e.AcceptLanguage}
+		out.HTTP = &httpResponse{Method: e.Method, UserAgent: e.UserAgent, Referer: e.Referer, AcceptLanguage: e.AcceptLanguage, BodyExcerpt: e.Body}
 	case incident.ChannelDNS:
 		out.DNS = &dnsResponse{Zone: e.DNSZone, Prefix: e.DNSPrefix, QType: e.DNSQType, Transport: e.DNSTransport}
 	case incident.ChannelSensor:

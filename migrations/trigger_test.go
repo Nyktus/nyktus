@@ -17,7 +17,7 @@ import (
 	"nyktus.org/nyktus/internal/platform/schematest"
 )
 
-const recordRequest = "SELECT * FROM public.record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '')"
+const recordRequest = "SELECT * FROM public.record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '', '')"
 
 func TestTriggerRole_PassesLeastPrivilegeCheck(t *testing.T) {
 	t.Parallel()
@@ -116,7 +116,7 @@ func expectDenied(t *testing.T, pool *pgxpool.Pool, statement string) {
 // Functions that the internet-facing roles may execute.
 var (
 	triggerFunctions = []string{
-		"public.record_honeytoken_request(text, text, inet, text, text, text)",
+		"public.record_honeytoken_request(text, text, inet, text, text, text, text)",
 		"public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb)",
 		"public.record_honeypot_heartbeat(bytea, text)",
 	}
@@ -166,6 +166,32 @@ func TestTriggerRole_HasNoPrivilegesBeyondItsFunctions(t *testing.T) {
 	}
 }
 
+// refusedInText are the code points that the checks of the text columns of an
+// event refuse: control characters, line separators and the format characters
+// that reorder or hide text.
+var refusedInText = []struct {
+	name string
+	cp   rune
+}{
+	{"control character", 0x01},
+	{"delete", 0x7f},
+	{"C1 control character", 0x85},
+	{"soft hyphen", 0xad},
+	{"arabic letter mark", 0x61c},
+	{"mongolian vowel separator", 0x180e},
+	{"zero width space", 0x200b},
+	{"right-to-left mark", 0x200f},
+	{"line separator", 0x2028},
+	{"paragraph separator", 0x2029},
+	{"right-to-left override", 0x202e},
+	{"word joiner", 0x2060},
+	{"isolate", 0x2066},
+	{"deprecated format character", 0x206f},
+	{"byte order mark", 0xfeff},
+	{"interlinear annotation", 0xfff9},
+	{"tag character", 0xe0041},
+}
+
 // The schema is the last line of defense for the headers of an event: a
 // compromised trigger cannot store what hides or reorders text, even though
 // the trigger replaces it. Code points are built at run time, so that no
@@ -189,28 +215,6 @@ func TestSchema_ChecksHeadersOfEvents(t *testing.T) {
 		{"referer", "events_referer_check", 1024},
 		{"accept language", "events_accept_language_check", 128},
 	}
-	refused := []struct {
-		name string
-		cp   rune
-	}{
-		{"control character", 0x01},
-		{"delete", 0x7f},
-		{"C1 control character", 0x85},
-		{"soft hyphen", 0xad},
-		{"arabic letter mark", 0x61c},
-		{"mongolian vowel separator", 0x180e},
-		{"zero width space", 0x200b},
-		{"right-to-left mark", 0x200f},
-		{"line separator", 0x2028},
-		{"paragraph separator", 0x2029},
-		{"right-to-left override", 0x202e},
-		{"word joiner", 0x2060},
-		{"isolate", 0x2066},
-		{"deprecated format character", 0x206f},
-		{"byte order mark", 0xfeff},
-		{"interlinear annotation", 0xfff9},
-		{"tag character", 0xe0041},
-	}
 	for i, col := range columns {
 		// The limit counts bytes, so a character of two bytes at the end
 		// crosses it where a letter would not.
@@ -222,7 +226,7 @@ func TestSchema_ChecksHeadersOfEvents(t *testing.T) {
 		if !errors.As(err, &pgErr) || pgErr.Code != "23514" || pgErr.ConstraintName != col.constraint {
 			t.Errorf("%s of %d bytes: error = %v, want a violation of %s", col.name, col.maxBytes+1, err, col.constraint)
 		}
-		for _, r := range refused {
+		for _, r := range refusedInText {
 			_, err := pool.Exec(t.Context(), insert, headers(i, "a"+string(r.cp)+"b")...)
 			var pgErr *pgconn.PgError
 			if !errors.As(err, &pgErr) || pgErr.Code != "23514" || pgErr.ConstraintName != col.constraint {
@@ -235,6 +239,73 @@ func TestSchema_ChecksHeadersOfEvents(t *testing.T) {
 			if _, err := pool.Exec(t.Context(), insert, headers(i, ok)...); err != nil {
 				t.Errorf("%s %q: %v", col.name, ok, err)
 			}
+		}
+	}
+}
+
+// The schema is the last line of defense for the body of a request as well. It
+// refuses every character that the headers refuse, line breaks and tabs among
+// them, which the trigger replaces with spaces, and a body beyond 4096 bytes;
+// it holds a body only for a POST request over HTTP.
+func TestSchema_ChecksTheBodyOfEvents(t *testing.T) {
+	t.Parallel()
+
+	pool := schematest.Open(t, schematest.New(t))
+	const insert = `INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel, method,
+	body, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'web_url', 'medium', now(), now(), 'http', $1, $2, 'Name')`
+	violation := func(err error, constraint string) bool {
+		var pgErr *pgconn.PgError
+		return errors.As(err, &pgErr) && pgErr.Code == "23514" && pgErr.ConstraintName == constraint
+	}
+
+	if _, err := pool.Exec(t.Context(), insert, "POST", strings.Repeat("a", 4096)); err != nil {
+		t.Errorf("body of 4096 bytes: %v", err)
+	}
+	// The limit counts bytes, so a character of two bytes at the end crosses it
+	// where a letter would not.
+	if _, err := pool.Exec(t.Context(), insert, "POST", strings.Repeat("a", 4095)+string(rune(0xe9))); !violation(err, "events_body_check") {
+		t.Errorf("body of 4097 bytes: error = %v, want a violation of events_body_check", err)
+	}
+	for _, r := range append(refusedInText, struct {
+		name string
+		cp   rune
+	}{"line feed", '\n'}, struct {
+		name string
+		cp   rune
+	}{"carriage return", '\r'}, struct {
+		name string
+		cp   rune
+	}{"tab", '\t'}) {
+		if _, err := pool.Exec(t.Context(), insert, "POST", "a"+string(r.cp)+"b"); !violation(err, "events_body_check") {
+			t.Errorf("body with %s: error = %v, want a violation of events_body_check", r.name, err)
+		}
+	}
+	for _, ok := range []string{"", `{"TargetUserName":"svc"}`, string([]rune{0x4e2d, 0x6587, 0x1f600}), " a  b "} {
+		if _, err := pool.Exec(t.Context(), insert, "POST", ok); err != nil {
+			t.Errorf("body %q: %v", ok, err)
+		}
+	}
+
+	// Only a POST holds a body, and only over HTTP.
+	for _, method := range []string{"GET", "HEAD"} {
+		if _, err := pool.Exec(t.Context(), insert, method, "a"); !violation(err, "events_http_check") {
+			t.Errorf("body of a %s: error = %v, want a violation of events_http_check", method, err)
+		}
+		if _, err := pool.Exec(t.Context(), insert, method, ""); err != nil {
+			t.Errorf("%s without a body: %v", method, err)
+		}
+	}
+	_, err := pool.Exec(t.Context(), `INSERT INTO events (resource_type, resource_id, honeytoken_type, severity, occurred_at, recorded_at, channel,
+	dns_zone, dns_prefix, dns_qtype, dns_transport, body, resource_name) VALUES ('honeytoken', gen_random_uuid(), 'dns', 'medium', now(), now(), 'dns',
+	'example.com', '', 'A', 'udp', 'a', 'Name')`)
+	if !violation(err, "events_http_check") {
+		t.Errorf("body of a DNS query: error = %v, want a violation of events_http_check", err)
+	}
+
+	// Only the methods that read or report to a honeytoken are recorded.
+	for _, method := range []string{"PUT", "PATCH", "DELETE", "OPTIONS", "post"} {
+		if _, err := pool.Exec(t.Context(), insert, method, ""); !violation(err, "events_method_check") {
+			t.Errorf("method %s: error = %v, want a violation of events_method_check", method, err)
 		}
 	}
 }

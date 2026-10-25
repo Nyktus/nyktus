@@ -417,6 +417,7 @@ export const en = {
   'event.userAgent': 'User-Agent',
   'event.referer': 'Referer',
   'event.acceptLanguage': 'Accept-Language',
+  'event.bodyExcerpt': 'Start of the body',
   'event.zone': 'Zone',
   'event.prefix': 'Name before the zone',
   'event.qtype': 'Query type',

@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	// maxBodyBytes limits the body of a request. Only the report of a sensor
-	// is read, and the limit is the only bound on it; the limit holds for
-	// every reader the handler may gain.
+	// maxBodyBytes limits the body of a request. The report of a sensor is read
+	// whole, and the limit is the only bound on it; the limit holds for every
+	// reader the handler may gain.
 	maxBodyBytes = 64 << 10
 	// recordTimeout bounds the wait for the database. A request that takes
 	// longer is answered as if its value were unknown.
@@ -42,6 +42,9 @@ const (
 	maxUserAgentBytes      = 512
 	maxRefererBytes        = 1024
 	maxAcceptLanguageBytes = 128
+	// maxBodyExcerptBytes is the length up to which the body of a POST request
+	// is recorded.
+	maxBodyExcerptBytes = 4096
 )
 
 // imageSuffix marks a request for an image. The URL of a honeytoken of the type
@@ -135,7 +138,7 @@ func (h *Handler) recoverPanic(w *answerWriter, r *http.Request) {
 		// A truncated answer must not look complete.
 		panic(http.ErrAbortHandler)
 	}
-	h.answer(w, r.URL.Path, "")
+	h.answer(w, r.Method, r.URL.Path, "")
 }
 
 // answerWriter remembers whether the answer has started.
@@ -184,12 +187,27 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	// its way, for example in the alphanumeric mode of a QR code.
 	path := strings.ToLower(r.URL.Path)
 	value, ok := triggerValue(path)
+	// The body of every POST is read, whichever path it goes to: net/http sends
+	// the interim response to Expect: 100-continue only when the handler reads,
+	// so a request that was not read would be answered differently.
+	var (
+		body    string
+		report  []byte
+		readErr error
+	)
+	switch {
+	case r.Method != http.MethodPost:
+	case path == reportPath:
+		report, readErr = io.ReadAll(r.Body)
+	default:
+		body = readBodyExcerpt(r.Body)
+	}
 	switch {
 	case r.Method == http.MethodPost && path == reportPath:
 		// A sensor reports here. The answer is the one that every other POST
 		// receives, whatever became of the report.
-		attrs = h.report(r, attrs)
-	case !ok || (r.Method != http.MethodGet && r.Method != http.MethodHead):
+		attrs = h.report(r, report, readErr, attrs)
+	case !ok || !recordedMethod(r.Method):
 		attrs = append(attrs, slog.String("outcome", "not_looked_up"))
 	default:
 		var err error
@@ -200,6 +218,7 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 			UserAgent:      untrusted(r.Header.Get("User-Agent"), maxUserAgentBytes),
 			Referer:        untrusted(r.Header.Get("Referer"), maxRefererBytes),
 			AcceptLanguage: untrusted(r.Header.Get("Accept-Language"), maxAcceptLanguageBytes),
+			Body:           body,
 		})
 		if err != nil {
 			// The client receives the answer to an unknown value, which is the
@@ -218,7 +237,7 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	status := h.answer(w, path, res.RedirectURL)
+	status := h.answer(w, r.Method, path, res.RedirectURL)
 
 	// The path holds the trigger value, so it stays out of the log.
 	attrs = append(attrs, slog.Int("status", status), slog.Duration("duration", time.Since(start)))
@@ -228,10 +247,23 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	h.logger.LogAttrs(r.Context(), slog.LevelInfo, "trigger: request", attrs...)
 }
 
-// answer writes the answer for the form of path: the image for a path that ends
-// with ".gif", otherwise a redirect to redirectURL or the default target. It
-// returns the status code.
-func (h *Handler) answer(w http.ResponseWriter, path, redirectURL string) int {
+// recordedMethod reports whether a request with this method is recorded:
+// those that read a honeytoken and the POST of a log shipper or a webhook.
+func recordedMethod(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead || method == http.MethodPost
+}
+
+// answer writes the answer for the form of the request: nothing but a status
+// for a POST, whatever its path, the image for a path that ends with ".gif",
+// otherwise a redirect to redirectURL or the default target. It returns the
+// status code. A sender of POST requests, such as a log shipper or a webhook,
+// repeats a request that it does not see succeed, so every POST is answered as
+// a success, also one to a value that is unknown or limited.
+func (h *Handler) answer(w http.ResponseWriter, method, path, redirectURL string) int {
+	if method == http.MethodPost {
+		writeEmpty(w)
+		return http.StatusOK
+	}
 	if strings.HasSuffix(strings.ToLower(path), imageSuffix) {
 		writeImage(w)
 		return http.StatusOK
@@ -260,16 +292,16 @@ func recordingContext(ctx context.Context) (context.Context, context.CancelFunc)
 const reportPath = "/"
 
 // report records the report of a sensor, if the request carries the form of
-// one, and returns the attributes of the log. It writes no response. The log
+// one, and returns the attributes of the log. It writes no response. body and
+// readErr are what reading the body of the request gave. The log
 // names the honeypot, its service and the type of the event, never the secret
 // or anything that the sensor chose.
-func (h *Handler) report(r *http.Request, attrs []slog.Attr) []slog.Attr {
+func (h *Handler) report(r *http.Request, body []byte, readErr error, attrs []slog.Attr) []slog.Attr {
 	secret, ok := bearerSecret(r.Header.Get("Authorization"))
 	if !ok {
 		return append(attrs, slog.String("outcome", "not_looked_up"))
 	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
+	if readErr != nil {
 		return append(attrs, slog.String("outcome", "rejected"), slog.String("reason", "invalid_report"))
 	}
 	rep, err := DecodeReport(body)
@@ -345,6 +377,23 @@ func isTriggerValue(s string) bool {
 	return true
 }
 
+// readBodyExcerpt returns the start of a request body as untrusted text. The
+// rest is not read: net/http discards what remains of a body that is not
+// large, and closes the connection after one that is. An error while reading,
+// such as a client that disconnects, keeps what arrived, because the request
+// happened all the same.
+func readBodyExcerpt(body io.Reader) string {
+	// A few bytes more than the excerpt let a character that crosses its end be
+	// kept or cut as a whole, instead of ending in a replacement character.
+	raw, _ := io.ReadAll(io.LimitReader(body, maxBodyExcerptBytes+utf8.UTFMax-1))
+	return untrusted(strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return ' '
+		}
+		return r
+	}, string(raw)), maxBodyExcerptBytes)
+}
+
 // untrusted prepares a header value for the database: invalid UTF-8 and every
 // character that is not printable are replaced, so that a value cannot break
 // the lines of a log or a report, and the value is cut to at most maxBytes
@@ -378,6 +427,13 @@ func untrusted(s string, maxBytes int) string {
 // so that net/http neither adds a Content-Type of its own nor switches to
 // chunked encoding, and Cache-Control keeps browsers and proxies from answering
 // the next request from a cache, which would leave it unrecorded.
+
+func writeEmpty(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("Content-Length", "0")
+	h.Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+}
 
 func writeImage(w http.ResponseWriter) {
 	h := w.Header()

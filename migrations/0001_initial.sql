@@ -1548,6 +1548,14 @@ CREATE TABLE public.events (
 	user_agent      text NOT NULL DEFAULT '',
 	referer         text NOT NULL DEFAULT '',
 	accept_language text NOT NULL DEFAULT '',
+	-- The start of the body of a POST request, which carries what a log shipper
+	-- or a webhook of a cloud service reports. Whoever sends the request chooses
+	-- it, so it is untrusted like the headers. The trigger replaces line breaks
+	-- and tabs with spaces, replaces every other character that is not
+	-- printable, and cuts it at 4096 bytes; it never parses it. It may hold
+	-- personal data, such as account names and addresses, and reaches neither
+	-- an alert nor the log.
+	body            text NOT NULL DEFAULT '',
 	-- The zone under which the name was queried, and the labels in front of
 	-- the trigger value, such as 'vpn' for 'vpn.<value>.<zone>'. Both are
 	-- chosen by whoever sends the query and are untrusted. The DNS role
@@ -1612,7 +1620,9 @@ CREATE TABLE public.events (
 	-- The columns of a channel are set exactly for its events.
 	CONSTRAINT events_http_check CHECK (
 		(channel = 'http') = (method IS NOT NULL)
-		AND (channel = 'http' OR (user_agent = '' AND referer = '' AND accept_language = ''))
+		AND (channel = 'http' OR (user_agent = '' AND referer = '' AND accept_language = '' AND body = ''))
+		-- Only a POST body is read.
+		AND (method = 'POST' OR body = '')
 	),
 	CONSTRAINT events_dns_check CHECK (
 		(channel = 'dns') = (dns_zone IS NOT NULL)
@@ -1655,11 +1665,12 @@ CREATE TABLE public.events (
 	CONSTRAINT events_sensor_application_name_check CHECK (public.untrusted_text_valid(sensor_application_name, 64)),
 	CONSTRAINT events_sensor_base_dn_check CHECK (public.untrusted_text_valid(sensor_base_dn, 256)),
 	CONSTRAINT events_sensor_filter_check CHECK (public.untrusted_text_valid(sensor_filter, 256)),
-	-- Only requests that read a honeytoken are recorded.
-	CONSTRAINT events_method_check CHECK (method IN ('GET', 'HEAD')),
+	-- Only requests that read a honeytoken or report to it are recorded.
+	CONSTRAINT events_method_check CHECK (method IN ('GET', 'HEAD', 'POST')),
 	CONSTRAINT events_user_agent_check CHECK (public.untrusted_text_valid(user_agent, 512)),
 	CONSTRAINT events_referer_check CHECK (public.untrusted_text_valid(referer, 1024)),
 	CONSTRAINT events_accept_language_check CHECK (public.untrusted_text_valid(accept_language, 128)),
+	CONSTRAINT events_body_check CHECK (public.untrusted_text_valid(body, 4096)),
 	CONSTRAINT events_dns_zone_check CHECK (
 		octet_length(dns_zone) <= 200 AND dns_zone ~ '^[a-z0-9-]+(\.[a-z0-9-]+)+$'
 	),
@@ -1771,6 +1782,7 @@ CREATE FUNCTION public.record_honeytoken_request(
 	request_user_agent text,
 	request_referer text,
 	request_accept_language text,
+	request_body text,
 	OUT outcome text,
 	OUT honeytoken_id uuid,
 	OUT redirect_url text
@@ -1805,9 +1817,9 @@ BEGIN
 	END IF;
 
 	INSERT INTO public.events (resource_type, resource_id, resource_name, scenario_id, scenario_name, honeytoken_type,
-		techniques, severity, occurred_at, recorded_at, channel, client_ip, method, user_agent, referer, accept_language)
+		techniques, severity, occurred_at, recorded_at, channel, client_ip, method, user_agent, referer, accept_language, body)
 	VALUES ('honeytoken', h.id, h.name, h.scenario_id, h.scenario_name, h.type, h.techniques, h.severity, now_at, now_at,
-		'http', request_client_ip, request_method, request_user_agent, request_referer, request_accept_language)
+		'http', request_client_ip, request_method, request_user_agent, request_referer, request_accept_language, request_body)
 	RETURNING id INTO new_event_id;
 	INSERT INTO public.event_jobs (event_id) VALUES (new_event_id);
 	outcome := 'recorded';
@@ -2215,7 +2227,7 @@ REVOKE ALL ON public.events, public.event_attempts, public.event_jobs, public.in
 REVOKE ALL ON FUNCTION public.incidents_change_status() FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.untrusted_text_valid(text, integer) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.event_limit_reached(uuid) FROM PUBLIC, nyktus_console;
-REVOKE ALL ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text)
+REVOKE ALL ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text, text)
 	FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_dns_query(text, text, text, text, text, inet, interval) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text,
@@ -2277,7 +2289,7 @@ BEGIN
 			'public.incidents_change_status()',
 			'public.untrusted_text_valid(text, integer)',
 			'public.event_limit_reached(uuid)',
-			'public.record_honeytoken_request(text, text, inet, text, text, text)',
+			'public.record_honeytoken_request(text, text, inet, text, text, text, text)',
 			'public.record_dns_query(text, text, text, text, text, inet, interval)',
 			'public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb)',
 			'public.record_honeypot_heartbeat(bytea, text)'
@@ -2937,7 +2949,7 @@ REVOKE ALL ON ALL TABLES IN SCHEMA public FROM nyktus_trigger, nyktus_dns, nyktu
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM nyktus_trigger, nyktus_dns, nyktus_worker;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM nyktus_trigger, nyktus_dns, nyktus_worker;
 GRANT USAGE ON SCHEMA public TO nyktus_trigger, nyktus_dns, nyktus_worker;
-GRANT EXECUTE ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text) TO nyktus_trigger;
+GRANT EXECUTE ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text, text) TO nyktus_trigger;
 GRANT EXECUTE ON FUNCTION public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text,
 	text, text, text, jsonb) TO nyktus_trigger;
 GRANT EXECUTE ON FUNCTION public.record_honeypot_heartbeat(bytea, text) TO nyktus_trigger;
@@ -2953,7 +2965,7 @@ DECLARE
 BEGIN
 	FOR role_name, function_names IN VALUES
 		('nyktus_trigger', ARRAY[
-			'public.record_honeytoken_request(text, text, inet, text, text, text)',
+			'public.record_honeytoken_request(text, text, inet, text, text, text, text)',
 			'public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb)',
 			'public.record_honeypot_heartbeat(bytea, text)'
 		]),

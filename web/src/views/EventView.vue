@@ -99,6 +99,10 @@ onMounted(load);
           <dd><UntrustedText :value="event.http.referer" /></dd>
           <dt>{{ t('event.acceptLanguage') }}</dt>
           <dd><UntrustedText :value="event.http.accept_language" /></dd>
+          <template v-if="event.http.method === 'POST'">
+            <dt>{{ t('event.bodyExcerpt') }}</dt>
+            <dd><UntrustedText :value="event.http.body_excerpt" /></dd>
+          </template>
         </dl>
       </div>
 

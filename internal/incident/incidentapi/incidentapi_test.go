@@ -128,6 +128,12 @@ INSERT INTO events (resource_type, resource_id, honeytoken_type, techniques, sev
 	client_ip, method, user_agent, referer, accept_language, incident_id, resource_name)
 VALUES ('honeytoken', $1, 'web_url', '{T1213}', 'high', $2, $2, 'http', '192.0.2.7', 'GET', 'curl/8.0', 'https://a.example.com/', 'de', $3, 'Name')
 RETURNING id`, resource, occurredAt, incidentID).Scan(&id)
+	case "http_post":
+		err = f.owner.QueryRow(t.Context(), `
+INSERT INTO events (resource_type, resource_id, honeytoken_type, techniques, severity, occurred_at, recorded_at, channel,
+	client_ip, method, body, incident_id, resource_name)
+VALUES ('honeytoken', $1, 'web_url', '{T1213}', 'high', $2, $2, 'http', '192.0.2.7', 'POST', '{"TargetUserName":"svc-backup"}', $3, 'Name')
+RETURNING id`, resource, occurredAt, incidentID).Scan(&id)
 	case "sensor":
 		err = f.owner.QueryRow(t.Context(), `
 INSERT INTO events (resource_type, resource_id, techniques, severity, occurred_at, recorded_at, channel, client_ip,
@@ -390,11 +396,19 @@ func TestGetEvent_ShowsTheRequestOrTheQuery(t *testing.T) {
 	f := newFixture(t)
 	request := f.event(t, resourceA, "", "http", time.Now())
 	query := f.event(t, resourceA, "", "dns", time.Now())
+	post := f.event(t, resourceA, "", "http_post", time.Now())
 
-	rec := f.serve(t, f.h.GetEvent, http.MethodGet, "/", request, "")
+	// Only a POST has the start of a body.
+	rec := f.serve(t, f.h.GetEvent, http.MethodGet, "/", post, "")
+	if got := decode[eventResponse](t, rec); rec.Code != http.StatusOK || got.HTTP == nil || got.HTTP.Method != http.MethodPost ||
+		got.HTTP.BodyExcerpt != `{"TargetUserName":"svc-backup"}` {
+		t.Errorf("GET POST request = %d %s", rec.Code, rec.Body)
+	}
+
+	rec = f.serve(t, f.h.GetEvent, http.MethodGet, "/", request, "")
 	got := decode[eventResponse](t, rec)
 	if rec.Code != http.StatusOK || got.Channel != "http" || got.DNS != nil || got.HTTP == nil || got.HTTP.Method != http.MethodGet ||
-		got.HTTP.UserAgent != "curl/8.0" || got.ClientIP == nil || *got.ClientIP != "192.0.2.7" || got.IncidentID != nil ||
+		got.HTTP.UserAgent != "curl/8.0" || got.HTTP.BodyExcerpt != "" || got.ClientIP == nil || *got.ClientIP != "192.0.2.7" || got.IncidentID != nil ||
 		got.HoneytokenType == nil || *got.HoneytokenType != "web_url" || got.Severity != "high" {
 		t.Errorf("GET request = %d %s", rec.Code, rec.Body)
 	}
