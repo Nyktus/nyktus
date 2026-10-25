@@ -29,3 +29,40 @@ export function checkPersonaValue(kind: PersonaKind, input: string): PersonaProb
       return undefined;
   }
 }
+
+/** A value that the catalog asks for, as the API describes it. */
+export interface PersonaField {
+  key: string;
+  kind: PersonaKind;
+  label: string;
+  example: string;
+}
+
+/**
+ * Checks the values of the fields that the user has to give, by key. A key that the scenario
+ * has already is left out: its value stays as it is, whatever the form holds.
+ */
+export function personaProblems(fields: readonly PersonaField[], values: Readonly<Record<string, string>>, fixed: Readonly<Record<string, string>> = {}): Record<string, PersonaProblem> {
+  const found: Record<string, PersonaProblem> = {};
+  for (const field of fields) {
+    if (Object.hasOwn(fixed, field.key)) {
+      continue;
+    }
+    const problem = checkPersonaValue(field.kind, values[field.key] ?? '');
+    if (problem !== undefined) {
+      found[field.key] = problem;
+    }
+  }
+  return found;
+}
+
+/** The values to send: the trimmed input for every key the scenario lacks, and nothing for a key it has. */
+export function personaToSend(fields: readonly PersonaField[], values: Readonly<Record<string, string>>, fixed: Readonly<Record<string, string>> = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const field of fields) {
+    if (!Object.hasOwn(fixed, field.key)) {
+      out[field.key] = (values[field.key] ?? '').trim();
+    }
+  }
+  return out;
+}

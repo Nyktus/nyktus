@@ -321,7 +321,54 @@ describe('the artifacts of a scenario', () => {
       'GET /api/v1/artifacts': () => new Promise<Response>(() => undefined) as never,
     });
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
-    const panel = wrapper.findAll('.section').find((p) => p.find('h2').exists() && p.get('h2').text() === 'Artifacts');
+    const panel = wrapper.findAll('.section').find((p) => p.find('h2').exists() && p.get('h2').text() === 'Files');
     expect(panel?.get('[role=status]').text()).toBe('Loading \u2026');
+  });
+});
+
+describe('the role of an artifact', () => {
+  const token = 'c0ffee00-aaaa-4222-8333-944444444444';
+
+  test('is lure carrier when it is bound to a honeytoken, with a link to the honeytoken and to its catalog entry', async () => {
+    const bound = artifact({ bindings: { portal: token } });
+    const { wrapper } = await boot(server('admin', { [`GET ${one}`]: () => json(200, bound) }), path);
+    const dl = wrapper.get('dl');
+    expect(dl.text()).toContain('Lure carrier.');
+    expect(dl.text()).toContain('It carries a honeytoken of its scenario.');
+    expect(dl.get(`a[href="/honeytokens/${token}"]`).text()).toBe(token);
+    expect(dl.text()).toContain('portal');
+    expect(dl.get('a[href="/catalog/artifacts/bookmarks"]').text()).toBe('bookmarks');
+  });
+
+  test('is pocket litter without a binding, and names no honeytoken', async () => {
+    const { wrapper } = await boot(server(), path);
+    const dl = wrapper.get('dl');
+    expect(dl.text()).toContain('Pocket litter.');
+    expect(dl.text()).toContain('never raises an event itself');
+    expect(dl.text()).not.toContain('Honeytokens');
+  });
+
+  test('is told in the list as well', async () => {
+    const bound = artifact({ bindings: { portal: token } });
+    const litter = artifact({ id: 'a11fac70-2222-4222-8333-944444444444', file_name: 'notes.txt' });
+    const { wrapper } = await boot(server('admin', { 'GET /api/v1/artifacts': () => json(200, { artifacts: [bound, litter] }) }), '/artifacts');
+    expect(wrapper.findAll('tbody tr').map((r) => r.findAll('td')[2]?.text())).toEqual(['Lure carrier', 'Pocket litter']);
+  });
+});
+
+describe('the placing text of an artifact', () => {
+  test('is shown as text with its structure, and markup in it stays text', async () => {
+    const placing = '1. Put it on the share.\n2. Name <img src=x onerror=alert(1)> as it is.\n\n[x](javascript:alert(2))';
+    const { wrapper } = await boot(server('viewer', { [`GET ${one}`]: () => json(200, artifact({ placing })) }), path);
+    const panel = wrapper.findAll('.section').find((p) => p.find('h2').exists() && p.get('h2').text() === 'How to place it');
+    expect(panel?.findAll('ol li')).toHaveLength(2);
+    expect(panel?.find('img').exists()).toBe(false);
+    expect(panel?.find('a').exists()).toBe(false);
+    expect(panel?.text()).toContain('<img src=x onerror=alert(1)>');
+  });
+
+  test('is left out when the catalog has none', async () => {
+    const { wrapper } = await boot(server(), path);
+    expect(wrapper.text()).not.toContain('How to place it');
   });
 });
