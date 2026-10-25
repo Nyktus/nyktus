@@ -10,7 +10,6 @@
     "en": "The config.json of the Docker client with an account and password for a registry. Every pull, push or login resolves the name of a DNS honeytoken.",
     "de": "Die config.json des Docker-Clients mit Konto und Passwort für eine Registry. Jedes Pull, Push und jede Anmeldung löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Registry", "accepts": ["dns"], "optional": false}
   ],

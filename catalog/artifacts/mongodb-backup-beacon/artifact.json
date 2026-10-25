@@ -10,7 +10,6 @@
     "en": "A mongosh script that stores a document with a connection string in your database. Every backup carries it; whoever uses the string resolves the name of a DNS honeytoken.",
     "de": "Ein mongosh-Skript, das ein Dokument mit einer Verbindungszeichenfolge in Ihrer Datenbank ablegt. Jede Sicherung trägt es; wer die Zeichenfolge nutzt, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Database", "accepts": ["dns"], "optional": false}
   ],

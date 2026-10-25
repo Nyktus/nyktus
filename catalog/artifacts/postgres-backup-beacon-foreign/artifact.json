@@ -10,7 +10,6 @@
     "en": "SQL for a foreign table of your PostgreSQL database through postgres_fdw. Every query of the table resolves the name of a DNS honeytoken.",
     "de": "SQL für eine Fremdtabelle Ihrer PostgreSQL-Datenbank über postgres_fdw. Jede Abfrage der Tabelle löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Database", "accepts": ["dns"], "optional": false}
   ],

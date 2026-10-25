@@ -10,7 +10,6 @@
     "en": "A WireGuard client configuration with an endpoint, as an administrator keeps it for a VPN. Bringing up the tunnel resolves the name of a DNS honeytoken.",
     "de": "Eine WireGuard-Clientkonfiguration mit einem Endpunkt, wie ein Administrator sie für ein VPN aufbewahrt. Wer den Tunnel aufbaut, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Gateway", "accepts": ["dns"], "optional": false}
   ],

@@ -10,7 +10,6 @@
     "en": "A runbook that names a domain controller for the replication check. Querying that controller resolves the name of a DNS honeytoken.",
     "de": "Ein Runbook, das einen Domänencontroller für die Replikationsprüfung nennt. Wer diesen Controller abfragt, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Controller", "accepts": ["dns"], "optional": false}
   ],

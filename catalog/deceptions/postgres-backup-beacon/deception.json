@@ -11,7 +11,7 @@
     "de": "SQL für zwei Objekte Ihrer PostgreSQL-Datenbank. Die Wiederherstellung eines Dumps auf einem anderen Rechner löst den Namen eines DNS-Honeytokens auf, ebenso eine Abfrage des zweiten Objekts."
   },
   "techniques": ["T1213", "T1005"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Database",

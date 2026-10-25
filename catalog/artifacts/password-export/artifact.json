@@ -10,7 +10,6 @@
     "en": "A CSV file in the format in which browsers export saved passwords, with one entry whose address is a URL. Whoever opens that address raises an event.",
     "de": "Eine CSV-Datei in dem Format, in dem Browser gespeicherte Passwörter exportieren, mit einem Eintrag, dessen Adresse eine URL ist. Wer diese Adresse öffnet, löst ein Event aus."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Portal", "accepts": ["web_url"], "optional": false}
   ],

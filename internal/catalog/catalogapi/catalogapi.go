@@ -117,11 +117,10 @@ func toDetail(d catalog.Deception, lang string) detail {
 
 // artifactSummary is an artifact as the list shows it.
 type artifactSummary struct {
-	ID               string           `json:"id"`
-	Category         catalog.Category `json:"category"`
-	Title            string           `json:"title"`
-	Summary          string           `json:"summary"`
-	EngageActivities []string         `json:"engage_activities"`
+	ID       string           `json:"id"`
+	Category catalog.Category `json:"category"`
+	Title    string           `json:"title"`
+	Summary  string           `json:"summary"`
 }
 
 // artifactDetail is an artifact with the file it renders and what it asks for.
@@ -149,7 +148,6 @@ type (
 func toArtifactSummary(a catalog.Artifact, lang string) artifactSummary {
 	return artifactSummary{
 		ID: a.ID, Category: a.Category, Title: a.Title[lang], Summary: a.Summary[lang],
-		EngageActivities: nonNil(a.EngageActivities),
 	}
 }
 

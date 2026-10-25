@@ -10,7 +10,6 @@
     "en": "A short PowerShell script with the account and password for a file share. Running it, or connecting to the share with the credentials, resolves the name of a DNS honeytoken.",
     "de": "Ein kurzes PowerShell-Skript mit Konto und Passwort für eine Dateifreigabe. Wer es ausführt oder sich mit den Zugangsdaten mit der Freigabe verbindet, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Share", "accepts": ["dns"], "optional": false}
   ],

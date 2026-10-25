@@ -11,7 +11,7 @@
     "de": "Drei gedruckte QR-Codes für ein Rack, ein Gerät und ein Patchfeld. Wer einen scannt, löst ein Event aus; das zeigt, dass jemand mit einem Telefon im Raum steht."
   },
   "techniques": ["T1592.001"],
-  "engage_activities": ["EAC0005", "EAC0011", "EAC0022"],
+  "engage_activities": ["EAC0005", "EAC0022"],
   "honeytokens": [
     {
       "key": "Rack",

@@ -10,7 +10,6 @@
     "en": "The link to the enrollment of certificates as a file of browser bookmarks.",
     "de": "Der Link zur Zertifikatanforderung als Datei mit Browser-Lesezeichen."
   },
-  "engage_activities": ["EAC0011", "EAC0022"],
   "slots": [
     {"key": "Enrollment", "accepts": ["web_url"], "optional": false}
   ],

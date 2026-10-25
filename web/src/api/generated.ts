@@ -302,7 +302,6 @@ export interface CatalogArtifactSummary {
   category: 'identity' | 'network' | 'data' | 'endpoint' | 'application';
   title: string;
   summary: string;
-  engage_activities: string[];
 }
 
 export interface CatalogArtifact {
@@ -310,7 +309,6 @@ export interface CatalogArtifact {
   category: 'identity' | 'network' | 'data' | 'endpoint' | 'application';
   title: string;
   summary: string;
-  engage_activities: string[];
   file_name: string;
   format: 'text' | 'markdown' | 'html' | 'config';
   slots: {

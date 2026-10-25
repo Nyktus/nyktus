@@ -10,7 +10,6 @@
     "en": "A profile of an application for its LDAP directory, with a bind account and password. Connecting resolves the name of a DNS honeytoken.",
     "de": "Ein Profil einer Anwendung für ihr LDAP-Verzeichnis, mit Bind-Konto und Passwort. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Directory", "accepts": ["dns"], "optional": false}
   ],

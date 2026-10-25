@@ -10,7 +10,6 @@
     "en": "An HTML e-mail as a file, with a link and an invisible image. Following the link or loading the image raises an event.",
     "de": "Eine E-Mail als HTML-Datei mit einem Link und einem unsichtbaren Bild. Wer dem Link folgt oder das Bild lädt, löst ein Event aus."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Link", "accepts": ["web_url"], "optional": false},
     {"key": "Pixel", "accepts": ["web_image"], "optional": false}

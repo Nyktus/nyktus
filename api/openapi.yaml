@@ -4349,7 +4349,12 @@ components:
             pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
         engage_activities:
           type: array
-          description: Identifiers of the MITRE Engage activities that the deception carries out.
+          description: |
+            Identifiers of the MITRE Engage activities that the story of the deception carries out.
+            A scenario created from it carries out more, depending on what it holds: lures
+            (`EAC0005`) for an artifact with a bound honeytoken, pocket litter (`EAC0011`) for one
+            without, artifact diversity (`EAC0022`) for files of more than one format, and personas
+            (`EAC0012`) for a persona that is not empty.
           items:
             type: string
             pattern: "^EAC[0-9]{4}$"
@@ -4376,7 +4381,12 @@ components:
             pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
         engage_activities:
           type: array
-          description: Identifiers of the MITRE Engage activities that the deception carries out.
+          description: |
+            Identifiers of the MITRE Engage activities that the story of the deception carries out.
+            A scenario created from it carries out more, depending on what it holds: lures
+            (`EAC0005`) for an artifact with a bound honeytoken, pocket litter (`EAC0011`) for one
+            without, artifact diversity (`EAC0022`) for files of more than one format, and personas
+            (`EAC0012`) for a persona that is not empty.
           items:
             type: string
             pattern: "^EAC[0-9]{4}$"
@@ -4475,7 +4485,7 @@ components:
     CatalogArtifactSummary:
       type: object
       additionalProperties: false
-      required: [id, category, title, summary, engage_activities]
+      required: [id, category, title, summary]
       properties:
         id:
           type: string
@@ -4487,16 +4497,10 @@ components:
           type: string
         summary:
           type: string
-        engage_activities:
-          type: array
-          description: Identifiers of the MITRE Engage activities that placing the artifact carries out.
-          items:
-            type: string
-            pattern: "^EAC[0-9]{4}$"
     CatalogArtifact:
       type: object
       additionalProperties: false
-      required: [id, category, title, summary, engage_activities, file_name, format, slots, persona, secrets]
+      required: [id, category, title, summary, file_name, format, slots, persona, secrets]
       properties:
         id:
           type: string
@@ -4508,12 +4512,6 @@ components:
           type: string
         summary:
           type: string
-        engage_activities:
-          type: array
-          description: Identifiers of the MITRE Engage activities that placing the artifact carries out.
-          items:
-            type: string
-            pattern: "^EAC[0-9]{4}$"
         file_name:
           type: string
           description: The name under which the artifact is downloaded.
@@ -4870,7 +4868,10 @@ components:
           description: The story of the scenario and where its decoys are placed. Empty if there are none.
         engage_activities:
           type: array
-          description: Identifiers of the engagement activities of MITRE Engage that the scenario carries out.
+          description: |
+            Identifiers of the engagement activities of MITRE Engage that the scenario carries out.
+            Applying a deception sets them from the story and from what it created, see the
+            activities of a deception; a change replaces them.
           items:
             type: string
             pattern: "^EAC[0-9]{4}$"

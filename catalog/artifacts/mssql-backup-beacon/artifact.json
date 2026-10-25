@@ -10,7 +10,6 @@
     "en": "SQL for a stored procedure of your SQL Server database. Whoever restores a backup and runs the procedure resolves the name of a DNS honeytoken.",
     "de": "SQL für eine gespeicherte Prozedur Ihrer SQL-Server-Datenbank. Wer eine Sicherung wiederherstellt und die Prozedur ausführt, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Share", "accepts": ["dns"], "optional": false}
   ],
