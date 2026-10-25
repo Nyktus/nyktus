@@ -415,9 +415,12 @@ export interface Scenario {
   name: string;
   notes: string;
   engage_activities: string[];
-  deception_id: string | null;
-  language: 'en' | 'de' | null;
-  persona: Record<string, string> | null;
+  deceptions: {
+    deception_id: string;
+    language: 'en' | 'de';
+    created_at: string;
+  }[];
+  persona: Record<string, string>;
   created_at: string;
   updated_at: string;
 }
@@ -427,6 +430,26 @@ export interface ApplyDeceptionRequest {
   notes?: string;
   language?: 'en' | 'de';
   persona?: Record<string, string>;
+  artifacts?: string[];
+}
+
+export interface AddDeceptionRequest {
+  deception_id: string;
+  language?: 'en' | 'de';
+  persona?: Record<string, string>;
+  artifacts?: string[];
+}
+
+export interface AddArtifactRequest {
+  catalog_artifact: string;
+  language?: 'en' | 'de';
+  persona?: Record<string, string>;
+  bindings?: Record<string, string>;
+}
+
+export interface AddedArtifact {
+  scenario: Scenario;
+  artifact: Artifact;
 }
 
 export interface AppliedDeception {
@@ -435,19 +458,24 @@ export interface AppliedDeception {
   artifacts: Artifact[];
 }
 
-export interface ScenarioGuide {
-  language: 'en' | 'de';
-  content: string;
+export interface ScenarioGuides {
+  guides: {
+    deception_id: string;
+    language: 'en' | 'de';
+    content: string;
+  }[];
 }
 
 export interface Artifact {
   id: string;
   scenario_id: string | null;
-  deception_artifact: string;
+  catalog_artifact: string;
   file_name: string;
   format: 'text' | 'markdown' | 'html' | 'config';
   media_type: string;
   size: number;
+  placing: string;
+  bindings: Record<string, string>;
   placement_notes: string;
   created_at: string;
   updated_at: string;
@@ -613,6 +641,8 @@ export interface OperationInfo {
 
 export const operations = {
   activateUser: { method: 'POST', path: '/api/v1/activation', access: 'public', navigation: false, binary: false },
+  addScenarioArtifact: { method: 'POST', path: '/api/v1/scenarios/{id}/artifacts', access: 'scenarios:write', navigation: false, binary: false },
+  addScenarioDeception: { method: 'POST', path: '/api/v1/scenarios/{id}/deceptions', access: 'scenarios:write', navigation: false, binary: false },
   applyCatalogDeception: { method: 'POST', path: '/api/v1/catalog/deceptions/{id}/apply', access: 'scenarios:write', navigation: false, binary: false },
   assignHoneypotScenario: { method: 'PUT', path: '/api/v1/honeypots/{id}/scenario', access: 'honeypots:write', navigation: false, binary: false },
   assignHoneytokenScenario: { method: 'PUT', path: '/api/v1/honeytokens/{id}/scenario', access: 'honeytokens:write', navigation: false, binary: false },
@@ -698,6 +728,18 @@ export interface OperationTypes {
     query: Record<string, never>;
     body: ActivationRequest;
     responses: { 200: User };
+  };
+  addScenarioArtifact: {
+    path: { id: string };
+    query: Record<string, never>;
+    body: AddArtifactRequest;
+    responses: { 201: AddedArtifact };
+  };
+  addScenarioDeception: {
+    path: { id: string };
+    query: Record<string, never>;
+    body: AddDeceptionRequest;
+    responses: { 201: AppliedDeception };
   };
   applyCatalogDeception: {
     path: { id: string };
@@ -949,7 +991,7 @@ export interface OperationTypes {
     path: { id: string };
     query: Record<string, never>;
     body: undefined;
-    responses: { 200: ScenarioGuide };
+    responses: { 200: ScenarioGuides };
   };
   getSession: {
     path: Record<string, never>;

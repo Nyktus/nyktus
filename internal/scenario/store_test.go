@@ -98,7 +98,7 @@ func createHoneypot(t *testing.T, d testDB, scenarioID string) string {
 func createArtifact(t *testing.T, d testDB, scenarioID string) string {
 	t.Helper()
 	a, err := artifact.NewStore(d.console).Create(t.Context(), artifact.Spec{
-		ScenarioID: scenarioID, DeceptionArtifact: "config", FileName: "config", Format: catalog.FormatConfig,
+		ScenarioID: scenarioID, CatalogArtifact: "config", FileName: "config", Format: catalog.FormatConfig,
 		Content: []byte("Host a\n"),
 	})
 	if err != nil {
@@ -152,8 +152,8 @@ func TestStore_CreateAndGet(t *testing.T) {
 	spec := scenario.Spec{Name: "Finance file share", Notes: "\\\\fs01\\finance\nowner: IT", EngageActivities: []string{"EAC0005", "EAC0006"}}
 	sc := create(t, d, spec)
 	if sc.ID == "" || sc.Name != spec.Name || sc.Notes != spec.Notes || !slices.Equal(sc.EngageActivities, spec.EngageActivities) ||
-		sc.DeceptionID != nil || !sc.CreatedAt.Equal(sc.UpdatedAt) {
-		t.Errorf("Create() = %+v, want the fields of %+v, no deception and equal times", sc, spec)
+		len(sc.Deceptions) != 0 || len(sc.Persona) != 0 || !sc.CreatedAt.Equal(sc.UpdatedAt) {
+		t.Errorf("Create() = %+v, want the fields of %+v, no deception, no persona and equal times", sc, spec)
 	}
 	got, err := s.Get(t.Context(), sc.ID)
 	if err != nil || got.ID != sc.ID || got.Name != sc.Name || !slices.Equal(got.EngageActivities, sc.EngageActivities) {
@@ -865,9 +865,8 @@ func TestSchema_ChecksScenarios(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
 
-	const insert = `INSERT INTO scenarios (name, notes, engage_activities, deception_id, language, persona, guide)
-VALUES ($1, $2, $3, $4, $5, $6, $7)`
-	valid := []any{"a", "", []string{}, "ssh-config", "en", `{"Domain": "corp.example.com"}`, "g"}
+	const insert = `INSERT INTO scenarios (name, notes, engage_activities, persona) VALUES ($1, $2, $3, $4)`
+	valid := []any{"a", "", []string{}, `{"Domain": "corp.example.com"}`}
 	with := func(i int, v any) []any {
 		args := slices.Clone(valid)
 		args[i] = v
@@ -888,18 +887,9 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)`
 		{"strategic activity", with(2, []string{"SPR0001"}), "scenarios_engage_activities_check"},
 		{"repeated activity", with(2, []string{"EAC0005", "EAC0005"}), "scenarios_engage_activities_check"},
 		{"too many activities", with(2, engageIDs(t)[:21]), "scenarios_engage_activities_check"},
-		{"deception in upper case", with(3, "SSH"), "scenarios_deception_id_check"},
-		{"deception with a trailing hyphen", with(3, "ssh-"), "scenarios_deception_id_check"},
-		{"long deception", with(3, strings.Repeat("a", 65)), "scenarios_deception_id_check"},
-		{"deception without language", with(4, nil), "scenarios_application_check"},
-		{"deception without persona", with(5, nil), "scenarios_application_check"},
-		{"deception without guide", with(6, nil), "scenarios_application_check"},
-		{"guide without deception", []any{"a", "", []string{}, nil, nil, nil, "g"}, "scenarios_application_check"},
-		{"unknown language", with(4, "fr"), "scenarios_language_check"},
-		{"persona as a list", with(5, `["corp.example.com"]`), "scenarios_persona_check"},
-		{"persona with a number", with(5, `{"Port": 22}`), "scenarios_persona_check"},
-		{"persona too large", with(5, `{"Text": "`+strings.Repeat("a", 16384)+`"}`), "scenarios_persona_check"},
-		{"guide too large", with(6, strings.Repeat("a", 1<<20+1)), "scenarios_guide_check"},
+		{"persona as a list", with(3, `["corp.example.com"]`), "scenarios_persona_check"},
+		{"persona with a number", with(3, `{"Port": 22}`), "scenarios_persona_check"},
+		{"persona too large", with(3, `{"Text": "`+strings.Repeat("a", 16384)+`"}`), "scenarios_persona_check"},
 	} {
 		_, err := d.owner.Exec(t.Context(), insert, tt.args...)
 		var pgErr *pgconn.PgError
@@ -908,7 +898,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)`
 		}
 	}
 
-	if _, err := d.owner.Exec(t.Context(), insert, with(3, strings.Repeat("a", 64))...); err != nil {
+	if _, err := d.owner.Exec(t.Context(), insert, valid...); err != nil {
 		t.Fatalf("valid row: %v", err)
 	}
 	var equal bool
@@ -963,9 +953,17 @@ func TestSchema_AcceptsTheIdentifiersOfEngageAndTheCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var scenarioID string
+	if err := d.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name) VALUES ('a') RETURNING id`).Scan(&scenarioID); err != nil {
+		t.Fatal(err)
+	}
+	// A scenario holds 20 deceptions at most, so each goes into a scenario of its own.
 	for _, dec := range c.Deceptions() {
 		for _, lang := range catalog.Languages {
-			_, err := d.owner.Exec(t.Context(), `INSERT INTO scenarios (name, deception_id, language, persona, guide) VALUES ('a', $1, $2, '{}', 'g')`, dec.ID, lang)
+			if err := d.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name) VALUES ('a') RETURNING id`).Scan(&scenarioID); err != nil {
+				t.Fatal(err)
+			}
+			_, err := d.owner.Exec(t.Context(), `INSERT INTO scenario_deceptions (scenario_id, deception_id, language, guide) VALUES ($1, $2, $3, 'g')`, scenarioID, dec.ID, lang)
 			if err != nil {
 				t.Errorf("deception %s in %s: %v", dec.ID, lang, err)
 			}

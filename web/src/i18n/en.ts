@@ -319,6 +319,7 @@ export const en = {
   'scenarios.apply': 'Apply a deception',
   'scenarios.guide': 'Guide',
   'scenarios.guideLanguage': 'Language of the guide: {language}',
+  'scenarios.guideOf': 'Guide of {id}. Language: {language}',
   'scenarios.guideFailed': 'The guide could not be loaded.',
 
   'error.artifact_reveals_decoy': 'One of the values would make an artifact reveal what it is, for example by naming the product or the decoy. Choose other values.',

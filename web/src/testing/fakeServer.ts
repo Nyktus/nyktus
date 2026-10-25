@@ -130,15 +130,19 @@ export function withSecret(h: Honeypot) {
 
 export const scenarioId = 'dec0de00-1111-4222-8333-944444444444';
 
+/** A deception that joined a scenario. */
+export function joined(deceptionId: string, language: 'en' | 'de' = 'en') {
+  return { deception_id: deceptionId, language, created_at: '2026-10-20T08:30:00Z' };
+}
+
 export function scenario(overrides: Partial<Scenario> = {}): Scenario {
   return {
     id: scenarioId,
     name: 'Stolen backup',
     notes: 'A backup that someone left on a share.',
     engage_activities: ['EAC0005'],
-    deception_id: null,
-    language: null,
-    persona: null,
+    deceptions: [],
+    persona: {},
     created_at: '2026-10-20T08:30:00Z',
     updated_at: '2026-10-21T09:00:00Z',
     ...overrides,
@@ -177,11 +181,13 @@ export function artifact(overrides: Partial<Artifact> = {}): Artifact {
   return {
     id: artifactId,
     scenario_id: scenarioId,
-    deception_artifact: 'bookmarks',
+    catalog_artifact: 'bookmarks',
     file_name: 'bookmarks.html',
     format: 'html',
     media_type: 'text/html',
     size: 2048,
+    placing: '',
+    bindings: {},
     placement_notes: 'On the share \\\\fs01\\it.',
     created_at: '2026-10-20T08:30:00Z',
     updated_at: '2026-10-21T09:00:00Z',

@@ -31,36 +31,57 @@ func NewStore(q db.Querier) *Store {
 
 // columns are the columns of an artifact without its content, which only a
 // download reads.
-const columns = `id, scenario_id, deception_artifact, file_name, format, octet_length(content), placement_notes,
-created_at, updated_at`
+const columns = `id, scenario_id, catalog_artifact, file_name, format, octet_length(content), placing_text, bindings,
+placement_notes, created_at, updated_at`
 
 // scan scans the columns of an artifact, followed by more.
 func scan(row pgx.Row, more ...any) (Artifact, error) {
 	var a Artifact
 	err := row.Scan(append([]any{
-		&a.ID, &a.ScenarioID, &a.DeceptionArtifact, &a.FileName, &a.Format, &a.Size,
+		&a.ID, &a.ScenarioID, &a.CatalogArtifact, &a.FileName, &a.Format, &a.Size, &a.Placing, &a.Bindings,
 		&a.PlacementNotes, &a.CreatedAt, &a.UpdatedAt,
 	}, more...)...)
 	return a, err
 }
 
 // Create stores the artifact spec in its scenario. The catalog validated the
-// file name and the format and bounded the content, and the schema checks
-// them again; the caller creates the scenario in the same transaction.
+// file name and the format and bounded the content and the placing, and the
+// schema checks them again; the caller locks the scenario, or creates it in
+// the same transaction, and has checked that the honeytokens of the bindings
+// belong to it. It returns ErrLimit if the scenario holds the most artifacts
+// it may.
 func (s *Store) Create(ctx context.Context, spec Spec) (Artifact, error) {
+	bindings := spec.Bindings
+	if bindings == nil {
+		bindings = map[string]string{}
+	}
 	a, err := scan(s.db.QueryRow(ctx, `
-INSERT INTO artifacts (scenario_id, deception_artifact, file_name, format, content)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING `+columns, spec.ScenarioID, spec.DeceptionArtifact, spec.FileName, spec.Format, spec.Content))
+INSERT INTO artifacts (scenario_id, catalog_artifact, file_name, format, content, placing_text, bindings)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING `+columns, spec.ScenarioID, spec.CatalogArtifact, spec.FileName, spec.Format, spec.Content,
+		spec.Placing, bindings))
+	if db.Violation(err, db.CheckViolation) == limitConstraint {
+		return Artifact{}, ErrLimit
+	}
 	if err != nil {
 		return Artifact{}, fmt.Errorf("create artifact: %w", err)
 	}
 	return a, nil
 }
 
+// MaxPerScenario is the most artifacts a scenario holds, as the database
+// enforces it.
+const MaxPerScenario = 200
+
+// limitConstraint is the constraint that the database names when a scenario
+// holds the most artifacts it may.
+const limitConstraint = "artifacts_limit_check"
+
 // Errors of the store.
 var (
 	ErrNotFound = errors.New("artifact not found")
+	// ErrLimit means that a scenario holds the most artifacts it may.
+	ErrLimit = errors.New("scenario holds the most artifacts")
 	// ErrInvalidPageSize is returned for a page size outside [1, MaxPageSize].
 	ErrInvalidPageSize = errors.New("invalid page size")
 )

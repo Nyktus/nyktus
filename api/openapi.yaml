@@ -1615,9 +1615,12 @@ paths:
         Creates a scenario from a deception: its honeytokens, which join the
         scenario, its artifacts, rendered with the URLs and names of those
         honeytokens, the values of the persona and new random secrets, and its
-        guide in the chosen language. Everything is created in one transaction:
-        an error leaves nothing behind. The scenario is a snapshot; a later
-        change of the catalog does not change it.
+        guide in the chosen language. The artifacts are those that the
+        deception recommends unless `artifacts` names a selection. Everything
+        is created in one transaction: an error leaves nothing behind. The
+        scenario is a snapshot; a later change of the catalog does not change
+        it. Further deceptions and artifacts join the scenario later, see
+        `addScenarioDeception` and `addScenarioArtifact`.
 
         A DNS honeytoken is named under the first zone of the DNS role in the
         artifacts. Without zones, a deception with a DNS honeytoken receives
@@ -2599,6 +2602,178 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/scenarios/{id}/deceptions:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: addScenarioDeception
+      summary: Add a deception to a scenario
+      description: |
+        Adds a deception of the catalog to a scenario that exists: its
+        honeytokens, which join the scenario, its artifacts (those that the
+        deception recommends unless `artifacts` names a selection), rendered
+        with the URLs and names of those honeytokens, and its guide in the chosen
+        language. Everything is created in one transaction: an error leaves
+        nothing behind.
+
+        A deception joins a scenario at most once; a second application with
+        other values of the persona needs a scenario of its own.
+
+        The persona belongs to the scenario and only grows. A value that the
+        scenario has stays: the request may repeat it or leave it out, and a
+        different value is refused with `409` and the code `persona_conflict`,
+        which names the key but neither value. A key that the scenario lacks is
+        added. A scenario holds at most 20 deceptions and 200 artifacts (`409`,
+        `scenario_limit`).
+
+        The permission `scenarios:write` covers the honeytokens and artifacts
+        that the request creates, as for applying a deception. The audit log
+        records each honeytoken as `honeytoken.create`, each artifact as
+        `artifact.create` and the scenario as `scenario.update` with the
+        changed fields `deceptions`, and `persona` and `engage_activities` if
+        they changed. The Engage activities of the scenario gain those that
+        follow from what joined, up to 20.
+      tags: [scenarios]
+      x-access: scenarios:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddDeceptionRequest"
+      responses:
+        "201":
+          description: The scenario after the change, with the honeytokens and artifacts that were created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppliedDeception"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            A value of the persona differs from the one the scenario has (`persona_conflict`), the deception
+            is part of the scenario already (`deception_already_added`), or the scenario holds the most
+            deceptions or artifacts it may (`scenario_limit`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: |
+            The deception has a `dns` honeytoken, but the console knows no zone of the DNS role
+            (`dns_not_configured`), or a value would make an artifact reveal what it is
+            (`artifact_reveals_decoy`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/scenarios/{id}/artifacts:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: addScenarioArtifact
+      summary: Add an artifact of the catalog to a scenario
+      description: |
+        Adds an artifact of the catalog to a scenario that exists, rendered once
+        with the persona of the scenario, new random secrets and the
+        honeytokens that `bindings` names for its slots, and never rendered
+        again. The honeytokens must belong to the scenario and be of a type that
+        the slot takes (`400` otherwise, without saying whether a honeytoken of
+        that identifier exists elsewhere). A slot that is optional and left out
+        makes the file pocket litter; a required slot needs a honeytoken.
+
+        The persona grows as for `addScenarioDeception`: a key that the artifact
+        asks for and the scenario lacks is added, a different value for a key
+        that the scenario has is refused with `409` and the code
+        `persona_conflict`. A password that the file names is not the one of the
+        older files of the scenario, because every artifact generates its own
+        secrets.
+
+        The permission `scenarios:write` covers the artifact. The audit log
+        records it as `artifact.create` and, if the persona or the Engage
+        activities of the scenario changed, the scenario as `scenario.update`
+        with the changed fields.
+      tags: [scenarios]
+      x-access: scenarios:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddArtifactRequest"
+      responses:
+        "201":
+          description: The artifact and the scenario after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AddedArtifact"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            A value of the persona differs from the one the scenario has (`persona_conflict`), or the scenario
+            holds the most artifacts it may (`scenario_limit`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: |
+            A bound honeytoken is a `dns` honeytoken, but the console knows no zone of the DNS role
+            (`dns_not_configured`), or a value would make the file reveal what it is
+            (`artifact_reveals_decoy`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
   /api/v1/scenarios/{id}/guide:
     parameters:
       - name: id
@@ -2609,13 +2784,13 @@ paths:
           format: uuid
     get:
       operationId: getScenarioGuide
-      summary: Get the guide of a scenario
+      summary: Get the guides of a scenario
       description: |
-        Returns the guide that applying the deception rendered for the
-        scenario, in Markdown, in the language of the application. It names
-        the honeytokens and values of the scenario and tells where to place
-        its artifacts and how to test them. A scenario put together by hand
-        has no guide and receives `404`.
+        Returns the guide of each deception of the scenario, in the order the
+        deceptions joined, as they were rendered, in Markdown, in the language
+        in which each joined. A guide names the honeytokens and values of the
+        scenario and tells where to place its artifacts and how to test them.
+        A scenario put together by hand holds no deception and has no guides.
       tags: [scenarios]
       x-access: scenarios:read
       security:
@@ -2623,11 +2798,11 @@ paths:
         - bearerKey: []
       responses:
         "200":
-          description: The guide.
+          description: The guides.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ScenarioGuide"
+                $ref: "#/components/schemas/ScenarioGuides"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -4856,7 +5031,7 @@ components:
     Scenario:
       type: object
       additionalProperties: false
-      required: [id, name, notes, engage_activities, deception_id, language, persona, created_at, updated_at]
+      required: [id, name, notes, engage_activities, deceptions, persona, created_at, updated_at]
       properties:
         id:
           type: string
@@ -4875,19 +5050,34 @@ components:
           items:
             type: string
             pattern: "^EAC[0-9]{4}$"
-        deception_id:
-          type: [string, "null"]
-          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
-          description: The deception of the catalog that the scenario was created from, or null for a scenario put together by hand.
-        language:
-          type: [string, "null"]
-          enum: [en, de, null]
-          description: The language of the guide and of the names of the honeytokens that applying the deception created, or null for a scenario put together by hand.
+        deceptions:
+          type: array
+          description: |
+            The deceptions of the catalog that joined the scenario, in the order they joined. Empty for a
+            scenario put together by hand.
+          items:
+            type: object
+            additionalProperties: false
+            required: [deception_id, language, created_at]
+            properties:
+              deception_id:
+                type: string
+                pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+              language:
+                type: string
+                enum: [en, de]
+                description: The language of its guide and of the names of its honeytokens.
+              created_at:
+                type: string
+                format: date-time
         persona:
-          type: [object, "null"]
+          type: object
           additionalProperties:
             type: string
-          description: The values of the persona that the deception was applied with, by key, or null for a scenario put together by hand.
+          description: |
+            The values of the persona that the files of the scenario were rendered with, by key. It only
+            grows: a key is added when a deception or an artifact joins that asks for it, and a value that
+            is there stays.
         created_at:
           type: string
           format: date-time
@@ -4923,6 +5113,86 @@ components:
             name, `text` one line of up to 200 characters.
           additionalProperties:
             type: string
+        artifacts:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          description: |
+            The identifiers of the artifacts of the deception to create, each of one that the deception
+            recommends. Without it, all of them; an empty list creates none.
+          items:
+            type: string
+            pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+
+    AddDeceptionRequest:
+      type: object
+      additionalProperties: false
+      required: [deception_id]
+      properties:
+        deception_id:
+          type: string
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+          description: The deception of the catalog to add.
+        language:
+          type: string
+          enum: [en, de]
+          description: The language of the guide and of the names of the honeytokens. Without it, English.
+        persona:
+          type: object
+          default: {}
+          description: |
+            The values of the persona of the deception, by key. A key that the scenario has may be left out
+            or repeat its value; a key that the scenario lacks is required. Each value must not be empty and
+            must match its kind, see `ApplyDeceptionRequest`.
+          additionalProperties:
+            type: string
+        artifacts:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          description: As for `ApplyDeceptionRequest`.
+          items:
+            type: string
+            pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+
+    AddArtifactRequest:
+      type: object
+      additionalProperties: false
+      required: [catalog_artifact]
+      properties:
+        catalog_artifact:
+          type: string
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+          description: The artifact of the catalog to add.
+        language:
+          type: string
+          enum: [en, de]
+          description: The language of the text that says where to place the artifact. Without it, English.
+        persona:
+          type: object
+          default: {}
+          description: As for `AddDeceptionRequest`, for the persona of the artifact.
+          additionalProperties:
+            type: string
+        bindings:
+          type: object
+          default: {}
+          description: |
+            The honeytoken of the scenario for each slot of the artifact, by the key of the slot. A required
+            slot needs one; an optional slot that is left out makes the file pocket litter.
+          additionalProperties:
+            type: string
+            format: uuid
+
+    AddedArtifact:
+      type: object
+      additionalProperties: false
+      required: [scenario, artifact]
+      properties:
+        scenario:
+          $ref: "#/components/schemas/Scenario"
+        artifact:
+          $ref: "#/components/schemas/Artifact"
 
     AppliedDeception:
       type: object
@@ -4940,23 +5210,34 @@ components:
           items:
             $ref: "#/components/schemas/Artifact"
 
-    ScenarioGuide:
+    ScenarioGuides:
       type: object
       additionalProperties: false
-      required: [language, content]
+      required: [guides]
       properties:
-        language:
-          type: string
-          enum: [en, de]
-        content:
-          type: string
-          description: The guide in Markdown.
+        guides:
+          type: array
+          description: The guide of each deception of the scenario, in the order the deceptions joined.
+          items:
+            type: object
+            additionalProperties: false
+            required: [deception_id, language, content]
+            properties:
+              deception_id:
+                type: string
+                pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+              language:
+                type: string
+                enum: [en, de]
+              content:
+                type: string
+                description: The guide in Markdown.
 
     Artifact:
       type: object
       additionalProperties: false
-      required: [id, scenario_id, deception_artifact, file_name, format, media_type, size, placement_notes,
-        created_at, updated_at]
+      required: [id, scenario_id, catalog_artifact, file_name, format, media_type, size, placing, bindings,
+        placement_notes, created_at, updated_at]
       properties:
         id:
           type: string
@@ -4964,11 +5245,11 @@ components:
         scenario_id:
           type: [string, "null"]
           format: uuid
-          description: The scenario that applying the deception created, or null once it was deleted and the artifact kept.
-        deception_artifact:
+          description: The scenario that the artifact was created in, or null once it was deleted and the artifact kept.
+        catalog_artifact:
           type: string
           pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
-          description: The key of the artifact in its deception.
+          description: The identifier of the artifact in the catalog.
         file_name:
           type: string
           description: The name under which the artifact is downloaded.
@@ -4986,6 +5267,19 @@ components:
           minimum: 0
           maximum: 1048576
           description: The length of the content in bytes.
+        placing:
+          type: string
+          description: |
+            Where to place the artifact, as the catalog says it, in Markdown, rendered for the scenario
+            when the artifact was created. Empty if the catalog says nothing.
+        bindings:
+          type: object
+          description: |
+            The honeytokens that fill the slots of the artifact, by the key of the slot. A slot without an
+            entry is empty, which makes the file pocket litter. The honeytoken may have been deleted since.
+          additionalProperties:
+            type: string
+            format: uuid
         placement_notes:
           type: string
           description: Where the artifact was placed. Empty if there are none.

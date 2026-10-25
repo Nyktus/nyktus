@@ -200,6 +200,9 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Delete: http.HandlerFunc(sc.Delete),
 			Apply:  http.HandlerFunc(sc.Apply),
 			Guide:  http.HandlerFunc(sc.Guide),
+
+			AddDeception: http.HandlerFunc(sc.AddDeception),
+			AddArtifact:  http.HandlerFunc(sc.AddArtifact),
 		},
 		Artifacts: Artifacts{
 			List:     http.HandlerFunc(art.List),

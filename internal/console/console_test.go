@@ -70,7 +70,7 @@ func deps(db Pinger) Deps {
 		Scenarios: Scenarios{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
 			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(), Apply: http.NotFoundHandler(),
-			Guide: http.NotFoundHandler(),
+			Guide: http.NotFoundHandler(), AddDeception: http.NotFoundHandler(), AddArtifact: http.NotFoundHandler(),
 		},
 		Artifacts: Artifacts{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Download: http.NotFoundHandler(),

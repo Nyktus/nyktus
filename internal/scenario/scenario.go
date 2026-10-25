@@ -4,7 +4,15 @@
 // Package scenario manages scenarios: groups of decoys that tell one story,
 // so that their events are correlated into one incident.
 //
-// A honeytoken joins or leaves a scenario only through its own operation in
+// A scenario holds the deceptions of the catalog that joined it, each with
+// its guide, and a persona that belongs to the scenario and only grows: a key
+// is added, a value that is there stays, so that the files that were rendered
+// with it keep agreeing with those that follow. A deception joins a scenario
+// at most once. Applying a deception creates a scenario with it; adding a
+// deception or an artifact of the catalog extends an existing one. Every
+// operation that extends a scenario locks it first.
+//
+// A honeytoken joins or leaves a scenario also through its own operation in
 // package honeytoken. Name and notes of a scenario are inventory, like those
 // of a honeytoken, and stay out of logs and the audit log. HTTP lives in
 // scenarioapi.
@@ -31,11 +39,19 @@ const (
 	MaxEngageActivities = 20
 )
 
+// MaxDeceptions is the most deceptions a scenario holds, as the database
+// enforces it. artifact.MaxPerScenario is the limit of its artifacts.
+const MaxDeceptions = 20
+
 // Names of the fields of a change, as recorded in the audit log.
 const (
 	FieldName             = "name"
 	FieldNotes            = "notes"
 	FieldEngageActivities = "engage_activities"
+	// FieldDeceptions and FieldPersona are the fields that adding a deception
+	// or an artifact changes.
+	FieldDeceptions = "deceptions"
+	FieldPersona    = "persona"
 )
 
 // Validation errors.
@@ -45,6 +61,7 @@ var (
 	ErrInvalidEngageActivities = errors.New("invalid Engage activities")
 	ErrInvalidRemoval          = errors.New("invalid removal of the resources of a scenario")
 	ErrInvalidLanguage         = errors.New("invalid language")
+	ErrInvalidSelection        = errors.New("invalid selection of artifacts")
 )
 
 // Scenario is a stored scenario.
@@ -55,17 +72,31 @@ type Scenario struct {
 	// EngageActivities are the identifiers of the activities of MITRE Engage
 	// that the scenario carries out.
 	EngageActivities []string
-	// DeceptionID is the deception of the catalog that the scenario was
-	// created from, or nil for a scenario put together by hand.
-	DeceptionID *string
-	// Language is the language of the guide and of the names of the
-	// honeytokens that applying the deception created, and Persona the
-	// values that it was applied with, by key; nil for a scenario put
-	// together by hand.
-	Language  *string
+	// Deceptions are the deceptions of the catalog that joined the scenario,
+	// in the order they joined; none for a scenario put together by hand.
+	Deceptions []AppliedDeception
+	// Persona holds the values that the deceptions and artifacts of the
+	// scenario were rendered with, by key. It is never nil.
 	Persona   map[string]string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// AppliedDeception is a deception that joined a scenario.
+type AppliedDeception struct {
+	// DeceptionID is the identifier of the deception in the catalog.
+	DeceptionID string `json:"deception_id"`
+	// Language is the language of its guide and of the names of its
+	// honeytokens.
+	Language  string    `json:"language"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Guide is the guide of a deception of a scenario, as it was rendered.
+type Guide struct {
+	DeceptionID string
+	Language    string
+	Content     string
 }
 
 // LogValue names the scenario by its identifier. Its name and notes are
@@ -91,8 +122,8 @@ func (s Spec) validate() error {
 	return ValidateEngageActivities(s.EngageActivities)
 }
 
-// Change describes changes to a scenario. A nil field stays as it is. The
-// deception never changes.
+// Change describes changes to a scenario. A nil field stays as it is. Its
+// deceptions and persona change only by adding to the scenario.
 type Change struct {
 	Name  *string
 	Notes *string

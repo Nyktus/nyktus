@@ -145,7 +145,7 @@ func TestCreateGetList(t *testing.T) {
 
 	got := f.create(t, `{"name": "Finance share", "notes": "fs01", "engage_activities": ["EAC0005"]}`)
 	if got.ID == "" || got.Name != "Finance share" || got.Notes != "fs01" ||
-		!slices.Equal(got.EngageActivities, []string{"EAC0005"}) || got.DeceptionID != nil {
+		!slices.Equal(got.EngageActivities, []string{"EAC0005"}) || len(got.Deceptions) != 0 {
 		t.Errorf("POST = %+v", got)
 	}
 	minimal := f.create(t, `{"name": "m"}`)
@@ -351,14 +351,13 @@ func TestResponses_MatchTheSpecification(t *testing.T) {
 
 	created := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/scenarios", "", `{"name": "a", "engage_activities": ["EAC0005"]}`)
 	sc := decode[response](t, created)
-	if _, err := f.owner.Exec(t.Context(), `INSERT INTO scenarios (name, deception_id, language, persona, guide) VALUES ('d', 'ssh-config', 'en', '{"Domain": "corp.example.com"}', 'g')`); err != nil {
-		t.Fatal(err)
-	}
+	applied := f.apply(t, "ssh-config", sshConfig)
 	for _, b := range []struct {
 		schema string
 		rec    *httptest.ResponseRecorder
 	}{
 		{"Scenario", created},
+		{"Scenario", f.serve(t, f.h.Get, http.MethodGet, "/", applied.Scenario.ID, "")},
 		{"Scenario", f.serve(t, f.h.Get, http.MethodGet, "/", sc.ID, "")},
 		{"Scenario", f.serve(t, f.h.Update, http.MethodPatch, "/", sc.ID, `{"notes": "n"}`)},
 		{"ScenarioPage", f.serve(t, f.h.List, http.MethodGet, "/api/v1/scenarios?limit=1", "", "")},

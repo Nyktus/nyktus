@@ -37,7 +37,7 @@ func createScenario(t *testing.T, d testDB) string {
 	t.Helper()
 	var id string
 	err := d.owner.QueryRow(t.Context(), `
-INSERT INTO scenarios (name, deception_id, language, persona, guide) VALUES ('s', 'ssh-config', 'en', '{}', 'g')
+INSERT INTO scenarios (name) VALUES ('s')
 RETURNING id`).Scan(&id)
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ RETURNING id`).Scan(&id)
 
 func spec(scenarioID string) artifact.Spec {
 	return artifact.Spec{
-		ScenarioID: scenarioID, DeceptionArtifact: "config", FileName: "config", Format: catalog.FormatConfig,
+		ScenarioID: scenarioID, CatalogArtifact: "config", FileName: "config", Format: catalog.FormatConfig,
 		Content: []byte("Host a\n"),
 	}
 }
@@ -61,7 +61,7 @@ func TestStore_Create(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if a.ID == "" || a.ScenarioID == nil || *a.ScenarioID != sc || a.DeceptionArtifact != "config" ||
+	if a.ID == "" || a.ScenarioID == nil || *a.ScenarioID != sc || a.CatalogArtifact != "config" ||
 		a.FileName != "config" || a.Format != catalog.FormatConfig || a.Size != len("Host a\n") ||
 		a.PlacementNotes != "" || !a.CreatedAt.Equal(a.UpdatedAt) {
 		t.Errorf("Create() = %+v", a)
@@ -103,7 +103,7 @@ func TestSchema_ChecksArtifacts(t *testing.T) {
 	d := newTestDB(t)
 	sc := createScenario(t, d)
 
-	const insert = `INSERT INTO artifacts (scenario_id, deception_artifact, file_name, format, content, placement_notes)
+	const insert = `INSERT INTO artifacts (scenario_id, catalog_artifact, file_name, format, content, placement_notes)
 VALUES ($1, $2, $3, $4, $5, $6)`
 	valid := []any{sc, "config", "config", "config", []byte("x"), ""}
 	with := func(i int, v any) []any {
@@ -117,8 +117,8 @@ VALUES ($1, $2, $3, $4, $5, $6)`
 		constraint string
 	}{
 		{"without scenario", with(0, nil), "artifacts_scenario_id_check"},
-		{"malformed key", with(1, "Config"), "artifacts_deception_artifact_check"},
-		{"long key", with(1, strings.Repeat("a", 65)), "artifacts_deception_artifact_check"},
+		{"malformed key", with(1, "Config"), "artifacts_catalog_artifact_check"},
+		{"long key", with(1, strings.Repeat("a", 65)), "artifacts_catalog_artifact_check"},
 		{"file name with separator", with(2, "a/b"), "artifacts_file_name_check"},
 		{"hidden file name", with(2, ".netrc"), "artifacts_file_name_check"},
 		{"file name with a line break", with(2, "a\nb"), "artifacts_file_name_check"},
