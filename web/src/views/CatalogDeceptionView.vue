@@ -4,15 +4,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
 import type { CatalogDeception } from '../api/generated';
 import { errorText } from '../api/messages';
+import FileChoice from '../components/FileChoice.vue';
+import PersonaFields from '../components/PersonaFields.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import { locale, t, type Locale } from '../i18n';
-import { checkPersonaValue } from '../personaRules';
+import { personaProblems, personaToSend } from '../personaRules';
+import { personaProblemText } from '../personaText';
 import { session } from '../session';
 
 const route = useRoute();
@@ -31,8 +34,10 @@ const canApply = computed(() => session.can('scenarios:write'));
 const name = ref('');
 const notes = ref('');
 const language = ref<Locale>(locale.value);
-const persona = reactive<Record<string, string>>({});
+const persona = ref<Record<string, string>>({});
 const problems = ref<Record<string, string>>({});
+// The artifacts that the deception recommends are all chosen at first; the user takes away the ones they do not want.
+const selected = ref<string[]>([]);
 
 function show(failure: unknown): string {
   return errorText(failure instanceof ApiError ? failure : new ApiError('server', 0));
@@ -54,8 +59,8 @@ async function load(): Promise<void> {
     if (previous === undefined || name.value === previous.title) {
       name.value = body.title;
     }
-    for (const field of body.persona) {
-      persona[field.key] ??= '';
+    if (previous === undefined) {
+      selected.value = body.artifacts.map((a) => a.key);
     }
   } catch (failure) {
     if (mine !== asked) {
@@ -74,15 +79,12 @@ async function load(): Promise<void> {
 }
 
 function check(): Record<string, string> {
+  const fields = deception.value?.persona ?? [];
   const found: Record<string, string> = {};
-  for (const field of deception.value?.persona ?? []) {
-    const problem = checkPersonaValue(field.kind, persona[field.key] ?? '');
-    if (problem === 'required') {
-      found[field.key] = t('catalog.apply.required', { label: field.label });
-    } else if (problem === 'host') {
-      found[field.key] = t('catalog.apply.hostInvalid', { label: field.label });
-    } else if (problem === 'text') {
-      found[field.key] = t('catalog.apply.textInvalid', { label: field.label });
+  for (const [key, problem] of Object.entries(personaProblems(fields, persona.value))) {
+    const field = fields.find((f) => f.key === key);
+    if (field !== undefined) {
+      found[key] = personaProblemText(field, problem);
     }
   }
   return found;
@@ -98,13 +100,16 @@ async function apply(): Promise<void> {
   }
   busy.value = true;
   try {
-    const values: Record<string, string> = {};
-    for (const field of deception.value.persona) {
-      values[field.key] = (persona[field.key] ?? '').trim();
-    }
+    // The list is sent as it stands, so that the scenario holds the files that the page showed as chosen.
     const { body } = await api.call('applyCatalogDeception', {
       path: { id: id.value },
-      body: { name: name.value.trim(), notes: notes.value, language: language.value, persona: values },
+      body: {
+        name: name.value.trim(),
+        notes: notes.value,
+        language: language.value,
+        persona: personaToSend(deception.value.persona, persona.value),
+        artifacts: deception.value.artifacts.map((a) => a.key).filter((key) => selected.value.includes(key)),
+      },
     });
     await router.replace({ name: 'scenario', params: { id: body.scenario.id } });
   } catch (failure) {
@@ -168,7 +173,7 @@ watch(locale, load);
             <table class="table">
               <tbody>
                 <tr v-for="artifact in deception.artifacts" :key="artifact.key">
-                  <td class="mono">{{ artifact.file_name }}</td>
+                  <td class="mono"><bdi>{{ artifact.file_name }}</bdi></td>
                   <td>{{ t(`artifactFormat.${artifact.format}`) }}</td>
                 </tr>
               </tbody>
@@ -201,28 +206,15 @@ watch(locale, load);
             </select>
           </div>
 
-          <fieldset v-if="deception.persona.length > 0" class="persona">
-            <legend>{{ t('catalog.apply.persona') }}</legend>
-            <p class="hint">{{ t('catalog.apply.personaHint') }}</p>
-            <div v-for="field in deception.persona" :key="field.key" class="field">
-              <label :for="`persona-${field.key}`">{{ field.label }}</label>
-              <input
-                :id="`persona-${field.key}`"
-                v-model="persona[field.key]"
-                type="text"
-                autocomplete="off"
-                spellcheck="false"
-                :placeholder="field.example"
-                :aria-describedby="`persona-${field.key}-hint`"
-                :aria-invalid="problems[field.key] !== undefined"
-                :maxlength="field.kind === 'text' ? 200 : 253"
-              />
-              <span :id="`persona-${field.key}-hint`" class="hint">
-                {{ t(`catalog.apply.${field.kind}`) }} {{ t('catalog.apply.example', { example: field.example }) }}
-              </span>
-              <span v-if="problems[field.key]" class="hint problem" role="alert">{{ problems[field.key] }}</span>
-            </div>
-          </fieldset>
+          <PersonaFields
+            v-model="persona"
+            :fields="deception.persona"
+            :problems="problems"
+            :legend="t('catalog.apply.persona')"
+            :hint="t('catalog.apply.personaHint')"
+          />
+
+          <FileChoice v-model="selected" :artifacts="deception.artifacts" :hint="t('catalog.apply.filesHint')" />
 
           <div class="actions-row">
             <button class="button button-primary" type="submit" :disabled="busy">{{ busy ? t('app.saving') : t('catalog.apply.submit') }}</button>
@@ -251,20 +243,6 @@ watch(locale, load);
 
 .narrow {
   max-width: 36rem;
-}
-
-.persona {
-  display: grid;
-  gap: 0.9rem;
-  margin: 0;
-  padding: 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-}
-
-.persona legend {
-  padding: 0 0.3rem;
-  font-weight: 600;
 }
 
 h3 {

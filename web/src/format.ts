@@ -27,3 +27,11 @@ export function formatSize(bytes: number, locale: Locale): { unit: 'bytes' | 'ki
   }
   return { unit: 'mib', count: number(bytes / (1024 * 1024)) };
 }
+
+/**
+ * Wraps text that a person typed in isolates, so that its direction cannot reorder the text
+ * around it where no element can hold it, such as in the entry of a list of choices.
+ */
+export function isolate(text: string): string {
+  return `\u2068${text}\u2069`;
+}

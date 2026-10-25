@@ -40,6 +40,7 @@ onMounted(list.reload);
           <tr>
             <th scope="col">{{ t('artifacts.fileName') }}</th>
             <th scope="col">{{ t('artifacts.format') }}</th>
+            <th scope="col">{{ t('artifacts.role') }}</th>
             <th scope="col">{{ t('artifacts.size') }}</th>
             <th scope="col">{{ t('field.created') }}</th>
           </tr>
@@ -47,9 +48,10 @@ onMounted(list.reload);
         <tbody>
           <tr v-for="artifact in list.items.value" :key="artifact.id">
             <td>
-              <RouterLink class="mono" :to="{ name: 'artifact', params: { id: artifact.id } }">{{ artifact.file_name }}</RouterLink>
+              <RouterLink class="mono" :to="{ name: 'artifact', params: { id: artifact.id } }"><bdi>{{ artifact.file_name }}</bdi></RouterLink>
             </td>
             <td>{{ t(`artifactFormat.${artifact.format}`) }}</td>
+            <td>{{ Object.keys(artifact.bindings).length > 0 ? t('artifacts.role.lure') : t('artifacts.role.litter') }}</td>
             <td><FileSize :bytes="artifact.size" /></td>
             <td><TimeStamp :value="artifact.created_at" /></td>
           </tr>

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { AuditEntry, APIKey, CreatedAPIKey, User, AlertChannel, AlertDelivery, Artifact, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
+import type { AuditEntry, APIKey, CreatedAPIKey, User, AlertChannel, AlertDelivery, Artifact, CatalogArtifact, CatalogArtifactSummary, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
 
 export interface Recorded {
   method: string;
@@ -171,6 +171,32 @@ export function catalogDeception(overrides: Partial<CatalogDeception> = {}): Cat
     ],
     secrets: [{ key: 'password', length: 16 }],
     artifacts: [{ key: 'bookmarks', file_name: 'bookmarks.html', format: 'html' }],
+    ...overrides,
+  };
+}
+
+export function catalogArtifactSummary(overrides: Partial<CatalogArtifactSummary> = {}): CatalogArtifactSummary {
+  return {
+    id: 'bookmarks',
+    category: 'data',
+    title: 'Bookmarks file',
+    summary: 'An export of bookmarks with a link that leads to a honeytoken.',
+    ...overrides,
+  };
+}
+
+/** A file with one required slot for a web URL and an optional one for a DNS name. */
+export function catalogArtifact(overrides: Partial<CatalogArtifact> = {}): CatalogArtifact {
+  return {
+    ...catalogArtifactSummary(),
+    file_name: 'bookmarks.html',
+    format: 'html',
+    slots: [{ key: 'portal', accepts: ['web_url'], optional: false }],
+    persona: [
+      { key: 'company', kind: 'text', label: 'Company', example: 'Acme Corp' },
+      { key: 'host', kind: 'host', label: 'Portal host', example: 'portal.acme.example' },
+    ],
+    secrets: [],
     ...overrides,
   };
 }

@@ -5,33 +5,67 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
-import type { CatalogDeceptionSummary } from '../api/generated';
+import type { CatalogArtifactSummary, CatalogDeceptionSummary } from '../api/generated';
 import { errorText } from '../api/messages';
 import { locale, t } from '../i18n';
 import DocsHint from '../components/DocsHint.vue';
 
-const deceptions = ref<CatalogDeceptionSummary[]>([]);
-const loaded = ref(false);
+type Category = CatalogDeceptionSummary['category'];
+
+const route = useRoute();
+
+// The two tabs are two routes of this page, so that the address and the back link name the one that is open.
+const showingArtifacts = computed(() => route.name === 'catalog-artifacts');
+
+// Each tab reads its own list when it is opened. A list in another language than the console shows
+// is dropped when the language changes, so that a tab never shows texts of the language before.
+const deceptions = ref<CatalogDeceptionSummary[] | undefined>();
+const artifacts = ref<CatalogArtifactSummary[] | undefined>();
 const error = ref<string | undefined>();
-const category = ref<'' | CatalogDeceptionSummary['category']>('');
+const category = ref<'' | Category>('');
 
-const shown = computed(() => deceptions.value.filter((d) => category.value === '' || d.category === category.value));
+const list = computed<readonly (CatalogDeceptionSummary | CatalogArtifactSummary)[] | undefined>(() => (showingArtifacts.value ? artifacts.value : deceptions.value));
+const shown = computed(() => (list.value ?? []).filter((entry) => category.value === '' || entry.category === category.value));
 
-// The catalog is the same in every installation and is not paged.
+// The catalog is the same in every installation and is not paged. The answer to the last question is the one that counts.
+let asked = 0;
+
 async function load(): Promise<void> {
+  const mine = ++asked;
   error.value = undefined;
+  const query = { lang: locale.value };
   try {
-    deceptions.value = (await api.call('listCatalogDeceptions', { query: { lang: locale.value } })).body.deceptions;
-    loaded.value = true;
+    if (showingArtifacts.value) {
+      const body = (await api.call('listCatalogArtifacts', { query })).body.artifacts;
+      if (mine === asked) {
+        artifacts.value = body;
+      }
+    } else {
+      const body = (await api.call('listCatalogDeceptions', { query })).body.deceptions;
+      if (mine === asked) {
+        deceptions.value = body;
+      }
+    }
   } catch (failure) {
-    error.value = errorText(failure instanceof ApiError ? failure : new ApiError('server', 0));
+    if (mine === asked) {
+      error.value = errorText(failure instanceof ApiError ? failure : new ApiError('server', 0));
+    }
   }
 }
 
 onMounted(load);
-watch(locale, load);
+watch(showingArtifacts, load);
+watch(locale, () => {
+  if (showingArtifacts.value) {
+    deceptions.value = undefined;
+  } else {
+    artifacts.value = undefined;
+  }
+  void load();
+});
 </script>
 
 <template>
@@ -42,6 +76,12 @@ watch(locale, load);
         <DocsHint />
       </div>
     </div>
+
+    <nav class="tabs" :aria-label="t('catalog.tabs')">
+      <RouterLink :to="{ name: 'catalog' }" :aria-current="showingArtifacts ? undefined : 'page'">{{ t('catalog.tab.deceptions') }}</RouterLink>
+      <RouterLink :to="{ name: 'catalog-artifacts' }" :aria-current="showingArtifacts ? 'page' : undefined">{{ t('catalog.tab.artifacts') }}</RouterLink>
+    </nav>
+    <p class="hint">{{ showingArtifacts ? t('catalog.tab.artifactsHint') : t('catalog.tab.deceptionsHint') }}</p>
 
     <div class="toolbar">
       <div class="field">
@@ -58,22 +98,49 @@ watch(locale, load);
     </div>
 
     <p v-if="error" class="notice notice-error" role="alert">{{ t('catalog.loadFailed') }} {{ error }}</p>
-    <p v-else-if="!loaded" role="status">{{ t('app.loading') }}</p>
-    <p v-else-if="shown.length === 0" class="notice" role="status">{{ t('catalog.empty') }}</p>
+    <p v-else-if="list === undefined" role="status">{{ t('app.loading') }}</p>
+    <p v-else-if="shown.length === 0" class="notice" role="status">{{ showingArtifacts ? t('catalog.emptyArtifacts') : t('catalog.empty') }}</p>
     <ul v-else class="cards">
-      <li v-for="deception in shown" :key="deception.id" class="card panel">
-        <p><span class="badge">{{ t(`category.${deception.category}`) }}</span></p>
+      <li v-for="entry in shown" :key="entry.id" class="card panel">
+        <p><span class="badge">{{ t(`category.${entry.category}`) }}</span></p>
         <h2>
-          <RouterLink :to="{ name: 'catalog-deception', params: { id: deception.id } }">{{ deception.title }}</RouterLink>
+          <RouterLink :to="showingArtifacts ? { name: 'catalog-artifact', params: { id: entry.id } } : { name: 'catalog-deception', params: { id: entry.id } }">{{ entry.title }}</RouterLink>
         </h2>
-        <p>{{ deception.summary }}</p>
-        <p class="ids mono">{{ deception.techniques.join(', ') }}</p>
+        <p>{{ entry.summary }}</p>
+        <p v-if="'techniques' in entry" class="ids mono">{{ entry.techniques.join(', ') }}</p>
       </li>
     </ul>
   </section>
 </template>
 
 <style scoped>
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.tabs a {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.tabs a[aria-current='page'] {
+  border-color: var(--mint);
+  background: var(--mint-soft);
+  font-weight: 600;
+}
+
+.hint {
+  color: var(--slate);
+  font-size: 0.8125rem;
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));

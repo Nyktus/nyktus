@@ -92,6 +92,18 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'scenarios.create.title', permission: 'scenarios:write' },
   },
   {
+    path: '/scenarios/:id/deceptions/new',
+    name: 'scenario-add-deception',
+    component: () => import('./views/ScenarioAddDeceptionView.vue'),
+    meta: { title: 'scenarios.addDeception.title', permission: 'scenarios:write' },
+  },
+  {
+    path: '/scenarios/:id/artifacts/new',
+    name: 'scenario-add-artifact',
+    component: () => import('./views/ScenarioAddArtifactView.vue'),
+    meta: { title: 'scenarios.addArtifact.title', permission: 'scenarios:write' },
+  },
+  {
     path: '/scenarios/:id',
     name: 'scenario',
     component: () => import('./views/ScenarioView.vue'),
@@ -101,6 +113,18 @@ export const routes: RouteRecordRaw[] = [
     path: '/catalog',
     name: 'catalog',
     component: () => import('./views/CatalogView.vue'),
+    meta: { title: 'catalog.title', permission: 'catalog:read' },
+  },
+  {
+    path: '/catalog/artifacts',
+    name: 'catalog-artifacts',
+    component: () => import('./views/CatalogView.vue'),
+    meta: { title: 'catalog.title', permission: 'catalog:read' },
+  },
+  {
+    path: '/catalog/artifacts/:id',
+    name: 'catalog-artifact',
+    component: () => import('./views/CatalogArtifactView.vue'),
     meta: { title: 'catalog.title', permission: 'catalog:read' },
   },
   {

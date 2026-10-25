@@ -12,6 +12,7 @@ import type { Artifact } from '../api/generated';
 import { errorText } from '../api/messages';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import FileSize from '../components/FileSize.vue';
+import MarkdownView from '../components/MarkdownView';
 import TimeStamp from '../components/TimeStamp.vue';
 import { saveFile } from '../download';
 import { formatSize } from '../format';
@@ -36,6 +37,8 @@ const notes = ref('');
 const preview = ref<{ text: string; cut: boolean } | undefined>();
 const previewing = ref(false);
 const canWrite = computed(() => session.can('artifacts:write'));
+// A file bound to a honeytoken of its scenario is a lure; one without a binding is pocket litter.
+const carries = computed(() => artifact.value !== undefined && Object.keys(artifact.value.bindings).length > 0);
 // Only text is shown, and as text; a file that is not text is only downloaded.
 const previewable = computed(() => artifact.value !== undefined && artifact.value.media_type.startsWith('text/'));
 
@@ -144,7 +147,7 @@ onMounted(load);
     <template v-else-if="artifact">
       <div class="page-head">
         <div>
-          <h1 class="mono name">{{ artifact.file_name }}</h1>
+          <h1 class="mono name"><bdi>{{ artifact.file_name }}</bdi></h1>
           <p class="badges">
             <span class="badge">{{ t(`artifactFormat.${artifact.format}`) }}</span>
           </p>
@@ -169,7 +172,23 @@ onMounted(load);
             <template v-else>{{ t('artifacts.scenarioGone') }}</template>
           </dd>
           <dt>{{ t('artifacts.key') }}</dt>
-          <dd class="mono">{{ artifact.catalog_artifact }}</dd>
+          <dd><RouterLink class="mono" :to="{ name: 'catalog-artifact', params: { id: artifact.catalog_artifact } }">{{ artifact.catalog_artifact }}</RouterLink></dd>
+          <dt>{{ t('artifacts.role') }}</dt>
+          <dd>
+            <strong>{{ carries ? t('artifacts.role.lure') : t('artifacts.role.litter') }}.</strong>
+            {{ carries ? t('artifacts.role.lureHint') : t('artifacts.role.litterHint') }}
+          </dd>
+          <template v-if="carries">
+            <dt>{{ t('artifacts.bindings') }}</dt>
+            <dd>
+              <ul class="bindings">
+                <li v-for="(honeytokenId, slot) in artifact.bindings" :key="slot">
+                  <span class="mono">{{ slot }}</span>:
+                  <RouterLink class="mono" :to="{ name: 'honeytoken', params: { id: honeytokenId } }">{{ honeytokenId }}</RouterLink>
+                </li>
+              </ul>
+            </dd>
+          </template>
           <dt>{{ t('artifacts.placement') }}</dt>
           <dd class="notes">{{ artifact.placement_notes === '' ? t('common.none') : artifact.placement_notes }}</dd>
           <dt>{{ t('field.created') }}</dt>
@@ -177,6 +196,11 @@ onMounted(load);
           <dt>{{ t('field.updated') }}</dt>
           <dd><TimeStamp :value="artifact.updated_at" /></dd>
         </dl>
+      </div>
+
+      <div v-if="artifact.placing !== ''" class="section panel">
+        <h2>{{ t('artifacts.placing') }}</h2>
+        <MarkdownView :source="artifact.placing" />
       </div>
 
       <div class="section panel">
@@ -239,6 +263,12 @@ onMounted(load);
 
 .notes {
   white-space: pre-wrap;
+}
+
+.bindings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .narrow {
