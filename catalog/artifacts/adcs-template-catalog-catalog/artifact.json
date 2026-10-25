@@ -10,7 +10,6 @@
     "en": "An internal page that lists the certificate templates of a certification authority and links to the enrollment.",
     "de": "Eine interne Seite, die die Zertifikatvorlagen einer Zertifizierungsstelle auflistet und auf die Anforderung verweist."
   },
-  "engage_activities": ["EAC0011", "EAC0022"],
   "slots": [
     {"key": "Enrollment", "accepts": ["web_url"], "optional": false}
   ],

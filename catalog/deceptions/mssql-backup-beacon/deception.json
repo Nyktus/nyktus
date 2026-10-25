@@ -11,7 +11,7 @@
     "de": "SQL für eine gespeicherte Prozedur Ihrer SQL-Server-Datenbank. Wer eine Sicherung wiederherstellt und die Prozedur ausführt, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1213", "T1005"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Share",

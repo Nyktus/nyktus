@@ -10,7 +10,6 @@
     "en": "A kubectl configuration for a cluster with a bearer token. Every kubectl call resolves the name of a DNS honeytoken.",
     "de": "Eine kubectl-Konfiguration für einen Cluster mit Bearer-Token. Jeder kubectl-Aufruf löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Api", "accepts": ["dns"], "optional": false}
   ],

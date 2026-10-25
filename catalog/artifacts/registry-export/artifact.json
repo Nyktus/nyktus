@@ -10,7 +10,6 @@
     "en": "A .reg file with the server, account and password of a backup tool. Connecting to the server resolves the name of a DNS honeytoken.",
     "de": "Eine .reg-Datei mit Server, Konto und Passwort eines Sicherungsprogramms. Wer sich mit dem Server verbindet, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Server", "accepts": ["dns"], "optional": false}
   ],

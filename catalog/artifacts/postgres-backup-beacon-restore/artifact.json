@@ -10,7 +10,6 @@
     "en": "SQL for a function and a materialized view of your PostgreSQL database. Restoring a dump on another machine refreshes the view, which resolves the name of a DNS honeytoken.",
     "de": "SQL für eine Funktion und eine Materialized View Ihrer PostgreSQL-Datenbank. Die Wiederherstellung eines Dumps auf einem anderen Rechner aktualisiert die View und löst dabei den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Database", "accepts": ["dns"], "optional": false}
   ],

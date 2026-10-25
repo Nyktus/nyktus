@@ -11,7 +11,7 @@
     "de": "Ein eigenes Dokument, das ein unsichtbares Bild verknüpft. Word lädt das Bild, wenn jemand das Dokument öffnet und die Bearbeitung aktiviert, auch auf dem Rechner eines Eindringlings, der es kopiert hat."
   },
   "techniques": ["T1005", "T1039"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Image",

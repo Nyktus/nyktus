@@ -10,7 +10,6 @@
     "en": "A note with a curl command that calls an internal API with a bearer token. Running it resolves the name of a DNS honeytoken.",
     "de": "Eine Notiz mit einem curl-Befehl, der eine interne API mit einem Bearer-Token aufruft. Wer ihn ausführt, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Api", "accepts": ["dns"], "optional": false}
   ],

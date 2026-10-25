@@ -11,7 +11,7 @@
     "de": "Eine Notiz mit einem curl-Befehl, der eine interne API mit einem Bearer-Token aufruft. Wer ihn ausführt, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1552.001"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Api",

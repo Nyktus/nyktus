@@ -40,7 +40,6 @@ const configArtifact = `{
   "category": "network",
   "title": {"en": "Config", "de": "Einstellung"},
   "summary": {"en": "A configuration.", "de": "Eine Einstellung."},
-  "engage_activities": ["EAC0011"],
   "slots": [{"key": "Gateway", "accepts": ["dns"], "optional": false}],
   "persona": [],
   "secrets": [{"key": "Password", "length": 16}],
@@ -58,7 +57,6 @@ const noteArtifact = `{
   "category": "data",
   "title": {"en": "Note", "de": "Notiz"},
   "summary": {"en": "A note.", "de": "Eine Notiz."},
-  "engage_activities": ["EAC0011", "EAC0022"],
   "slots": [{"key": "Link", "accepts": ["web_url", "web_image"], "optional": true}],
   "persona": [
     {"key": "Domain", "kind": "host", "label": {"en": "Domain", "de": "Domain"}, "example": "corp.example.com"},
@@ -499,7 +497,7 @@ func addPlainArtifacts(fsys fstest.MapFS, n, size int) {
 		fsys["artifacts/"+id+"/artifact.json"] = mapFile(`{
   "schema_version": 1, "id": "` + id + `", "category": "data",
   "title": {"en": "Plain", "de": "Schlicht"}, "summary": {"en": "Plain.", "de": "Schlicht."},
-  "engage_activities": ["EAC0011"], "slots": [], "persona": [], "secrets": [],
+  "slots": [], "persona": [], "secrets": [],
   "file_name": "` + id + `", "format": "text", "line_endings": "lf", "template": "plain.tmpl"
 }`)
 		fsys["artifacts/"+id+"/plain.tmpl"] = mapFile(strings.Repeat("x", size))

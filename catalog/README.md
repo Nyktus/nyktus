@@ -39,7 +39,7 @@ Identifiers are lowercase letters and digits, separated by single hyphens, at mo
   "title": {"en": "...", "de": "..."},
   "summary": {"en": "...", "de": "..."},
   "techniques": ["T1021.004"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {"key": "JumpHost", "type": "dns", "label": {"en": "Jump host", "de": "Jump-Host"}, "techniques": ["T1021.004"]}
   ],
@@ -60,7 +60,7 @@ Unknown members are an error. `persona`, `artifacts` and the `techniques` of a h
 | `category` | `identity`, `network`, `data`, `endpoint` or `application`. |
 | `title`, `summary` | A text in English (`en`) and German (`de`) each: one line, up to 100 and 500 characters. |
 | `techniques` | 1 to 20 distinct identifiers of MITRE ATT&CK techniques that a trigger suggests, from the version that Nyktus bundles. |
-| `engage_activities` | 1 to 20 distinct engagement activities of MITRE Engage that the scenario of the deception carries out, such as `EAC0005` (Lures). |
+| `engage_activities` | 1 to 20 distinct engagement activities of MITRE Engage that the story of the deception carries out, such as `EAC0005` (Lures). Applying the deception adds those that follow from what the scenario holds, see below. |
 | `honeytokens` | 1 to 10 honeytokens that applying the deception creates, each with a `key`, a honeytoken `type` (`web_url`, `web_image` or `dns`), a `label` in both languages, up to 20 `techniques`, which the honeytoken receives, and optionally a `severity` (`low`, `medium`, `high` or `critical`), without which the honeytoken has the default of its type. Choose `high` for a honeytoken that nobody but an intruder has a reason to use, such as credentials in a file. |
 | `persona` | Up to 10 values that the administrator enters when applying the deception, each with a `key`, a `kind` (`host`, `name` or `text`), a `label` and an `example` of that kind, which the console shows. It holds the values of the recommended artifacts as well. |
 | `artifacts` | Up to 20 identifiers of the artifacts that the deception recommends. Applying the deception renders all of them, in this order. |
@@ -77,6 +77,17 @@ A deception binds its honeytokens to the slots of its artifacts by key: the slot
 - every honeytoken and every value of the persona is referenced by the guide or by an artifact, so that nothing is asked for in vain, and
 - no artifact contains the identifier of the deception: it is the same in every installation, like the identifier of the artifact.
 
+### Engage activities of a scenario
+
+MITRE Engage tells a lure from pocket litter by intent, not by kind of file, so an artifact names no activities. Applying a deception gives its scenario the activities of the deception and adds those that follow from what the scenario holds:
+
+- `EAC0005` (Lures) for every artifact with a slot that is bound to a honeytoken, which expects an action,
+- `EAC0011` (Pocket Litter) for every artifact without a bound slot, which only supports the story,
+- `EAC0022` (Artifact Diversity) for artifacts of more than one format, and
+- `EAC0012` (Personas) for a persona that is not empty.
+
+Name in `engage_activities` of a deception only what its story carries out beyond that, such as `EAC0009` (Email Manipulation) for a message.
+
 ## `artifact.json`
 
 ```json
@@ -86,7 +97,6 @@ A deception binds its honeytokens to the slots of its artifacts by key: the slot
   "category": "network",
   "title": {"en": "...", "de": "..."},
   "summary": {"en": "...", "de": "..."},
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "JumpHost", "accepts": ["dns"], "optional": false}
   ],
@@ -109,7 +119,6 @@ Unknown members are an error. `slots`, `persona` and `secrets` may be empty, and
 | `schema_version` | `1`. |
 | `id` | The name of the directory. |
 | `category`, `title`, `summary` | As for a deception. |
-| `engage_activities` | 1 to 20 distinct engagement activities that placing the artifact carries out, such as `EAC0011` (Pocket Litter) and `EAC0022` (Artifact Diversity). |
 | `slots` | Up to 10 places for the trigger of a honeytoken, each with a `key`, the types it `accepts` and whether it is `optional`. All types of a slot give the same value, so `dns` (a host name) cannot be combined with `web_url` or `web_image` (a URL). An optional slot may stay empty, which makes the file pocket litter; the template references it only inside `{{if}}` on the same slot, which the validation checks, and renders it empty as well. |
 | `persona` | Up to 10 values that the artifact asks for, as for a deception. |
 | `secrets` | Up to 10 random values of letters and digits that Nyktus generates when it renders the artifact, each with a `key` and a `length` of 8 to 64. Every artifact generates its own, so two files of a deception do not share a password. Secrets are not stored. |

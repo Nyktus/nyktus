@@ -59,9 +59,7 @@ func TestLoad_RejectsInvalidArtifacts(t *testing.T) {
 		"title language":       {cfg(`"title": {"en": "Config", "de": "Einstellung"}`, `"title": {"en": "Config"}`), "title: want a text in each"},
 		"title too long":       {cfg(`"de": "Einstellung"`, `"de": "`+strings.Repeat("a", maxTitleLength+1)+`"`), "title: de: want 1 to"},
 		"summary too long":     {cfg(`"de": "Eine Einstellung."`, `"de": "`+strings.Repeat("a", maxSummaryLength+1)+`"`), "summary: de: want 1 to"},
-		"no activities":        {cfg(`"engage_activities": ["EAC0011"]`, `"engage_activities": []`), "want 1 to 20 activities"},
-		"strategic activity":   {cfg(`"engage_activities": ["EAC0011"]`, `"engage_activities": ["SAC0001"]`), "\"SAC0001\" is unknown"},
-		"repeated activity":    {cfg(`"engage_activities": ["EAC0011"]`, `"engage_activities": ["EAC0011", "EAC0011"]`), "\"EAC0011\" is unknown or listed twice"},
+		"activities":           {cfg(`"slots":`, `"engage_activities": ["EAC0011"], "slots":`), "unknown field"},
 
 		// Slots.
 		"too many slots":       {manySlots, "want at most 10 slots"},

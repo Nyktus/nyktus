@@ -98,9 +98,6 @@
     "EAC0009": {
       "name": "Email Manipulation"
     },
-    "EAC0011": {
-      "name": "Pocket Litter"
-    },
     "EAC0022": {
       "name": "Artifact Diversity"
     }
@@ -117,7 +114,6 @@
         ],
         "engage_activities": [
           "EAC0005",
-          "EAC0011",
           "EAC0022"
         ],
         "honeytokens": [
@@ -169,8 +165,7 @@
           "T1018"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -216,8 +211,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -262,8 +256,7 @@
           "T1217"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -308,8 +301,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -368,8 +360,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -420,8 +411,7 @@
           "T1135"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -466,8 +456,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -513,7 +502,6 @@
         ],
         "engage_activities": [
           "EAC0005",
-          "EAC0011",
           "EAC0009"
         ],
         "honeytokens": [
@@ -582,8 +570,7 @@
           "T1615"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -641,8 +628,7 @@
           "T1613"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -694,8 +680,7 @@
           "T1021.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -741,8 +726,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -794,8 +778,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -859,8 +842,7 @@
           "T1005"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -906,8 +888,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -952,8 +933,7 @@
           "T1555.003"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1013,8 +993,7 @@
           "T1039"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1052,8 +1031,7 @@
           "T1005"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1134,8 +1112,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1187,7 +1164,6 @@
         ],
         "engage_activities": [
           "EAC0005",
-          "EAC0011",
           "EAC0022"
         ],
         "honeytokens": [
@@ -1232,8 +1208,7 @@
           "T1021.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1278,8 +1253,7 @@
           "T1552.002"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1330,8 +1304,7 @@
           "T1018"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1376,8 +1349,7 @@
           "T1021.004"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1422,8 +1394,7 @@
           "T1078"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1469,8 +1440,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1522,8 +1492,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1581,8 +1550,7 @@
           "T1018"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1634,8 +1602,7 @@
           "T1684.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1675,8 +1642,7 @@
           "T1083"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1708,8 +1674,7 @@
           "T1133"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1752,8 +1717,7 @@
           "T1039"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1781,8 +1745,7 @@
           "T1039"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1812,7 +1775,6 @@
         ],
         "engage_activities": [
           "EAC0005",
-          "EAC0011",
           "EAC0022"
         ],
         "honeytokens": [
@@ -1864,8 +1826,7 @@
           "T1018"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1911,8 +1872,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -1957,8 +1917,7 @@
           "T1217"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2003,8 +1962,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2063,8 +2021,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2115,8 +2072,7 @@
           "T1135"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2161,8 +2117,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2208,7 +2163,6 @@
         ],
         "engage_activities": [
           "EAC0005",
-          "EAC0011",
           "EAC0009"
         ],
         "honeytokens": [
@@ -2277,8 +2231,7 @@
           "T1615"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2336,8 +2289,7 @@
           "T1613"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2389,8 +2341,7 @@
           "T1021.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2436,8 +2387,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2489,8 +2439,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2554,8 +2503,7 @@
           "T1005"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2601,8 +2549,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2647,8 +2594,7 @@
           "T1555.003"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2708,8 +2654,7 @@
           "T1039"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2747,8 +2692,7 @@
           "T1005"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2829,8 +2773,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2882,7 +2825,6 @@
         ],
         "engage_activities": [
           "EAC0005",
-          "EAC0011",
           "EAC0022"
         ],
         "honeytokens": [
@@ -2927,8 +2869,7 @@
           "T1021.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -2973,8 +2914,7 @@
           "T1552.002"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3025,8 +2965,7 @@
           "T1018"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3071,8 +3010,7 @@
           "T1021.004"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3117,8 +3055,7 @@
           "T1078"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3164,8 +3101,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3217,8 +3153,7 @@
           "T1552.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3276,8 +3211,7 @@
           "T1018"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3329,8 +3263,7 @@
           "T1684.001"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3370,8 +3303,7 @@
           "T1083"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3403,8 +3335,7 @@
           "T1133"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3447,8 +3378,7 @@
           "T1039"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3476,8 +3406,7 @@
           "T1039"
         ],
         "engage_activities": [
-          "EAC0005",
-          "EAC0011"
+          "EAC0005"
         ],
         "honeytokens": [
           {
@@ -3504,10 +3433,6 @@
         "category": "identity",
         "title": "Lesezeichen zur Zertifikatanforderung",
         "summary": "Der Link zur Zertifikatanforderung als Datei mit Browser-Lesezeichen.",
-        "engage_activities": [
-          "EAC0011",
-          "EAC0022"
-        ],
         "file_name": "Certificate-enrollment.html",
         "format": "html",
         "slots": [
@@ -3534,10 +3459,6 @@
         "category": "identity",
         "title": "Seite mit Zertifikatvorlagen",
         "summary": "Eine interne Seite, die die Zertifikatvorlagen einer Zertifizierungsstelle auflistet und auf die Anforderung verweist.",
-        "engage_activities": [
-          "EAC0011",
-          "EAC0022"
-        ],
         "file_name": "Certificate-templates.html",
         "format": "html",
         "slots": [
@@ -3570,9 +3491,6 @@
         "category": "endpoint",
         "title": "Ansible-Inventar",
         "summary": "Ein Ansible-Inventar mit den Hosts einer Anwendung. Wer ein Playbook ausführt oder sich mit einem Host verbindet, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "inventory.ini",
         "format": "config",
         "slots": [
@@ -3605,9 +3523,6 @@
         "category": "application",
         "title": "curl-Befehl mit API-Schlüssel",
         "summary": "Eine Notiz mit einem curl-Befehl, der eine interne API mit einem Bearer-Token aufruft. Wer ihn ausführt, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "api-call.txt",
         "format": "text",
         "slots": [
@@ -3639,9 +3554,6 @@
         "category": "data",
         "title": "Browser-Lesezeichen",
         "summary": "Ein Export von Browser-Lesezeichen mit einem Link auf ein internes Portal. Wer dem Link folgt, ruft die URL eines Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "bookmarks.html",
         "format": "html",
         "slots": [
@@ -3674,9 +3586,6 @@
         "category": "application",
         "title": "Umgebungsdatei mit Geheimnissen eines Dienstes",
         "summary": "Eine .env-Datei eines Dienstes mit Datenbank-URL, Sitzungsschlüssel und Mail-Passwort. Wer sich mit der Datenbank verbindet, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "production.env",
         "format": "config",
         "slots": [
@@ -3722,9 +3631,6 @@
         "category": "application",
         "title": "Konfigurationsdatei mit Datenbank-Zugangsdaten",
         "summary": "Die INI-Datei einer Anwendung mit Host-Name, Konto und Passwort ihrer Datenbank. Wer sich damit verbindet, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "config.ini",
         "format": "config",
         "slots": [
@@ -3762,9 +3668,6 @@
         "category": "network",
         "title": "Übersicht der DFS-Namespaces",
         "summary": "Eine Liste von DFS-Namespaces und der Dateiserver dahinter. Wer den Pfad eines davon öffnet, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "DFS-namespaces.txt",
         "format": "text",
         "slots": [
@@ -3797,9 +3700,6 @@
         "category": "application",
         "title": "Docker-Konfiguration mit Registry-Zugangsdaten",
         "summary": "Die config.json des Docker-Clients mit Konto und Passwort für eine Registry. Jedes Pull, Push und jede Anmeldung löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "config.json",
         "format": "config",
         "slots": [
@@ -3831,9 +3731,6 @@
         "category": "data",
         "title": "Gespeicherte E-Mail mit Link und Bild",
         "summary": "Eine E-Mail als HTML-Datei mit einem Link und einem unsichtbaren Bild. Wer dem Link folgt oder das Bild lädt, löst ein Event aus.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "message.html",
         "format": "html",
         "slots": [
@@ -3885,9 +3782,6 @@
         "category": "endpoint",
         "title": "Notizen zur Sicherung der Gruppenrichtlinien",
         "summary": "Eine Notiz eines Administrators, die die Freigabe mit den Sicherungen der Gruppenrichtlinien und ein Konto dafür nennt. Wer die Freigabe öffnet, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "GPO-Backup.txt",
         "format": "text",
         "slots": [
@@ -3931,9 +3825,6 @@
         "category": "application",
         "title": "Kubernetes-Konfiguration mit Token",
         "summary": "Eine kubectl-Konfiguration für einen Cluster mit Bearer-Token. Jeder kubectl-Aufruf löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "config",
         "format": "config",
         "slots": [
@@ -3971,9 +3862,6 @@
         "category": "identity",
         "title": "Notfallblatt für den lokalen Administrator",
         "summary": "Ein Notfallblatt mit dem Passwort des lokalen Administrators eines Servers. Wer sich mit dem Server verbindet, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Recovery.txt",
         "format": "text",
         "slots": [
@@ -4005,9 +3893,6 @@
         "category": "network",
         "title": "Verbindungsprofil für ein Verzeichnis",
         "summary": "Ein Profil einer Anwendung für ihr LDAP-Verzeichnis, mit Bind-Konto und Passwort. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "ldap.ini",
         "format": "config",
         "slots": [
@@ -4045,9 +3930,6 @@
         "category": "data",
         "title": "MongoDB-Dokument mit Verbindungszeichenfolge",
         "summary": "Ein mongosh-Skript, das ein Dokument mit einer Verbindungszeichenfolge in Ihrer Datenbank ablegt. Jede Sicherung trägt es; wer die Zeichenfolge nutzt, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "endpoints.js",
         "format": "config",
         "slots": [
@@ -4097,9 +3979,6 @@
         "category": "data",
         "title": "SQL-Server-Prozedur, die in jeder Sicherung mitreist",
         "summary": "SQL für eine gespeicherte Prozedur Ihrer SQL-Server-Datenbank. Wer eine Sicherung wiederherstellt und die Prozedur ausführt, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "procedure.sql",
         "format": "config",
         "slots": [
@@ -4132,9 +4011,6 @@
         "category": "identity",
         "title": "Zugangsdaten in einer .netrc-Datei",
         "summary": "Eine .netrc-Datei mit Konto und Passwort für einen Host, wie curl, Git und FTP-Clients sie lesen. Wer die Zugangsdaten nutzt, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "netrc",
         "format": "config",
         "slots": [
@@ -4166,9 +4042,6 @@
         "category": "data",
         "title": "Passwort-Export eines Browsers",
         "summary": "Eine CSV-Datei in dem Format, in dem Browser gespeicherte Passwörter exportieren, mit einem Eintrag, dessen Adresse eine URL ist. Wer diese Adresse öffnet, löst ein Event aus.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Passwords.csv",
         "format": "config",
         "slots": [
@@ -4214,9 +4087,6 @@
         "category": "data",
         "title": "PostgreSQL-Fremdtabelle",
         "summary": "SQL für eine Fremdtabelle Ihrer PostgreSQL-Datenbank über postgres_fdw. Jede Abfrage der Tabelle löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "foreign-table.sql",
         "format": "config",
         "slots": [
@@ -4266,9 +4136,6 @@
         "category": "data",
         "title": "PostgreSQL-Hook, der bei der Wiederherstellung läuft",
         "summary": "SQL für eine Funktion und eine Materialized View Ihrer PostgreSQL-Datenbank. Die Wiederherstellung eines Dumps auf einem anderen Rechner aktualisiert die View und löst dabei den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "restore-hook.sql",
         "format": "config",
         "slots": [
@@ -4318,9 +4185,6 @@
         "category": "endpoint",
         "title": "PowerShell-Skript, das eine Freigabe verbindet",
         "summary": "Ein kurzes PowerShell-Skript mit Konto und Passwort für eine Dateifreigabe. Wer es ausführt oder sich mit den Zugangsdaten mit der Freigabe verbindet, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Map-Share.ps1",
         "format": "config",
         "slots": [
@@ -4358,9 +4222,6 @@
         "category": "network",
         "title": "Remotedesktopverbindung",
         "summary": "Eine gespeicherte Remotedesktopverbindung zu einem Server, mit dem Konto für die Anmeldung. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Server.rdp",
         "format": "config",
         "slots": [
@@ -4393,9 +4254,6 @@
         "category": "endpoint",
         "title": "Registry-Export mit Sicherungseinstellungen",
         "summary": "Eine .reg-Datei mit Server, Konto und Passwort eines Sicherungsprogramms. Wer sich mit dem Server verbindet, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Settings.reg",
         "format": "config",
         "slots": [
@@ -4433,9 +4291,6 @@
         "category": "network",
         "title": "Runbook zur Prüfung der Replikation",
         "summary": "Ein Runbook, das einen Domänencontroller für die Replikationsprüfung nennt. Wer diesen Controller abfragt, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Replication-check.txt",
         "format": "text",
         "slots": [
@@ -4468,9 +4323,6 @@
         "category": "network",
         "title": "SSH-Konfiguration mit Jump-Host",
         "summary": "Eine SSH-Client-Konfiguration, die die Hosts einer Domain über einen Jump-Host erreicht. Jede Verbindung zu einem von ihnen löst den Namen des Jump-Hosts auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "config",
         "format": "config",
         "slots": [
@@ -4503,9 +4355,6 @@
         "category": "identity",
         "title": "Hinweis zum Zurücksetzen der Single-Sign-on-Anmeldung",
         "summary": "Ein HTML-Hinweis der IT mit einem Link zu einem Portal, in dem die Single-Sign-on-Anmeldung zurückgesetzt wird. Wer dem Link folgt, löst ein Event aus.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "SSO-reset.html",
         "format": "html",
         "slots": [
@@ -4538,9 +4387,6 @@
         "category": "application",
         "title": "Terraform-Backend mit Zugangsdaten",
         "summary": "Eine Terraform-Datei, die den State in einem HTTP-Backend mit Konto und Passwort speichert. terraform init und plan lösen den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "backend.tf",
         "format": "config",
         "slots": [
@@ -4578,9 +4424,6 @@
         "category": "data",
         "title": "Notizen zum Sicherungs-Repository",
         "summary": "Eine Notiz zum Repository der Sicherungen mit Freigabe und Dienstkonto. Wer sich mit der Freigabe verbindet, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Backup-repository.txt",
         "format": "text",
         "slots": [
@@ -4624,9 +4467,6 @@
         "category": "network",
         "title": "PowerShell-Profil für vCenter",
         "summary": "Ein PowerShell-Skript, das sich mit einem Dienstkonto mit einem vCenter-Server verbindet. Wer es ausführt, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Connect-VCenter.ps1",
         "format": "config",
         "slots": [
@@ -4664,9 +4504,6 @@
         "category": "application",
         "title": "Skript, das eine Kopie Ihrer Website erkennt",
         "summary": "Ein kleines Skript für Ihre eigene Website. Wird es von einem anderen Host ausgeliefert, etwa auf einer kopierten Seite, lädt es ein unsichtbares Bild und löst ein Event aus.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "site.js",
         "format": "config",
         "slots": [
@@ -4693,9 +4530,6 @@
         "category": "endpoint",
         "title": "Internetverknüpfung",
         "summary": "Eine Windows-Verknüpfung zu einer Webseite. Wer sie öffnet, ruft die URL eines Honeytokens auf, die den Browser auf eine Seite Ihrer Wahl weiterleitet.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Portal.url",
         "format": "config",
         "slots": [
@@ -4715,9 +4549,6 @@
         "category": "network",
         "title": "WireGuard-Konfiguration für einen Tunnel",
         "summary": "Eine WireGuard-Clientkonfiguration mit einem Endpunkt, wie ein Administrator sie für ein VPN aufbewahrt. Wer den Tunnel aufbaut, löst den Namen eines DNS-Honeytokens auf.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "wg0.conf",
         "format": "config",
         "slots": [
@@ -4748,10 +4579,6 @@
         "category": "identity",
         "title": "Bookmark for certificate enrollment",
         "summary": "The link to the enrollment of certificates as a file of browser bookmarks.",
-        "engage_activities": [
-          "EAC0011",
-          "EAC0022"
-        ],
         "file_name": "Certificate-enrollment.html",
         "format": "html",
         "slots": [
@@ -4778,10 +4605,6 @@
         "category": "identity",
         "title": "Page listing certificate templates",
         "summary": "An internal page that lists the certificate templates of a certification authority and links to the enrollment.",
-        "engage_activities": [
-          "EAC0011",
-          "EAC0022"
-        ],
         "file_name": "Certificate-templates.html",
         "format": "html",
         "slots": [
@@ -4814,9 +4637,6 @@
         "category": "endpoint",
         "title": "Ansible inventory",
         "summary": "An Ansible inventory with the hosts of an application. Running a playbook or connecting to a host resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "inventory.ini",
         "format": "config",
         "slots": [
@@ -4849,9 +4669,6 @@
         "category": "application",
         "title": "curl command with an API key",
         "summary": "A note with a curl command that calls an internal API with a bearer token. Running it resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "api-call.txt",
         "format": "text",
         "slots": [
@@ -4883,9 +4700,6 @@
         "category": "data",
         "title": "Browser bookmarks",
         "summary": "An export of browser bookmarks with a link to an internal portal. Following the link requests the URL of a honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "bookmarks.html",
         "format": "html",
         "slots": [
@@ -4918,9 +4732,6 @@
         "category": "application",
         "title": "Environment file with secrets of a service",
         "summary": "An .env file of a service with a database URL, a session key and a mail password. Connecting to the database resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "production.env",
         "format": "config",
         "slots": [
@@ -4966,9 +4777,6 @@
         "category": "application",
         "title": "Configuration file with database credentials",
         "summary": "The INI file of an application with the host name, account and password of its database. Connecting with them resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "config.ini",
         "format": "config",
         "slots": [
@@ -5006,9 +4814,6 @@
         "category": "network",
         "title": "Map of the DFS namespaces",
         "summary": "A list of DFS namespaces and the file servers behind them. Opening the path of one of them resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "DFS-namespaces.txt",
         "format": "text",
         "slots": [
@@ -5041,9 +4846,6 @@
         "category": "application",
         "title": "Docker configuration with registry credentials",
         "summary": "The config.json of the Docker client with an account and password for a registry. Every pull, push or login resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "config.json",
         "format": "config",
         "slots": [
@@ -5075,9 +4877,6 @@
         "category": "data",
         "title": "Saved e-mail with a link and an image",
         "summary": "An HTML e-mail as a file, with a link and an invisible image. Following the link or loading the image raises an event.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "message.html",
         "format": "html",
         "slots": [
@@ -5129,9 +4928,6 @@
         "category": "endpoint",
         "title": "Notes on the backup of group policies",
         "summary": "A note of an administrator that names the share with the backups of the group policies and an account for it. Opening the share resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "GPO-Backup.txt",
         "format": "text",
         "slots": [
@@ -5175,9 +4971,6 @@
         "category": "application",
         "title": "Kubernetes configuration with a token",
         "summary": "A kubectl configuration for a cluster with a bearer token. Every kubectl call resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "config",
         "format": "config",
         "slots": [
@@ -5215,9 +5008,6 @@
         "category": "identity",
         "title": "Recovery sheet for the local administrator",
         "summary": "A break-glass sheet with the password of the local administrator of a server. Connecting to the server resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Recovery.txt",
         "format": "text",
         "slots": [
@@ -5249,9 +5039,6 @@
         "category": "network",
         "title": "Connection profile for a directory",
         "summary": "A profile of an application for its LDAP directory, with a bind account and password. Connecting resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "ldap.ini",
         "format": "config",
         "slots": [
@@ -5289,9 +5076,6 @@
         "category": "data",
         "title": "MongoDB document with a connection string",
         "summary": "A mongosh script that stores a document with a connection string in your database. Every backup carries it; whoever uses the string resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "endpoints.js",
         "format": "config",
         "slots": [
@@ -5341,9 +5125,6 @@
         "category": "data",
         "title": "SQL Server procedure that travels with every backup",
         "summary": "SQL for a stored procedure of your SQL Server database. Whoever restores a backup and runs the procedure resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "procedure.sql",
         "format": "config",
         "slots": [
@@ -5376,9 +5157,6 @@
         "category": "identity",
         "title": "Credentials in a .netrc file",
         "summary": "A .netrc file with an account and password for a host, as curl, Git and FTP clients read it. Using the credentials resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "netrc",
         "format": "config",
         "slots": [
@@ -5410,9 +5188,6 @@
         "category": "data",
         "title": "Password export of a browser",
         "summary": "A CSV file in the format in which browsers export saved passwords, with one entry whose address is a URL. Whoever opens that address raises an event.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Passwords.csv",
         "format": "config",
         "slots": [
@@ -5458,9 +5233,6 @@
         "category": "data",
         "title": "PostgreSQL foreign table",
         "summary": "SQL for a foreign table of your PostgreSQL database through postgres_fdw. Every query of the table resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "foreign-table.sql",
         "format": "config",
         "slots": [
@@ -5510,9 +5282,6 @@
         "category": "data",
         "title": "PostgreSQL hook that runs on restore",
         "summary": "SQL for a function and a materialized view of your PostgreSQL database. Restoring a dump on another machine refreshes the view, which resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "restore-hook.sql",
         "format": "config",
         "slots": [
@@ -5562,9 +5331,6 @@
         "category": "endpoint",
         "title": "PowerShell script that maps a share",
         "summary": "A short PowerShell script with the account and password for a file share. Running it, or connecting to the share with the credentials, resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Map-Share.ps1",
         "format": "config",
         "slots": [
@@ -5602,9 +5368,6 @@
         "category": "network",
         "title": "Remote Desktop connection",
         "summary": "A saved Remote Desktop connection to a server, with the account to sign in with. Connecting resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Server.rdp",
         "format": "config",
         "slots": [
@@ -5637,9 +5400,6 @@
         "category": "endpoint",
         "title": "Registry export with backup settings",
         "summary": "A .reg file with the server, account and password of a backup tool. Connecting to the server resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Settings.reg",
         "format": "config",
         "slots": [
@@ -5677,9 +5437,6 @@
         "category": "network",
         "title": "Runbook for checking replication",
         "summary": "A runbook that names a domain controller for the replication check. Querying that controller resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Replication-check.txt",
         "format": "text",
         "slots": [
@@ -5712,9 +5469,6 @@
         "category": "network",
         "title": "SSH configuration with a jump host",
         "summary": "An SSH client configuration that reaches the hosts of a domain through a jump host. Every connection to one of them resolves the name of the jump host.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "config",
         "format": "config",
         "slots": [
@@ -5747,9 +5501,6 @@
         "category": "identity",
         "title": "Note on the reset of single sign-on",
         "summary": "An HTML note of the IT department with a link to a portal for resetting the single sign-on. Following the link raises an event.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "SSO-reset.html",
         "format": "html",
         "slots": [
@@ -5782,9 +5533,6 @@
         "category": "application",
         "title": "Terraform backend with credentials",
         "summary": "A Terraform file that stores the state on an HTTP backend with an account and password. terraform init and plan resolve the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "backend.tf",
         "format": "config",
         "slots": [
@@ -5822,9 +5570,6 @@
         "category": "data",
         "title": "Notes on the backup repository",
         "summary": "A note on the repository of the backups with the share and the service account. Connecting to the share resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Backup-repository.txt",
         "format": "text",
         "slots": [
@@ -5868,9 +5613,6 @@
         "category": "network",
         "title": "PowerShell profile for vCenter",
         "summary": "A PowerShell script that connects to a vCenter server with a service account. Running it resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Connect-VCenter.ps1",
         "format": "config",
         "slots": [
@@ -5908,9 +5650,6 @@
         "category": "application",
         "title": "Script that detects a copy of your website",
         "summary": "A small script for your own website. Served from another host, as on a cloned page, it loads an invisible image and raises an event.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "site.js",
         "format": "config",
         "slots": [
@@ -5937,9 +5676,6 @@
         "category": "endpoint",
         "title": "Internet shortcut",
         "summary": "A Windows shortcut to a web page. Opening it requests the URL of a honeytoken, which redirects the browser to a page of your choice.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "Portal.url",
         "format": "config",
         "slots": [
@@ -5959,9 +5695,6 @@
         "category": "network",
         "title": "WireGuard configuration for a tunnel",
         "summary": "A WireGuard client configuration with an endpoint, as an administrator keeps it for a VPN. Bringing up the tunnel resolves the name of a DNS honeytoken.",
-        "engage_activities": [
-          "EAC0011"
-        ],
         "file_name": "wg0.conf",
         "format": "config",
         "slots": [

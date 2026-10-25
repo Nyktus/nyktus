@@ -11,7 +11,7 @@
     "de": "Die config.json des Docker-Clients mit Konto und Passwort für eine Registry. Jedes Pull, Push und jede Anmeldung löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1552.001"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Registry",

@@ -10,7 +10,6 @@
     "en": "An HTML note of the IT department with a link to a portal for resetting the single sign-on. Following the link raises an event.",
     "de": "Ein HTML-Hinweis der IT mit einem Link zu einem Portal, in dem die Single-Sign-on-Anmeldung zurückgesetzt wird. Wer dem Link folgt, löst ein Event aus."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Portal", "accepts": ["web_url"], "optional": false}
   ],

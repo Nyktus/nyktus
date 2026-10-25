@@ -11,7 +11,7 @@
     "de": "Die INI-Datei einer Anwendung mit Host-Name, Konto und Passwort ihrer Datenbank. Wer sich damit verbindet, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1552.001"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Database",

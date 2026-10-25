@@ -10,7 +10,6 @@
     "en": "An SSH client configuration that reaches the hosts of a domain through a jump host. Every connection to one of them resolves the name of the jump host.",
     "de": "Eine SSH-Client-Konfiguration, die die Hosts einer Domain über einen Jump-Host erreicht. Jede Verbindung zu einem von ihnen löst den Namen des Jump-Hosts auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "JumpHost", "accepts": ["dns"], "optional": false}
   ],

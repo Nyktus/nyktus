@@ -10,7 +10,6 @@
     "en": "A small script for your own website. Served from another host, as on a cloned page, it loads an invisible image and raises an event.",
     "de": "Ein kleines Skript für Ihre eigene Website. Wird es von einem anderen Host ausgeliefert, etwa auf einer kopierten Seite, lädt es ein unsichtbares Bild und löst ein Event aus."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Beacon", "accepts": ["web_image"], "optional": false}
   ],
