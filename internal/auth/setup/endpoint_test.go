@@ -34,7 +34,7 @@ func startConsole(t *testing.T, d testDB) (srv *httptest.Server, tok setup.Token
 		t.Fatalf("Issue() error = %v", err)
 	}
 	h, err := console.New(t.Context(), console.Options{
-		Catalog:        embedded.Deceptions(),
+		Catalog:        embedded.FS(),
 		Logger:         logger,
 		DB:             d.console,
 		Setup:          svc,

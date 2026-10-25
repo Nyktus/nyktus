@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "password-export",
   "category": "data",
   "title": {
@@ -35,9 +35,6 @@
       "example": "j.doe"
     }
   ],
-  "secrets": [{"key": "Password", "length": 16}, {"key": "WikiPassword", "length": 14}, {"key": "BuildPassword", "length": 18}],
-  "artifacts": [
-    {"key": "export", "file_name": "Passwords.csv", "format": "config", "line_endings": "crlf", "template": "passwords.csv.tmpl"}
-  ],
+  "artifacts": ["password-export"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

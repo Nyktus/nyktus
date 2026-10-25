@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "config-file",
   "category": "application",
   "title": {
@@ -35,9 +35,6 @@
       "example": "billing_app"
     }
   ],
-  "secrets": [{"key": "Password", "length": 20}],
-  "artifacts": [
-    {"key": "config", "file_name": "config.ini", "format": "config", "line_endings": "lf", "template": "config.ini.tmpl"}
-  ],
+  "artifacts": ["config-file"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

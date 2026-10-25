@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "registry-export",
   "category": "endpoint",
   "title": {
@@ -34,9 +34,6 @@
       "example": "svc-backup"
     }
   ],
-  "secrets": [{"key": "Password", "length": 20}],
-  "artifacts": [
-    {"key": "export", "file_name": "Settings.reg", "format": "config", "line_endings": "crlf", "template": "settings.reg.tmpl"}
-  ],
+  "artifacts": ["registry-export"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

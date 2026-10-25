@@ -16,11 +16,16 @@ const src = join(import.meta.dirname, '..', 'src');
  * Three remain for good. The two checks of health are for orchestrators and load
  * balancers, not for people. The callback of the identity provider is a navigation of
  * the browser that the provider causes: no page links to it or requests it.
+ *
+ * The two reads of the artifacts of the catalog are for API clients; the console shows
+ * an artifact only as part of the deception that recommends it, for now.
  */
 const unused = [
   'completeOIDCSignIn',
+  'getCatalogArtifact',
   'getLiveness',
   'getReadiness',
+  'listCatalogArtifacts',
 ] as const;
 
 function sources(): string {

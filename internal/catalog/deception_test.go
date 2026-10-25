@@ -5,6 +5,7 @@ package catalog
 
 import (
 	"errors"
+	"io/fs"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -12,8 +13,8 @@ import (
 	"nyktus.org/nyktus/internal/honeytoken"
 )
 
-const validDefinition = `{
-  "schema_version": 1,
+const validDeception = `{
+  "schema_version": 2,
   "id": "sample",
   "category": "network",
   "title": {"en": "Sample", "de": "Beispiel"},
@@ -28,26 +29,108 @@ const validDefinition = `{
     {"key": "Domain", "kind": "host", "label": {"en": "Domain", "de": "Domain"}, "example": "corp.example.com"},
     {"key": "Company", "kind": "text", "label": {"en": "Company", "de": "Firma"}, "example": "Example Ltd"}
   ],
-  "secrets": [{"key": "Password", "length": 16}],
-  "artifacts": [
-    {"key": "config", "file_name": "config", "format": "config", "line_endings": "lf", "template": "config.tmpl"},
-    {"key": "note", "file_name": "Read me.txt", "format": "text", "line_endings": "crlf", "template": "note.txt.tmpl"}
-  ],
+  "artifacts": ["config", "note"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }`
 
-// validFiles returns a catalog with two valid deceptions, sample and second,
-// whose templates reference every value. Tests break sample.
+// configArtifact needs a honeytoken and generates a secret.
+const configArtifact = `{
+  "schema_version": 1,
+  "id": "config",
+  "category": "network",
+  "title": {"en": "Config", "de": "Einstellung"},
+  "summary": {"en": "A configuration.", "de": "Eine Einstellung."},
+  "engage_activities": ["EAC0011"],
+  "slots": [{"key": "Gateway", "accepts": ["dns"], "optional": false}],
+  "persona": [],
+  "secrets": [{"key": "Password", "length": 16}],
+  "file_name": "config",
+  "format": "config",
+  "line_endings": "lf",
+  "template": "config.tmpl"
+}`
+
+// noteArtifact asks for the persona, carries a honeytoken in an optional slot
+// and is pocket litter without it.
+const noteArtifact = `{
+  "schema_version": 1,
+  "id": "note",
+  "category": "data",
+  "title": {"en": "Note", "de": "Notiz"},
+  "summary": {"en": "A note.", "de": "Eine Notiz."},
+  "engage_activities": ["EAC0011", "EAC0022"],
+  "slots": [{"key": "Link", "accepts": ["web_url", "web_image"], "optional": true}],
+  "persona": [
+    {"key": "Domain", "kind": "host", "label": {"en": "Domain", "de": "Domain"}, "example": "corp.example.com"},
+    {"key": "Company", "kind": "text", "label": {"en": "Company", "de": "Firma"}, "example": "Example Ltd"}
+  ],
+  "secrets": [],
+  "file_name": "Read me.txt",
+  "format": "text",
+  "line_endings": "crlf",
+  "template": "note.txt.tmpl"
+}`
+
+const (
+	configTemplate = "Host {{.Honeytokens.Gateway.Host}}\nPassword {{.Secrets.Password}}\n"
+	noteTemplate   = "{{.Persona.Company}}{{if .Honeytokens.Link.URL}}: {{.Honeytokens.Link.URL}}{{end}} on {{.Persona.Domain}}\n"
+)
+
+// Paths in the catalog of validFiles.
+const (
+	sampleJSON   = "deceptions/sample/deception.json"
+	configJSON   = "artifacts/config/artifact.json"
+	configTmpl   = "artifacts/config/config.tmpl"
+	noteJSON     = "artifacts/note/artifact.json"
+	noteTmpl     = "artifacts/note/note.txt.tmpl"
+	guideEnTmpl  = "deceptions/sample/guide.en.md.tmpl"
+	guideDeTmpl  = "deceptions/sample/guide.de.md.tmpl"
+	secondJSON   = "deceptions/second/deception.json"
+	deceptionDir = "deceptions/"
+)
+
+func mapFile(content string) *fstest.MapFile { return &fstest.MapFile{Data: []byte(content)} }
+
+// validFiles returns a catalog with two artifacts, config and note, and two
+// valid deceptions, sample and second, that recommend both and whose templates
+// reference every value. Tests break sample, config and note.
 func validFiles() fstest.MapFS {
-	fsys := fstest.MapFS{}
+	fsys := fstest.MapFS{
+		configJSON: mapFile(configArtifact),
+		configTmpl: mapFile(configTemplate),
+		noteJSON:   mapFile(noteArtifact),
+		noteTmpl:   mapFile(noteTemplate),
+	}
 	for _, id := range []string{"sample", "second"} {
-		fsys[id+"/deception.json"] = &fstest.MapFile{Data: []byte(strings.Replace(validDefinition, `"id": "sample"`, `"id": "`+id+`"`, 1))}
-		fsys[id+"/config.tmpl"] = &fstest.MapFile{Data: []byte("Host {{.Honeytokens.Gateway.Host}}\nPassword {{.Secrets.Password}}\n")}
-		fsys[id+"/note.txt.tmpl"] = &fstest.MapFile{Data: []byte("{{.Persona.Company}}: {{.Honeytokens.Link.URL}} on {{.Persona.Domain}}\n")}
-		fsys[id+"/guide.en.md.tmpl"] = &fstest.MapFile{Data: []byte("Place the honeytoken {{.Honeytokens.Gateway.Host}} for {{.Persona.Company}}.\n")}
-		fsys[id+"/guide.de.md.tmpl"] = &fstest.MapFile{Data: []byte("Legen Sie den Honeytoken {{.Honeytokens.Gateway.Host}} ab.\n")}
+		fsys[deceptionDir+id+"/deception.json"] = mapFile(strings.Replace(validDeception, `"id": "sample"`, `"id": "`+id+`"`, 1))
+		fsys[deceptionDir+id+"/guide.en.md.tmpl"] = mapFile("Place the honeytoken {{.Honeytokens.Gateway.Host}} for {{.Persona.Company}}.\n")
+		fsys[deceptionDir+id+"/guide.de.md.tmpl"] = mapFile("Legen Sie den Honeytoken {{.Honeytokens.Gateway.Host}} ab.\n")
 	}
 	return fsys
+}
+
+// edit replaces old by replacement in the file name of the catalog, which
+// must contain it.
+func edit(t *testing.T, name, old, replacement string) func(fstest.MapFS) {
+	t.Helper()
+	return func(fsys fstest.MapFS) {
+		s := string(fsys[name].Data)
+		if !strings.Contains(s, old) {
+			t.Fatalf("%s does not contain %q", name, old)
+		}
+		fsys[name] = mapFile(strings.Replace(s, old, replacement, 1))
+	}
+}
+
+// file sets the file name, or removes it for an empty content.
+func file(name, content string) func(fstest.MapFS) {
+	return func(fsys fstest.MapFS) {
+		if content == "" {
+			delete(fsys, name)
+			return
+		}
+		fsys[name] = mapFile(content)
+	}
 }
 
 func TestLoad_ReadsAValidCatalog(t *testing.T) {
@@ -63,29 +146,32 @@ func TestLoad_ReadsAValidCatalog(t *testing.T) {
 	}
 	d, ok := c.Lookup("sample")
 	if !ok || d.Category != CategoryNetwork || d.Title["de"] != "Beispiel" || len(d.Honeytokens) != 2 ||
-		d.Honeytokens[1].Type != honeytoken.TypeWebURL || len(d.Persona) != 2 || d.Secrets[0].Length != 16 ||
-		len(d.Artifacts) != 2 || d.Artifacts[1].FileName != "Read me.txt" || d.Guide["de"] == nil {
+		d.Honeytokens[1].Type != honeytoken.TypeWebURL || len(d.Persona) != 2 ||
+		len(d.Artifacts) != 2 || d.Artifacts[0].ID != "config" || d.Artifacts[1].FileName != "Read me.txt" || d.Guide["de"] == nil {
 		t.Errorf("Lookup(sample) = %+v, %v", d, ok)
 	}
 	if _, ok := c.Lookup("third"); ok {
 		t.Error("Lookup(third) found a deception")
 	}
 
-	out, err := d.Artifacts[0].Render(map[string]string{
-		"Honeytokens.Gateway.Host": "abc.d.example.net", "Secrets.Password": "aaaabbbbccccdddd",
-	})
-	if err != nil || string(out) != "Host abc.d.example.net\nPassword aaaabbbbccccdddd\n" {
-		t.Errorf("Render(config) = %q, %v", out, err)
+	as := c.Artifacts()
+	if len(as) != 2 || as[0].ID != "config" || as[1].ID != "note" {
+		t.Fatalf("Artifacts() = %v, want config and note in order", as)
 	}
-	// The note declares CRLF.
-	out, err = d.Artifacts[1].Render(map[string]string{
-		"Persona.Company": "A", "Honeytokens.Link.URL": "https://t.example.net/x", "Persona.Domain": "corp.example.com",
-	})
-	if err != nil || string(out) != "A: https://t.example.net/x on corp.example.com\r\n" {
-		t.Errorf("Render(note) = %q, %v", out, err)
+	a, ok := c.LookupArtifact("config")
+	if !ok || a.Category != CategoryNetwork || a.Title["de"] != "Einstellung" || a.Secrets[0].Length != 16 ||
+		len(a.Slots) != 1 || a.Slots[0].Key != "Gateway" || a.Slots[0].Optional || a.Placing != nil {
+		t.Errorf("LookupArtifact(config) = %+v, %v", a, ok)
 	}
+	if n, _ := c.LookupArtifact("note"); !n.Slots[0].Optional || len(n.Slots[0].Accepts) != 2 || len(n.Persona) != 2 {
+		t.Errorf("LookupArtifact(note) = %+v", n)
+	}
+	if _, ok := c.LookupArtifact("third"); ok {
+		t.Error("LookupArtifact(third) found an artifact")
+	}
+
 	// Guides are Markdown.
-	out, err = d.Guide["en"].Render(map[string]string{"Honeytokens.Gateway.Host": "abc.d.example.net", "Persona.Company": "A<b>"})
+	out, err := d.Guide["en"].Render(map[string]string{"Honeytokens.Gateway.Host": "abc.d.example.net", "Persona.Company": "A<b>"})
 	if err != nil || string(out) != "Place the honeytoken abc.d.example.net for A\\<b\\>.\n" {
 		t.Errorf("Render(guide) = %q, %v", out, err)
 	}
@@ -104,7 +190,6 @@ func TestDeception_Fields(t *testing.T) {
 		"Honeytokens.Link.URL":     KindURL,
 		"Persona.Domain":           KindHost,
 		"Persona.Company":          KindText,
-		"Secrets.Password":         KindSecret,
 	}
 	got := d.Fields()
 	if len(got) != len(want) {
@@ -122,24 +207,7 @@ func TestDeception_Fields(t *testing.T) {
 func TestLoad_RejectsInvalidDeceptions(t *testing.T) {
 	t.Parallel()
 
-	def := func(old, replacement string) func(fstest.MapFS) {
-		return func(fsys fstest.MapFS) {
-			s := string(fsys["sample/deception.json"].Data)
-			if !strings.Contains(s, old) {
-				t.Fatalf("the definition does not contain %q", old)
-			}
-			fsys["sample/deception.json"] = &fstest.MapFile{Data: []byte(strings.Replace(s, old, replacement, 1))}
-		}
-	}
-	file := func(name, content string) func(fstest.MapFS) {
-		return func(fsys fstest.MapFS) {
-			if content == "" {
-				delete(fsys, name)
-				return
-			}
-			fsys[name] = &fstest.MapFile{Data: []byte(content)}
-		}
-	}
+	def := func(old, replacement string) func(fstest.MapFS) { return edit(t, sampleJSON, old, replacement) }
 
 	for name, c := range map[string]struct {
 		change func(fstest.MapFS)
@@ -150,18 +218,17 @@ func TestLoad_RejectsInvalidDeceptions(t *testing.T) {
 		// The directory and its files.
 		"malformed directory":    {func(fsys fstest.MapFS) { moveDir(fsys, "sample", "Sample") }, "not a valid identifier"},
 		"long directory":         {func(fsys fstest.MapFS) { moveDir(fsys, "sample", strings.Repeat("a", 65)) }, "not a valid identifier"},
-		"missing definition":     {file("sample/deception.json", ""), "deception.json is missing"},
-		"unreferenced file":      {file("sample/extra.tmpl", "x"), "extra.tmpl is not referenced"},
-		"file of another name":   {file("sample/notes.txt", "x"), "notes.txt is not a template"},
-		"subdirectory":           {file("sample/x.tmpl/config.tmpl", "x"), "x.tmpl is not a template"},
-		"file too large":         {file("sample/note.txt.tmpl", strings.Repeat("a", maxFileBytes+1)), "note.txt.tmpl is larger than"},
-		"missing artifact file":  {file("sample/note.txt.tmpl", ""), "the template note.txt.tmpl is missing"},
-		"missing guide file":     {file("sample/guide.de.md.tmpl", ""), "the template guide.de.md.tmpl is missing"},
-		"unknown field":          {def(`"schema_version": 1,`, `"schema_version": 1, "author": "x",`), "unknown field"},
-		"unknown nested field":   {def(`"length": 16}`, `"length": 16, "charset": "x"}`), "unknown field"},
-		"trailing data":          {func(fsys fstest.MapFS) { appendTo(fsys, "sample/deception.json", " {}") }, "unexpected data"},
-		"malformed JSON":         {def(`"schema_version": 1,`, `"schema_version": 1`), "deception.json:"},
-		"schema version":         {def(`"schema_version": 1`, `"schema_version": 2`), "schema version 2"},
+		"missing definition":     {file(sampleJSON, ""), "deception.json is missing"},
+		"unreferenced file":      {file(deceptionDir+"sample/extra.tmpl", "x"), "extra.tmpl is not referenced"},
+		"file of another name":   {file(deceptionDir+"sample/notes.txt", "x"), "notes.txt is not a template"},
+		"subdirectory":           {file(deceptionDir+"sample/x.tmpl/guide.tmpl", "x"), "x.tmpl is not a template"},
+		"file too large":         {file(guideDeTmpl, strings.Repeat("a", maxFileBytes+1)), "guide.de.md.tmpl is larger than"},
+		"missing guide file":     {file(guideDeTmpl, ""), "the template guide.de.md.tmpl is missing"},
+		"unknown field":          {def(`"schema_version": 2,`, `"schema_version": 2, "author": "x",`), "unknown field"},
+		"unknown member":         {def(`"artifacts": ["config", "note"],`, `"artifacts": ["config", "note"], "secrets": [],`), "unknown field"},
+		"trailing data":          {func(fsys fstest.MapFS) { appendTo(fsys, sampleJSON, " {}") }, "unexpected data"},
+		"malformed JSON":         {def(`"schema_version": 2,`, `"schema_version": 2`), "deception.json:"},
+		"schema version":         {def(`"schema_version": 2`, `"schema_version": 1`), "schema version 1"},
 		"identifier":             {def(`"id": "sample"`, `"id": "other"`), "differs from the name"},
 		"category":               {def(`"category": "network"`, `"category": "cloud"`), "unknown category"},
 		"title language missing": {def(`"title": {"en": "Sample", "de": "Beispiel"}`, `"title": {"en": "Sample"}`), "title: want a text in each"},
@@ -192,7 +259,7 @@ func TestLoad_RejectsInvalidDeceptions(t *testing.T) {
 		"honeytoken severity info": {def(`"techniques": []}`, `"techniques": [], "severity": "info"}`), "honeytoken Link: the severity \"info\""},
 		"honeytoken severity":      {def(`"techniques": []}`, `"techniques": [], "severity": "urgent"}`), "honeytoken Link: the severity \"urgent\""},
 
-		// Persona and secrets.
+		// Persona.
 		"persona kind url":        {def(`"kind": "host"`, `"kind": "url"`), "is not host, name or text"},
 		"persona kind secret":     {def(`"kind": "host"`, `"kind": "secret"`), "is not host, name or text"},
 		"persona kind unknown":    {def(`"kind": "host"`, `"kind": "port"`), "is not host, name or text"},
@@ -200,42 +267,36 @@ func TestLoad_RejectsInvalidDeceptions(t *testing.T) {
 		"persona example invalid": {def(`"example": "corp.example.com"`, `"example": "Corp Example"`), "want an example"},
 		"persona label":           {def(`"label": {"en": "Domain", "de": "Domain"}`, `"label": {"en": "Domain", "de": "`+strings.Repeat("a", maxLabelLength+1)+`"}`), "persona Domain: label"},
 		"repeated persona key":    {def(`"key": "Company"`, `"key": "Domain"`), "the key \"Domain\" is malformed or used twice"},
-		"malformed secret key":    {def(`"key": "Password"`, `"key": "Pass-word"`), "the key \"Pass-word\" is malformed"},
-		"secret too short":        {def(`"length": 16`, `"length": 7`), "want a length"},
-		"secret too long":         {def(`"length": 16`, `"length": 65`), "want a length"},
+		"too much persona":        {manyPersona, "want at most 10 values of the persona"},
 
-		// Artifacts.
-		"malformed artifact key":   {def(`"key": "note"`, `"key": "Note"`), "artifact \"Note\": the key"},
-		"repeated artifact key":    {def(`"key": "note"`, `"key": "config"`), "artifact \"config\": the key"},
-		"file name with separator": {def(`"file_name": "Read me.txt"`, `"file_name": "docs/Read me.txt"`), "the file name"},
-		"file name with backslash": {def(`"file_name": "Read me.txt"`, `"file_name": "docs\\Read me.txt"`), "the file name"},
-		"hidden file name":         {def(`"file_name": "Read me.txt"`, `"file_name": ".netrc"`), "the file name"},
-		"file name trailing dot":   {def(`"file_name": "Read me.txt"`, `"file_name": "Read me."`), "the file name"},
-		"file name in other case":  {def(`"file_name": "Read me.txt"`, `"file_name": "CONFIG"`), "the file name"},
-		"artifact format":          {def(`"format": "text"`, `"format": "yaml"`), "artifact note: unknown format"},
-		"line endings":             {def(`"line_endings": "crlf"`, `"line_endings": "cr"`), "the line endings \"cr\" are not lf or crlf"},
-		"line endings missing":     {def(`, "line_endings": "crlf"`, ``), "the line endings \"\" are not lf or crlf"},
-		"artifact template name":   {def(`"template": "note.txt.tmpl"`, `"template": "../note.txt.tmpl"`), "is not the name of a template"},
-		"artifact template":        {file("sample/note.txt.tmpl", "{{range .Persona.Company}}x{{end}}"), "only text, values"},
-		"free text in config":      {file("sample/config.tmpl", "Host {{.Persona.Company}}\n"), "free text"},
-		"undeclared value":         {file("sample/config.tmpl", "Host {{.Honeytokens.Link.Host}}\n"), "unknown value"},
-		"marker":                   {file("sample/note.txt.tmpl", "Nyktus\n"), "contains \"nyktus\""},
-		"marker in a branch":       {file("sample/note.txt.tmpl", "{{if .Persona.Company}}x{{else}}a HoneyToken{{end}}\n"), "contains \"honeytoken\""},
-		"identifier as marker":     {file("sample/config.tmpl", "# SAMPLE\n"), "contains \"sample\""},
-		"attribution as marker":    {file("sample/note.txt.tmpl", "Generated by a tool\n"), "contains \"generated by\""},
-		"license as marker":        {file("sample/note.txt.tmpl", "Licensed CC-BY-SA 4.0\n"), "contains \"cc-by\""},
-		"unreferenced honeytoken":  {file("sample/note.txt.tmpl", "{{.Persona.Company}} on {{.Persona.Domain}}\n"), "no template references .Honeytokens.Link.URL"},
-		"unreferenced persona":     {file("sample/note.txt.tmpl", "{{.Persona.Company}}: {{.Honeytokens.Link.URL}}\n"), "no template references .Persona.Domain"},
-		"unreferenced secret":      {file("sample/config.tmpl", "Host {{.Honeytokens.Gateway.Host}}\n"), "no template references .Secrets.Password"},
-		"too many artifacts":       {manyArtifacts, "want at most 20 artifacts"},
-		"too much to render":       {largeArtifacts, "its artifacts and guide can render"},
-		"file too large to render": {file("sample/note.txt.tmpl", strings.Repeat("{{.Persona.Company}}\n", 250)+"{{.Honeytokens.Link.URL}}{{.Persona.Domain}}"), "artifact note can render"},
+		// The artifacts that the deception recommends.
+		"unknown artifact":        {def(`"artifacts": ["config", "note"]`, `"artifacts": ["config", "memo"]`), "artifact memo: not in the catalog"},
+		"malformed artifact id":   {def(`"artifacts": ["config", "note"]`, `"artifacts": ["config", "Note"]`), "artifacts: \"Note\" is malformed or listed twice"},
+		"repeated artifact":       {def(`"artifacts": ["config", "note"]`, `"artifacts": ["config", "config"]`), "artifacts: \"config\" is malformed or listed twice"},
+		"too many artifacts":      {manyArtifacts, "want at most 20 artifacts"},
+		"too much to render":      {largeArtifacts, "its artifacts and guide can render"},
+		"slot without honeytoken": {def(`{"key": "Gateway", "type": "dns", "label": {"en": "Gateway", "de": "Gateway"}, "techniques": ["T1021.004"]},`, `{"key": "Host", "type": "dns", "label": {"en": "Gateway", "de": "Gateway"}, "techniques": ["T1021.004"]},`), "artifact config: the slot Gateway has no honeytoken of that key"},
+		"slot of another type":    {def(`{"key": "Gateway", "type": "dns"`, `{"key": "Gateway", "type": "web_url"`), "artifact config: the slot Gateway does not take honeytokens of the type web_url"},
+		"persona of the artifact not in the deception": {
+			def(`    {"key": "Company", "kind": "text", "label": {"en": "Company", "de": "Firma"}, "example": "Example Ltd"}`, `    {"key": "Firm", "kind": "text", "label": {"en": "Company", "de": "Firma"}, "example": "Example Ltd"}`),
+			"artifact note: the persona Company of kind text is not a value of the deception",
+		},
+		"persona of the artifact of another kind": {
+			def(`"key": "Company", "kind": "text", "label": {"en": "Company", "de": "Firma"}, "example": "Example Ltd"`, `"key": "Company", "kind": "name", "label": {"en": "Company", "de": "Firma"}, "example": "company"`),
+			"artifact note: the persona Company of kind text is not a value of the deception",
+		},
+		"identifier as marker": {file(configTmpl, "# SAMPLE\nHost {{.Honeytokens.Gateway.Host}}\nPassword {{.Secrets.Password}}\n"), "artifact config: the template contains \"sample\""},
+
+		// Values that nothing references.
+		"unreferenced honeytoken": {noteWithoutLink, "no template references .Honeytokens.Link.URL"},
+		"unreferenced persona":    {noteWithoutDomain, "no template references .Persona.Domain"},
 
 		// Guides.
 		"guide language missing": {def(`"guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}`, `"guide": {"en": "guide.en.md.tmpl"}`), "guide: want a template for each"},
 		"guide language unknown": {def(`"guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}`, `"guide": {"en": "guide.en.md.tmpl", "fr": "guide.de.md.tmpl"}`), "guide: \"fr\" is not a language"},
-		"guide template":         {file("sample/guide.de.md.tmpl", "{{template \"x\"}}"), "guide de:"},
-		"guide undeclared value": {file("sample/guide.de.md.tmpl", "{{.Secrets.Token}}"), "guide de:"},
+		"guide template":         {file(guideDeTmpl, "{{template \"x\"}}"), "guide de:"},
+		"guide undeclared value": {file(guideDeTmpl, "{{.Secrets.Token}}"), "guide de:"},
+		"guide with a secret":    {file(guideDeTmpl, "{{.Secrets.Password}}"), "guide de:"},
 	} {
 		fsys := validFiles()
 		c.change(fsys)
@@ -246,12 +307,62 @@ func TestLoad_RejectsInvalidDeceptions(t *testing.T) {
 }
 
 // A value that only the guide references is used, for example the URL of an
-// image that the administrator embeds in a document of their own.
+// image that the administrator embeds in a document of their own, and so is a
+// deception without artifacts.
 func TestLoad_AcceptsValuesThatOnlyTheGuideReferences(t *testing.T) {
 	t.Parallel()
 
 	fsys := validFiles()
-	fsys["sample/note.txt.tmpl"] = &fstest.MapFile{Data: []byte("{{.Honeytokens.Link.URL}} on {{.Persona.Domain}}\n")}
+	edit(t, sampleJSON, `"artifacts": ["config", "note"]`, `"artifacts": ["config"]`)(fsys)
+	fsys[guideEnTmpl] = mapFile("{{.Honeytokens.Gateway.Host}} {{.Honeytokens.Link.URL}} {{.Persona.Company}} {{.Persona.Domain}}\n")
+	if _, err := Load(fsys); err != nil {
+		t.Errorf("Load() error = %v", err)
+	}
+
+	bare := validFiles()
+	edit(t, sampleJSON, `"artifacts": ["config", "note"]`, `"artifacts": []`)(bare)
+	bare[guideEnTmpl] = mapFile("{{.Honeytokens.Gateway.Host}} {{.Honeytokens.Link.URL}} {{.Persona.Company}} {{.Persona.Domain}}\n")
+	if _, err := Load(bare); err != nil {
+		t.Errorf("Load(deception without artifacts) error = %v", err)
+	}
+}
+
+// An artifact binds the honeytoken of its key, and an optional slot may stay
+// empty: the deception then lacks the honeytoken.
+func TestLoad_AcceptsAnOptionalSlotWithoutHoneytoken(t *testing.T) {
+	t.Parallel()
+
+	fsys := validFiles()
+	edit(t, sampleJSON, `,
+    {"key": "Link", "type": "web_url", "label": {"en": "Link", "de": "Link"}, "techniques": []}`, ``)(fsys)
+	c, err := Load(fsys)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if d, _ := c.Lookup("sample"); len(d.Honeytokens) != 1 || len(d.Artifacts) != 2 {
+		t.Errorf("Lookup(sample) = %+v, want one honeytoken and both artifacts", d)
+	}
+}
+
+// Two artifacts of a deception must not share a file name, also in another
+// case: they are the same file on Windows and macOS.
+func TestLoad_RejectsArtifactsWithTheSameFileName(t *testing.T) {
+	t.Parallel()
+
+	fsys := validFiles()
+	edit(t, noteJSON, `"file_name": "Read me.txt"`, `"file_name": "CONFIG"`)(fsys)
+	if _, err := Load(fsys); err == nil || !strings.Contains(err.Error(), `artifact note: the file name "CONFIG" is also that of artifact config`) {
+		t.Errorf("Load() error = %v, want the file name used twice", err)
+	}
+}
+
+// A slot takes the types it declares: the note takes a web_url and a
+// web_image, which both give a URL.
+func TestLoad_BindsASlotToEveryTypeItAccepts(t *testing.T) {
+	t.Parallel()
+
+	fsys := validFiles()
+	edit(t, sampleJSON, `"key": "Link", "type": "web_url"`, `"key": "Link", "type": "web_image"`)(fsys)
 	if _, err := Load(fsys); err != nil {
 		t.Errorf("Load() error = %v", err)
 	}
@@ -262,7 +373,7 @@ func TestLoad_AllowsMarkersInGuides(t *testing.T) {
 	t.Parallel()
 
 	fsys := validFiles()
-	fsys["sample/guide.en.md.tmpl"] = &fstest.MapFile{Data: []byte("This deception of Nyktus creates a honeytoken, a decoy for the sample.\n")}
+	fsys[guideEnTmpl] = mapFile("This deception of Nyktus creates a honeytoken, a decoy for the sample {{.Honeytokens.Gateway.Host}} of {{.Persona.Company}}.\n")
 	if _, err := Load(fsys); err != nil {
 		t.Errorf("Load() error = %v", err)
 	}
@@ -274,22 +385,55 @@ func TestLoad_RejectsAnInvalidCatalog(t *testing.T) {
 	if _, err := Load(fstest.MapFS{}); err == nil {
 		t.Error("Load(empty) error = nil")
 	}
-	fsys := validFiles()
-	fsys["README.md"] = &fstest.MapFile{Data: []byte("x")}
-	if _, err := Load(fsys); !errors.Is(err, ErrInvalidDeception) || !strings.Contains(err.Error(), "README.md is not the directory") {
-		t.Errorf("Load(file beside the deceptions) error = %v, want ErrInvalidDeception for README.md", err)
+	for name, c := range map[string]struct {
+		change func(fstest.MapFS)
+		want   error
+		in     string
+	}{
+		"file beside the deceptions": {file("deceptions/README.md", "x"), ErrInvalidDeception, "deceptions/README.md is not a directory"},
+		"file beside the artifacts":  {file("artifacts/README.md", "x"), ErrInvalidArtifact, "artifacts/README.md is not a directory"},
+		"no deceptions":              {emptyDir(deceptionDir), nil, "no entries in deceptions"},
+		"no artifacts":               {emptyDir("artifacts/"), nil, "no entries in artifacts"},
+		"missing deceptions":         {missingDir(deceptionDir), nil, "load catalog"},
+		"missing artifacts":          {missingDir("artifacts/"), nil, "load catalog"},
+	} {
+		fsys := validFiles()
+		c.change(fsys)
+		_, err := Load(fsys)
+		if err == nil || !strings.Contains(err.Error(), c.in) || (c.want != nil && !errors.Is(err, c.want)) {
+			t.Errorf("%s: Load() error = %v, want %v with %q", name, err, c.want, c.in)
+		}
+	}
+}
+
+// emptyDir leaves the directory dir without entries.
+func emptyDir(dir string) func(fstest.MapFS) {
+	return func(fsys fstest.MapFS) {
+		missingDir(dir)(fsys)
+		fsys[strings.TrimSuffix(dir, "/")] = &fstest.MapFile{Mode: fs.ModeDir}
+	}
+}
+
+// missingDir removes the directory dir.
+func missingDir(dir string) func(fstest.MapFS) {
+	return func(fsys fstest.MapFS) {
+		for n := range fsys {
+			if strings.HasPrefix(n, dir) {
+				delete(fsys, n)
+			}
+		}
 	}
 }
 
 func moveDir(fsys fstest.MapFS, from, to string) {
 	for name, f := range fsys {
-		if rest, ok := strings.CutPrefix(name, from+"/"); ok {
+		if rest, ok := strings.CutPrefix(name, deceptionDir+from+"/"); ok {
 			delete(fsys, name)
-			fsys[to+"/"+rest] = f
+			fsys[deceptionDir+to+"/"+rest] = f
 		}
 	}
-	if s := string(fsys[to+"/deception.json"].Data); s != "" {
-		fsys[to+"/deception.json"] = &fstest.MapFile{Data: []byte(strings.Replace(s, `"id": "`+from+`"`, `"id": "`+to+`"`, 1))}
+	if s := string(fsys[deceptionDir+to+"/deception.json"].Data); s != "" {
+		fsys[deceptionDir+to+"/deception.json"] = mapFile(strings.Replace(s, `"id": "`+from+`"`, `"id": "`+to+`"`, 1))
 	}
 }
 
@@ -299,14 +443,13 @@ func appendTo(fsys fstest.MapFS, name, s string) {
 
 // noHoneytokens removes the honeytokens and every reference to them.
 func noHoneytokens(fsys fstest.MapFS) {
-	s := string(fsys["sample/deception.json"].Data)
+	s := string(fsys[sampleJSON].Data)
 	start := strings.Index(s, `"honeytokens": [`)
 	end := strings.Index(s, `"persona": [`)
-	fsys["sample/deception.json"] = &fstest.MapFile{Data: []byte(s[:start] + `"honeytokens": [],` + "\n  " + s[end:])}
-	fsys["sample/config.tmpl"] = &fstest.MapFile{Data: []byte("Password {{.Secrets.Password}}\n")}
-	fsys["sample/note.txt.tmpl"] = &fstest.MapFile{Data: []byte("{{.Persona.Company}}\n")}
-	fsys["sample/guide.en.md.tmpl"] = &fstest.MapFile{Data: []byte("guide\n")}
-	fsys["sample/guide.de.md.tmpl"] = &fstest.MapFile{Data: []byte("Anleitung\n")}
+	fsys[sampleJSON] = mapFile(s[:start] + `"honeytokens": [],` + "\n  " + s[end:])
+	fsys[sampleJSON] = mapFile(strings.Replace(string(fsys[sampleJSON].Data), `"artifacts": ["config", "note"]`, `"artifacts": []`, 1))
+	fsys[guideEnTmpl] = mapFile("guide {{.Persona.Company}} {{.Persona.Domain}}\n")
+	fsys[guideDeTmpl] = mapFile("Anleitung\n")
 }
 
 func manyHoneytokens(fsys fstest.MapFS) {
@@ -314,31 +457,65 @@ func manyHoneytokens(fsys fstest.MapFS) {
 	for i := range maxHoneytokens - 1 {
 		extra.WriteString(`{"key": "Extra` + string(rune('A'+i)) + `", "type": "dns", "label": {"en": "x", "de": "x"}, "techniques": []},`)
 	}
-	s := strings.Replace(string(fsys["sample/deception.json"].Data), `"honeytokens": [`, `"honeytokens": [`+extra.String(), 1)
-	fsys["sample/deception.json"] = &fstest.MapFile{Data: []byte(s)}
+	s := strings.Replace(string(fsys[sampleJSON].Data), `"honeytokens": [`, `"honeytokens": [`+extra.String(), 1)
+	fsys[sampleJSON] = mapFile(s)
+}
+
+func manyPersona(fsys fstest.MapFS) {
+	var extra strings.Builder
+	for i := range maxPersona - 1 {
+		extra.WriteString(`{"key": "Extra` + string(rune('A'+i)) + `", "kind": "name", "label": {"en": "x", "de": "x"}, "example": "x"},`)
+	}
+	s := strings.Replace(string(fsys[sampleJSON].Data), `"persona": [`, `"persona": [`+extra.String(), 1)
+	fsys[sampleJSON] = mapFile(s)
+}
+
+// noteWithoutLink drops the slot from the note, which leaves the deception
+// with a honeytoken that nobody places.
+func noteWithoutLink(fsys fstest.MapFS) {
+	s := strings.Replace(string(fsys[noteJSON].Data), `"slots": [{"key": "Link", "accepts": ["web_url", "web_image"], "optional": true}]`, `"slots": []`, 1)
+	fsys[noteJSON] = mapFile(s)
+	fsys[noteTmpl] = mapFile("{{.Persona.Company}} on {{.Persona.Domain}}\n")
+}
+
+// noteWithoutDomain drops the domain from the note, which leaves the deception
+// asking for a value that nobody uses.
+func noteWithoutDomain(fsys fstest.MapFS) {
+	s := string(fsys[noteJSON].Data)
+	s = strings.Replace(s, `    {"key": "Domain", "kind": "host", "label": {"en": "Domain", "de": "Domain"}, "example": "corp.example.com"},
+`, "", 1)
+	fsys[noteJSON] = mapFile(s)
+	fsys[noteTmpl] = mapFile("{{.Persona.Company}}{{if .Honeytokens.Link.URL}}: {{.Honeytokens.Link.URL}}{{end}}\n")
+}
+
+// addPlainArtifacts adds n artifacts of the format text without values, each
+// with a template of size bytes, and lets the deception sample recommend them
+// instead of its own. The ids are plain-a, plain-b, ...
+func addPlainArtifacts(fsys fstest.MapFS, n, size int) {
+	ids := make([]string, n)
+	for i := range n {
+		id := "plain-" + string(rune('a'+i))
+		ids[i] = `"` + id + `"`
+		fsys["artifacts/"+id+"/artifact.json"] = mapFile(`{
+  "schema_version": 1, "id": "` + id + `", "category": "data",
+  "title": {"en": "Plain", "de": "Schlicht"}, "summary": {"en": "Plain.", "de": "Schlicht."},
+  "engage_activities": ["EAC0011"], "slots": [], "persona": [], "secrets": [],
+  "file_name": "` + id + `", "format": "text", "line_endings": "lf", "template": "plain.tmpl"
+}`)
+		fsys["artifacts/"+id+"/plain.tmpl"] = mapFile(strings.Repeat("x", size))
+	}
+	s := strings.Replace(string(fsys[sampleJSON].Data), `"artifacts": ["config", "note"]`, `"artifacts": [`+strings.Join(ids, ", ")+`]`, 1)
+	fsys[sampleJSON] = mapFile(s)
+	fsys[guideEnTmpl] = mapFile("{{.Honeytokens.Gateway.Host}} {{.Honeytokens.Link.URL}} {{.Persona.Company}} {{.Persona.Domain}}\n")
 }
 
 func manyArtifacts(fsys fstest.MapFS) {
-	var extra strings.Builder
-	for i := range maxArtifacts - 1 {
-		c := string(rune('a' + i))
-		extra.WriteString(`{"key": "extra-` + c + `", "file_name": "extra-` + c + `", "format": "text", "line_endings": "lf", "template": "extra-` + c + `.tmpl"},`)
-		fsys["sample/extra-"+c+".tmpl"] = &fstest.MapFile{Data: []byte("x")}
-	}
-	s := strings.Replace(string(fsys["sample/deception.json"].Data), `"artifacts": [`, `"artifacts": [`+extra.String(), 1)
-	fsys["sample/deception.json"] = &fstest.MapFile{Data: []byte(s)}
+	addPlainArtifacts(fsys, maxArtifacts+1, 1)
 }
 
 // largeArtifacts adds artifacts that together can render more than
 // MaxRenderedBytes, each within the limit of a file.
 func largeArtifacts(fsys fstest.MapFS) {
-	var extra strings.Builder
-	size := MaxRenderedBytes/(maxArtifacts-2) + 1024
-	for i := range maxArtifacts - 2 {
-		c := string(rune('a' + i))
-		extra.WriteString(`{"key": "large-` + c + `", "file_name": "large-` + c + `", "format": "text", "line_endings": "lf", "template": "large-` + c + `.tmpl"},`)
-		fsys["sample/large-"+c+".tmpl"] = &fstest.MapFile{Data: []byte(strings.Repeat("x", size))}
-	}
-	s := strings.Replace(string(fsys["sample/deception.json"].Data), `"artifacts": [`, `"artifacts": [`+extra.String(), 1)
-	fsys["sample/deception.json"] = &fstest.MapFile{Data: []byte(s)}
+	n := maxArtifacts - 2
+	addPlainArtifacts(fsys, n, MaxRenderedBytes/n+1024)
 }

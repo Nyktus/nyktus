@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "website-clone",
   "category": "application",
   "title": {
@@ -29,9 +29,6 @@
       "example": "www.example.com"
     }
   ],
-  "secrets": [],
-  "artifacts": [
-    {"key": "script", "file_name": "site.js", "format": "config", "line_endings": "lf", "template": "site.js.tmpl"}
-  ],
+  "artifacts": ["website-clone"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

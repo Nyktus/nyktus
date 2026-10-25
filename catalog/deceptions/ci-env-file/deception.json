@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "ci-env-file",
   "category": "application",
   "title": {
@@ -35,9 +35,6 @@
       "example": "orders_app"
     }
   ],
-  "secrets": [{"key": "Password", "length": 20}, {"key": "SessionKey", "length": 48}, {"key": "MailPassword", "length": 16}],
-  "artifacts": [
-    {"key": "env", "file_name": "production.env", "format": "config", "line_endings": "lf", "template": "production.env.tmpl"}
-  ],
+  "artifacts": ["ci-env-file"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

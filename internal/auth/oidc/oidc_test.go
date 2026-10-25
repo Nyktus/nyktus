@@ -87,7 +87,7 @@ func newUndiscoveredEnv(t *testing.T) env {
 	}, slog.New(slog.DiscardHandler))
 	errs := new(atomic.Int32)
 	h, err := console.New(t.Context(), console.Options{
-		Catalog:    embedded.Deceptions(),
+		Catalog:    embedded.FS(),
 		Logger:     slog.New(errorCounter{Handler: slog.DiscardHandler, n: errs}),
 		DB:         pool,
 		Setup:      setup.NewService(pool),
@@ -344,7 +344,7 @@ func TestRoutes_NotFoundWithoutAProvider(t *testing.T) {
 	_, consoleDBURL := schematest.Console(t)
 	pool := schematest.Open(t, consoleDBURL)
 	h, err := console.New(t.Context(), console.Options{
-		Catalog: embedded.Deceptions(),
+		Catalog: embedded.FS(),
 		Logger:  slog.New(slog.DiscardHandler), DB: pool, Setup: setup.NewService(pool), Hasher: hasher,
 		Sessions: session.Config{IdleTimeout: time.Hour, MaxAge: 12 * time.Hour}, Keys: secretboxtest.Keyring(t), ConsoleURL: consoleURL, TriggerURL: "https://t.example.net",
 	})

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "sso-reset-note",
   "category": "identity",
   "title": {
@@ -35,9 +35,6 @@
       "example": "Service desk"
     }
   ],
-  "secrets": [],
-  "artifacts": [
-    {"key": "note", "file_name": "SSO-reset.html", "format": "html", "line_endings": "lf", "template": "sso-reset.html.tmpl"}
-  ],
+  "artifacts": ["sso-reset-note"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

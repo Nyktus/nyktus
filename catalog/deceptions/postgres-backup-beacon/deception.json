@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "postgres-backup-beacon",
   "category": "data",
   "title": {
@@ -59,10 +59,6 @@
       "example": "bi_reader"
     }
   ],
-  "secrets": [{"key": "Password", "length": 20}],
-  "artifacts": [
-    {"key": "restore", "file_name": "restore-hook.sql", "format": "config", "line_endings": "lf", "template": "restore-hook.sql.tmpl"},
-    {"key": "foreign", "file_name": "foreign-table.sql", "format": "config", "line_endings": "lf", "template": "foreign-table.sql.tmpl"}
-  ],
+  "artifacts": ["postgres-backup-beacon-restore", "postgres-backup-beacon-foreign"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

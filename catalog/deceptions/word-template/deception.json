@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "word-template",
   "category": "data",
   "title": {
@@ -21,7 +21,6 @@
     }
   ],
   "persona": [],
-  "secrets": [],
   "artifacts": [],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

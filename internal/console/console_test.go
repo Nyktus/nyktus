@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"nyktus.org/nyktus/api"
+	embedded "nyktus.org/nyktus/catalog"
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/catalog"
 	"nyktus.org/nyktus/internal/platform/apispec"
@@ -51,7 +53,10 @@ func deps(db Pinger) Deps {
 			Activate: http.NotFoundHandler(), IssueResetLink: http.NotFoundHandler(), ResetPassword: http.NotFoundHandler(),
 		},
 		APIKeys: APIKeys{List: http.NotFoundHandler(), Create: http.NotFoundHandler(), Revoke: http.NotFoundHandler()},
-		Catalog: Catalog{List: http.NotFoundHandler(), Get: http.NotFoundHandler()},
+		Catalog: Catalog{
+			List: http.NotFoundHandler(), Get: http.NotFoundHandler(),
+			ListArtifacts: http.NotFoundHandler(), GetArtifact: http.NotFoundHandler(),
+		},
 		Honeytokens: Honeytokens{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
 			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(),
@@ -262,9 +267,31 @@ func TestCreateAPIKeyRequest_ListsTheScopesKeysMayCarry(t *testing.T) {
 func TestNew_RefusesAnInvalidCatalog(t *testing.T) {
 	t.Parallel()
 
-	invalid := fstest.MapFS{"ssh-config/deception.json": {Data: []byte(`{"schema_version": 2}`)}}
-	if _, err := New(t.Context(), Options{Catalog: invalid}); !errors.Is(err, catalog.ErrInvalidDeception) {
-		t.Errorf("New(invalid catalog) error = %v, want ErrInvalidDeception", err)
+	// An invalid artifact and an invalid deception, in an otherwise valid
+	// catalog.
+	embeddedCopy := func(path, content string) fstest.MapFS {
+		fsys := fstest.MapFS{}
+		if err := fs.WalkDir(embedded.FS(), ".", func(name string, e fs.DirEntry, err error) error {
+			if err != nil || e.IsDir() {
+				return err
+			}
+			b, err := fs.ReadFile(embedded.FS(), name)
+			fsys[name] = &fstest.MapFile{Data: b}
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		fsys[path] = &fstest.MapFile{Data: []byte(content)}
+		return fsys
+	}
+	for path, want := range map[string]error{
+		"artifacts/ssh-config/artifact.json":   catalog.ErrInvalidArtifact,
+		"deceptions/ssh-config/deception.json": catalog.ErrInvalidDeception,
+	} {
+		invalid := embeddedCopy(path, `{"schema_version": 3}`)
+		if _, err := New(t.Context(), Options{Catalog: invalid}); !errors.Is(err, want) {
+			t.Errorf("New(%s invalid) error = %v, want %v", path, err, want)
+		}
 	}
 	if _, err := New(t.Context(), Options{Catalog: fstest.MapFS{}}); err == nil {
 		t.Error("New(empty catalog) error = nil")

@@ -50,7 +50,7 @@ func sessionOf(t *testing.T, d testDB, id string) *http.Cookie {
 func startConsoleWith(t *testing.T, d testDB, cfg session.Config) *httptest.Server {
 	t.Helper()
 	h, err := console.New(t.Context(), console.Options{
-		Catalog:        embedded.Deceptions(),
+		Catalog:        embedded.FS(),
 		Logger:         slog.New(slog.DiscardHandler),
 		DB:             d.console,
 		Setup:          setup.NewService(d.console),

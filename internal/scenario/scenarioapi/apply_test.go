@@ -76,7 +76,7 @@ func TestApply_RejectsInvalidRequests(t *testing.T) {
 		{"ssh-config", strings.Replace(sshConfig, "corp.example.com", "Corp Example", 1), http.StatusBadRequest, "invalid_request", "persona Domain: must be a host name"},
 		{"ssh-config", strings.Replace(sshConfig, `"Account": "j.doe"`, `"Account": "j.doe", "Zone": "x"`, 1), http.StatusBadRequest, "invalid_request", "persona Zone: is not a value"},
 		{"ssh-config", strings.Replace(sshConfig, `"name"`, `"deception_id": "netrc", "name"`, 1), http.StatusBadRequest, "invalid_request", ""},
-		{"ssh-config", strings.Replace(sshConfig, "corp.example.com", "decoy.example.com", 1), http.StatusUnprocessableEntity, "artifact_reveals_decoy", "the artifact config would contain"},
+		{"ssh-config", strings.Replace(sshConfig, "corp.example.com", "decoy.example.com", 1), http.StatusUnprocessableEntity, "artifact_reveals_decoy", "the artifact ssh-config would contain"},
 	} {
 		rec := f.serve(t, f.h.Apply, http.MethodPost, "/", tt.deception, tt.body)
 		if rec.Code != tt.status || errorCode(t, rec) != tt.code || !strings.Contains(rec.Body.String(), tt.message) {

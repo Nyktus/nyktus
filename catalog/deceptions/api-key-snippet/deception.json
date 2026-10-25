@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "api-key-snippet",
   "category": "application",
   "title": {
@@ -29,9 +29,6 @@
       "example": "Inventory service"
     }
   ],
-  "secrets": [{"key": "Token", "length": 40}],
-  "artifacts": [
-    {"key": "snippet", "file_name": "api-call.txt", "format": "text", "line_endings": "lf", "template": "api-call.txt.tmpl"}
-  ],
+  "artifacts": ["api-key-snippet"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

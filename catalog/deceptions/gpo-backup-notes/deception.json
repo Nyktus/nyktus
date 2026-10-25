@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "gpo-backup-notes",
   "category": "endpoint",
   "title": {
@@ -41,9 +41,6 @@
       "example": "Infrastructure team"
     }
   ],
-  "secrets": [{"key": "Password", "length": 20}],
-  "artifacts": [
-    {"key": "notes", "file_name": "GPO-Backup.txt", "format": "text", "line_endings": "lf", "template": "gpo-backup.txt.tmpl"}
-  ],
+  "artifacts": ["gpo-backup-notes"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

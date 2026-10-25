@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "vsphere-profile",
   "category": "network",
   "title": {
@@ -35,9 +35,6 @@
       "example": "svc-vmops"
     }
   ],
-  "secrets": [{"key": "Password", "length": 20}],
-  "artifacts": [
-    {"key": "script", "file_name": "Connect-VCenter.ps1", "format": "config", "line_endings": "crlf", "template": "connect-vcenter.ps1.tmpl"}
-  ],
+  "artifacts": ["vsphere-profile"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

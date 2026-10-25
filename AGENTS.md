@@ -49,7 +49,7 @@ cmd/nyktus/         server binary
 sensor/             honeypot sensor for monitored networks: a Go module of its own
                     (nyktus.org/nyktus/sensor) with the binary in sensor/cmd/nyktus-sensor
 internal/           application packages, organized by domain
-catalog/            the deception catalog, embedded at build time
+catalog/            the deception and artifact catalog, embedded at build time
 migrations/         PostgreSQL migrations
 web/                web console
 deploy/             reference deployment configuration
@@ -68,15 +68,15 @@ Use these terms consistently in code, API and documentation:
 |---|---|
 | Honeytoken | A trigger primitive (URL, image, QR code, DNS name) that raises an event when it is requested or resolved. Write "honeytoken", not "canary token". |
 | Honeypot | A network service emulated by the sensor. |
-| Artifact | Content placed to make a scenario believable ("pocket litter"). An artifact never raises an event. |
+| Artifact | A template in the catalog for a file that a person places to make a scenario believable. A slot bound to a honeytoken makes it a lure, without one it is pocket litter. An artifact never raises an event itself. |
 | Scenario | A group of honeytokens, honeypots and artifacts that together tell one believable story. A resource belongs to at most one scenario or stands alone. |
-| Deception | A blueprint in the catalog. Applying it creates a scenario with its resources. Deceptions are not runtime objects. |
-| Catalog | The versioned collection of deceptions, including technique mappings and guides. |
+| Deception | A story in the catalog: honeytokens, persona, a guide and the artifacts it recommends. Applying it creates a scenario with its resources. Deceptions are not runtime objects. |
+| Catalog | The versioned collection of deceptions and artifacts, including technique mappings and guides. |
 | Event | A single recorded interaction with a honeytoken or honeypot. |
 | Incident | Correlated events: one open incident per scenario, or per resource that has no scenario. Triage happens on incidents. |
 | Alert | The single notification sent when an incident opens. |
 
-ATT&CK techniques describe attacker behavior and are attached to honeytokens, honeypots, events and incidents. Engage activities describe defender actions and are attached to deceptions and scenarios.
+ATT&CK techniques describe attacker behavior and are attached to honeytokens, honeypots, events and incidents. Engage activities describe defender actions and are attached to deceptions, artifacts and scenarios.
 
 ## Non-negotiable invariants
 

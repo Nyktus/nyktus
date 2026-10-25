@@ -24,7 +24,7 @@ const (
 
 func deception(t *testing.T, id string) catalog.Deception {
 	t.Helper()
-	c, err := catalog.Load(embedded.Deceptions())
+	c, err := catalog.Load(embedded.FS())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestApply_EveryDeceptionInEveryLanguage(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
 	actor := createUser(t, d)
-	c, err := catalog.Load(embedded.Deceptions())
+	c, err := catalog.Load(embedded.FS())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,12 +166,22 @@ func TestApply_EveryDeceptionInEveryLanguage(t *testing.T) {
 				t.Errorf("%s in %s: Apply() error = %v", dec.ID, lang, err)
 				continue
 			}
-			for _, art := range applied.Artifacts {
+			// The artifacts are those that the deception recommends, in order.
+			if len(applied.Artifacts) != len(dec.Artifacts) {
+				t.Errorf("%s in %s: %d artifacts, want %d", dec.ID, lang, len(applied.Artifacts), len(dec.Artifacts))
+				continue
+			}
+			for i, art := range applied.Artifacts {
+				want := dec.Artifacts[i]
+				if art.DeceptionArtifact != want.ID || art.FileName != want.FileName || art.Format != want.Format {
+					t.Errorf("%s in %s: artifact %d is %s (%s, %s), want %s (%s, %s)", dec.ID, lang, i,
+						art.DeceptionArtifact, art.FileName, art.Format, want.ID, want.FileName, want.Format)
+				}
 				var content []byte
 				if err := d.owner.QueryRow(t.Context(), `SELECT content FROM artifacts WHERE id = $1`, art.ID).Scan(&content); err != nil {
 					t.Fatal(err)
 				}
-				if m := dec.Reveals(content); m != "" {
+				if m := want.Reveals(content, dec.ID); m != "" {
 					t.Errorf("%s in %s: %s contains %q", dec.ID, lang, art.FileName, m)
 				}
 			}
@@ -204,8 +214,8 @@ func TestApply_IsAtomic(t *testing.T) {
 		a.DNSZone = "canary.example.net"
 		_, err := scenario.Apply(t.Context(), d.console, createUser(t, d), a)
 		var re *catalog.RevealError
-		if !errors.As(err, &re) || re.Artifact != "config" || re.Marker != "canary" {
-			t.Errorf("Apply() error = %v, want a RevealError of config", err)
+		if !errors.As(err, &re) || re.Artifact != "ssh-config" || re.Marker != "canary" {
+			t.Errorf("Apply() error = %v, want a RevealError of ssh-config", err)
 		}
 		assertNothingStored(t, d, "render")
 	})
