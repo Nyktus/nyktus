@@ -11,9 +11,10 @@ import (
 
 // Through the whole console: every role reads scenarios, viewers cannot
 // change them, and a key holds exactly its scenario scopes. The scenario of a
-// honeytoken changes with honeytokens:write alone. A denied write is rejected
-// before the scenario or the honeytoken is looked up, so it cannot reveal
-// whether one exists.
+// honeytoken changes with honeytokens:write alone. Adding a deception or an
+// artifact needs scenarios:write. A denied write is rejected before the
+// scenario or the honeytoken is looked up, so it cannot reveal whether one
+// exists.
 func TestScenarios_FollowRolesAndKeyScopes(t *testing.T) {
 	t.Parallel()
 
@@ -59,6 +60,8 @@ func TestScenarios_FollowRolesAndKeyScopes(t *testing.T) {
 	}
 	unknown := "/api/v1/scenarios/00000000-0000-4000-8000-000000000000"
 	assign := `{"scenario_id": "` + id + `"}`
+	addDeception := `{"deception_id": "browser-bookmarks", "persona": {"Company": "Example Ltd", "PortalName": "Intranet"}}`
+	addArtifact := `{"catalog_artifact": "browser-bookmarks"}`
 
 	for _, tt := range []struct {
 		name         string
@@ -87,6 +90,19 @@ func TestScenarios_FollowRolesAndKeyScopes(t *testing.T) {
 		{"honeytoken key assigns", nil, tokens, http.MethodPut, "/api/v1/honeytokens/" + h + "/scenario", assign, http.StatusOK},
 		{"honeytoken key detaches", nil, tokens, http.MethodDelete, "/api/v1/honeytokens/" + h + "/scenario", "", http.StatusOK},
 		{"user assigns", user, nil, http.MethodPut, "/api/v1/honeytokens/" + h + "/scenario", assign, http.StatusOK},
+		// Adding a deception or an artifact needs scenarios:write, and is
+		// refused before the scenario is looked up.
+		{"viewer adds a deception to an unknown scenario", viewer, nil, http.MethodPost, unknown + "/deceptions", addDeception, http.StatusForbidden},
+		{"viewer adds an artifact to an unknown scenario", viewer, nil, http.MethodPost, unknown + "/artifacts", addArtifact, http.StatusForbidden},
+		{"viewer adds a deception", viewer, nil, http.MethodPost, "/api/v1/scenarios/" + id + "/deceptions", addDeception, http.StatusForbidden},
+		{"reading key adds a deception to an unknown scenario", nil, reader, http.MethodPost, unknown + "/deceptions", addDeception, http.StatusForbidden},
+		{"reading key adds an artifact", nil, reader, http.MethodPost, "/api/v1/scenarios/" + id + "/artifacts", addArtifact, http.StatusForbidden},
+		{"honeytoken key adds a deception", nil, tokens, http.MethodPost, "/api/v1/scenarios/" + id + "/deceptions", addDeception, http.StatusForbidden},
+		{"writing key adds an unknown deception", nil, writer, http.MethodPost, "/api/v1/scenarios/" + id + "/deceptions", `{"deception_id": "nothing"}`, http.StatusBadRequest},
+		{"writing key adds an unknown artifact", nil, writer, http.MethodPost, "/api/v1/scenarios/" + id + "/artifacts", `{"catalog_artifact": "nothing"}`, http.StatusBadRequest},
+		{"user adds a deception to an unknown scenario", user, nil, http.MethodPost, unknown + "/deceptions", addDeception, http.StatusNotFound},
+		{"user adds a deception", user, nil, http.MethodPost, "/api/v1/scenarios/" + id + "/deceptions", addDeception, http.StatusCreated},
+		{"user adds it twice", user, nil, http.MethodPost, "/api/v1/scenarios/" + id + "/deceptions", addDeception, http.StatusConflict},
 		{"user deletes", user, nil, http.MethodDelete, "/api/v1/scenarios/" + id + "?honeytokens=delete", "", http.StatusNoContent},
 		{"honeytoken deleted with the scenario", user, nil, http.MethodGet, "/api/v1/honeytokens/" + h, "", http.StatusNotFound},
 	} {

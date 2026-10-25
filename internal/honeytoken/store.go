@@ -295,6 +295,21 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// GetForShare returns the honeytoken id and keeps it from being deleted or
+// assigned to another scenario until the end of the transaction. It returns
+// ErrNotFound if there is none. The caller holds the lock of the scenario
+// already, see SetScenario.
+func (s *Store) GetForShare(ctx context.Context, id string) (Honeytoken, error) {
+	h, err := scan(s.db.QueryRow(ctx, `SELECT `+columns+` FROM honeytokens WHERE id = $1 FOR SHARE`, id))
+	if db.NotFound(err) {
+		return Honeytoken{}, ErrNotFound
+	}
+	if err != nil {
+		return Honeytoken{}, fmt.Errorf("lock honeytoken %s: %w", id, err)
+	}
+	return h, nil
+}
+
 // SetScenario assigns the honeytoken id to the scenario scenarioID, or
 // detaches it from its scenario if scenarioID is empty. It returns the
 // honeytoken after the change and whether it changed: a honeytoken that is

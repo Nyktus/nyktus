@@ -135,13 +135,16 @@ func (h Honeypots) complete() bool {
 type Scenarios struct {
 	List, Get, Create, Update, Delete http.Handler
 	// Apply creates a scenario from a deception of the catalog, and Guide
-	// reads the guide that applying it rendered.
+	// reads the guides that applying deceptions rendered.
 	Apply, Guide http.Handler
+	// AddDeception and AddArtifact extend a scenario with a deception or an
+	// artifact of the catalog.
+	AddDeception, AddArtifact http.Handler
 }
 
 func (h Scenarios) complete() bool {
 	return h.List != nil && h.Get != nil && h.Create != nil && h.Update != nil && h.Delete != nil &&
-		h.Apply != nil && h.Guide != nil
+		h.Apply != nil && h.Guide != nil && h.AddDeception != nil && h.AddArtifact != nil
 }
 
 // Artifacts are the handlers of the artifacts: their metadata, the download
@@ -291,6 +294,11 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/api/v1/scenarios/{id}", httpx.Require("scenarios:read"), d.Scenarios.Get)
 	rt.Handle(http.MethodGet, "/api/v1/scenarios/{id}/guide", httpx.Require("scenarios:read"), d.Scenarios.Guide)
 	rt.Handle(http.MethodPatch, "/api/v1/scenarios/{id}", httpx.Require("scenarios:write"), d.Scenarios.Update)
+	// A deception or an artifact of the catalog joins a scenario with the
+	// honeytokens and artifacts it creates, as applying a deception does, so
+	// it needs scenarios:write only. The persona of the scenario grows.
+	rt.Handle(http.MethodPost, "/api/v1/scenarios/{id}/deceptions", httpx.Require("scenarios:write"), d.Scenarios.AddDeception)
+	rt.Handle(http.MethodPost, "/api/v1/scenarios/{id}/artifacts", httpx.Require("scenarios:write"), d.Scenarios.AddArtifact)
 	rt.Handle(http.MethodDelete, "/api/v1/scenarios/{id}", httpx.Require("scenarios:write"), d.Scenarios.Delete)
 	rt.Handle(http.MethodGet, "/api/v1/artifacts", httpx.Require("artifacts:read"), d.Artifacts.List)
 	rt.Handle(http.MethodGet, "/api/v1/artifacts/{id}", httpx.Require("artifacts:read"), d.Artifacts.Get)

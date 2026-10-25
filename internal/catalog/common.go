@@ -191,6 +191,12 @@ func readFiles(fsys fs.FS, dir, definition string) (map[string][]byte, error) {
 	return files, nil
 }
 
+// ValidKey reports whether key has the form of the key of a honeytoken, a slot
+// or a value of the persona.
+func ValidKey(key string) bool {
+	return valueKey.MatchString(key)
+}
+
 // decodeStrict decodes JSON into v, rejecting unknown fields and anything
 // after the value.
 func decodeStrict(b []byte, v any) error {

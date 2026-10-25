@@ -4,7 +4,7 @@
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { arrive, boot, submit, type } from './testing/boot';
-import { failure, fakeServer, honeypot, honeypotId, honeytoken, json, noContent, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { failure, fakeServer, honeypot, honeypotId, honeytoken, joined, json, noContent, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -31,7 +31,7 @@ function server(role: Role = 'admin', extra: Record<string, () => Response> = {}
 
 describe('the list of scenarios', () => {
   test('shows where each came from', async () => {
-    const fromCatalog = scenario({ id: 'dec0de00-2222-4222-8333-944444444444', name: 'SSH jump host', deception_id: 'ssh-jump-host', language: 'en', persona: { host: 'jump02' } });
+    const fromCatalog = scenario({ id: 'dec0de00-2222-4222-8333-944444444444', name: 'SSH jump host', deceptions: [joined('ssh-jump-host')], persona: { host: 'jump02' } });
     const { wrapper } = await boot(server('admin', { 'GET /api/v1/scenarios': () => json(200, { scenarios: [scenario(), fromCatalog] }) }), '/scenarios');
     const rows = wrapper.findAll('tbody tr');
     expect(rows[0]?.text()).toContain('Put together by hand');
@@ -109,7 +109,7 @@ describe('a scenario', () => {
   });
 
   test('shows the persona that a deception was applied with, as text', async () => {
-    const s = server('admin', { [`GET ${detail}`]: () => json(200, scenario({ deception_id: 'ssh-jump-host', language: 'de', persona: { host: '<b>jump02</b>' } })) });
+    const s = server('admin', { [`GET ${detail}`]: () => json(200, scenario({ deceptions: [joined('ssh-jump-host', 'de')], persona: { host: '<b>jump02</b>' } })) });
     const { wrapper } = await boot(s, path);
     expect(wrapper.get('.persona').text()).toContain('<b>jump02</b>');
     expect(wrapper.find('.persona b').exists()).toBe(false);

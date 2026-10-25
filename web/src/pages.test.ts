@@ -5,7 +5,7 @@ import { flushPromises } from '@vue/test-utils';
 import { afterEach, expect, test, vi } from 'vitest';
 import { navigation } from './navigation';
 import { boot } from './testing/boot';
-import { auditEntry, metricsText, plain, apiKey, userId, userRecord, alertChannel, alertDelivery, artifact, artifactId, catalogDeception, catalogSummary, event, eventId, fakeServer, honeypot, honeypotId, honeytoken, incident, incidentId, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { auditEntry, metricsText, plain, apiKey, userId, userRecord, alertChannel, alertDelivery, artifact, artifactId, catalogDeception, catalogSummary, event, eventId, fakeServer, honeypot, honeypotId, honeytoken, incident, incidentId, joined, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -23,8 +23,8 @@ function server() {
     'GET /api/v1/honeypots': () => json(200, { honeypots: [honeypot()] }),
     [`GET /api/v1/honeypots/${honeypotId}`]: () => json(200, honeypot()),
     'GET /api/v1/scenarios': () => json(200, { scenarios: [scenario()] }),
-    [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario({ deception_id: 'browser-bookmarks', language: 'en' })),
-    [`GET /api/v1/scenarios/${scenarioId}/guide`]: () => json(200, { language: 'en', content: '# Guide' }),
+    [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario({ deceptions: [joined('browser-bookmarks')] })),
+    [`GET /api/v1/scenarios/${scenarioId}/guide`]: () => json(200, { guides: [{ deception_id: 'browser-bookmarks', language: 'en', content: '# Guide' }] }),
     'GET /api/v1/catalog/deceptions': () => json(200, { deceptions: [catalogSummary()] }),
     'GET /api/v1/artifacts': () => json(200, { artifacts: [artifact()] }),
     [`GET /api/v1/artifacts/${artifactId}`]: () => json(200, artifact()),

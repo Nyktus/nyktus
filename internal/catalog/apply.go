@@ -5,6 +5,7 @@ package catalog
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -88,6 +89,12 @@ func validatePersona(fields []PersonaField, persona map[string]string, owner str
 			return &PersonaError{Key: p.Key, Reason: kindRules[p.Kind]}
 		}
 	}
+	return validatePersonaKeys(fields, owner, persona)
+}
+
+// validatePersonaKeys accepts persona if it names no key that is not in
+// fields.
+func validatePersonaKeys(fields []PersonaField, owner string, persona map[string]string) error {
 	keys := make([]string, 0, len(persona))
 	for k := range persona {
 		keys = append(keys, k)
@@ -176,10 +183,42 @@ func (d Deception) Values(placed map[string]Placed, persona map[string]string) m
 	return values
 }
 
-// RenderedArtifact is an artifact of a deception with its content.
+// RenderedArtifact is an artifact of the catalog with its content and the text
+// that says where to place it.
 type RenderedArtifact struct {
 	Artifact
 	Content []byte
+	// Placing is empty if the artifact has no text for the language.
+	Placing string
+}
+
+// RenderArtifact renders the artifact a in lang, with the honeytokens placed,
+// the persona and the secrets of the artifact, and the text that says where to
+// place it. The identifiers deceptionIDs of the deceptions of the scenario are
+// markers like the one of the artifact, see Artifact.Render. It fails with a
+// RevealError if the file contains a marker.
+func RenderArtifact(a Artifact, placed map[string]Placed, persona, secrets map[string]string, lang string, deceptionIDs ...string) (RenderedArtifact, error) {
+	values, err := a.Values(placed, persona, secrets)
+	if err != nil {
+		return RenderedArtifact{}, fmt.Errorf("render artifact %s: %w", a.ID, err)
+	}
+	content, err := a.Render(values, deceptionIDs...)
+	if err != nil {
+		var re *RevealError
+		if errors.As(err, &re) {
+			return RenderedArtifact{}, err
+		}
+		return RenderedArtifact{}, fmt.Errorf("render artifact %s: %w", a.ID, err)
+	}
+	r := RenderedArtifact{Artifact: a, Content: content}
+	if t := a.Placing[lang]; t != nil {
+		placing, err := t.Render(values)
+		if err != nil {
+			return RenderedArtifact{}, fmt.Errorf("render placing %s of %s: %w", lang, a.ID, err)
+		}
+		r.Placing = string(placing)
+	}
+	return r, nil
 }
 
 // Rendered is what applying a deception renders.
@@ -195,25 +234,23 @@ type Rendered struct {
 // RevealError if an artifact contains a marker, and with ErrUnknownLanguage if
 // d has no guide in lang.
 func (d Deception) Render(placed map[string]Placed, persona map[string]string, secrets map[string]map[string]string, lang string) (Rendered, error) {
+	return d.RenderSelected(d.Artifacts, placed, persona, secrets, lang)
+}
+
+// RenderSelected renders the guide of d in lang, and of its artifacts only
+// those in artifacts, as Render does.
+func (d Deception) RenderSelected(artifacts []Artifact, placed map[string]Placed, persona map[string]string, secrets map[string]map[string]string, lang string) (Rendered, error) {
 	guide, ok := d.Guide[lang]
 	if !ok {
 		return Rendered{}, fmt.Errorf("%w: %q", ErrUnknownLanguage, lang)
 	}
 	var r Rendered
-	for _, a := range d.Artifacts {
-		values, err := a.Values(placed, persona, secrets[a.ID])
+	for _, a := range artifacts {
+		rendered, err := RenderArtifact(a, placed, persona, secrets[a.ID], lang, d.ID)
 		if err != nil {
-			return Rendered{}, fmt.Errorf("render artifact %s of %s: %w", a.ID, d.ID, err)
+			return Rendered{}, fmt.Errorf("render artifacts of %s: %w", d.ID, err)
 		}
-		content, err := a.Render(values, d.ID)
-		if err != nil {
-			var re *RevealError
-			if errors.As(err, &re) {
-				return Rendered{}, err
-			}
-			return Rendered{}, fmt.Errorf("render artifact %s of %s: %w", a.ID, d.ID, err)
-		}
-		r.Artifacts = append(r.Artifacts, RenderedArtifact{Artifact: a, Content: content})
+		r.Artifacts = append(r.Artifacts, rendered)
 	}
 	var err error
 	if r.Guide, err = guide.Render(d.Values(placed, persona)); err != nil {
@@ -268,4 +305,84 @@ func Activities(base []string, artifacts []Artifact, placed map[string]Placed, p
 		add(ActivityPersonas)
 	}
 	return out
+}
+
+// ErrPersonaConflict means that a value of the persona differs from the one
+// the scenario already has.
+var ErrPersonaConflict = errors.New("persona value conflicts with the scenario")
+
+// PersonaConflictError says which key of the persona has another value in the
+// scenario. Its message names the key only, never either value: the stored one
+// is inventory, and the given one is not echoed.
+type PersonaConflictError struct {
+	Key string
+}
+
+func (e *PersonaConflictError) Error() string {
+	return fmt.Sprintf("persona %s: the scenario already has another value", e.Key)
+}
+
+// Is makes the error match ErrPersonaConflict.
+func (e *PersonaConflictError) Is(target error) bool {
+	return target == ErrPersonaConflict
+}
+
+// MaxPersonaBytes is the largest persona of a scenario, as its JSON, as the
+// database enforces it.
+const MaxPersonaBytes = 16384
+
+// MergePersona returns the persona of a scenario that holds stored after the
+// deception d joins it with the values given. The persona only grows: a key
+// that is new is added, a value that is there stays, and a value that is left
+// out is the stored one. It fails with a PersonaError for a key that d does not
+// ask for, a value that is missing or not of the kind d gives the key, or a
+// persona that gets too large, and with a PersonaConflictError for a given
+// value that differs from the stored one. added lists the new keys in order.
+func (d Deception) MergePersona(stored, given map[string]string) (merged map[string]string, added []string, err error) {
+	return mergePersona(d.Persona, "deception", stored, given)
+}
+
+// MergePersona merges the persona of the artifact a into that of a scenario,
+// as Deception.MergePersona does.
+func (a Artifact) MergePersona(stored, given map[string]string) (merged map[string]string, added []string, err error) {
+	return mergePersona(a.Persona, "artifact", stored, given)
+}
+
+func mergePersona(fields []PersonaField, owner string, stored, given map[string]string) (map[string]string, []string, error) {
+	// An unknown key is named in the same way as in validatePersona.
+	if err := validatePersonaKeys(fields, owner, given); err != nil {
+		return nil, nil, err
+	}
+	merged := make(map[string]string, len(stored)+len(fields))
+	for k, v := range stored {
+		merged[k] = v
+	}
+	var added []string
+	for _, f := range fields {
+		g, hasGiven := given[f.Key]
+		s, hasStored := stored[f.Key]
+		v := s
+		switch {
+		case hasGiven && hasStored && g != s:
+			return nil, nil, &PersonaConflictError{Key: f.Key}
+		case hasGiven:
+			v = g
+		case !hasStored:
+			return nil, nil, &PersonaError{Key: f.Key, Reason: "is required"}
+		}
+		if v == "" {
+			return nil, nil, &PersonaError{Key: f.Key, Reason: "is required"}
+		}
+		if !validValue(f.Kind, v) {
+			return nil, nil, &PersonaError{Key: f.Key, Reason: kindRules[f.Kind]}
+		}
+		if !hasStored {
+			added = append(added, f.Key)
+		}
+		merged[f.Key] = v
+	}
+	if b, err := json.Marshal(merged); err != nil || len(b) > MaxPersonaBytes {
+		return nil, nil, &PersonaError{Key: "", Reason: "the persona of the scenario would be too large"}
+	}
+	return merged, added, nil
 }

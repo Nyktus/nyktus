@@ -22,9 +22,12 @@ import (
 // Errors of the store.
 var (
 	ErrNotFound = errors.New("scenario not found")
-	// ErrNoGuide means that a scenario was put together by hand and has no
-	// guide.
-	ErrNoGuide = errors.New("scenario has no guide")
+	// ErrDeceptionAdded means that the deception is part of the scenario
+	// already.
+	ErrDeceptionAdded = errors.New("deception is part of the scenario already")
+	// ErrTooManyDeceptions means that a scenario holds the most deceptions it
+	// may.
+	ErrTooManyDeceptions = errors.New("scenario holds the most deceptions")
 	// ErrInvalidPageSize is returned for a page size outside [1, MaxPageSize].
 	ErrInvalidPageSize = errors.New("invalid page size")
 )
@@ -63,13 +66,46 @@ func NewStore(q db.Querier) *Store {
 
 // columns are the columns of a scenario without its guide, which only a read
 // of the guide needs.
-const columns = `id, name, notes, engage_activities, deception_id, language, persona, created_at, updated_at`
+const columns = `id, name, notes, engage_activities, persona, created_at, updated_at`
 
 func scan(row pgx.Row) (Scenario, error) {
 	var s Scenario
-	err := row.Scan(&s.ID, &s.Name, &s.Notes, &s.EngageActivities, &s.DeceptionID, &s.Language, &s.Persona,
-		&s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.Name, &s.Notes, &s.EngageActivities, &s.Persona, &s.CreatedAt, &s.UpdatedAt)
 	return s, err
+}
+
+// withDeceptions sets the deceptions of the scenarios, which are kept in a
+// table of their own.
+func (s *Store) withDeceptions(ctx context.Context, list ...*Scenario) error {
+	ids := make([]string, len(list))
+	byID := make(map[string]*Scenario, len(list))
+	for i, sc := range list {
+		ids[i] = sc.ID
+		sc.Deceptions = []AppliedDeception{}
+		byID[sc.ID] = sc
+	}
+	rows, err := s.db.Query(ctx, `
+SELECT scenario_id, deception_id, language, created_at FROM scenario_deceptions
+WHERE scenario_id = ANY($1::uuid[])
+ORDER BY created_at, deception_id`, ids)
+	if err != nil {
+		return fmt.Errorf("list deceptions of scenarios: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			id string
+			d  AppliedDeception
+		)
+		if err := rows.Scan(&id, &d.DeceptionID, &d.Language, &d.CreatedAt); err != nil {
+			return fmt.Errorf("list deceptions of scenarios: %w", err)
+		}
+		byID[id].Deceptions = append(byID[id].Deceptions, d)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("list deceptions of scenarios: %w", err)
+	}
+	return nil
 }
 
 // Create validates spec and stores a new scenario. The fields are validated
@@ -90,41 +126,40 @@ RETURNING `+columns, spec.Name, spec.Notes, activities))
 	if err != nil {
 		return Scenario{}, fmt.Errorf("create scenario: %w", mapWriteError(err))
 	}
+	sc.Deceptions = []AppliedDeception{}
 	return sc, nil
 }
 
-// createFromDeception stores a new scenario that applying the deception
-// deceptionID creates, with what the application keeps. The caller validated
-// every value.
-func (s *Store) createFromDeception(ctx context.Context, spec Spec, deceptionID, lang string,
-	persona map[string]string, guide []byte,
-) (Scenario, error) {
-	sc, err := scan(s.db.QueryRow(ctx, `
-INSERT INTO scenarios (name, notes, engage_activities, deception_id, language, persona, guide)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING `+columns, spec.Name, spec.Notes, spec.EngageActivities, deceptionID, lang, persona, string(guide)))
-	if err != nil {
-		return Scenario{}, fmt.Errorf("create scenario of %s: %w", deceptionID, mapWriteError(err))
-	}
-	return sc, nil
-}
-
-// Guide returns the guide of the scenario id in the language it was applied
-// in. It returns ErrNotFound if there is no such scenario and ErrNoGuide if
-// the scenario was put together by hand.
-func (s *Store) Guide(ctx context.Context, id string) (lang, guide string, err error) {
-	var l, g *string
-	err = s.db.QueryRow(ctx, `SELECT language, guide FROM scenarios WHERE id = $1`, id).Scan(&l, &g)
+// Guides returns the guides of the deceptions of the scenario id, in the order
+// the deceptions joined. A scenario put together by hand has none. It returns
+// ErrNotFound if there is no such scenario.
+func (s *Store) Guides(ctx context.Context, id string) ([]Guide, error) {
+	var found bool
+	err := s.db.QueryRow(ctx, `SELECT true FROM scenarios WHERE id = $1`, id).Scan(&found)
 	if db.NotFound(err) {
-		return "", "", ErrNotFound
+		return nil, ErrNotFound
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("get guide of scenario %s: %w", id, err)
+		return nil, fmt.Errorf("get scenario %s: %w", id, err)
 	}
-	if l == nil || g == nil {
-		return "", "", ErrNoGuide
+	rows, err := s.db.Query(ctx, `
+SELECT deception_id, language, guide FROM scenario_deceptions WHERE scenario_id = $1
+ORDER BY created_at, deception_id`, id)
+	if err != nil {
+		return nil, fmt.Errorf("get guides of scenario %s: %w", id, err)
 	}
-	return *l, *g, nil
+	guides, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Guide, error) {
+		var g Guide
+		err := row.Scan(&g.DeceptionID, &g.Language, &g.Content)
+		return g, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get guides of scenario %s: %w", id, err)
+	}
+	if guides == nil {
+		guides = []Guide{}
+	}
+	return guides, nil
 }
 
 // Get returns the scenario id. It returns ErrNotFound if there is none.
@@ -135,6 +170,9 @@ func (s *Store) Get(ctx context.Context, id string) (Scenario, error) {
 	}
 	if err != nil {
 		return Scenario{}, fmt.Errorf("get scenario %s: %w", id, err)
+	}
+	if err := s.withDeceptions(ctx, &sc); err != nil {
+		return Scenario{}, err
 	}
 	return sc, nil
 }
@@ -183,6 +221,15 @@ func (s *Store) List(ctx context.Context, size int, after *Cursor) (list []Scena
 		last := list[size-1]
 		next = &Cursor{CreatedAt: last.CreatedAt, ID: last.ID}
 	}
+	if len(list) > 0 {
+		pointers := make([]*Scenario, len(list))
+		for i := range list {
+			pointers[i] = &list[i]
+		}
+		if err := s.withDeceptions(ctx, pointers...); err != nil {
+			return nil, nil, err
+		}
+	}
 	return list, next, nil
 }
 
@@ -205,6 +252,9 @@ func (s *Store) Update(ctx context.Context, id string, c Change) (Scenario, []st
 	}
 	if err != nil {
 		return Scenario{}, nil, fmt.Errorf("lock scenario %s: %w", id, err)
+	}
+	if err := s.withDeceptions(ctx, &current); err != nil {
+		return Scenario{}, nil, err
 	}
 
 	updated := current
@@ -237,6 +287,7 @@ RETURNING `+columns, id, updated.Name, updated.Notes, updated.EngageActivities))
 	if err != nil {
 		return Scenario{}, nil, fmt.Errorf("update scenario %s: %w", id, mapWriteError(err))
 	}
+	sc.Deceptions = current.Deceptions
 	return sc, changed, nil
 }
 
@@ -249,7 +300,9 @@ RETURNING `+columns, id, updated.Name, updated.Notes, updated.EngageActivities))
 // resources, as the assignment of a honeytoken or a honeypot does, so that a
 // resource that joins the scenario meanwhile either waits and then finds no
 // scenario, or joined before and is removed with the others. Honeytokens are
-// removed before honeypots, and honeypots before artifacts, everywhere.
+// removed before honeypots, and honeypots before artifacts, everywhere. A
+// deception that is being added meanwhile locks the scenario first as well,
+// and either waits and then finds no scenario or is removed with the others.
 func (s *Store) Delete(ctx context.Context, id string, removals ResourceRemovals) (Removed, error) {
 	if !removals.Honeytokens.Valid() || !removals.Honeypots.Valid() || !removals.Artifacts.Valid() {
 		return Removed{}, ErrInvalidRemoval
@@ -290,6 +343,10 @@ func (s *Store) Delete(ctx context.Context, id string, removals ResourceRemovals
 		removed.DetachedArtifacts = ids
 	}
 
+	// The deceptions of the scenario go with it, after its resources.
+	if _, err := s.db.Exec(ctx, `DELETE FROM scenario_deceptions WHERE scenario_id = $1`, id); err != nil {
+		return Removed{}, fmt.Errorf("delete deceptions of scenario %s: %w", id, err)
+	}
 	if _, err := s.db.Exec(ctx, `DELETE FROM scenarios WHERE id = $1`, id); err != nil {
 		return Removed{}, fmt.Errorf("delete scenario %s: %w", id, err)
 	}
@@ -426,4 +483,55 @@ func Delete(ctx context.Context, d DB, actor audit.Actor, id string, removals Re
 		return Removed{}, fmt.Errorf("delete scenario: %w", err)
 	}
 	return removed, nil
+}
+
+// Lock locks the scenario id until the end of the transaction and returns it
+// with its deceptions. It is the first lock of everything that extends a
+// scenario, see Delete: that takes the scenario before its resources, so the
+// two cannot wait for each other. It returns ErrNotFound if there is no such
+// scenario.
+func (s *Store) Lock(ctx context.Context, id string) (Scenario, error) {
+	sc, err := scan(s.db.QueryRow(ctx, `SELECT `+columns+` FROM scenarios WHERE id = $1 FOR NO KEY UPDATE`, id))
+	if db.NotFound(err) {
+		return Scenario{}, ErrNotFound
+	}
+	if err != nil {
+		return Scenario{}, fmt.Errorf("lock scenario %s: %w", id, err)
+	}
+	if err := s.withDeceptions(ctx, &sc); err != nil {
+		return Scenario{}, err
+	}
+	return sc, nil
+}
+
+// grow stores the persona and the activities of the scenario id after
+// something joined it. The caller holds its lock and merged the persona, which
+// the schema allows to grow only.
+func (s *Store) grow(ctx context.Context, id string, persona map[string]string, activities []string) error {
+	_, err := s.db.Exec(ctx, `
+UPDATE scenarios SET persona = $2, engage_activities = $3, updated_at = clock_timestamp()
+WHERE id = $1`, id, persona, activities)
+	if err != nil {
+		return fmt.Errorf("extend scenario %s: %w", id, mapWriteError(err))
+	}
+	return nil
+}
+
+// addDeception stores that the deception joined the scenario id, with the guide
+// rendered for it. The caller holds the lock of the scenario. It returns
+// ErrDeceptionAdded if the deception is part of the scenario already, and
+// ErrTooManyDeceptions if the scenario holds the most it may.
+func (s *Store) addDeception(ctx context.Context, id, deceptionID, lang string, guide []byte) error {
+	_, err := s.db.Exec(ctx, `
+INSERT INTO scenario_deceptions (scenario_id, deception_id, language, guide) VALUES ($1, $2, $3, $4)`,
+		id, deceptionID, lang, string(guide))
+	switch {
+	case db.Violation(err, db.UniqueViolation) == "scenario_deceptions_pkey":
+		return ErrDeceptionAdded
+	case db.Violation(err, db.CheckViolation) == "scenario_deceptions_limit_check":
+		return ErrTooManyDeceptions
+	case err != nil:
+		return fmt.Errorf("add deception %s to scenario %s: %w", deceptionID, id, err)
+	}
+	return nil
 }

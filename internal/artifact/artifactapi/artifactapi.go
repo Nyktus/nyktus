@@ -25,31 +25,39 @@ import (
 // Response is the representation of an artifact without its content, which
 // is downloaded on its own.
 type Response struct {
-	ID                string         `json:"id"`
-	ScenarioID        *string        `json:"scenario_id"`
-	DeceptionArtifact string         `json:"deception_artifact"`
-	FileName          string         `json:"file_name"`
-	Format            catalog.Format `json:"format"`
-	MediaType         string         `json:"media_type"`
-	Size              int            `json:"size"`
-	PlacementNotes    string         `json:"placement_notes"`
-	CreatedAt         time.Time      `json:"created_at"`
-	UpdatedAt         time.Time      `json:"updated_at"`
+	ID              string            `json:"id"`
+	ScenarioID      *string           `json:"scenario_id"`
+	CatalogArtifact string            `json:"catalog_artifact"`
+	FileName        string            `json:"file_name"`
+	Format          catalog.Format    `json:"format"`
+	MediaType       string            `json:"media_type"`
+	Size            int               `json:"size"`
+	Placing         string            `json:"placing"`
+	Bindings        map[string]string `json:"bindings"`
+	PlacementNotes  string            `json:"placement_notes"`
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
 }
 
 // NewResponse returns the representation of a.
 func NewResponse(a artifact.Artifact) Response {
+	bindings := a.Bindings
+	if bindings == nil {
+		bindings = map[string]string{}
+	}
 	return Response{
-		ID:                a.ID,
-		ScenarioID:        a.ScenarioID,
-		DeceptionArtifact: a.DeceptionArtifact,
-		FileName:          a.FileName,
-		Format:            a.Format,
-		MediaType:         artifact.MediaType(a.Format),
-		Size:              a.Size,
-		PlacementNotes:    a.PlacementNotes,
-		CreatedAt:         a.CreatedAt,
-		UpdatedAt:         a.UpdatedAt,
+		ID:              a.ID,
+		ScenarioID:      a.ScenarioID,
+		CatalogArtifact: a.CatalogArtifact,
+		FileName:        a.FileName,
+		Format:          a.Format,
+		MediaType:       artifact.MediaType(a.Format),
+		Size:            a.Size,
+		Placing:         a.Placing,
+		Bindings:        bindings,
+		PlacementNotes:  a.PlacementNotes,
+		CreatedAt:       a.CreatedAt,
+		UpdatedAt:       a.UpdatedAt,
 	}
 }
 

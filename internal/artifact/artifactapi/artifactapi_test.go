@@ -45,7 +45,7 @@ RETURNING id`).Scan(&userID)
 		t.Fatal(err)
 	}
 	err = owner.QueryRow(t.Context(), `
-INSERT INTO scenarios (name, deception_id, language, persona, guide) VALUES ('s', 'browser-bookmarks', 'en', '{}', 'g')
+INSERT INTO scenarios (name) VALUES ('s')
 RETURNING id`).Scan(&scenarioID)
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ RETURNING id`).Scan(&scenarioID)
 func (f fixture) artifact(t *testing.T, fileName string, format catalog.Format, content string) artifact.Artifact {
 	t.Helper()
 	a, err := artifact.NewStore(f.console).Create(t.Context(), artifact.Spec{
-		ScenarioID: f.scenario, DeceptionArtifact: "bookmarks", FileName: fileName, Format: format, Content: []byte(content),
+		ScenarioID: f.scenario, CatalogArtifact: "bookmarks", FileName: fileName, Format: format, Content: []byte(content),
 	})
 	if err != nil {
 		t.Fatal(err)

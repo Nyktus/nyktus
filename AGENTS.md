@@ -69,7 +69,7 @@ Use these terms consistently in code, API and documentation:
 | Honeytoken | A trigger primitive (URL, image, QR code, DNS name) that raises an event when it is requested or resolved. Write "honeytoken", not "canary token". |
 | Honeypot | A network service emulated by the sensor. |
 | Artifact | A template in the catalog for a file that a person places to make a scenario believable. A slot bound to a honeytoken makes it a lure, without one it is pocket litter. An artifact never raises an event itself. |
-| Scenario | A group of honeytokens, honeypots and artifacts that together tell one believable story. A resource belongs to at most one scenario or stands alone. |
+| Scenario | A group of honeytokens, honeypots and artifacts that together tell one believable story. It holds the deceptions that joined it and a persona that its files share and that only grows. A resource belongs to at most one scenario or stands alone. |
 | Deception | A story in the catalog: honeytokens, persona, a guide and the artifacts it recommends. Applying it creates a scenario with its resources. Deceptions are not runtime objects. |
 | Catalog | The versioned collection of deceptions and artifacts, including technique mappings and guides. |
 | Event | A single recorded interaction with a honeytoken or honeypot. |

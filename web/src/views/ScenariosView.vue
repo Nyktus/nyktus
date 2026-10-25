@@ -54,7 +54,7 @@ onMounted(list.reload);
             <td>
               <RouterLink :to="{ name: 'scenario', params: { id: scenario.id } }">{{ scenario.name }}</RouterLink>
             </td>
-            <td>{{ scenario.deception_id === null ? t('scenarios.byHand') : t('scenarios.fromDeception', { id: scenario.deception_id }) }}</td>
+            <td>{{ scenario.deceptions.length === 0 ? t('scenarios.byHand') : scenario.deceptions.map((d) => t('scenarios.fromDeception', { id: d.deception_id })).join('; ') }}</td>
             <td><TimeStamp :value="scenario.created_at" /></td>
           </tr>
         </tbody>

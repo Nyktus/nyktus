@@ -1,9 +1,10 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package scenarioapi serves the scenarios of the team, and applies the
-// deceptions of the catalog, which creates scenarios. The routes must require
-// the permissions scenarios:read and scenarios:write.
+// Package scenarioapi serves the scenarios of the team, applies the deceptions
+// of the catalog, which creates scenarios, and adds deceptions and artifacts of
+// the catalog to scenarios that exist. The routes must require the permissions
+// scenarios:read and scenarios:write.
 package scenarioapi
 
 import (
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"nyktus.org/nyktus/internal/artifact"
 	"nyktus.org/nyktus/internal/artifact/artifactapi"
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/access"
@@ -31,6 +33,15 @@ const (
 	// codeArtifactReveals answers an application whose values make an
 	// artifact name the product or what it is.
 	codeArtifactReveals = "artifact_reveals_decoy"
+	// codePersonaConflict answers a value of the persona that differs from
+	// the one the scenario has. The persona only grows.
+	codePersonaConflict = "persona_conflict"
+	// codeDeceptionAdded answers a deception that is part of the scenario
+	// already.
+	codeDeceptionAdded = "deception_already_added"
+	// codeScenarioLimit answers an addition to a scenario that holds the most
+	// deceptions or artifacts it may.
+	codeScenarioLimit = "scenario_limit"
 )
 
 // defaultPageSize is the page size if the request names none.
@@ -78,11 +89,17 @@ type response struct {
 	Name             string            `json:"name"`
 	Notes            string            `json:"notes"`
 	EngageActivities []string          `json:"engage_activities"`
-	DeceptionID      *string           `json:"deception_id"`
-	Language         *string           `json:"language"`
+	Deceptions       []deceptionRef    `json:"deceptions"`
 	Persona          map[string]string `json:"persona"`
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
+}
+
+// deceptionRef is a deception that joined a scenario.
+type deceptionRef struct {
+	DeceptionID string    `json:"deception_id"`
+	Language    string    `json:"language"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 func toResponse(s scenario.Scenario) response {
@@ -90,14 +107,21 @@ func toResponse(s scenario.Scenario) response {
 	if activities == nil {
 		activities = []string{}
 	}
+	deceptions := make([]deceptionRef, 0, len(s.Deceptions))
+	for _, d := range s.Deceptions {
+		deceptions = append(deceptions, deceptionRef{DeceptionID: d.DeceptionID, Language: d.Language, CreatedAt: d.CreatedAt})
+	}
+	persona := s.Persona
+	if persona == nil {
+		persona = map[string]string{}
+	}
 	return response{
 		ID:               s.ID,
 		Name:             s.Name,
 		Notes:            s.Notes,
 		EngageActivities: activities,
-		DeceptionID:      s.DeceptionID,
-		Language:         s.Language,
-		Persona:          s.Persona,
+		Deceptions:       deceptions,
+		Persona:          persona,
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
 	}
@@ -145,7 +169,8 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 
 // createRequest is the request to create a scenario. The optional members
 // reject null, as in a change, so that null never silently means the default.
-// The deception is not among them: only applying a deception sets it.
+// Neither the deceptions nor the persona are among them: only a deception or an
+// artifact of the catalog adds to them.
 type createRequest struct {
 	Name             string                   `json:"name"`
 	Notes            httpx.Optional[string]   `json:"notes"`
@@ -175,9 +200,9 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, toResponse(s))
 }
 
-// updateRequest lists every field that a change may contain. The deception is
-// not among them, and neither are the resources of the scenario, which join
-// and leave it through operations of their own.
+// updateRequest lists every field that a change may contain. The deceptions and
+// the persona are not among them, and neither are the resources of the
+// scenario, which join and leave it through operations of their own.
 type updateRequest struct {
 	Name             httpx.Optional[string]   `json:"name"`
 	Notes            httpx.Optional[string]   `json:"notes"`
@@ -303,15 +328,18 @@ var (
 	activitiesRule = fmt.Sprintf("engage_activities must list at most %d distinct engagement activities of MITRE Engage, such as EAC0005", scenario.MaxEngageActivities)
 	removalRule    = "honeytokens, honeypots and artifacts must be keep or delete"
 	languageRule   = "language must be one of " + strings.Join(catalog.Languages, ", ")
+	selectionRule  = "artifacts must name artifacts that the deception recommends, each once"
 )
 
 func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, err error) {
 	var (
-		personaErr *catalog.PersonaError
-		revealErr  *catalog.RevealError
+		personaErr  *catalog.PersonaError
+		conflictErr *catalog.PersonaConflictError
+		bindingErr  *scenario.BindingError
+		revealErr   *catalog.RevealError
 	)
 	switch {
-	case errors.Is(err, scenario.ErrNotFound), errors.Is(err, scenario.ErrNoGuide):
+	case errors.Is(err, scenario.ErrNotFound):
 		httpx.NotFound(w, r)
 	case errors.Is(err, scenario.ErrInvalidName):
 		invalid(w, r, nameRule)
@@ -325,6 +353,19 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, 
 		invalid(w, r, languageRule)
 	case errors.As(err, &personaErr):
 		invalid(w, r, personaErr.Error())
+	case errors.As(err, &conflictErr):
+		httpx.WriteError(w, r, http.StatusConflict, codePersonaConflict, conflictErr.Error()+
+			"; the persona of a scenario only grows, so use the value it has or leave it out")
+	case errors.Is(err, scenario.ErrDeceptionAdded):
+		httpx.WriteError(w, r, http.StatusConflict, codeDeceptionAdded,
+			"the deception is part of the scenario already; apply it to another scenario for other values of the persona")
+	case errors.Is(err, scenario.ErrTooManyDeceptions), errors.Is(err, artifact.ErrLimit):
+		httpx.WriteError(w, r, http.StatusConflict, codeScenarioLimit, fmt.Sprintf(
+			"a scenario holds at most %d deceptions and %d artifacts", scenario.MaxDeceptions, artifact.MaxPerScenario))
+	case errors.Is(err, scenario.ErrInvalidSelection):
+		invalid(w, r, selectionRule)
+	case errors.As(err, &bindingErr):
+		invalid(w, r, bindingErr.Error())
 	case errors.Is(err, scenario.ErrDNSNotConfigured):
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, codeDNSNotConfigured,
 			"the deception has a DNS honeytoken, which needs the zones of the DNS role; set NYKTUS_DNS_ZONES for the console")
@@ -348,6 +389,9 @@ type applyRequest struct {
 	Notes    httpx.Optional[string]            `json:"notes"`
 	Language httpx.Optional[string]            `json:"language"`
 	Persona  httpx.Optional[map[string]string] `json:"persona"`
+	// Artifacts name the artifacts of the deception to create; left out, they
+	// are those that the deception recommends.
+	Artifacts httpx.Optional[[]string] `json:"artifacts"`
 }
 
 // applyResponse is what applying a deception created.
@@ -377,24 +421,48 @@ func (h *Handler) Apply(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
-	lang := defaultLanguage
-	if req.Language.Set {
-		lang = req.Language.Value
-	}
 	a := scenario.Application{
-		Deception: d, Name: req.Name, Notes: req.Notes.Value, Language: lang, Persona: req.Persona.Value,
-		TriggerURL: h.triggerURL,
-	}
-	// DNS honeytokens are placed under the first zone; they have a name
-	// under every other zone as well.
-	if len(h.dnsZones) > 0 {
-		a.DNSZone = h.dnsZones[0]
+		Join: h.join(d, req.Language, req.Persona, req.Artifacts),
+		Name: req.Name, Notes: req.Notes.Value,
 	}
 	applied, err := scenario.Apply(r.Context(), h.db, p.Actor(), a)
 	if err != nil {
 		h.writeError(w, r, "scenario: apply deception", err)
 		return
 	}
+	h.logger.InfoContext(r.Context(), "scenario: applied deception", slog.String("deception", d.ID),
+		slog.Any("scenario", applied.Scenario), slog.Int("honeytokens", len(applied.Honeytokens)),
+		slog.Int("artifacts", len(applied.Artifacts)))
+	httpx.WriteJSON(w, http.StatusCreated, h.toApplyResponse(applied))
+}
+
+// join returns how the deception d joins a scenario from the optional members
+// of a request.
+func (h *Handler) join(d catalog.Deception, language httpx.Optional[string], persona httpx.Optional[map[string]string],
+	artifacts httpx.Optional[[]string],
+) scenario.Join {
+	lang := defaultLanguage
+	if language.Set {
+		lang = language.Value
+	}
+	j := scenario.Join{
+		Deception: d, Language: lang, Persona: persona.Value, TriggerURL: h.triggerURL,
+	}
+	if artifacts.Set {
+		j.Artifacts = artifacts.Value
+		if j.Artifacts == nil {
+			j.Artifacts = []string{}
+		}
+	}
+	// DNS honeytokens are placed under the first zone; they have a name
+	// under every other zone as well.
+	if len(h.dnsZones) > 0 {
+		j.DNSZone = h.dnsZones[0]
+	}
+	return j
+}
+
+func (h *Handler) toApplyResponse(applied scenario.Applied) applyResponse {
 	resp := applyResponse{
 		Scenario:    toResponse(applied.Scenario),
 		Honeytokens: make([]honeytokenapi.Response, 0, len(applied.Honeytokens)),
@@ -406,25 +474,132 @@ func (h *Handler) Apply(w http.ResponseWriter, r *http.Request) {
 	for _, art := range applied.Artifacts {
 		resp.Artifacts = append(resp.Artifacts, artifactapi.NewResponse(art))
 	}
-	h.logger.InfoContext(r.Context(), "scenario: applied deception", slog.String("deception", d.ID),
-		slog.Any("scenario", applied.Scenario), slog.Int("honeytokens", len(applied.Honeytokens)),
-		slog.Int("artifacts", len(applied.Artifacts)))
-	httpx.WriteJSON(w, http.StatusCreated, resp)
+	return resp
 }
 
-// guideResponse is the guide of a scenario.
+// addDeceptionRequest is the request to add a deception to a scenario. The
+// optional members reject null, as everywhere.
+type addDeceptionRequest struct {
+	DeceptionID string                            `json:"deception_id"`
+	Language    httpx.Optional[string]            `json:"language"`
+	Persona     httpx.Optional[map[string]string] `json:"persona"`
+	Artifacts   httpx.Optional[[]string]          `json:"artifacts"`
+}
+
+// AddDeception handles POST /api/v1/scenarios/{id}/deceptions. It adds a
+// deception of the catalog to the scenario, with its honeytokens, artifacts
+// and guide. The persona of the scenario keeps its values and grows by the
+// keys that the deception asks for and the scenario lacks.
+func (h *Handler) AddDeception(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.principal(w, r)
+	if !ok {
+		return
+	}
+	var req addDeceptionRequest
+	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
+		return
+	}
+	d, ok := h.catalog.Lookup(req.DeceptionID)
+	if !ok {
+		invalid(w, r, "deception_id must be a deception of the catalog")
+		return
+	}
+	applied, err := scenario.AddDeception(r.Context(), h.db, p.Actor(), scenario.Addition{
+		ScenarioID: r.PathValue("id"),
+		Join:       h.join(d, req.Language, req.Persona, req.Artifacts),
+	})
+	if err != nil {
+		h.writeError(w, r, "scenario: add deception", err)
+		return
+	}
+	h.logger.InfoContext(r.Context(), "scenario: added deception", slog.String("deception", d.ID),
+		slog.Any("scenario", applied.Scenario), slog.Int("honeytokens", len(applied.Honeytokens)),
+		slog.Int("artifacts", len(applied.Artifacts)))
+	httpx.WriteJSON(w, http.StatusCreated, h.toApplyResponse(applied))
+}
+
+// addArtifactRequest is the request to add an artifact of the catalog to a
+// scenario.
+type addArtifactRequest struct {
+	CatalogArtifact string                            `json:"catalog_artifact"`
+	Language        httpx.Optional[string]            `json:"language"`
+	Persona         httpx.Optional[map[string]string] `json:"persona"`
+	// Bindings name the honeytoken of the scenario for each slot, by the key
+	// of the slot.
+	Bindings httpx.Optional[map[string]string] `json:"bindings"`
+}
+
+// addArtifactResponse is the artifact that was added and the scenario after
+// it.
+type addArtifactResponse struct {
+	Scenario response             `json:"scenario"`
+	Artifact artifactapi.Response `json:"artifact"`
+}
+
+// AddArtifact handles POST /api/v1/scenarios/{id}/artifacts. It adds an
+// artifact of the catalog to the scenario, rendered with the persona of the
+// scenario and the honeytokens that fill its slots.
+func (h *Handler) AddArtifact(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.principal(w, r)
+	if !ok {
+		return
+	}
+	var req addArtifactRequest
+	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
+		return
+	}
+	a, ok := h.catalog.LookupArtifact(req.CatalogArtifact)
+	if !ok {
+		invalid(w, r, "catalog_artifact must be an artifact of the catalog")
+		return
+	}
+	lang := defaultLanguage
+	if req.Language.Set {
+		lang = req.Language.Value
+	}
+	add := scenario.ArtifactAddition{
+		ScenarioID: r.PathValue("id"), Artifact: a, Language: lang, Persona: req.Persona.Value,
+		Bindings: req.Bindings.Value, TriggerURL: h.triggerURL,
+	}
+	if len(h.dnsZones) > 0 {
+		add.DNSZone = h.dnsZones[0]
+	}
+	applied, err := scenario.AddArtifact(r.Context(), h.db, p.Actor(), add)
+	if err != nil {
+		h.writeError(w, r, "scenario: add artifact", err)
+		return
+	}
+	h.logger.InfoContext(r.Context(), "scenario: added artifact", slog.String("artifact", a.ID),
+		slog.Any("scenario", applied.Scenario))
+	httpx.WriteJSON(w, http.StatusCreated, addArtifactResponse{
+		Scenario: toResponse(applied.Scenario), Artifact: artifactapi.NewResponse(applied.Artifacts[0]),
+	})
+}
+
+// guideResponse is the guide of a deception of a scenario.
 type guideResponse struct {
-	Language string `json:"language"`
-	Content  string `json:"content"`
+	DeceptionID string `json:"deception_id"`
+	Language    string `json:"language"`
+	Content     string `json:"content"`
+}
+
+// guidesResponse lists the guides of a scenario, in the order its deceptions
+// joined.
+type guidesResponse struct {
+	Guides []guideResponse `json:"guides"`
 }
 
 // Guide handles GET /api/v1/scenarios/{id}/guide. A scenario put together by
-// hand has no guide and answers 404 like an unknown one.
+// hand has no deception and so no guide.
 func (h *Handler) Guide(w http.ResponseWriter, r *http.Request) {
-	lang, guide, err := scenario.NewStore(h.db).Guide(r.Context(), r.PathValue("id"))
+	guides, err := scenario.NewStore(h.db).Guides(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.writeError(w, r, "scenario: get guide", err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, guideResponse{Language: lang, Content: guide})
+	resp := guidesResponse{Guides: make([]guideResponse, 0, len(guides))}
+	for _, g := range guides {
+		resp.Guides = append(resp.Guides, guideResponse{DeceptionID: g.DeceptionID, Language: g.Language, Content: g.Content})
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
