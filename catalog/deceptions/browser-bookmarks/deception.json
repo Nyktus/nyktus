@@ -11,7 +11,7 @@
     "de": "Ein Export von Browser-Lesezeichen mit einem Link auf ein internes Portal. Wer dem Link folgt, ruft die URL eines Honeytokens auf."
   },
   "techniques": ["T1217"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Portal",

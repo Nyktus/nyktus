@@ -11,7 +11,7 @@
     "de": "Eine Notiz eines Administrators, die die Freigabe mit den Sicherungen der Gruppenrichtlinien und ein Konto dafür nennt. Wer die Freigabe öffnet, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1135", "T1615"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Share",

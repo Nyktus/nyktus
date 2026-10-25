@@ -128,13 +128,6 @@ func publish(t *testing.T, c *catalog.Catalog) []byte {
 			}
 			p.Artifacts[lang] = append(p.Artifacts[lang], encode(t, resp, ""))
 		}
-		for _, id := range a.EngageActivities {
-			activity, ok := engage.Lookup(id)
-			if !ok {
-				t.Fatalf("%s: activity %s is not in the bundled list", a.ID, id)
-			}
-			p.EngageActivities[id] = reference{Name: activity.Name}
-		}
 	}
 	return encode(t, p, "  ")
 }
@@ -231,15 +224,6 @@ func TestPublishedCatalog_MatchesTheSpecification(t *testing.T) {
 		for i, raw := range artifacts {
 			for _, problem := range schemas.Check("CatalogArtifact", raw) {
 				t.Errorf("artifacts %s[%d]: %s", lang, i, problem)
-			}
-			var a struct {
-				EngageActivities []string `json:"engage_activities"`
-			}
-			if err := json.Unmarshal(raw, &a); err != nil {
-				t.Fatalf("artifacts %s[%d]: %v", lang, i, err)
-			}
-			for _, id := range a.EngageActivities {
-				activities[id] = true
 			}
 		}
 	}

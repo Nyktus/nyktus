@@ -11,7 +11,7 @@
     "de": "Eine .netrc-Datei mit Konto und Passwort für einen Host, wie curl, Git und FTP-Clients sie lesen. Wer die Zugangsdaten nutzt, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1552.001"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Host",

@@ -43,7 +43,6 @@ const artifact = `{
   "category": "network",
   "title": {"en": "File %ID%", "de": "Datei %ID%"},
   "summary": {"en": "Artifact.", "de": "Artefakt."},
-  "engage_activities": ["EAC0011", "EAC0022"],
   "slots": [{"key": "Gateway", "accepts": ["dns"], "optional": false}],
   "persona": [
     {"key": "Domain", "kind": "host", "label": {"en": "Domain", "de": "Domaene"}, "example": "corp.example.com"}
@@ -63,7 +62,6 @@ const memo = `{
   "category": "data",
   "title": {"en": "Memo", "de": "Notiz"},
   "summary": {"en": "Memo.", "de": "Notiz."},
-  "engage_activities": ["EAC0011"],
   "slots": [{"key": "Image", "accepts": ["web_image", "web_url"], "optional": true}],
   "persona": [],
   "secrets": [],
@@ -80,7 +78,6 @@ const plain = `{
   "category": "endpoint",
   "title": {"en": "Plain", "de": "Schlicht"},
   "summary": {"en": "Plain.", "de": "Schlicht."},
-  "engage_activities": ["EAC0011"],
   "slots": [],
   "persona": [],
   "secrets": [],
@@ -252,8 +249,7 @@ func TestListArtifacts_ReturnsEveryArtifactInTheRequestedLanguage(t *testing.T) 
 	if want := []string{"memo", "plain", "rdp", "ssh"}; !slices.Equal(ids, want) {
 		t.Fatalf("artifacts = %v, want %v by identifier", ids, want)
 	}
-	if ssh := got.Artifacts[3]; ssh.Title != "File ssh" || ssh.Summary != "Artifact." || ssh.Category != catalog.CategoryNetwork ||
-		!slices.Equal(ssh.EngageActivities, []string{"EAC0011", "EAC0022"}) {
+	if ssh := got.Artifacts[3]; ssh.Title != "File ssh" || ssh.Summary != "Artifact." || ssh.Category != catalog.CategoryNetwork {
 		t.Errorf("ssh = %+v", ssh)
 	}
 	de := decode[artifactListResponse](t, serve(t, h.ListArtifacts, "/api/v1/catalog/artifacts?lang=de", ""))

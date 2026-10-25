@@ -11,7 +11,7 @@
     "de": "Ein eigenes Dokument, das eine Vorlage auf einem entfernten Host nennt. Word löst den Host auf, wenn jemand das Dokument öffnet, auch auf dem Rechner eines Eindringlings, der es kopiert hat."
   },
   "techniques": ["T1005", "T1039"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Host",

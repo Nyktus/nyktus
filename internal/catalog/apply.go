@@ -221,3 +221,51 @@ func (d Deception) Render(placed map[string]Placed, persona map[string]string, s
 	}
 	return r, nil
 }
+
+// Engage activities that follow from what a scenario holds. A deception names
+// the activities of its story in its entry; these depend on how it is applied.
+const (
+	ActivityLures             = "EAC0005"
+	ActivityPocketLitter      = "EAC0011"
+	ActivityPersonas          = "EAC0012"
+	ActivityArtifactDiversity = "EAC0022"
+)
+
+// Lure reports whether a bound slot makes the artifact the carrier of a lure,
+// placed with the honeytokens placed. Engage tells a lure from pocket litter
+// by intent, not by kind of file: a file that carries a trigger expects an
+// action, one that does not only supports the story.
+func (a Artifact) Lure(placed map[string]Placed) bool {
+	return slices.ContainsFunc(a.Slots, func(s Slot) bool { return s.placedValue(placed) != "" })
+}
+
+// Activities returns the Engage activities that a scenario carries out when it
+// holds the artifacts placed with the honeytokens placed and a persona: base,
+// the activities of the story, then lures for every artifact that carries a
+// honeytoken, pocket litter for every one that does not, artifact diversity
+// for files of more than one format, and personas for a persona that is not
+// empty. Each appears once.
+func Activities(base []string, artifacts []Artifact, placed map[string]Placed, persona map[string]string) []string {
+	out := slices.Clone(base)
+	add := func(id string) {
+		if !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	formats := map[Format]bool{}
+	for _, a := range artifacts {
+		formats[a.Format] = true
+		if a.Lure(placed) {
+			add(ActivityLures)
+		} else {
+			add(ActivityPocketLitter)
+		}
+	}
+	if len(formats) > 1 {
+		add(ActivityArtifactDiversity)
+	}
+	if len(persona) > 0 {
+		add(ActivityPersonas)
+	}
+	return out
+}

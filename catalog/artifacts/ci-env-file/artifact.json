@@ -10,7 +10,6 @@
     "en": "An .env file of a service with a database URL, a session key and a mail password. Connecting to the database resolves the name of a DNS honeytoken.",
     "de": "Eine .env-Datei eines Dienstes mit Datenbank-URL, Sitzungsschlüssel und Mail-Passwort. Wer sich mit der Datenbank verbindet, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Database", "accepts": ["dns"], "optional": false}
   ],

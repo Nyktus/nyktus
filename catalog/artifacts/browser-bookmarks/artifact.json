@@ -10,7 +10,6 @@
     "en": "An export of browser bookmarks with a link to an internal portal. Following the link requests the URL of a honeytoken.",
     "de": "Ein Export von Browser-Lesezeichen mit einem Link auf ein internes Portal. Wer dem Link folgt, ruft die URL eines Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Portal", "accepts": ["web_url"], "optional": false}
   ],

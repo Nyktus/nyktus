@@ -10,7 +10,6 @@
     "en": "A Terraform file that stores the state on an HTTP backend with an account and password. terraform init and plan resolve the name of a DNS honeytoken.",
     "de": "Eine Terraform-Datei, die den State in einem HTTP-Backend mit Konto und Passwort speichert. terraform init und plan lösen den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "State", "accepts": ["dns"], "optional": false}
   ],

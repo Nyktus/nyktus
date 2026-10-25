@@ -76,7 +76,7 @@ Use these terms consistently in code, API and documentation:
 | Incident | Correlated events: one open incident per scenario, or per resource that has no scenario. Triage happens on incidents. |
 | Alert | The single notification sent when an incident opens. |
 
-ATT&CK techniques describe attacker behavior and are attached to honeytokens, honeypots, events and incidents. Engage activities describe defender actions and are attached to deceptions, artifacts and scenarios.
+ATT&CK techniques describe attacker behavior and are attached to honeytokens, honeypots, events and incidents. Engage activities describe defender actions and are attached to deceptions and scenarios. A scenario also carries out the lures, pocket litter, artifact diversity and personas that follow from what it holds; an artifact names none, because Engage tells a lure from pocket litter by intent, not by kind of file.
 
 ## Non-negotiable invariants
 

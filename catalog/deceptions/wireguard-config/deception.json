@@ -11,7 +11,7 @@
     "de": "Eine WireGuard-Clientkonfiguration mit einem Endpunkt, wie ein Administrator sie für ein VPN aufbewahrt. Wer den Tunnel aufbaut, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1133"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Gateway",

@@ -10,7 +10,6 @@
     "en": "A note on the repository of the backups with the share and the service account. Connecting to the share resolves the name of a DNS honeytoken.",
     "de": "Eine Notiz zum Repository der Sicherungen mit Freigabe und Dienstkonto. Wer sich mit der Freigabe verbindet, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Repository", "accepts": ["dns"], "optional": false}
   ],

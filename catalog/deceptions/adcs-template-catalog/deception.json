@@ -11,7 +11,7 @@
     "de": "Eine interne Seite, die die Zertifikatvorlagen einer Zertifizierungsstelle auflistet und auf die Anforderung verweist, dazu derselbe Link als Lesezeichen. Wer ihm folgt, löst ein Event aus."
   },
   "techniques": ["T1649"],
-  "engage_activities": ["EAC0005", "EAC0011", "EAC0022"],
+  "engage_activities": ["EAC0005", "EAC0022"],
   "honeytokens": [
     {
       "key": "Enrollment",

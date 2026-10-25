@@ -11,7 +11,7 @@
     "de": "Eine E-Mail als HTML-Datei mit einem Link und einem unsichtbaren Bild. Wer dem Link folgt oder das Bild lädt, löst ein Event aus."
   },
   "techniques": ["T1114"],
-  "engage_activities": ["EAC0005", "EAC0011", "EAC0009"],
+  "engage_activities": ["EAC0005", "EAC0009"],
   "honeytokens": [
     {
       "key": "Link",

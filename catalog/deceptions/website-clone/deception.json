@@ -11,7 +11,7 @@
     "de": "Ein kleines Skript für Ihre eigene Website. Wird es von einem anderen Host ausgeliefert, etwa auf einer kopierten Seite, lädt es ein unsichtbares Bild und löst ein Event aus."
   },
   "techniques": ["T1566.002", "T1684.001"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Beacon",

@@ -16,6 +16,7 @@ import (
 
 	embedded "nyktus.org/nyktus/catalog"
 	"nyktus.org/nyktus/internal/catalog"
+	"nyktus.org/nyktus/internal/engage"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files of the embedded catalog")
@@ -242,6 +243,37 @@ func TestEmbeddedCatalog_ArtifactsRenderWithBoundAndEmptySlots(t *testing.T) {
 			revealing := bound(a)
 			revealing[s.Key] = catalog.Placed{Host: "decoy.d.example.net", URL: "https://decoy.example.net/x"}
 			check("slot "+s.Key, revealing, persona)
+		}
+	}
+}
+
+// Applying any deception of the embedded catalog carries out activities that
+// exist in Engage, at most as many as a scenario may name, and its lures. The
+// artifacts of a deception bind to its honeytokens, so none of them is pocket
+// litter.
+func TestEmbeddedCatalog_DeceptionsCarryOutLures(t *testing.T) {
+	t.Parallel()
+
+	c, err := catalog.Load(embedded.FS())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range c.Deceptions() {
+		placed := map[string]catalog.Placed{}
+		for _, h := range d.Honeytokens {
+			placed[h.Key] = placedAs(h.Key)
+		}
+		got := catalog.Activities(d.EngageActivities, d.Artifacts, placed, examples(d.Persona))
+		if len(got) > 20 || !slices.Contains(got, catalog.ActivityLures) {
+			t.Errorf("%s: activities = %v, want at most 20 with %s", d.ID, got, catalog.ActivityLures)
+		}
+		if slices.Contains(got, catalog.ActivityPocketLitter) {
+			t.Errorf("%s: activities = %v, want no pocket litter: its artifacts carry its honeytokens", d.ID, got)
+		}
+		for _, id := range got {
+			if _, ok := engage.Lookup(id); !ok {
+				t.Errorf("%s: activity %s is not in the bundled list", d.ID, id)
+			}
 		}
 	}
 }

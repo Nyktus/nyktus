@@ -11,7 +11,7 @@
     "de": "Eine kubectl-Konfiguration für einen Cluster mit Bearer-Token. Jeder kubectl-Aufruf löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1552.001", "T1613"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Api",

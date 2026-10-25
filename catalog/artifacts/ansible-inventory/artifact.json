@@ -10,7 +10,6 @@
     "en": "An Ansible inventory with the hosts of an application. Running a playbook or connecting to a host resolves the name of a DNS honeytoken.",
     "de": "Ein Ansible-Inventar mit den Hosts einer Anwendung. Wer ein Playbook ausführt oder sich mit einem Host verbindet, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Application", "accepts": ["dns"], "optional": false}
   ],

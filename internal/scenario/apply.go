@@ -41,7 +41,8 @@ type Application struct {
 	DNSZone string
 }
 
-// spec returns the scenario that applying the deception creates.
+// spec returns the scenario that applying the deception creates, with the
+// activities of its story; Apply adds those that follow from what it holds.
 func (a Application) spec() Spec {
 	return Spec{Name: a.Name, Notes: a.Notes, EngageActivities: slices.Clone(a.Deception.EngageActivities)}
 }
@@ -127,7 +128,12 @@ func Apply(ctx context.Context, d DB, actor audit.Actor, a Application) (Applied
 			return err
 		}
 
-		if applied.Scenario, err = NewStore(tx).createFromDeception(ctx, a.spec(), dec.ID, a.Language, persona,
+		spec := a.spec()
+		spec.EngageActivities = catalog.Activities(dec.EngageActivities, dec.Artifacts, placed, persona)
+		if err := spec.validate(); err != nil {
+			return err
+		}
+		if applied.Scenario, err = NewStore(tx).createFromDeception(ctx, spec, dec.ID, a.Language, persona,
 			rendered.Guide); err != nil {
 			return err
 		}

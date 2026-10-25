@@ -10,7 +10,6 @@
     "en": "A note of an administrator that names the share with the backups of the group policies and an account for it. Opening the share resolves the name of a DNS honeytoken.",
     "de": "Eine Notiz eines Administrators, die die Freigabe mit den Sicherungen der Gruppenrichtlinien und ein Konto dafür nennt. Wer die Freigabe öffnet, löst den Namen eines DNS-Honeytokens auf."
   },
-  "engage_activities": ["EAC0011"],
   "slots": [
     {"key": "Share", "accepts": ["dns"], "optional": false}
   ],

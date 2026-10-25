@@ -31,12 +31,9 @@ type Artifact struct {
 	Category Category
 	Title    Text
 	Summary  Text
-	// EngageActivities are the Engage activities that placing the artifact
-	// carries out.
-	EngageActivities []string
-	Slots            []Slot
-	Persona          []PersonaField
-	Secrets          []Secret
+	Slots    []Slot
+	Persona  []PersonaField
+	Secrets  []Secret
 	// FileName is the name under which the artifact is downloaded.
 	FileName    string
 	Format      Format
@@ -68,6 +65,15 @@ func (s Slot) field() (string, Kind) {
 		return "Honeytokens." + s.Key + ".Host", KindHost
 	}
 	return "Honeytokens." + s.Key + ".URL", KindURL
+}
+
+// placedValue returns the URL or host name of the honeytoken that is placed
+// under the key of the slot, or "" if there is none.
+func (s Slot) placedValue(placed map[string]Placed) string {
+	if s.Accepts[0] == honeytoken.TypeDNS {
+		return placed[s.Key].Host
+	}
+	return placed[s.Key].URL
 }
 
 // Fields returns the values that the template of the artifact may reference:
@@ -111,20 +117,19 @@ const artifactDefinitionFile = "artifact.json"
 
 // artifactDefinition is the JSON of an artifact.
 type artifactDefinition struct {
-	SchemaVersion    int               `json:"schema_version"`
-	ID               string            `json:"id"`
-	Category         Category          `json:"category"`
-	Title            Text              `json:"title"`
-	Summary          Text              `json:"summary"`
-	EngageActivities []string          `json:"engage_activities"`
-	Slots            []slotDef         `json:"slots"`
-	Persona          []personaFieldDef `json:"persona"`
-	Secrets          []secretDef       `json:"secrets"`
-	FileName         string            `json:"file_name"`
-	Format           Format            `json:"format"`
-	LineEndings      LineEndings       `json:"line_endings"`
-	Template         string            `json:"template"`
-	Placing          map[string]string `json:"placing"`
+	SchemaVersion int               `json:"schema_version"`
+	ID            string            `json:"id"`
+	Category      Category          `json:"category"`
+	Title         Text              `json:"title"`
+	Summary       Text              `json:"summary"`
+	Slots         []slotDef         `json:"slots"`
+	Persona       []personaFieldDef `json:"persona"`
+	Secrets       []secretDef       `json:"secrets"`
+	FileName      string            `json:"file_name"`
+	Format        Format            `json:"format"`
+	LineEndings   LineEndings       `json:"line_endings"`
+	Template      string            `json:"template"`
+	Placing       map[string]string `json:"placing"`
 }
 
 type slotDef struct {
@@ -169,8 +174,7 @@ func loadArtifact(fsys fs.FS, dir string) (Artifact, error) {
 
 	a := Artifact{
 		ID: def.ID, Category: def.Category, Title: def.Title, Summary: def.Summary,
-		EngageActivities: def.EngageActivities,
-		FileName:         def.FileName, Format: def.Format, LineEndings: def.LineEndings,
+		FileName: def.FileName, Format: def.Format, LineEndings: def.LineEndings,
 	}
 	for _, s := range def.Slots {
 		a.Slots = append(a.Slots, Slot(s))
@@ -248,9 +252,6 @@ func (def artifactDefinition) validate() error {
 	}
 	if err := validText(def.Summary, maxSummaryLength); err != nil {
 		return fmt.Errorf("summary: %w", err)
-	}
-	if err := validActivities(def.EngageActivities); err != nil {
-		return err
 	}
 	if err := def.validateSlots(); err != nil {
 		return err
@@ -333,12 +334,8 @@ func (a Artifact) Values(placed map[string]Placed, persona, secrets map[string]s
 	values := map[string]string{}
 	for _, s := range a.Slots {
 		path, _ := s.field()
-		p, ok := placed[s.Key]
-		v := p.URL
-		if s.Accepts[0] == honeytoken.TypeDNS {
-			v = p.Host
-		}
-		if (!ok || v == "") && !s.Optional {
+		v := s.placedValue(placed)
+		if v == "" && !s.Optional {
 			return nil, fmt.Errorf("%w: the slot %s needs a honeytoken", ErrInvalidValue, s.Key)
 		}
 		values[path] = v

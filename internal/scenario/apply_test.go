@@ -76,7 +76,7 @@ func TestApply_CreatesTheScenarioWithItsResources(t *testing.T) {
 	}
 	sc := applied.Scenario
 	if sc.Name != "Jump server" || sc.Notes != "admin workstation" || sc.DeceptionID == nil || *sc.DeceptionID != "netrc" ||
-		sc.Language == nil || *sc.Language != "de" || !slices.Equal(sc.EngageActivities, dec.EngageActivities) ||
+		sc.Language == nil || *sc.Language != "de" || !slices.Equal(sc.EngageActivities, []string{"EAC0005", "EAC0012"}) ||
 		len(sc.Persona) != len(dec.Persona) || sc.Persona["Account"] != examples(dec)["Account"] {
 		t.Errorf("scenario = %+v", sc)
 	}

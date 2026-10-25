@@ -11,7 +11,7 @@
     "de": "Eine .reg-Datei mit Server, Konto und Passwort eines Sicherungsprogramms. Wer sich mit dem Server verbindet, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1552.002"],
-  "engage_activities": ["EAC0005", "EAC0011"],
+  "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
       "key": "Server",
