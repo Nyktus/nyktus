@@ -32,7 +32,7 @@ const (
 
 func testCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
-	c, err := catalog.Load(embedded.Deceptions())
+	c, err := catalog.Load(embedded.FS())
 	if err != nil {
 		t.Fatal(err)
 	}

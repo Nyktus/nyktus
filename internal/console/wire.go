@@ -63,8 +63,9 @@ type Options struct {
 	DNSZones []string
 	// Outbound checks the targets of alert channels.
 	Outbound *ssrf.Guard
-	// Catalog holds the deceptions of the catalog, one directory each, such
-	// as those that the package nyktus.org/nyktus/catalog embeds.
+	// Catalog holds the deceptions and the artifacts of the catalog in the
+	// directories deceptions and artifacts, such as the package
+	// nyktus.org/nyktus/catalog embeds.
 	Catalog fs.FS
 	// UI holds the files of the build of the web console, with index.html at
 	// its root. Without an index.html, as in a build that skipped the web
@@ -165,8 +166,10 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			ResetPassword:  http.HandlerFunc(a.ResetPassword),
 		},
 		Catalog: Catalog{
-			List: http.HandlerFunc(cat.List),
-			Get:  http.HandlerFunc(cat.Get),
+			List:          http.HandlerFunc(cat.List),
+			Get:           http.HandlerFunc(cat.Get),
+			ListArtifacts: http.HandlerFunc(cat.ListArtifacts),
+			GetArtifact:   http.HandlerFunc(cat.GetArtifact),
 		},
 		Honeytokens: Honeytokens{
 			List:   http.HandlerFunc(t.List),

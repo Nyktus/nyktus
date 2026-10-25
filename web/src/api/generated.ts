@@ -293,6 +293,43 @@ export interface CatalogDeception {
   }[];
 }
 
+export interface CatalogArtifactList {
+  artifacts: CatalogArtifactSummary[];
+}
+
+export interface CatalogArtifactSummary {
+  id: string;
+  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application';
+  title: string;
+  summary: string;
+  engage_activities: string[];
+}
+
+export interface CatalogArtifact {
+  id: string;
+  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application';
+  title: string;
+  summary: string;
+  engage_activities: string[];
+  file_name: string;
+  format: 'text' | 'markdown' | 'html' | 'config';
+  slots: {
+    key: string;
+    accepts: ('web_url' | 'web_image' | 'dns')[];
+    optional: boolean;
+  }[];
+  persona: {
+    key: string;
+    kind: 'host' | 'name' | 'text';
+    label: string;
+    example: string;
+  }[];
+  secrets: {
+    key: string;
+    length: number;
+  }[];
+}
+
 export interface Honeytoken {
   id: string;
   type: 'web_url' | 'web_image' | 'dns';
@@ -609,6 +646,7 @@ export const operations = {
   getAlertChannel: { method: 'GET', path: '/api/v1/alert-channels/{id}', access: 'alert_channels:read', navigation: false, binary: false },
   getAlertDelivery: { method: 'GET', path: '/api/v1/alert-deliveries/{id}', access: 'alert_channels:read', navigation: false, binary: false },
   getArtifact: { method: 'GET', path: '/api/v1/artifacts/{id}', access: 'artifacts:read', navigation: false, binary: false },
+  getCatalogArtifact: { method: 'GET', path: '/api/v1/catalog/artifacts/{id}', access: 'catalog:read', navigation: false, binary: false },
   getCatalogDeception: { method: 'GET', path: '/api/v1/catalog/deceptions/{id}', access: 'catalog:read', navigation: false, binary: false },
   getEvent: { method: 'GET', path: '/api/v1/events/{id}', access: 'events:read', navigation: false, binary: false },
   getHoneypot: { method: 'GET', path: '/api/v1/honeypots/{id}', access: 'honeypots:read', navigation: false, binary: false },
@@ -626,6 +664,7 @@ export const operations = {
   listAlertChannels: { method: 'GET', path: '/api/v1/alert-channels', access: 'alert_channels:read', navigation: false, binary: false },
   listArtifacts: { method: 'GET', path: '/api/v1/artifacts', access: 'artifacts:read', navigation: false, binary: false },
   listAuditEntries: { method: 'GET', path: '/api/v1/audit-entries', access: 'audit:read', navigation: false, binary: false },
+  listCatalogArtifacts: { method: 'GET', path: '/api/v1/catalog/artifacts', access: 'catalog:read', navigation: false, binary: false },
   listCatalogDeceptions: { method: 'GET', path: '/api/v1/catalog/deceptions', access: 'catalog:read', navigation: false, binary: false },
   listEvents: { method: 'GET', path: '/api/v1/events', access: 'events:read', navigation: false, binary: false },
   listHoneypots: { method: 'GET', path: '/api/v1/honeypots', access: 'honeypots:read', navigation: false, binary: false },
@@ -848,6 +887,12 @@ export interface OperationTypes {
     body: undefined;
     responses: { 200: Artifact };
   };
+  getCatalogArtifact: {
+    path: { id: string };
+    query: { lang?: 'en' | 'de' };
+    body: undefined;
+    responses: { 200: CatalogArtifact };
+  };
   getCatalogDeception: {
     path: { id: string };
     query: { lang?: 'en' | 'de' };
@@ -949,6 +994,12 @@ export interface OperationTypes {
     query: { limit?: number; cursor?: string };
     body: undefined;
     responses: { 200: AuditEntryPage };
+  };
+  listCatalogArtifacts: {
+    path: Record<string, never>;
+    query: { lang?: 'en' | 'de' };
+    body: undefined;
+    responses: { 200: CatalogArtifactList };
   };
   listCatalogDeceptions: {
     path: Record<string, never>;

@@ -57,7 +57,7 @@ type Artifact struct {
 	// ScenarioID is the scenario that applying the deception created, or nil
 	// once the scenario was deleted and the artifact kept.
 	ScenarioID *string
-	// DeceptionArtifact is the key of the artifact in its deception.
+	// DeceptionArtifact is the identifier of the artifact in the catalog.
 	DeceptionArtifact string
 	// FileName is the name under which the artifact is downloaded.
 	FileName string

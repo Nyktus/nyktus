@@ -69,7 +69,17 @@ var kindRules = map[Kind]string{
 // persona of d and nothing else, each not empty and of its kind. A deception
 // has no defaults, so every value is required.
 func (d Deception) ValidatePersona(persona map[string]string) error {
-	for _, p := range d.Persona {
+	return validatePersona(d.Persona, persona, "deception")
+}
+
+// ValidatePersona accepts persona if it holds a value for every value of the
+// persona of a and nothing else, as Deception.ValidatePersona does.
+func (a Artifact) ValidatePersona(persona map[string]string) error {
+	return validatePersona(a.Persona, persona, "artifact")
+}
+
+func validatePersona(fields []PersonaField, persona map[string]string, owner string) error {
+	for _, p := range fields {
 		v, ok := persona[p.Key]
 		switch {
 		case !ok || v == "":
@@ -86,13 +96,13 @@ func (d Deception) ValidatePersona(persona map[string]string) error {
 	// between requests.
 	slices.Sort(keys)
 	for _, k := range keys {
-		if !slices.ContainsFunc(d.Persona, func(p PersonaField) bool { return p.Key == k }) {
+		if !slices.ContainsFunc(fields, func(p PersonaField) bool { return p.Key == k }) {
 			// The key comes from the request; it is named only if it has
 			// the form of a key, so that the error does not echo any text.
 			if !valueKey.MatchString(k) {
 				k = "with a malformed key"
 			}
-			return &PersonaError{Key: k, Reason: "is not a value of the persona of this deception"}
+			return &PersonaError{Key: k, Reason: "is not a value of the persona of this " + owner}
 		}
 	}
 	return nil
@@ -102,12 +112,25 @@ func (d Deception) ValidatePersona(persona map[string]string) error {
 // supported format treats specially.
 const secretAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 
-// NewSecrets returns a new random value for every secret of d, of its length,
+// NewSecrets returns a new random value for every secret of a, of its length,
 // from crypto/rand.
-func (d Deception) NewSecrets() map[string]string {
-	secrets := make(map[string]string, len(d.Secrets))
-	for _, s := range d.Secrets {
+func (a Artifact) NewSecrets() map[string]string {
+	secrets := make(map[string]string, len(a.Secrets))
+	for _, s := range a.Secrets {
 		secrets[s.Key] = newSecret(s.Length)
+	}
+	return secrets
+}
+
+// NewSecrets returns new secrets for the artifacts of d that have any, by the
+// identifier of the artifact. Every artifact generates its own, so a password
+// that two files of a deception name is not the same in both.
+func (d Deception) NewSecrets() map[string]map[string]string {
+	secrets := map[string]map[string]string{}
+	for _, a := range d.Artifacts {
+		if len(a.Secrets) > 0 {
+			secrets[a.ID] = a.NewSecrets()
+		}
 	}
 	return secrets
 }
@@ -136,23 +159,19 @@ type Placed struct {
 	Host string
 }
 
-// Values returns the values that the templates of d reference: the URL or
-// host name of every honeytoken, keyed by the key of its slot, the persona
-// and the secrets.
-func (d Deception) Values(honeytokens map[string]Placed, persona, secrets map[string]string) map[string]string {
+// Values returns the values that the guide of d references: the URL or host
+// name of every honeytoken, keyed by its key, and the persona.
+func (d Deception) Values(placed map[string]Placed, persona map[string]string) map[string]string {
 	values := map[string]string{}
 	for _, h := range d.Honeytokens {
 		if h.Type == honeytoken.TypeDNS {
-			values["Honeytokens."+h.Key+".Host"] = honeytokens[h.Key].Host
+			values["Honeytokens."+h.Key+".Host"] = placed[h.Key].Host
 		} else {
-			values["Honeytokens."+h.Key+".URL"] = honeytokens[h.Key].URL
+			values["Honeytokens."+h.Key+".URL"] = placed[h.Key].URL
 		}
 	}
-	for k, v := range persona {
-		values["Persona."+k] = v
-	}
-	for k, v := range secrets {
-		values["Secrets."+k] = v
+	for _, p := range d.Persona {
+		values["Persona."+p.Key] = persona[p.Key]
 	}
 	return values
 }
@@ -170,27 +189,34 @@ type Rendered struct {
 	Guide []byte
 }
 
-// Render renders the artifacts of d and its guide in lang with values. It
-// fails with a RevealError if an artifact contains a marker, and with
-// ErrUnknownLanguage if d has no guide in lang.
-func (d Deception) Render(values map[string]string, lang string) (Rendered, error) {
+// Render renders the artifacts of d and its guide in lang. placed holds the
+// honeytokens by key, persona the values of the persona and secrets those of
+// each artifact by its identifier, as NewSecrets returns them. It fails with a
+// RevealError if an artifact contains a marker, and with ErrUnknownLanguage if
+// d has no guide in lang.
+func (d Deception) Render(placed map[string]Placed, persona map[string]string, secrets map[string]map[string]string, lang string) (Rendered, error) {
 	guide, ok := d.Guide[lang]
 	if !ok {
 		return Rendered{}, fmt.Errorf("%w: %q", ErrUnknownLanguage, lang)
 	}
 	var r Rendered
 	for _, a := range d.Artifacts {
-		content, err := a.Render(values)
+		values, err := a.Values(placed, persona, secrets[a.ID])
 		if err != nil {
-			return Rendered{}, fmt.Errorf("render artifact %s of %s: %w", a.Key, d.ID, err)
+			return Rendered{}, fmt.Errorf("render artifact %s of %s: %w", a.ID, d.ID, err)
 		}
-		if marker := d.Reveals(content); marker != "" {
-			return Rendered{}, &RevealError{Artifact: a.Key, Marker: marker}
+		content, err := a.Render(values, d.ID)
+		if err != nil {
+			var re *RevealError
+			if errors.As(err, &re) {
+				return Rendered{}, err
+			}
+			return Rendered{}, fmt.Errorf("render artifact %s of %s: %w", a.ID, d.ID, err)
 		}
 		r.Artifacts = append(r.Artifacts, RenderedArtifact{Artifact: a, Content: content})
 	}
 	var err error
-	if r.Guide, err = guide.Render(values); err != nil {
+	if r.Guide, err = guide.Render(d.Values(placed, persona)); err != nil {
 		return Rendered{}, fmt.Errorf("render guide %s of %s: %w", lang, d.ID, err)
 	}
 	return r, nil

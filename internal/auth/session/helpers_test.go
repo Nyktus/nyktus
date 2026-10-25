@@ -94,7 +94,7 @@ RETURNING id`, email, role, status, hash).Scan(&id)
 func startConsole(t *testing.T, d testDB) *httptest.Server {
 	t.Helper()
 	h, err := console.New(t.Context(), console.Options{
-		Catalog:        embedded.Deceptions(),
+		Catalog:        embedded.FS(),
 		Logger:         slog.New(slog.DiscardHandler),
 		DB:             d.console,
 		Setup:          setup.NewService(d.console),

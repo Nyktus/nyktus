@@ -296,7 +296,7 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 		TrustedProxies: cfg.TrustedProxies,
 		OIDC:           provider,
 		OIDCGroups:     groups,
-		Catalog:        embedded.Deceptions(),
+		Catalog:        embedded.FS(),
 		UI:             web.Dist(),
 	})
 	if err != nil {

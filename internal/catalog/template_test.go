@@ -319,3 +319,37 @@ func TestCompile_RunsTemplatesWithMissingKeyError(t *testing.T) {
 		}
 	}
 }
+
+// An optional value is empty when it is not set, so a template references it
+// only inside an {{if}} on that value, outside its {{else}}. The conditions on
+// other values do not guard it.
+func TestCompile_ReferencesOptionalValuesOnlyInsideTheirCondition(t *testing.T) {
+	t.Parallel()
+
+	optional := map[string]bool{"Gateway.Host": true}
+	for _, tt := range []struct {
+		src string
+		ok  bool
+	}{
+		{"{{if .Gateway.Host}}host={{.Gateway.Host}}{{end}}", true},
+		{"{{if .Gateway.Host}}{{if .Account}}{{.Gateway.Host}}{{end}}{{end}}", true},
+		{"{{if .Account}}{{if .Gateway.Host}}{{.Gateway.Host}}{{end}}{{end}}", true},
+		{"{{if .Gateway.Host}}a{{else}}none{{end}}", true},
+		{"{{.Account}}", true},
+		{"{{.Gateway.Host}}", false},
+		{"{{if .Account}}{{.Gateway.Host}}{{end}}", false},
+		{"{{if .Gateway.Host}}a{{else}}{{.Gateway.Host}}{{end}}", false},
+		{"{{if .Gateway.Host}}a{{end}}{{.Gateway.Host}}", false},
+		{"{{if .Account}}{{if .Gateway.Host}}a{{end}}{{else}}{{.Gateway.Host}}{{end}}", false},
+	} {
+		_, err := compile("test", FormatText, tt.src, testFields, optional)
+		if tt.ok != (err == nil) || (!tt.ok && !errors.Is(err, ErrInvalidTemplate)) {
+			t.Errorf("compile(%q) error = %v, want ok = %v", tt.src, err, tt.ok)
+		}
+	}
+
+	// Without the declaration, any reference is fine.
+	if _, err := Compile("test", FormatText, "{{.Gateway.Host}}", testFields); err != nil {
+		t.Errorf("Compile() error = %v", err)
+	}
+}

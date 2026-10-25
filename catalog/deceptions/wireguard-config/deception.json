@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "wireguard-config",
   "category": "network",
   "title": {
@@ -22,9 +22,6 @@
     }
   ],
   "persona": [],
-  "secrets": [{"key": "PrivateKey", "length": 42}, {"key": "PublicKey", "length": 42}],
-  "artifacts": [
-    {"key": "config", "file_name": "wg0.conf", "format": "config", "line_endings": "lf", "template": "wg0.conf.tmpl"}
-  ],
+  "artifacts": ["wireguard-config"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

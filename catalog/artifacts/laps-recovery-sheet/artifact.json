@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "laps-recovery-sheet",
+  "category": "identity",
+  "title": {
+    "en": "Recovery sheet for the local administrator",
+    "de": "Notfallblatt für den lokalen Administrator"
+  },
+  "summary": {
+    "en": "A break-glass sheet with the password of the local administrator of a server. Connecting to the server resolves the name of a DNS honeytoken.",
+    "de": "Ein Notfallblatt mit dem Passwort des lokalen Administrators eines Servers. Wer sich mit dem Server verbindet, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "engage_activities": ["EAC0011"],
+  "slots": [
+    {"key": "Host", "accepts": ["dns"], "optional": false}
+  ],
+  "persona": [
+    {
+      "key": "Contact",
+      "kind": "text",
+      "label": {"en": "Contact", "de": "Ansprechpartner"},
+      "example": "Service desk, extension 4711"
+    }
+  ],
+  "secrets": [
+    {"key": "Password", "length": 20}
+  ],
+  "file_name": "Recovery.txt",
+  "format": "text",
+  "line_endings": "lf",
+  "template": "recovery.txt.tmpl"
+}

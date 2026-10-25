@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "replication-runbook",
   "category": "network",
   "title": {
@@ -35,9 +35,6 @@
       "example": "Infrastructure team"
     }
   ],
-  "secrets": [],
-  "artifacts": [
-    {"key": "runbook", "file_name": "Replication-check.txt", "format": "text", "line_endings": "lf", "template": "replication-check.txt.tmpl"}
-  ],
+  "artifacts": ["replication-runbook"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

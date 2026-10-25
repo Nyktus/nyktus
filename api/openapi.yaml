@@ -1482,8 +1482,8 @@ paths:
       summary: Get a deception of the catalog
       description: |
         Returns a deception with the honeytokens that applying it creates, the
-        values of the persona that it asks for, the secrets that it generates
-        and the artifacts that it renders.
+        values of the persona that it asks for, the secrets that its artifacts
+        generate and the artifacts that it recommends and renders.
       tags: [catalog]
       x-access: catalog:read
       security:
@@ -1503,6 +1503,91 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CatalogDeception"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+
+  /api/v1/catalog/artifacts:
+    get:
+      operationId: listCatalogArtifacts
+      summary: List the artifacts of the catalog
+      description: |
+        Returns every artifact of the catalog, ordered by identifier. An
+        artifact is a template of a file that a person places, such as an SSH
+        configuration; deceptions recommend artifacts, and an artifact exists
+        without a deception. The catalog ships with Nyktus and is the same in
+        every installation, so the list is complete and not paged, and it holds
+        no inventory.
+      tags: [catalog]
+      x-access: catalog:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      parameters:
+        - name: lang
+          in: query
+          description: The language of the texts. Without it, they are English.
+          schema:
+            type: string
+            enum: [en, de]
+      responses:
+        "200":
+          description: The artifacts of the catalog.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogArtifactList"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/catalog/artifacts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+    get:
+      operationId: getCatalogArtifact
+      summary: Get an artifact of the catalog
+      description: |
+        Returns an artifact with the file it renders, the slots for honeytokens,
+        the values of the persona that it asks for and the secrets that it
+        generates.
+      tags: [catalog]
+      x-access: catalog:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      parameters:
+        - name: lang
+          in: query
+          description: The language of the texts. Without it, they are English.
+          schema:
+            type: string
+            enum: [en, de]
+      responses:
+        "200":
+          description: The artifact.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogArtifact"
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
@@ -4345,7 +4430,9 @@ components:
                 type: string
         secrets:
           type: array
-          description: The random values of letters and digits that applying the deception generates, such as passwords.
+          description: |
+            The random values of letters and digits that applying the deception generates, such as
+            passwords, listed once by key. Every artifact that names a key generates its own value.
           items:
             type: object
             additionalProperties: false
@@ -4359,7 +4446,9 @@ components:
                 maximum: 64
         artifacts:
           type: array
-          description: The files that applying the deception renders. A deception without artifacts consists of its guide.
+          description: |
+            The artifacts that the deception recommends and that applying it renders. A deception
+            without artifacts consists of its guide.
           items:
             type: object
             additionalProperties: false
@@ -4367,11 +4456,128 @@ components:
             properties:
               key:
                 type: string
+                pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+                description: The identifier of the artifact in the catalog.
               file_name:
                 type: string
               format:
                 type: string
                 enum: [text, markdown, html, config]
+    CatalogArtifactList:
+      type: object
+      additionalProperties: false
+      required: [artifacts]
+      properties:
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogArtifactSummary"
+    CatalogArtifactSummary:
+      type: object
+      additionalProperties: false
+      required: [id, category, title, summary, engage_activities]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+        category:
+          type: string
+          enum: [identity, network, data, endpoint, application]
+        title:
+          type: string
+        summary:
+          type: string
+        engage_activities:
+          type: array
+          description: Identifiers of the MITRE Engage activities that placing the artifact carries out.
+          items:
+            type: string
+            pattern: "^EAC[0-9]{4}$"
+    CatalogArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, category, title, summary, engage_activities, file_name, format, slots, persona, secrets]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+        category:
+          type: string
+          enum: [identity, network, data, endpoint, application]
+        title:
+          type: string
+        summary:
+          type: string
+        engage_activities:
+          type: array
+          description: Identifiers of the MITRE Engage activities that placing the artifact carries out.
+          items:
+            type: string
+            pattern: "^EAC[0-9]{4}$"
+        file_name:
+          type: string
+          description: The name under which the artifact is downloaded.
+        format:
+          type: string
+          enum: [text, markdown, html, config]
+        slots:
+          type: array
+          description: |
+            The places in the artifact for the trigger of a honeytoken. A slot that is bound to a
+            honeytoken makes the file a lure; an artifact without a bound slot is pocket litter.
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, accepts, optional]
+            properties:
+              key:
+                type: string
+              accepts:
+                type: array
+                description: The types of honeytokens that the slot takes.
+                items:
+                  type: string
+                  enum: [web_url, web_image, dns]
+              optional:
+                type: boolean
+                description: Whether the artifact is valid with the slot empty.
+        persona:
+          type: array
+          description: |
+            The values that the administrator enters, so that the artifact fits the environment.
+            `example` only illustrates a value; the catalog has no default for it, because a value
+            that every installation shares would identify the artifacts.
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, kind, label, example]
+            properties:
+              key:
+                type: string
+              kind:
+                type: string
+                enum: [host, name, text]
+                description: |
+                  `host` is a host name of lowercase letters, digits, hyphens and dots, `name` an account
+                  name, and `text` free text on one line, which appears only in files that a person reads.
+              label:
+                type: string
+              example:
+                type: string
+        secrets:
+          type: array
+          description: The random values of letters and digits that rendering the artifact generates, such as passwords.
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, length]
+            properties:
+              key:
+                type: string
+              length:
+                type: integer
+                minimum: 8
+                maximum: 64
     Honeytoken:
       type: object
       additionalProperties: false

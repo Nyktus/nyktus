@@ -58,6 +58,10 @@ func TestResponses_MatchTheSpecification(t *testing.T) {
 		{"CatalogDeceptionList", serve(t, h.List, "/api/v1/catalog/deceptions", "").Body.Bytes()},
 		{"CatalogDeception", serve(t, h.Get, "/api/v1/catalog/deceptions/ssh?lang=de", "ssh").Body.Bytes()},
 		{"CatalogDeception", serve(t, h.Get, "/api/v1/catalog/deceptions/guide-only", "guide-only").Body.Bytes()},
+		{"CatalogArtifactList", serve(t, h.ListArtifacts, "/api/v1/catalog/artifacts", "").Body.Bytes()},
+		{"CatalogArtifact", serve(t, h.GetArtifact, "/api/v1/catalog/artifacts/ssh?lang=de", "ssh").Body.Bytes()},
+		{"CatalogArtifact", serve(t, h.GetArtifact, "/api/v1/catalog/artifacts/memo", "memo").Body.Bytes()},
+		{"CatalogArtifact", serve(t, h.GetArtifact, "/api/v1/catalog/artifacts/plain", "plain").Body.Bytes()},
 	} {
 		for _, p := range schemas.Check(tt.schema, tt.body) {
 			t.Error(p)
@@ -75,6 +79,7 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	detailProps := schemas["CatalogDeception"].Properties
+	artifactProps := schemas["CatalogArtifact"].Properties
 
 	names := func(values any) []string {
 		var out []string
@@ -104,19 +109,25 @@ func TestSpecification_MatchesCode(t *testing.T) {
 	sorted := func(s []string) []string { s = slices.Clone(s); slices.Sort(s); return s }
 
 	for name, tt := range map[string]struct{ spec, code []string }{
-		"category":        {schemas["CatalogDeceptionSummary"].Properties["category"].EnumStrings(), names(catalog.Categories)},
-		"detail category": {detailProps["category"].EnumStrings(), names(catalog.Categories)},
-		"artifact format": {detailProps["artifacts"].Items.Properties["format"].EnumStrings(), names(catalog.Formats)},
-		"honeytoken type": {detailProps["honeytokens"].Items.Properties["type"].EnumStrings(), names(honeytoken.Types)},
-		"persona kinds":   {detailProps["persona"].Items.Properties["kind"].EnumStrings(), []string{"host", "name", "text"}},
-		"severity":        {detailProps["honeytokens"].Items.Properties["severity"].EnumStrings(), names(severity.Suggested)},
+		"category":           {schemas["CatalogDeceptionSummary"].Properties["category"].EnumStrings(), names(catalog.Categories)},
+		"detail category":    {detailProps["category"].EnumStrings(), names(catalog.Categories)},
+		"recommended format": {detailProps["artifacts"].Items.Properties["format"].EnumStrings(), names(catalog.Formats)},
+		"honeytoken type":    {detailProps["honeytokens"].Items.Properties["type"].EnumStrings(), names(honeytoken.Types)},
+		"persona kinds":      {detailProps["persona"].Items.Properties["kind"].EnumStrings(), []string{"host", "name", "text"}},
+		"severity":           {detailProps["honeytokens"].Items.Properties["severity"].EnumStrings(), names(severity.Suggested)},
+
+		"artifact category":         {artifactProps["category"].EnumStrings(), names(catalog.Categories)},
+		"artifact summary category": {schemas["CatalogArtifactSummary"].Properties["category"].EnumStrings(), names(catalog.Categories)},
+		"artifact format":           {artifactProps["format"].EnumStrings(), names(catalog.Formats)},
+		"slot types":                {artifactProps["slots"].Items.Properties["accepts"].Items.EnumStrings(), names(honeytoken.Types)},
+		"artifact persona kinds":    {artifactProps["persona"].Items.Properties["kind"].EnumStrings(), []string{"host", "name", "text"}},
 	} {
 		if !slices.Equal(sorted(tt.spec), tt.code) {
 			t.Errorf("%s: specification %v, code %v", name, tt.spec, tt.code)
 		}
 	}
 
-	for _, path := range []string{"/api/v1/catalog/deceptions", "/api/v1/catalog/deceptions/{id}"} {
+	for _, path := range []string{"/api/v1/catalog/deceptions", "/api/v1/catalog/deceptions/{id}", "/api/v1/catalog/artifacts", "/api/v1/catalog/artifacts/{id}"} {
 		params := spec.Paths[path].Get.Parameters
 		// Other specification tests read every default of a query parameter
 		// as a number, so the default language is part of the description.

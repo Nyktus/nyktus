@@ -959,7 +959,7 @@ func TestSchema_AcceptsTheIdentifiersOfEngageAndTheCatalog(t *testing.T) {
 			t.Errorf("activity %s: %v", id, err)
 		}
 	}
-	c, err := catalog.Load(embedded.Deceptions())
+	c, err := catalog.Load(embedded.FS())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "powershell-script",
   "category": "endpoint",
   "title": {
@@ -35,9 +35,6 @@
       "example": "svc-ops"
     }
   ],
-  "secrets": [{"key": "Password", "length": 20}],
-  "artifacts": [
-    {"key": "script", "file_name": "Map-Share.ps1", "format": "config", "line_endings": "crlf", "template": "map-share.ps1.tmpl"}
-  ],
+  "artifacts": ["powershell-script"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

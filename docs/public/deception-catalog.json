@@ -1,8 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "license": "CC-BY-SA-4.0",
   "notice": [
-    "The deceptions of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License: https://creativecommons.org/licenses/by-sa/4.0/",
+    "The deceptions and artifacts of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License: https://creativecommons.org/licenses/by-sa/4.0/",
     "Identifiers and names of techniques from MITRE ATT&CK(R) Enterprise: (c) 2026 The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. ATT&CK(R) is a registered trademark of The MITRE Corporation. Terms of use: https://attack.mitre.org/resources/legal-and-branding/terms-of-use/",
     "Identifiers and names of activities from MITRE Engage(TM): (c) 2021 The MITRE Corporation. Approved for Public Release; Distribution Unlimited. Public Release Case Number PR_21-01759-28. Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0 MITRE Engage(TM) is a trademark of The MITRE Corporation."
   ],
@@ -148,12 +148,12 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "catalog",
+            "key": "adcs-template-catalog-catalog",
             "file_name": "Certificate-templates.html",
             "format": "html"
           },
           {
-            "key": "bookmark",
+            "key": "adcs-template-catalog-bookmark",
             "file_name": "Certificate-enrollment.html",
             "format": "html"
           }
@@ -201,7 +201,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "inventory",
+            "key": "ansible-inventory",
             "file_name": "inventory.ini",
             "format": "config"
           }
@@ -247,7 +247,7 @@
         ],
         "artifacts": [
           {
-            "key": "snippet",
+            "key": "api-key-snippet",
             "file_name": "api-call.txt",
             "format": "text"
           }
@@ -293,7 +293,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "bookmarks",
+            "key": "browser-bookmarks",
             "file_name": "bookmarks.html",
             "format": "html"
           }
@@ -353,7 +353,7 @@
         ],
         "artifacts": [
           {
-            "key": "env",
+            "key": "ci-env-file",
             "file_name": "production.env",
             "format": "config"
           }
@@ -405,7 +405,7 @@
         ],
         "artifacts": [
           {
-            "key": "config",
+            "key": "config-file",
             "file_name": "config.ini",
             "format": "config"
           }
@@ -451,7 +451,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "map",
+            "key": "dfs-namespace-map",
             "file_name": "DFS-namespaces.txt",
             "format": "text"
           }
@@ -497,7 +497,7 @@
         ],
         "artifacts": [
           {
-            "key": "config",
+            "key": "docker-registry",
             "file_name": "config.json",
             "format": "config"
           }
@@ -566,7 +566,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "message",
+            "key": "email-link",
             "file_name": "message.html",
             "format": "html"
           }
@@ -625,7 +625,7 @@
         ],
         "artifacts": [
           {
-            "key": "notes",
+            "key": "gpo-backup-notes",
             "file_name": "GPO-Backup.txt",
             "format": "text"
           }
@@ -678,7 +678,7 @@
         ],
         "artifacts": [
           {
-            "key": "config",
+            "key": "kubeconfig",
             "file_name": "config",
             "format": "config"
           }
@@ -725,7 +725,7 @@
         ],
         "artifacts": [
           {
-            "key": "sheet",
+            "key": "laps-recovery-sheet",
             "file_name": "Recovery.txt",
             "format": "text"
           }
@@ -778,7 +778,7 @@
         ],
         "artifacts": [
           {
-            "key": "profile",
+            "key": "ldap-profile",
             "file_name": "ldap.ini",
             "format": "config"
           }
@@ -843,7 +843,7 @@
         ],
         "artifacts": [
           {
-            "key": "document",
+            "key": "mongodb-backup-beacon",
             "file_name": "endpoints.js",
             "format": "config"
           }
@@ -891,7 +891,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "procedure",
+            "key": "mssql-backup-beacon",
             "file_name": "procedure.sql",
             "format": "config"
           }
@@ -997,7 +997,7 @@
         ],
         "artifacts": [
           {
-            "key": "export",
+            "key": "password-export",
             "file_name": "Passwords.csv",
             "format": "config"
           }
@@ -1113,12 +1113,12 @@
         ],
         "artifacts": [
           {
-            "key": "restore",
+            "key": "postgres-backup-beacon-restore",
             "file_name": "restore-hook.sql",
             "format": "config"
           },
           {
-            "key": "foreign",
+            "key": "postgres-backup-beacon-foreign",
             "file_name": "foreign-table.sql",
             "format": "config"
           }
@@ -1171,7 +1171,7 @@
         ],
         "artifacts": [
           {
-            "key": "script",
+            "key": "powershell-script",
             "file_name": "Map-Share.ps1",
             "format": "config"
           }
@@ -1263,7 +1263,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "connection",
+            "key": "rdp-connection",
             "file_name": "Server.rdp",
             "format": "config"
           }
@@ -1315,7 +1315,7 @@
         ],
         "artifacts": [
           {
-            "key": "export",
+            "key": "registry-export",
             "file_name": "Settings.reg",
             "format": "config"
           }
@@ -1361,7 +1361,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "runbook",
+            "key": "replication-runbook",
             "file_name": "Replication-check.txt",
             "format": "text"
           }
@@ -1407,7 +1407,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "config",
+            "key": "ssh-config",
             "file_name": "config",
             "format": "config"
           }
@@ -1454,7 +1454,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "note",
+            "key": "sso-reset-note",
             "file_name": "SSO-reset.html",
             "format": "html"
           }
@@ -1506,7 +1506,7 @@
         ],
         "artifacts": [
           {
-            "key": "backend",
+            "key": "terraform-backend",
             "file_name": "backend.tf",
             "format": "config"
           }
@@ -1565,7 +1565,7 @@
         ],
         "artifacts": [
           {
-            "key": "notes",
+            "key": "veeam-repository",
             "file_name": "Backup-repository.txt",
             "format": "text"
           }
@@ -1618,7 +1618,7 @@
         ],
         "artifacts": [
           {
-            "key": "script",
+            "key": "vsphere-profile",
             "file_name": "Connect-VCenter.ps1",
             "format": "config"
           }
@@ -1660,7 +1660,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "script",
+            "key": "website-clone",
             "file_name": "site.js",
             "format": "config"
           }
@@ -1693,7 +1693,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "shortcut",
+            "key": "windows-shortcut",
             "file_name": "Portal.url",
             "format": "config"
           }
@@ -1736,7 +1736,7 @@
         ],
         "artifacts": [
           {
-            "key": "config",
+            "key": "wireguard-config",
             "file_name": "wg0.conf",
             "format": "config"
           }
@@ -1843,12 +1843,12 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "catalog",
+            "key": "adcs-template-catalog-catalog",
             "file_name": "Certificate-templates.html",
             "format": "html"
           },
           {
-            "key": "bookmark",
+            "key": "adcs-template-catalog-bookmark",
             "file_name": "Certificate-enrollment.html",
             "format": "html"
           }
@@ -1896,7 +1896,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "inventory",
+            "key": "ansible-inventory",
             "file_name": "inventory.ini",
             "format": "config"
           }
@@ -1942,7 +1942,7 @@
         ],
         "artifacts": [
           {
-            "key": "snippet",
+            "key": "api-key-snippet",
             "file_name": "api-call.txt",
             "format": "text"
           }
@@ -1988,7 +1988,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "bookmarks",
+            "key": "browser-bookmarks",
             "file_name": "bookmarks.html",
             "format": "html"
           }
@@ -2048,7 +2048,7 @@
         ],
         "artifacts": [
           {
-            "key": "env",
+            "key": "ci-env-file",
             "file_name": "production.env",
             "format": "config"
           }
@@ -2100,7 +2100,7 @@
         ],
         "artifacts": [
           {
-            "key": "config",
+            "key": "config-file",
             "file_name": "config.ini",
             "format": "config"
           }
@@ -2146,7 +2146,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "map",
+            "key": "dfs-namespace-map",
             "file_name": "DFS-namespaces.txt",
             "format": "text"
           }
@@ -2192,7 +2192,7 @@
         ],
         "artifacts": [
           {
-            "key": "config",
+            "key": "docker-registry",
             "file_name": "config.json",
             "format": "config"
           }
@@ -2261,7 +2261,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "message",
+            "key": "email-link",
             "file_name": "message.html",
             "format": "html"
           }
@@ -2320,7 +2320,7 @@
         ],
         "artifacts": [
           {
-            "key": "notes",
+            "key": "gpo-backup-notes",
             "file_name": "GPO-Backup.txt",
             "format": "text"
           }
@@ -2373,7 +2373,7 @@
         ],
         "artifacts": [
           {
-            "key": "config",
+            "key": "kubeconfig",
             "file_name": "config",
             "format": "config"
           }
@@ -2420,7 +2420,7 @@
         ],
         "artifacts": [
           {
-            "key": "sheet",
+            "key": "laps-recovery-sheet",
             "file_name": "Recovery.txt",
             "format": "text"
           }
@@ -2473,7 +2473,7 @@
         ],
         "artifacts": [
           {
-            "key": "profile",
+            "key": "ldap-profile",
             "file_name": "ldap.ini",
             "format": "config"
           }
@@ -2538,7 +2538,7 @@
         ],
         "artifacts": [
           {
-            "key": "document",
+            "key": "mongodb-backup-beacon",
             "file_name": "endpoints.js",
             "format": "config"
           }
@@ -2586,7 +2586,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "procedure",
+            "key": "mssql-backup-beacon",
             "file_name": "procedure.sql",
             "format": "config"
           }
@@ -2692,7 +2692,7 @@
         ],
         "artifacts": [
           {
-            "key": "export",
+            "key": "password-export",
             "file_name": "Passwords.csv",
             "format": "config"
           }
@@ -2808,12 +2808,12 @@
         ],
         "artifacts": [
           {
-            "key": "restore",
+            "key": "postgres-backup-beacon-restore",
             "file_name": "restore-hook.sql",
             "format": "config"
           },
           {
-            "key": "foreign",
+            "key": "postgres-backup-beacon-foreign",
             "file_name": "foreign-table.sql",
             "format": "config"
           }
@@ -2866,7 +2866,7 @@
         ],
         "artifacts": [
           {
-            "key": "script",
+            "key": "powershell-script",
             "file_name": "Map-Share.ps1",
             "format": "config"
           }
@@ -2958,7 +2958,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "connection",
+            "key": "rdp-connection",
             "file_name": "Server.rdp",
             "format": "config"
           }
@@ -3010,7 +3010,7 @@
         ],
         "artifacts": [
           {
-            "key": "export",
+            "key": "registry-export",
             "file_name": "Settings.reg",
             "format": "config"
           }
@@ -3056,7 +3056,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "runbook",
+            "key": "replication-runbook",
             "file_name": "Replication-check.txt",
             "format": "text"
           }
@@ -3102,7 +3102,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "config",
+            "key": "ssh-config",
             "file_name": "config",
             "format": "config"
           }
@@ -3149,7 +3149,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "note",
+            "key": "sso-reset-note",
             "file_name": "SSO-reset.html",
             "format": "html"
           }
@@ -3201,7 +3201,7 @@
         ],
         "artifacts": [
           {
-            "key": "backend",
+            "key": "terraform-backend",
             "file_name": "backend.tf",
             "format": "config"
           }
@@ -3260,7 +3260,7 @@
         ],
         "artifacts": [
           {
-            "key": "notes",
+            "key": "veeam-repository",
             "file_name": "Backup-repository.txt",
             "format": "text"
           }
@@ -3313,7 +3313,7 @@
         ],
         "artifacts": [
           {
-            "key": "script",
+            "key": "vsphere-profile",
             "file_name": "Connect-VCenter.ps1",
             "format": "config"
           }
@@ -3355,7 +3355,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "script",
+            "key": "website-clone",
             "file_name": "site.js",
             "format": "config"
           }
@@ -3388,7 +3388,7 @@
         "secrets": [],
         "artifacts": [
           {
-            "key": "shortcut",
+            "key": "windows-shortcut",
             "file_name": "Portal.url",
             "format": "config"
           }
@@ -3431,7 +3431,7 @@
         ],
         "artifacts": [
           {
-            "key": "config",
+            "key": "wireguard-config",
             "file_name": "wg0.conf",
             "format": "config"
           }
@@ -3494,6 +3494,2496 @@
         "persona": [],
         "secrets": [],
         "artifacts": []
+      }
+    ]
+  },
+  "artifacts": {
+    "de": [
+      {
+        "id": "adcs-template-catalog-bookmark",
+        "category": "identity",
+        "title": "Lesezeichen zur Zertifikatanforderung",
+        "summary": "Der Link zur Zertifikatanforderung als Datei mit Browser-Lesezeichen.",
+        "engage_activities": [
+          "EAC0011",
+          "EAC0022"
+        ],
+        "file_name": "Certificate-enrollment.html",
+        "format": "html",
+        "slots": [
+          {
+            "key": "Enrollment",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Authority",
+            "kind": "text",
+            "label": "Name der Zertifizierungsstelle",
+            "example": "Example Issuing CA 01"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "adcs-template-catalog-catalog",
+        "category": "identity",
+        "title": "Seite mit Zertifikatvorlagen",
+        "summary": "Eine interne Seite, die die Zertifikatvorlagen einer Zertifizierungsstelle auflistet und auf die Anforderung verweist.",
+        "engage_activities": [
+          "EAC0011",
+          "EAC0022"
+        ],
+        "file_name": "Certificate-templates.html",
+        "format": "html",
+        "slots": [
+          {
+            "key": "Enrollment",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name der Organisation",
+            "example": "Example Corp"
+          },
+          {
+            "key": "Authority",
+            "kind": "text",
+            "label": "Name der Zertifizierungsstelle",
+            "example": "Example Issuing CA 01"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "ansible-inventory",
+        "category": "endpoint",
+        "title": "Ansible-Inventar",
+        "summary": "Ein Ansible-Inventar mit den Hosts einer Anwendung. Wer ein Playbook ausführt oder sich mit einem Host verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "inventory.ini",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Application",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Interne Domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "deploy"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "api-key-snippet",
+        "category": "application",
+        "title": "curl-Befehl mit API-Schlüssel",
+        "summary": "Eine Notiz mit einem curl-Befehl, der eine interne API mit einem Bearer-Token aufruft. Wer ihn ausführt, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "api-call.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "Api",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Product",
+            "kind": "text",
+            "label": "Name des internen Dienstes",
+            "example": "Inventory service"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          }
+        ]
+      },
+      {
+        "id": "browser-bookmarks",
+        "category": "data",
+        "title": "Browser-Lesezeichen",
+        "summary": "Ein Export von Browser-Lesezeichen mit einem Link auf ein internes Portal. Wer dem Link folgt, ruft die URL eines Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "bookmarks.html",
+        "format": "html",
+        "slots": [
+          {
+            "key": "Portal",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name der Organisation",
+            "example": "Example Ltd"
+          },
+          {
+            "key": "PortalName",
+            "kind": "text",
+            "label": "Name des Portals",
+            "example": "VPN self-service"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "ci-env-file",
+        "category": "application",
+        "title": "Umgebungsdatei mit Geheimnissen eines Dienstes",
+        "summary": "Eine .env-Datei eines Dienstes mit Datenbank-URL, Sitzungsschlüssel und Mail-Passwort. Wer sich mit der Datenbank verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "production.env",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name der Datenbank",
+            "example": "orders"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Datenbankkonto",
+            "example": "orders_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          },
+          {
+            "key": "SessionKey",
+            "length": 48
+          },
+          {
+            "key": "MailPassword",
+            "length": 16
+          }
+        ]
+      },
+      {
+        "id": "config-file",
+        "category": "application",
+        "title": "Konfigurationsdatei mit Datenbank-Zugangsdaten",
+        "summary": "Die INI-Datei einer Anwendung mit Host-Name, Konto und Passwort ihrer Datenbank. Wer sich damit verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "config.ini",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name der Datenbank",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Datenbankkonto",
+            "example": "billing_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "dfs-namespace-map",
+        "category": "network",
+        "title": "Übersicht der DFS-Namespaces",
+        "summary": "Eine Liste von DFS-Namespaces und der Dateiserver dahinter. Wer den Pfad eines davon öffnet, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "DFS-namespaces.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "FileServer",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Interne Domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Ansprechpartner",
+            "example": "Infrastructure team"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "docker-registry",
+        "category": "application",
+        "title": "Docker-Konfiguration mit Registry-Zugangsdaten",
+        "summary": "Die config.json des Docker-Clients mit Konto und Passwort für eine Registry. Jedes Pull, Push und jede Anmeldung löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "config.json",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Registry",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "ci-pull"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 24
+          }
+        ]
+      },
+      {
+        "id": "email-link",
+        "category": "data",
+        "title": "Gespeicherte E-Mail mit Link und Bild",
+        "summary": "Eine E-Mail als HTML-Datei mit einem Link und einem unsichtbaren Bild. Wer dem Link folgt oder das Bild lädt, löst ein Event aus.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "message.html",
+        "format": "html",
+        "slots": [
+          {
+            "key": "Link",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          },
+          {
+            "key": "Pixel",
+            "accepts": [
+              "web_image"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Subject",
+            "kind": "text",
+            "label": "Betreff",
+            "example": "Mailbox storage almost full"
+          },
+          {
+            "key": "Message",
+            "kind": "text",
+            "label": "Nachricht",
+            "example": "Your mailbox has reached 95% of its quota. Please review the overview and archive old messages."
+          },
+          {
+            "key": "LinkText",
+            "kind": "text",
+            "label": "Text des Links",
+            "example": "Open mailbox overview"
+          },
+          {
+            "key": "Sender",
+            "kind": "text",
+            "label": "Absender",
+            "example": "IT Service Desk"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "gpo-backup-notes",
+        "category": "endpoint",
+        "title": "Notizen zur Sicherung der Gruppenrichtlinien",
+        "summary": "Eine Notiz eines Administrators, die die Freigabe mit den Sicherungen der Gruppenrichtlinien und ein Konto dafür nennt. Wer die Freigabe öffnet, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "GPO-Backup.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "Share",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Netbios",
+            "kind": "name",
+            "label": "NetBIOS-Name der Domain",
+            "example": "CORP"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "svc-gpo"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Ansprechpartner",
+            "example": "Infrastructure team"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "kubeconfig",
+        "category": "application",
+        "title": "Kubernetes-Konfiguration mit Token",
+        "summary": "Eine kubectl-Konfiguration für einen Cluster mit Bearer-Token. Jeder kubectl-Aufruf löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "config",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Api",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Cluster",
+            "kind": "name",
+            "label": "Name des Clusters",
+            "example": "prod-eu1"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "deploy"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          }
+        ]
+      },
+      {
+        "id": "laps-recovery-sheet",
+        "category": "identity",
+        "title": "Notfallblatt für den lokalen Administrator",
+        "summary": "Ein Notfallblatt mit dem Passwort des lokalen Administrators eines Servers. Wer sich mit dem Server verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Recovery.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "Host",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Ansprechpartner",
+            "example": "Service desk, extension 4711"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "ldap-profile",
+        "category": "network",
+        "title": "Verbindungsprofil für ein Verzeichnis",
+        "summary": "Ein Profil einer Anwendung für ihr LDAP-Verzeichnis, mit Bind-Konto und Passwort. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "ldap.ini",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Directory",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Interne Domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Bind-Konto",
+            "example": "svc-ldap"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "mongodb-backup-beacon",
+        "category": "data",
+        "title": "MongoDB-Dokument mit Verbindungszeichenfolge",
+        "summary": "Ein mongosh-Skript, das ein Dokument mit einer Verbindungszeichenfolge in Ihrer Datenbank ablegt. Jede Sicherung trägt es; wer die Zeichenfolge nutzt, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "endpoints.js",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name der Datenbank",
+            "example": "integrations"
+          },
+          {
+            "key": "CollectionName",
+            "kind": "name",
+            "label": "Name der Collection",
+            "example": "endpoints"
+          },
+          {
+            "key": "ServiceName",
+            "kind": "name",
+            "label": "Name des Dienstes",
+            "example": "sync-service"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "svc-sync"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "mssql-backup-beacon",
+        "category": "data",
+        "title": "SQL-Server-Prozedur, die in jeder Sicherung mitreist",
+        "summary": "SQL für eine gespeicherte Prozedur Ihrer SQL-Server-Datenbank. Wer eine Sicherung wiederherstellt und die Prozedur ausführt, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "procedure.sql",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Share",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "ProcedureName",
+            "kind": "name",
+            "label": "Name der Prozedur",
+            "example": "usp_ExportCustomerData"
+          },
+          {
+            "key": "ShareName",
+            "kind": "name",
+            "label": "Name der Freigabe",
+            "example": "exports"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "netrc",
+        "category": "identity",
+        "title": "Zugangsdaten in einer .netrc-Datei",
+        "summary": "Eine .netrc-Datei mit Konto und Passwort für einen Host, wie curl, Git und FTP-Clients sie lesen. Wer die Zugangsdaten nutzt, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "netrc",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Host",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "deploy"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "password-export",
+        "category": "data",
+        "title": "Passwort-Export eines Browsers",
+        "summary": "Eine CSV-Datei in dem Format, in dem Browser gespeicherte Passwörter exportieren, mit einem Eintrag, dessen Adresse eine URL ist. Wer diese Adresse öffnet, löst ein Event aus.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Passwords.csv",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Portal",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Interne Domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "j.doe"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 16
+          },
+          {
+            "key": "WikiPassword",
+            "length": 14
+          },
+          {
+            "key": "BuildPassword",
+            "length": 18
+          }
+        ]
+      },
+      {
+        "id": "postgres-backup-beacon-foreign",
+        "category": "data",
+        "title": "PostgreSQL-Fremdtabelle",
+        "summary": "SQL für eine Fremdtabelle Ihrer PostgreSQL-Datenbank über postgres_fdw. Jede Abfrage der Tabelle löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "foreign-table.sql",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "ServerName",
+            "kind": "name",
+            "label": "Name des Fremdservers",
+            "example": "reporting_replica"
+          },
+          {
+            "key": "TableName",
+            "kind": "name",
+            "label": "Name der Fremdtabelle",
+            "example": "customer_payment_tokens"
+          },
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name der entfernten Datenbank",
+            "example": "analytics"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Entferntes Konto",
+            "example": "bi_reader"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "postgres-backup-beacon-restore",
+        "category": "data",
+        "title": "PostgreSQL-Hook, der bei der Wiederherstellung läuft",
+        "summary": "SQL für eine Funktion und eine Materialized View Ihrer PostgreSQL-Datenbank. Die Wiederherstellung eines Dumps auf einem anderen Rechner aktualisiert die View und löst dabei den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "restore-hook.sql",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "FunctionName",
+            "kind": "name",
+            "label": "Name der Funktion",
+            "example": "refresh_catalog_stats"
+          },
+          {
+            "key": "ViewName",
+            "kind": "name",
+            "label": "Name der Materialized View",
+            "example": "catalog_stats"
+          },
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name der entfernten Datenbank",
+            "example": "analytics"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Entferntes Konto",
+            "example": "bi_reader"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "powershell-script",
+        "category": "endpoint",
+        "title": "PowerShell-Skript, das eine Freigabe verbindet",
+        "summary": "Ein kurzes PowerShell-Skript mit Konto und Passwort für eine Dateifreigabe. Wer es ausführt oder sich mit den Zugangsdaten mit der Freigabe verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Map-Share.ps1",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Share",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Netbios",
+            "kind": "name",
+            "label": "NetBIOS-Name der Domain",
+            "example": "CORP"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "svc-ops"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "rdp-connection",
+        "category": "network",
+        "title": "Remotedesktopverbindung",
+        "summary": "Eine gespeicherte Remotedesktopverbindung zu einem Server, mit dem Konto für die Anmeldung. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Server.rdp",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Server",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Domain des Kontos",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "adm.jdoe"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "registry-export",
+        "category": "endpoint",
+        "title": "Registry-Export mit Sicherungseinstellungen",
+        "summary": "Eine .reg-Datei mit Server, Konto und Passwort eines Sicherungsprogramms. Wer sich mit dem Server verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Settings.reg",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Server",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Vendor",
+            "kind": "name",
+            "label": "Name der Sicherungssoftware",
+            "example": "BackupPro"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "svc-backup"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "replication-runbook",
+        "category": "network",
+        "title": "Runbook zur Prüfung der Replikation",
+        "summary": "Ein Runbook, das einen Domänencontroller für die Replikationsprüfung nennt. Wer diesen Controller abfragt, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Replication-check.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "Controller",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Interne Domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Ansprechpartner",
+            "example": "Infrastructure team"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "ssh-config",
+        "category": "network",
+        "title": "SSH-Konfiguration mit Jump-Host",
+        "summary": "Eine SSH-Client-Konfiguration, die die Hosts einer Domain über einen Jump-Host erreicht. Jede Verbindung zu einem von ihnen löst den Namen des Jump-Hosts auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "config",
+        "format": "config",
+        "slots": [
+          {
+            "key": "JumpHost",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Interne Domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "j.doe"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "sso-reset-note",
+        "category": "identity",
+        "title": "Hinweis zum Zurücksetzen der Single-Sign-on-Anmeldung",
+        "summary": "Ein HTML-Hinweis der IT mit einem Link zu einem Portal, in dem die Single-Sign-on-Anmeldung zurückgesetzt wird. Wer dem Link folgt, löst ein Event aus.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "SSO-reset.html",
+        "format": "html",
+        "slots": [
+          {
+            "key": "Portal",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name der Organisation",
+            "example": "Example Corp"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Ansprechpartner",
+            "example": "Service desk"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "terraform-backend",
+        "category": "application",
+        "title": "Terraform-Backend mit Zugangsdaten",
+        "summary": "Eine Terraform-Datei, die den State in einem HTTP-Backend mit Konto und Passwort speichert. terraform init und plan lösen den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "backend.tf",
+        "format": "config",
+        "slots": [
+          {
+            "key": "State",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Project",
+            "kind": "name",
+            "label": "Name des Projekts",
+            "example": "platform-prod"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "terraform"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 24
+          }
+        ]
+      },
+      {
+        "id": "veeam-repository",
+        "category": "data",
+        "title": "Notizen zum Sicherungs-Repository",
+        "summary": "Eine Notiz zum Repository der Sicherungen mit Freigabe und Dienstkonto. Wer sich mit der Freigabe verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Backup-repository.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "Repository",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Netbios",
+            "kind": "name",
+            "label": "NetBIOS-Name der Domain",
+            "example": "CORP"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Dienstkonto",
+            "example": "svc-backup"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Ansprechpartner",
+            "example": "Backup team"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "vsphere-profile",
+        "category": "network",
+        "title": "PowerShell-Profil für vCenter",
+        "summary": "Ein PowerShell-Skript, das sich mit einem Dienstkonto mit einem vCenter-Server verbindet. Wer es ausführt, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Connect-VCenter.ps1",
+        "format": "config",
+        "slots": [
+          {
+            "key": "VCenter",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "SsoDomain",
+            "kind": "host",
+            "label": "Single-Sign-on-Domain",
+            "example": "vsphere.local"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Dienstkonto",
+            "example": "svc-vmops"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "website-clone",
+        "category": "application",
+        "title": "Skript, das eine Kopie Ihrer Website erkennt",
+        "summary": "Ein kleines Skript für Ihre eigene Website. Wird es von einem anderen Host ausgeliefert, etwa auf einer kopierten Seite, lädt es ein unsichtbares Bild und löst ein Event aus.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "site.js",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Beacon",
+            "accepts": [
+              "web_image"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Site",
+            "kind": "host",
+            "label": "Host-Name Ihrer Website",
+            "example": "www.example.com"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "windows-shortcut",
+        "category": "endpoint",
+        "title": "Internetverknüpfung",
+        "summary": "Eine Windows-Verknüpfung zu einer Webseite. Wer sie öffnet, ruft die URL eines Honeytokens auf, die den Browser auf eine Seite Ihrer Wahl weiterleitet.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Portal.url",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Link",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [],
+        "secrets": []
+      },
+      {
+        "id": "wireguard-config",
+        "category": "network",
+        "title": "WireGuard-Konfiguration für einen Tunnel",
+        "summary": "Eine WireGuard-Clientkonfiguration mit einem Endpunkt, wie ein Administrator sie für ein VPN aufbewahrt. Wer den Tunnel aufbaut, löst den Namen eines DNS-Honeytokens auf.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "wg0.conf",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Gateway",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [],
+        "secrets": [
+          {
+            "key": "PrivateKey",
+            "length": 42
+          },
+          {
+            "key": "PublicKey",
+            "length": 42
+          }
+        ]
+      }
+    ],
+    "en": [
+      {
+        "id": "adcs-template-catalog-bookmark",
+        "category": "identity",
+        "title": "Bookmark for certificate enrollment",
+        "summary": "The link to the enrollment of certificates as a file of browser bookmarks.",
+        "engage_activities": [
+          "EAC0011",
+          "EAC0022"
+        ],
+        "file_name": "Certificate-enrollment.html",
+        "format": "html",
+        "slots": [
+          {
+            "key": "Enrollment",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Authority",
+            "kind": "text",
+            "label": "Name of the certification authority",
+            "example": "Example Issuing CA 01"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "adcs-template-catalog-catalog",
+        "category": "identity",
+        "title": "Page listing certificate templates",
+        "summary": "An internal page that lists the certificate templates of a certification authority and links to the enrollment.",
+        "engage_activities": [
+          "EAC0011",
+          "EAC0022"
+        ],
+        "file_name": "Certificate-templates.html",
+        "format": "html",
+        "slots": [
+          {
+            "key": "Enrollment",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name of the organization",
+            "example": "Example Corp"
+          },
+          {
+            "key": "Authority",
+            "kind": "text",
+            "label": "Name of the certification authority",
+            "example": "Example Issuing CA 01"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "ansible-inventory",
+        "category": "endpoint",
+        "title": "Ansible inventory",
+        "summary": "An Ansible inventory with the hosts of an application. Running a playbook or connecting to a host resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "inventory.ini",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Application",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Internal domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "deploy"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "api-key-snippet",
+        "category": "application",
+        "title": "curl command with an API key",
+        "summary": "A note with a curl command that calls an internal API with a bearer token. Running it resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "api-call.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "Api",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Product",
+            "kind": "text",
+            "label": "Name of the internal service",
+            "example": "Inventory service"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          }
+        ]
+      },
+      {
+        "id": "browser-bookmarks",
+        "category": "data",
+        "title": "Browser bookmarks",
+        "summary": "An export of browser bookmarks with a link to an internal portal. Following the link requests the URL of a honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "bookmarks.html",
+        "format": "html",
+        "slots": [
+          {
+            "key": "Portal",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name of the organization",
+            "example": "Example Ltd"
+          },
+          {
+            "key": "PortalName",
+            "kind": "text",
+            "label": "Name of the portal",
+            "example": "VPN self-service"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "ci-env-file",
+        "category": "application",
+        "title": "Environment file with secrets of a service",
+        "summary": "An .env file of a service with a database URL, a session key and a mail password. Connecting to the database resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "production.env",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name of the database",
+            "example": "orders"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Database account",
+            "example": "orders_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          },
+          {
+            "key": "SessionKey",
+            "length": 48
+          },
+          {
+            "key": "MailPassword",
+            "length": 16
+          }
+        ]
+      },
+      {
+        "id": "config-file",
+        "category": "application",
+        "title": "Configuration file with database credentials",
+        "summary": "The INI file of an application with the host name, account and password of its database. Connecting with them resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "config.ini",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name of the database",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Database account",
+            "example": "billing_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "dfs-namespace-map",
+        "category": "network",
+        "title": "Map of the DFS namespaces",
+        "summary": "A list of DFS namespaces and the file servers behind them. Opening the path of one of them resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "DFS-namespaces.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "FileServer",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Internal domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Contact",
+            "example": "Infrastructure team"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "docker-registry",
+        "category": "application",
+        "title": "Docker configuration with registry credentials",
+        "summary": "The config.json of the Docker client with an account and password for a registry. Every pull, push or login resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "config.json",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Registry",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "ci-pull"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 24
+          }
+        ]
+      },
+      {
+        "id": "email-link",
+        "category": "data",
+        "title": "Saved e-mail with a link and an image",
+        "summary": "An HTML e-mail as a file, with a link and an invisible image. Following the link or loading the image raises an event.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "message.html",
+        "format": "html",
+        "slots": [
+          {
+            "key": "Link",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          },
+          {
+            "key": "Pixel",
+            "accepts": [
+              "web_image"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Subject",
+            "kind": "text",
+            "label": "Subject",
+            "example": "Mailbox storage almost full"
+          },
+          {
+            "key": "Message",
+            "kind": "text",
+            "label": "Message",
+            "example": "Your mailbox has reached 95% of its quota. Please review the overview and archive old messages."
+          },
+          {
+            "key": "LinkText",
+            "kind": "text",
+            "label": "Text of the link",
+            "example": "Open mailbox overview"
+          },
+          {
+            "key": "Sender",
+            "kind": "text",
+            "label": "Sender",
+            "example": "IT Service Desk"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "gpo-backup-notes",
+        "category": "endpoint",
+        "title": "Notes on the backup of group policies",
+        "summary": "A note of an administrator that names the share with the backups of the group policies and an account for it. Opening the share resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "GPO-Backup.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "Share",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Netbios",
+            "kind": "name",
+            "label": "NetBIOS name of the domain",
+            "example": "CORP"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "svc-gpo"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Contact",
+            "example": "Infrastructure team"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "kubeconfig",
+        "category": "application",
+        "title": "Kubernetes configuration with a token",
+        "summary": "A kubectl configuration for a cluster with a bearer token. Every kubectl call resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "config",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Api",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Cluster",
+            "kind": "name",
+            "label": "Name of the cluster",
+            "example": "prod-eu1"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "deploy"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          }
+        ]
+      },
+      {
+        "id": "laps-recovery-sheet",
+        "category": "identity",
+        "title": "Recovery sheet for the local administrator",
+        "summary": "A break-glass sheet with the password of the local administrator of a server. Connecting to the server resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Recovery.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "Host",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Contact",
+            "example": "Service desk, extension 4711"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "ldap-profile",
+        "category": "network",
+        "title": "Connection profile for a directory",
+        "summary": "A profile of an application for its LDAP directory, with a bind account and password. Connecting resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "ldap.ini",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Directory",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Internal domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Bind account",
+            "example": "svc-ldap"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "mongodb-backup-beacon",
+        "category": "data",
+        "title": "MongoDB document with a connection string",
+        "summary": "A mongosh script that stores a document with a connection string in your database. Every backup carries it; whoever uses the string resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "endpoints.js",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name of the database",
+            "example": "integrations"
+          },
+          {
+            "key": "CollectionName",
+            "kind": "name",
+            "label": "Name of the collection",
+            "example": "endpoints"
+          },
+          {
+            "key": "ServiceName",
+            "kind": "name",
+            "label": "Name of the service",
+            "example": "sync-service"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "svc-sync"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "mssql-backup-beacon",
+        "category": "data",
+        "title": "SQL Server procedure that travels with every backup",
+        "summary": "SQL for a stored procedure of your SQL Server database. Whoever restores a backup and runs the procedure resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "procedure.sql",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Share",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "ProcedureName",
+            "kind": "name",
+            "label": "Name of the procedure",
+            "example": "usp_ExportCustomerData"
+          },
+          {
+            "key": "ShareName",
+            "kind": "name",
+            "label": "Name of the share",
+            "example": "exports"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "netrc",
+        "category": "identity",
+        "title": "Credentials in a .netrc file",
+        "summary": "A .netrc file with an account and password for a host, as curl, Git and FTP clients read it. Using the credentials resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "netrc",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Host",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "deploy"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "password-export",
+        "category": "data",
+        "title": "Password export of a browser",
+        "summary": "A CSV file in the format in which browsers export saved passwords, with one entry whose address is a URL. Whoever opens that address raises an event.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Passwords.csv",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Portal",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Internal domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "j.doe"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 16
+          },
+          {
+            "key": "WikiPassword",
+            "length": 14
+          },
+          {
+            "key": "BuildPassword",
+            "length": 18
+          }
+        ]
+      },
+      {
+        "id": "postgres-backup-beacon-foreign",
+        "category": "data",
+        "title": "PostgreSQL foreign table",
+        "summary": "SQL for a foreign table of your PostgreSQL database through postgres_fdw. Every query of the table resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "foreign-table.sql",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "ServerName",
+            "kind": "name",
+            "label": "Name of the foreign server",
+            "example": "reporting_replica"
+          },
+          {
+            "key": "TableName",
+            "kind": "name",
+            "label": "Name of the foreign table",
+            "example": "customer_payment_tokens"
+          },
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name of the remote database",
+            "example": "analytics"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Remote account",
+            "example": "bi_reader"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "postgres-backup-beacon-restore",
+        "category": "data",
+        "title": "PostgreSQL hook that runs on restore",
+        "summary": "SQL for a function and a materialized view of your PostgreSQL database. Restoring a dump on another machine refreshes the view, which resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "restore-hook.sql",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "FunctionName",
+            "kind": "name",
+            "label": "Name of the function",
+            "example": "refresh_catalog_stats"
+          },
+          {
+            "key": "ViewName",
+            "kind": "name",
+            "label": "Name of the materialized view",
+            "example": "catalog_stats"
+          },
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name of the remote database",
+            "example": "analytics"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Remote account",
+            "example": "bi_reader"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "powershell-script",
+        "category": "endpoint",
+        "title": "PowerShell script that maps a share",
+        "summary": "A short PowerShell script with the account and password for a file share. Running it, or connecting to the share with the credentials, resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Map-Share.ps1",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Share",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Netbios",
+            "kind": "name",
+            "label": "NetBIOS name of the domain",
+            "example": "CORP"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "svc-ops"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "rdp-connection",
+        "category": "network",
+        "title": "Remote Desktop connection",
+        "summary": "A saved Remote Desktop connection to a server, with the account to sign in with. Connecting resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Server.rdp",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Server",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Domain of the account",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "adm.jdoe"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "registry-export",
+        "category": "endpoint",
+        "title": "Registry export with backup settings",
+        "summary": "A .reg file with the server, account and password of a backup tool. Connecting to the server resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Settings.reg",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Server",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Vendor",
+            "kind": "name",
+            "label": "Name of the backup software",
+            "example": "BackupPro"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "svc-backup"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "replication-runbook",
+        "category": "network",
+        "title": "Runbook for checking replication",
+        "summary": "A runbook that names a domain controller for the replication check. Querying that controller resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Replication-check.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "Controller",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Internal domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Contact",
+            "example": "Infrastructure team"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "ssh-config",
+        "category": "network",
+        "title": "SSH configuration with a jump host",
+        "summary": "An SSH client configuration that reaches the hosts of a domain through a jump host. Every connection to one of them resolves the name of the jump host.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "config",
+        "format": "config",
+        "slots": [
+          {
+            "key": "JumpHost",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Internal domain",
+            "example": "corp.example.com"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "j.doe"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "sso-reset-note",
+        "category": "identity",
+        "title": "Note on the reset of single sign-on",
+        "summary": "An HTML note of the IT department with a link to a portal for resetting the single sign-on. Following the link raises an event.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "SSO-reset.html",
+        "format": "html",
+        "slots": [
+          {
+            "key": "Portal",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name of the organization",
+            "example": "Example Corp"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Contact",
+            "example": "Service desk"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "terraform-backend",
+        "category": "application",
+        "title": "Terraform backend with credentials",
+        "summary": "A Terraform file that stores the state on an HTTP backend with an account and password. terraform init and plan resolve the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "backend.tf",
+        "format": "config",
+        "slots": [
+          {
+            "key": "State",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Project",
+            "kind": "name",
+            "label": "Name of the project",
+            "example": "platform-prod"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "terraform"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 24
+          }
+        ]
+      },
+      {
+        "id": "veeam-repository",
+        "category": "data",
+        "title": "Notes on the backup repository",
+        "summary": "A note on the repository of the backups with the share and the service account. Connecting to the share resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Backup-repository.txt",
+        "format": "text",
+        "slots": [
+          {
+            "key": "Repository",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Netbios",
+            "kind": "name",
+            "label": "NetBIOS name of the domain",
+            "example": "CORP"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Service account",
+            "example": "svc-backup"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Contact",
+            "example": "Backup team"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "vsphere-profile",
+        "category": "network",
+        "title": "PowerShell profile for vCenter",
+        "summary": "A PowerShell script that connects to a vCenter server with a service account. Running it resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Connect-VCenter.ps1",
+        "format": "config",
+        "slots": [
+          {
+            "key": "VCenter",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "SsoDomain",
+            "kind": "host",
+            "label": "Single sign-on domain",
+            "example": "vsphere.local"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Service account",
+            "example": "svc-vmops"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "website-clone",
+        "category": "application",
+        "title": "Script that detects a copy of your website",
+        "summary": "A small script for your own website. Served from another host, as on a cloned page, it loads an invisible image and raises an event.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "site.js",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Beacon",
+            "accepts": [
+              "web_image"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Site",
+            "kind": "host",
+            "label": "Host name of your website",
+            "example": "www.example.com"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "windows-shortcut",
+        "category": "endpoint",
+        "title": "Internet shortcut",
+        "summary": "A Windows shortcut to a web page. Opening it requests the URL of a honeytoken, which redirects the browser to a page of your choice.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "Portal.url",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Link",
+            "accepts": [
+              "web_url"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [],
+        "secrets": []
+      },
+      {
+        "id": "wireguard-config",
+        "category": "network",
+        "title": "WireGuard configuration for a tunnel",
+        "summary": "A WireGuard client configuration with an endpoint, as an administrator keeps it for a VPN. Bringing up the tunnel resolves the name of a DNS honeytoken.",
+        "engage_activities": [
+          "EAC0011"
+        ],
+        "file_name": "wg0.conf",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Gateway",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [],
+        "secrets": [
+          {
+            "key": "PrivateKey",
+            "length": 42
+          },
+          {
+            "key": "PublicKey",
+            "length": 42
+          }
+        ]
       }
     ]
   }

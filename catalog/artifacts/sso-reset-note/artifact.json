@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "id": "sso-reset-note",
+  "category": "identity",
+  "title": {
+    "en": "Note on the reset of single sign-on",
+    "de": "Hinweis zum Zurücksetzen der Single-Sign-on-Anmeldung"
+  },
+  "summary": {
+    "en": "An HTML note of the IT department with a link to a portal for resetting the single sign-on. Following the link raises an event.",
+    "de": "Ein HTML-Hinweis der IT mit einem Link zu einem Portal, in dem die Single-Sign-on-Anmeldung zurückgesetzt wird. Wer dem Link folgt, löst ein Event aus."
+  },
+  "engage_activities": ["EAC0011"],
+  "slots": [
+    {"key": "Portal", "accepts": ["web_url"], "optional": false}
+  ],
+  "persona": [
+    {
+      "key": "Company",
+      "kind": "text",
+      "label": {"en": "Name of the organization", "de": "Name der Organisation"},
+      "example": "Example Corp"
+    },
+    {
+      "key": "Contact",
+      "kind": "text",
+      "label": {"en": "Contact", "de": "Ansprechpartner"},
+      "example": "Service desk"
+    }
+  ],
+  "secrets": [],
+  "file_name": "SSO-reset.html",
+  "format": "html",
+  "line_endings": "lf",
+  "template": "sso-reset.html.tmpl"
+}

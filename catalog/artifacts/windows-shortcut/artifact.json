@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "windows-shortcut",
+  "category": "endpoint",
+  "title": {
+    "en": "Internet shortcut",
+    "de": "Internetverknüpfung"
+  },
+  "summary": {
+    "en": "A Windows shortcut to a web page. Opening it requests the URL of a honeytoken, which redirects the browser to a page of your choice.",
+    "de": "Eine Windows-Verknüpfung zu einer Webseite. Wer sie öffnet, ruft die URL eines Honeytokens auf, die den Browser auf eine Seite Ihrer Wahl weiterleitet."
+  },
+  "engage_activities": ["EAC0011"],
+  "slots": [
+    {"key": "Link", "accepts": ["web_url"], "optional": false}
+  ],
+  "persona": [],
+  "secrets": [],
+  "file_name": "Portal.url",
+  "format": "config",
+  "line_endings": "crlf",
+  "template": "shortcut.url.tmpl"
+}
