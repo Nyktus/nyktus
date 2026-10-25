@@ -517,3 +517,33 @@ func largeArtifacts(fsys fstest.MapFS) {
 	n := maxArtifacts - 2
 	addPlainArtifacts(fsys, n, MaxRenderedBytes/n+1024)
 }
+
+// The persona belongs to the scenario and only grows, so a key of the persona has
+// one kind in the whole catalog: otherwise a scenario could hold a value that an
+// entry that joins it later cannot accept, and never change it.
+func TestLoad_RejectsAKeyOfThePersonaOfTwoKinds(t *testing.T) {
+	t.Parallel()
+
+	fsys := validFiles()
+	fsys["artifacts/orphan/artifact.json"] = mapFile(`{
+  "schema_version": 1,
+  "id": "orphan",
+  "category": "data",
+  "title": {"en": "Orphan", "de": "Waise"},
+  "summary": {"en": "An orphan.", "de": "Eine Waise."},
+  "slots": [],
+  "persona": [
+    {"key": "Company", "kind": "host", "label": {"en": "Company", "de": "Firma"}, "example": "example.com"}
+  ],
+  "secrets": [],
+  "file_name": "orphan.txt",
+  "format": "text",
+  "line_endings": "lf",
+  "template": "orphan.txt.tmpl"
+}`)
+	fsys["artifacts/orphan/orphan.txt.tmpl"] = mapFile("{{.Persona.Company}}\n")
+	_, err := Load(fsys)
+	if !errors.Is(err, ErrInvalidDeception) || !strings.Contains(err.Error(), "Company is text in note and host in orphan") {
+		t.Errorf("Load() error = %v, want the key Company named with its two kinds", err)
+	}
+}

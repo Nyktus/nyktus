@@ -4,7 +4,7 @@
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { arrive, boot, submit, type } from './testing/boot';
-import { catalogDeception, catalogSummary, failure, fakeServer, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { catalogDeception, catalogSummary, failure, fakeServer, joined, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -124,7 +124,7 @@ describe('a deception', () => {
   });
 
   describe('applied', () => {
-    const created = () => json(201, { scenario: scenario({ deception_id: 'browser-bookmarks', language: 'en' }), honeytokens: [], artifacts: [] });
+    const created = () => json(201, { scenario: scenario({ deceptions: [joined('browser-bookmarks')] }), honeytokens: [], artifacts: [] });
 
     async function fill(wrapper: Awaited<ReturnType<typeof boot>>['wrapper'], company = 'Acme Corp', host = 'portal.acme.example') {
       await type(wrapper, '#persona-company', company);
@@ -158,7 +158,7 @@ describe('a deception', () => {
     });
 
     test('sends the name, the language and every value, and shows the new scenario', async () => {
-      const s = server('admin', { [apply]: created, [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario({ deception_id: 'browser-bookmarks', language: 'en' })), [`GET /api/v1/scenarios/${scenarioId}/guide`]: () => json(200, { language: 'en', content: '# Guide' }) });
+      const s = server('admin', { [apply]: created, [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario({ deceptions: [joined('browser-bookmarks')] })), [`GET /api/v1/scenarios/${scenarioId}/guide`]: () => json(200, { guides: [{ deception_id: 'browser-bookmarks', language: 'en', content: '# Guide' }] }) });
       const { wrapper, router } = await boot(s, path);
       await type(wrapper, '#name', '  Bookmarks of IT  ');
       await type(wrapper, '#notes', 'On the file share.');
@@ -209,7 +209,7 @@ describe('a deception', () => {
 
 describe('the guide of a scenario', () => {
   const detail = `/api/v1/scenarios/${scenarioId}`;
-  const fromCatalog = scenario({ deception_id: 'browser-bookmarks', language: 'en', persona: { company: 'Acme Corp' } });
+  const fromCatalog = scenario({ deceptions: [joined('browser-bookmarks')], persona: { company: 'Acme Corp' } });
 
   function sc(extra: Record<string, () => Response> = {}) {
     return server('admin', {
@@ -222,7 +222,7 @@ describe('the guide of a scenario', () => {
   }
 
   test('is shown as text with its structure', async () => {
-    const s = sc({ [`GET ${detail}/guide`]: () => json(200, { language: 'en', content: '# Bookmarks\n\n## Place it\n\n1. Do this.\n2. Do that.\n\n```\nopen file\n```' }) });
+    const s = sc({ [`GET ${detail}/guide`]: () => json(200, { guides: [{ deception_id: 'browser-bookmarks', language: 'en', content: '# Bookmarks\n\n## Place it\n\n1. Do this.\n2. Do that.\n\n```\nopen file\n```' }] }) });
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
     const guide = wrapper.get('.markdown');
     expect(guide.get('h2').text()).toBe('Bookmarks');
@@ -234,7 +234,7 @@ describe('the guide of a scenario', () => {
 
   // The guide names values that a person typed, and the console shows them as text.
   test('shows markup in it as text', async () => {
-    const s = sc({ [`GET ${detail}/guide`]: () => json(200, { language: 'en', content: 'Company: <img src=x onerror=alert(1)> [x](javascript:alert(2))' }) });
+    const s = sc({ [`GET ${detail}/guide`]: () => json(200, { guides: [{ deception_id: 'browser-bookmarks', language: 'en', content: 'Company: <img src=x onerror=alert(1)> [x](javascript:alert(2))' }] }) });
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
     expect(wrapper.find('.markdown img').exists()).toBe(false);
     expect(wrapper.find('.markdown a').exists()).toBe(false);

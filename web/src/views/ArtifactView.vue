@@ -169,7 +169,7 @@ onMounted(load);
             <template v-else>{{ t('artifacts.scenarioGone') }}</template>
           </dd>
           <dt>{{ t('artifacts.key') }}</dt>
-          <dd class="mono">{{ artifact.deception_artifact }}</dd>
+          <dd class="mono">{{ artifact.catalog_artifact }}</dd>
           <dt>{{ t('artifacts.placement') }}</dt>
           <dd class="notes">{{ artifact.placement_notes === '' ? t('common.none') : artifact.placement_notes }}</dd>
           <dt>{{ t('field.created') }}</dt>

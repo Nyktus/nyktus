@@ -18,6 +18,7 @@ import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
 import TimeStamp from '../components/TimeStamp.vue';
 import { t } from '../i18n';
+import { sourceLabel } from '../scenarioSource';
 import { session } from '../session';
 import { usePagedList } from '../usePagedList';
 
@@ -53,7 +54,7 @@ watch(deleting, () => {
 
 const detaching = ref(false);
 
-const guide = ref<{ language: string; content: string } | undefined>();
+const guides = ref<{ deception_id: string; language: string; content: string }[]>([]);
 const guideFailed = ref(false);
 
 const honeytokens = usePagedList<Honeytoken>(async (cursor) => {
@@ -93,15 +94,15 @@ async function load(): Promise<void> {
   }
 }
 
-// Only a scenario that a deception created has a guide; one put together by hand has none.
+// Only a scenario with a deception has guides; one put together by hand has none.
 async function loadGuide(): Promise<void> {
-  guide.value = undefined;
+  guides.value = [];
   guideFailed.value = false;
-  if (scenario.value?.deception_id === null) {
+  if (scenario.value?.deceptions.length === 0) {
     return;
   }
   try {
-    guide.value = (await api.call('getScenarioGuide', { path: { id: id.value } })).body;
+    guides.value = (await api.call('getScenarioGuide', { path: { id: id.value } })).body.guides;
   } catch {
     guideFailed.value = true;
   }
@@ -192,12 +193,12 @@ onMounted(load);
           <dt>{{ t('field.notes') }}</dt>
           <dd class="notes">{{ scenario.notes === '' ? t('common.none') : scenario.notes }}</dd>
           <dt>{{ t('scenarios.source') }}</dt>
-          <dd>{{ scenario.deception_id === null ? t('scenarios.byHand') : t('scenarios.fromDeception', { id: scenario.deception_id }) }}</dd>
-          <template v-if="scenario.language !== null">
+          <dd>{{ sourceLabel(scenario) }}</dd>
+          <template v-if="scenario.deceptions.length > 0">
             <dt>{{ t('scenarios.language') }}</dt>
-            <dd>{{ scenario.language }}</dd>
+            <dd>{{ [...new Set(scenario.deceptions.map((d) => d.language))].join(', ') }}</dd>
           </template>
-          <template v-if="scenario.persona !== null">
+          <template v-if="Object.keys(scenario.persona).length > 0">
             <dt>{{ t('scenarios.persona') }}</dt>
             <dd>
               <dl class="persona">
@@ -290,12 +291,14 @@ onMounted(load);
         </p>
       </div>
 
-      <div v-if="guide || guideFailed" class="section panel">
+      <div v-if="guides.length > 0 || guideFailed" class="section panel">
         <h2>{{ t('scenarios.guide') }}</h2>
         <p v-if="guideFailed" class="notice notice-error" role="alert">{{ t('scenarios.guideFailed') }}</p>
-        <template v-else-if="guide">
-          <p class="hint">{{ t('scenarios.guideLanguage', { language: guide.language }) }}</p>
-          <MarkdownView :source="guide.content" />
+        <template v-else>
+          <template v-for="g in guides" :key="g.deception_id">
+            <p class="hint">{{ guides.length > 1 ? t('scenarios.guideOf', { id: g.deception_id, language: g.language }) : t('scenarios.guideLanguage', { language: g.language }) }}</p>
+            <MarkdownView :source="g.content" />
+          </template>
         </template>
       </div>
 

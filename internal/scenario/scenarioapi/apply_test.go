@@ -6,6 +6,7 @@ package scenarioapi
 import (
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -33,8 +34,9 @@ func TestApply_ReturnsTheScenarioWithItsResources(t *testing.T) {
 
 	got := f.apply(t, "ssh-config", sshConfig)
 	sc := got.Scenario
-	if sc.Name != "Jump server" || sc.DeceptionID == nil || *sc.DeceptionID != "ssh-config" || sc.Language == nil ||
-		*sc.Language != "de" || sc.Persona["Account"] != "j.doe" || len(sc.EngageActivities) == 0 {
+	if sc.Name != "Jump server" || len(sc.Deceptions) != 1 || sc.Deceptions[0].DeceptionID != "ssh-config" ||
+		sc.Deceptions[0].Language != "de" || sc.Persona["Account"] != "j.doe" ||
+		!slices.Equal(sc.EngageActivities, []string{"EAC0005", "EAC0012"}) {
 		t.Errorf("scenario = %+v", sc)
 	}
 	if len(got.Honeytokens) != 1 || got.Honeytokens[0].ScenarioID == nil || *got.Honeytokens[0].ScenarioID != sc.ID ||
@@ -42,19 +44,21 @@ func TestApply_ReturnsTheScenarioWithItsResources(t *testing.T) {
 		t.Errorf("honeytokens = %+v, want one in the scenario with a name under each zone", got.Honeytokens)
 	}
 	if len(got.Artifacts) != 1 || got.Artifacts[0].FileName != "config" || got.Artifacts[0].MediaType != "application/octet-stream" ||
-		got.Artifacts[0].Size == 0 {
+		got.Artifacts[0].Size == 0 || got.Artifacts[0].CatalogArtifact != "ssh-config" ||
+		got.Artifacts[0].Bindings["JumpHost"] != got.Honeytokens[0].ID {
 		t.Errorf("artifacts = %+v", got.Artifacts)
 	}
 
 	rec := f.serve(t, f.h.Guide, http.MethodGet, "/", sc.ID, "")
-	guide := decode[guideResponse](t, rec)
-	if rec.Code != http.StatusOK || guide.Language != "de" || !strings.Contains(guide.Content, got.Honeytokens[0].TriggerNames[0]) {
+	guides := decode[guidesResponse](t, rec)
+	if rec.Code != http.StatusOK || len(guides.Guides) != 1 || guides.Guides[0].DeceptionID != "ssh-config" ||
+		guides.Guides[0].Language != "de" || !strings.Contains(guides.Guides[0].Content, got.Honeytokens[0].TriggerNames[0]) {
 		t.Errorf("GET guide = %d %s", rec.Code, rec.Body)
 	}
 	// Without a language, the guide is English.
 	en := f.apply(t, "ssh-config", `{"name": "s", "persona": {"Domain": "corp.example.com", "Account": "j.doe"}}`)
-	if en.Scenario.Language == nil || *en.Scenario.Language != "en" {
-		t.Errorf("language without one = %v, want en", en.Scenario.Language)
+	if len(en.Scenario.Deceptions) != 1 || en.Scenario.Deceptions[0].Language != "en" {
+		t.Errorf("language without one = %+v, want en", en.Scenario.Deceptions)
 	}
 }
 
@@ -76,6 +80,9 @@ func TestApply_RejectsInvalidRequests(t *testing.T) {
 		{"ssh-config", strings.Replace(sshConfig, "corp.example.com", "Corp Example", 1), http.StatusBadRequest, "invalid_request", "persona Domain: must be a host name"},
 		{"ssh-config", strings.Replace(sshConfig, `"Account": "j.doe"`, `"Account": "j.doe", "Zone": "x"`, 1), http.StatusBadRequest, "invalid_request", "persona Zone: is not a value"},
 		{"ssh-config", strings.Replace(sshConfig, `"name"`, `"deception_id": "netrc", "name"`, 1), http.StatusBadRequest, "invalid_request", ""},
+		{"ssh-config", strings.Replace(sshConfig, `"name"`, `"artifacts": ["netrc"], "name"`, 1), http.StatusBadRequest, "invalid_request", "artifacts must name"},
+		{"ssh-config", strings.Replace(sshConfig, `"name"`, `"artifacts": ["ssh-config", "ssh-config"], "name"`, 1), http.StatusBadRequest, "invalid_request", "artifacts must name"},
+		{"ssh-config", strings.Replace(sshConfig, `"name"`, `"artifacts": null, "name"`, 1), http.StatusBadRequest, "invalid_request", ""},
 		{"ssh-config", strings.Replace(sshConfig, "corp.example.com", "decoy.example.com", 1), http.StatusUnprocessableEntity, "artifact_reveals_decoy", "the artifact ssh-config would contain"},
 	} {
 		rec := f.serve(t, f.h.Apply, http.MethodPost, "/", tt.deception, tt.body)
@@ -115,13 +122,17 @@ VALUES ($1, 'user@example.com', 'Test User', 'user', 'active', '$argon2id$v=19$m
 	}
 }
 
-// The guide of a scenario by hand, or of none, is not found.
-func TestGuide_NotFound(t *testing.T) {
+// A scenario by hand has no guides, and an unknown one is not found.
+func TestGuide_OfAScenarioByHandAndOfNone(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	sc := f.create(t, `{"name": "s"}`)
 
-	for _, id := range []string{sc.ID, "00000000-0000-4000-8000-000000000000", "not-a-uuid"} {
+	rec := f.serve(t, f.h.Guide, http.MethodGet, "/", sc.ID, "")
+	if got := decode[guidesResponse](t, rec); rec.Code != http.StatusOK || got.Guides == nil || len(got.Guides) != 0 {
+		t.Errorf("GET guide of a scenario by hand = %d %s, want an empty list", rec.Code, rec.Body)
+	}
+	for _, id := range []string{"00000000-0000-4000-8000-000000000000", "not-a-uuid"} {
 		if rec := f.serve(t, f.h.Guide, http.MethodGet, "/", id, ""); rec.Code != http.StatusNotFound || errorCode(t, rec) != "not_found" {
 			t.Errorf("GET guide of %s = %d %s, want 404", id, rec.Code, rec.Body)
 		}
@@ -184,7 +195,7 @@ func TestApplyAndGuide_MatchTheSpecification(t *testing.T) {
 	}{
 		{"AppliedDeception", applied.Body.Bytes()},
 		{"AppliedDeception", f.serve(t, f.h.Apply, http.MethodPost, "/", "browser-bookmarks", `{"name": "b", "persona": {"Company": "Example Ltd", "PortalName": "Intranet"}}`).Body.Bytes()},
-		{"ScenarioGuide", f.serve(t, f.h.Guide, http.MethodGet, "/", id, "").Body.Bytes()},
+		{"ScenarioGuides", f.serve(t, f.h.Guide, http.MethodGet, "/", id, "").Body.Bytes()},
 		{"Scenario", f.serve(t, f.h.Get, http.MethodGet, "/", id, "").Body.Bytes()},
 	} {
 		for _, p := range schemas.Check(b.schema, b.body) {

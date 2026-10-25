@@ -46,8 +46,10 @@ func examples(d catalog.Deception) map[string]string {
 
 func application(d catalog.Deception) scenario.Application {
 	return scenario.Application{
-		Deception: d, Name: "Jump server", Notes: "admin workstation", Language: "de",
-		Persona: examples(d), TriggerURL: triggerURL, DNSZone: dnsZone,
+		Join: scenario.Join{
+			Deception: d, Language: "de", Persona: examples(d), TriggerURL: triggerURL, DNSZone: dnsZone,
+		},
+		Name: "Jump server", Notes: "admin workstation",
 	}
 }
 
@@ -75,8 +77,9 @@ func TestApply_CreatesTheScenarioWithItsResources(t *testing.T) {
 		t.Fatalf("Apply() error = %v", err)
 	}
 	sc := applied.Scenario
-	if sc.Name != "Jump server" || sc.Notes != "admin workstation" || sc.DeceptionID == nil || *sc.DeceptionID != "netrc" ||
-		sc.Language == nil || *sc.Language != "de" || !slices.Equal(sc.EngageActivities, []string{"EAC0005", "EAC0012"}) ||
+	if sc.Name != "Jump server" || sc.Notes != "admin workstation" || len(sc.Deceptions) != 1 ||
+		sc.Deceptions[0].DeceptionID != "netrc" || sc.Deceptions[0].Language != "de" ||
+		!slices.Equal(sc.EngageActivities, []string{"EAC0005", "EAC0012"}) ||
 		len(sc.Persona) != len(dec.Persona) || sc.Persona["Account"] != examples(dec)["Account"] {
 		t.Errorf("scenario = %+v", sc)
 	}
@@ -109,14 +112,16 @@ func TestApply_CreatesTheScenarioWithItsResources(t *testing.T) {
 		}
 	}
 
-	lang, guide, err := scenario.NewStore(d.console).Guide(t.Context(), sc.ID)
-	if err != nil || lang != "de" || !strings.Contains(guide, name) || !strings.Contains(guide, "## ") {
-		t.Errorf("Guide() = %s, %q, %v; want the German guide with %s", lang, guide, err, name)
+	guides, err := scenario.NewStore(d.console).Guides(t.Context(), sc.ID)
+	if err != nil || len(guides) != 1 || guides[0].DeceptionID != "netrc" || guides[0].Language != "de" ||
+		!strings.Contains(guides[0].Content, name) || !strings.Contains(guides[0].Content, "## ") {
+		t.Errorf("Guides() = %+v, %v; want the German guide with %s", guides, err, name)
 	}
 
+	// The scenario is created first, then everything that joins it.
 	want := []entry{
-		{"honeytoken.create", "honeytoken", h.ID, []string{}, actor.UserID},
 		{"scenario.create", "scenario", sc.ID, []string{}, actor.UserID},
+		{"honeytoken.create", "honeytoken", h.ID, []string{}, actor.UserID},
 	}
 	for _, a := range applied.Artifacts {
 		want = append(want, entry{"artifact.create", "artifact", a.ID, []string{}, actor.UserID})
@@ -173,9 +178,9 @@ func TestApply_EveryDeceptionInEveryLanguage(t *testing.T) {
 			}
 			for i, art := range applied.Artifacts {
 				want := dec.Artifacts[i]
-				if art.DeceptionArtifact != want.ID || art.FileName != want.FileName || art.Format != want.Format {
+				if art.CatalogArtifact != want.ID || art.FileName != want.FileName || art.Format != want.Format {
 					t.Errorf("%s in %s: artifact %d is %s (%s, %s), want %s (%s, %s)", dec.ID, lang, i,
-						art.DeceptionArtifact, art.FileName, art.Format, want.ID, want.FileName, want.Format)
+						art.CatalogArtifact, art.FileName, art.Format, want.ID, want.FileName, want.Format)
 				}
 				var content []byte
 				if err := d.owner.QueryRow(t.Context(), `SELECT content FROM artifacts WHERE id = $1`, art.ID).Scan(&content); err != nil {
@@ -192,7 +197,7 @@ func TestApply_EveryDeceptionInEveryLanguage(t *testing.T) {
 // assertNothingStored fails the test if anything of an application remains.
 func assertNothingStored(t *testing.T, d testDB, name string) {
 	t.Helper()
-	for _, table := range []string{"scenarios", "honeytokens", "artifacts", "audit_entries"} {
+	for _, table := range []string{"scenarios", "scenario_deceptions", "honeytokens", "artifacts", "audit_entries"} {
 		if n := count(t, d, `SELECT count(*) FROM `+table); n != 0 {
 			t.Errorf("%s: %d rows in %s, want none", name, n, table)
 		}
@@ -283,22 +288,24 @@ func TestApply_ValidatesBeforeWriting(t *testing.T) {
 	}
 }
 
-// A scenario put together by hand has no guide.
-func TestStore_Guide_OfAScenarioByHand(t *testing.T) {
+// A scenario put together by hand holds no deception, so it has no guides and
+// an empty persona.
+func TestStore_Guides_OfAScenarioByHand(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
 	sc := create(t, d, scenario.Spec{Name: "s"})
 
-	if _, _, err := scenario.NewStore(d.console).Guide(t.Context(), sc.ID); !errors.Is(err, scenario.ErrNoGuide) {
-		t.Errorf("Guide(by hand) error = %v, want ErrNoGuide", err)
+	guides, err := scenario.NewStore(d.console).Guides(t.Context(), sc.ID)
+	if err != nil || guides == nil || len(guides) != 0 {
+		t.Errorf("Guides(by hand) = %v, %v; want an empty list", guides, err)
 	}
 	for _, id := range []string{"00000000-0000-4000-8000-000000000000", "not-a-uuid"} {
-		if _, _, err := scenario.NewStore(d.console).Guide(t.Context(), id); !errors.Is(err, scenario.ErrNotFound) {
-			t.Errorf("Guide(%q) error = %v, want ErrNotFound", id, err)
+		if _, err := scenario.NewStore(d.console).Guides(t.Context(), id); !errors.Is(err, scenario.ErrNotFound) {
+			t.Errorf("Guides(%q) error = %v, want ErrNotFound", id, err)
 		}
 	}
 	got, err := scenario.NewStore(d.console).Get(t.Context(), sc.ID)
-	if err != nil || got.Language != nil || got.Persona != nil {
-		t.Errorf("Get(by hand) = %+v, %v; want no language and no persona", got, err)
+	if err != nil || got.Deceptions == nil || len(got.Deceptions) != 0 || got.Persona == nil || len(got.Persona) != 0 {
+		t.Errorf("Get(by hand) = %+v, %v; want no deceptions and an empty persona", got, err)
 	}
 }

@@ -38,7 +38,9 @@ Each of these properties needs its own test, named after the property:
 - Health checks never record an event, open an incident or raise an alert.
 - The setup endpoint accepts only the current setup token and returns `404` once an administrator exists, including after a restart.
 - Generated artifacts contain no product name, attribution or metadata that identifies Nyktus, for every deception, artifact and language, also when applied with values from outside the catalog.
-- Applying a deception creates its scenario, honeytokens, artifacts and audit entries together or not at all: a failure while rendering, storing a resource or writing an audit entry leaves nothing behind.
+- Applying a deception creates its scenario, honeytokens, artifacts and audit entries together or not at all: a failure while rendering, storing a resource or writing an audit entry leaves nothing behind. The same holds for adding a deception or an artifact to a scenario, which leaves the scenario as it was, its persona included.
+- The persona of a scenario only grows, in the code and in the schema: a key is added, a value that is there stays, and two deceptions that join at once with different values for a new key leave exactly one of them in.
+- A scenario holds at most 20 deceptions and 200 artifacts, in the code and in the schema, also when two are added at once.
 - Every registered route declares its authentication and permission. The test enumerates the router, so a new route without a declaration fails the build.
 - Denied requests are rejected before the resource is loaded.
 - The console can add and read audit entries but never change or delete them.
