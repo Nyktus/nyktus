@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "id": "rdp-connection",
+  "category": "network",
+  "title": {
+    "en": "Remote Desktop connection",
+    "de": "Remotedesktopverbindung"
+  },
+  "summary": {
+    "en": "A saved Remote Desktop connection to a server, with the account to sign in with. Connecting resolves the name of a DNS honeytoken.",
+    "de": "Eine gespeicherte Remotedesktopverbindung zu einem Server, mit dem Konto für die Anmeldung. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "engage_activities": ["EAC0011"],
+  "slots": [
+    {"key": "Server", "accepts": ["dns"], "optional": false}
+  ],
+  "persona": [
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Domain of the account", "de": "Domain des Kontos"},
+      "example": "corp.example.com"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "adm.jdoe"
+    }
+  ],
+  "secrets": [],
+  "file_name": "Server.rdp",
+  "format": "config",
+  "line_endings": "crlf",
+  "template": "connection.rdp.tmpl"
+}

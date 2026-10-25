@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "id": "config-file",
+  "category": "application",
+  "title": {
+    "en": "Configuration file with database credentials",
+    "de": "Konfigurationsdatei mit Datenbank-Zugangsdaten"
+  },
+  "summary": {
+    "en": "The INI file of an application with the host name, account and password of its database. Connecting with them resolves the name of a DNS honeytoken.",
+    "de": "Die INI-Datei einer Anwendung mit Host-Name, Konto und Passwort ihrer Datenbank. Wer sich damit verbindet, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "engage_activities": ["EAC0011"],
+  "slots": [
+    {"key": "Database", "accepts": ["dns"], "optional": false}
+  ],
+  "persona": [
+    {
+      "key": "DatabaseName",
+      "kind": "name",
+      "label": {"en": "Name of the database", "de": "Name der Datenbank"},
+      "example": "billing"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Database account", "de": "Datenbankkonto"},
+      "example": "billing_app"
+    }
+  ],
+  "secrets": [
+    {"key": "Password", "length": 20}
+  ],
+  "file_name": "config.ini",
+  "format": "config",
+  "line_endings": "lf",
+  "template": "config.ini.tmpl"
+}

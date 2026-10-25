@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "adcs-template-catalog-bookmark",
+  "category": "identity",
+  "title": {
+    "en": "Bookmark for certificate enrollment",
+    "de": "Lesezeichen zur Zertifikatanforderung"
+  },
+  "summary": {
+    "en": "The link to the enrollment of certificates as a file of browser bookmarks.",
+    "de": "Der Link zur Zertifikatanforderung als Datei mit Browser-Lesezeichen."
+  },
+  "engage_activities": ["EAC0011", "EAC0022"],
+  "slots": [
+    {"key": "Enrollment", "accepts": ["web_url"], "optional": false}
+  ],
+  "persona": [
+    {
+      "key": "Authority",
+      "kind": "text",
+      "label": {"en": "Name of the certification authority", "de": "Name der Zertifizierungsstelle"},
+      "example": "Example Issuing CA 01"
+    }
+  ],
+  "secrets": [],
+  "file_name": "Certificate-enrollment.html",
+  "format": "html",
+  "line_endings": "lf",
+  "template": "certificate-enrollment.html.tmpl"
+}

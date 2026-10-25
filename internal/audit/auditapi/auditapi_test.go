@@ -46,7 +46,7 @@ func newEnv(t *testing.T) env {
 	ownerURL, consoleURL := schematest.Console(t)
 	pool := schematest.Open(t, consoleURL)
 	h, err := console.New(t.Context(), console.Options{
-		Catalog:    embedded.Deceptions(),
+		Catalog:    embedded.FS(),
 		Logger:     slog.New(slog.DiscardHandler),
 		DB:         pool,
 		Setup:      setup.NewService(pool),

@@ -59,7 +59,7 @@ Configuration is read from the environment once at startup, parsed into a typed 
 - API routes live under `/api/v1`. Health endpoints for orchestrators live at the root.
 - Route paths consist of literal segments and `{name}` wildcards only. The router rejects subtree patterns (trailing slash, `{name...}`), `{$}` and host patterns: `http.ServeMux` answers them with redirects before authorization runs, and they have no OpenAPI equivalent. Requests with unclean paths (`//`, `/./`, `/../`) and `CONNECT` requests receive the JSON `404` instead of the mux's redirects.
 - A `GET` route also answers `HEAD` with the same access, as `http.ServeMux` does. `HEAD` is not documented separately.
-- Lists page with a cursor after the last item, never with an offset. The deceptions of the catalog are the exception: they are fixed at build time and few, so their list is complete. Handlers read `limit` and `cursor` with `httpx.DecodeListQuery`, which rejects unknown and repeated parameters, and return `next_cursor` from `httpx.EncodeCursor`. The store defines the maximum page size.
+- Lists page with a cursor after the last item, never with an offset. The deceptions and artifacts of the catalog are the exception: they are fixed at build time and few, so their lists are complete. Handlers read `limit` and `cursor` with `httpx.DecodeListQuery`, which rejects unknown and repeated parameters, and return `next_cursor` from `httpx.EncodeCursor`. The store defines the maximum page size.
 
 ### OpenAPI specification
 

@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package catalogapi serves the deceptions of the catalog. The routes must
+// Package catalogapi serves the deceptions and the artifacts of the catalog.
+// The routes must
 // require the permission catalog:read. The catalog is the same in every
 // installation and holds no inventory, so every role reads it.
 package catalogapi
@@ -22,7 +23,7 @@ const paramLang = "lang"
 // defaultLang is the language of the texts if the request names none.
 const defaultLang = "en"
 
-// Handler serves the deceptions of the catalog.
+// Handler serves the deceptions and the artifacts of the catalog.
 type Handler struct {
 	catalog *catalog.Catalog
 }
@@ -68,10 +69,8 @@ type (
 		Label   string       `json:"label"`
 		Example string       `json:"example"`
 	}
-	secretResponse struct {
-		Key    string `json:"key"`
-		Length int    `json:"length"`
-	}
+	// artifactResponse is an artifact that a deception recommends; its key
+	// is the identifier of the artifact in the catalog.
 	artifactResponse struct {
 		Key      string         `json:"key"`
 		FileName string         `json:"file_name"`
@@ -91,7 +90,7 @@ func toDetail(d catalog.Deception, lang string) detail {
 		summary:     toSummary(d, lang),
 		Honeytokens: make([]honeytokenResponse, 0, len(d.Honeytokens)),
 		Persona:     make([]personaResponse, 0, len(d.Persona)),
-		Secrets:     make([]secretResponse, 0, len(d.Secrets)),
+		Secrets:     []secretResponse{},
 		Artifacts:   make([]artifactResponse, 0, len(d.Artifacts)),
 	}
 	for _, h := range d.Honeytokens {
@@ -102,11 +101,74 @@ func toDetail(d catalog.Deception, lang string) detail {
 	for _, p := range d.Persona {
 		resp.Persona = append(resp.Persona, personaResponse{Key: p.Key, Kind: p.Kind, Label: p.Label[lang], Example: p.Example})
 	}
-	for _, s := range d.Secrets {
-		resp.Secrets = append(resp.Secrets, secretResponse(s))
-	}
 	for _, a := range d.Artifacts {
-		resp.Artifacts = append(resp.Artifacts, artifactResponse{Key: a.Key, FileName: a.FileName, Format: a.Format})
+		resp.Artifacts = append(resp.Artifacts, artifactResponse{Key: a.ID, FileName: a.FileName, Format: a.Format})
+		// The deception lists the secrets of its artifacts by key, in order, so
+		// that a key stays unique as it was when the deception held them. Every
+		// artifact that names a key generates its own value.
+		for _, s := range a.Secrets {
+			if !slices.ContainsFunc(resp.Secrets, func(r secretResponse) bool { return r.Key == s.Key }) {
+				resp.Secrets = append(resp.Secrets, secretResponse(s))
+			}
+		}
+	}
+	return resp
+}
+
+// artifactSummary is an artifact as the list shows it.
+type artifactSummary struct {
+	ID               string           `json:"id"`
+	Category         catalog.Category `json:"category"`
+	Title            string           `json:"title"`
+	Summary          string           `json:"summary"`
+	EngageActivities []string         `json:"engage_activities"`
+}
+
+// artifactDetail is an artifact with the file it renders and what it asks for.
+type artifactDetail struct {
+	artifactSummary
+	FileName string            `json:"file_name"`
+	Format   catalog.Format    `json:"format"`
+	Slots    []slotResponse    `json:"slots"`
+	Persona  []personaResponse `json:"persona"`
+	Secrets  []secretResponse  `json:"secrets"`
+}
+
+type (
+	slotResponse struct {
+		Key      string            `json:"key"`
+		Accepts  []honeytoken.Type `json:"accepts"`
+		Optional bool              `json:"optional"`
+	}
+	secretResponse struct {
+		Key    string `json:"key"`
+		Length int    `json:"length"`
+	}
+)
+
+func toArtifactSummary(a catalog.Artifact, lang string) artifactSummary {
+	return artifactSummary{
+		ID: a.ID, Category: a.Category, Title: a.Title[lang], Summary: a.Summary[lang],
+		EngageActivities: nonNil(a.EngageActivities),
+	}
+}
+
+func toArtifactDetail(a catalog.Artifact, lang string) artifactDetail {
+	resp := artifactDetail{
+		artifactSummary: toArtifactSummary(a, lang),
+		FileName:        a.FileName, Format: a.Format,
+		Slots:   make([]slotResponse, 0, len(a.Slots)),
+		Persona: make([]personaResponse, 0, len(a.Persona)),
+		Secrets: make([]secretResponse, 0, len(a.Secrets)),
+	}
+	for _, s := range a.Slots {
+		resp.Slots = append(resp.Slots, slotResponse{Key: s.Key, Accepts: slices.Clone(s.Accepts), Optional: s.Optional})
+	}
+	for _, p := range a.Persona {
+		resp.Persona = append(resp.Persona, personaResponse{Key: p.Key, Kind: p.Kind, Label: p.Label[lang], Example: p.Example})
+	}
+	for _, s := range a.Secrets {
+		resp.Secrets = append(resp.Secrets, secretResponse(s))
 	}
 	return resp
 }
@@ -148,6 +210,38 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, toDetail(d, lang))
+}
+
+type artifactListResponse struct {
+	Artifacts []artifactSummary `json:"artifacts"`
+}
+
+// ListArtifacts handles GET /api/v1/catalog/artifacts, which is complete and
+// not paged like the list of deceptions.
+func (h *Handler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
+	lang, ok := decodeLang(w, r)
+	if !ok {
+		return
+	}
+	resp := artifactListResponse{Artifacts: []artifactSummary{}}
+	for _, a := range h.catalog.Artifacts() {
+		resp.Artifacts = append(resp.Artifacts, toArtifactSummary(a, lang))
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+// GetArtifact handles GET /api/v1/catalog/artifacts/{id}.
+func (h *Handler) GetArtifact(w http.ResponseWriter, r *http.Request) {
+	lang, ok := decodeLang(w, r)
+	if !ok {
+		return
+	}
+	a, found := h.catalog.LookupArtifact(r.PathValue("id"))
+	if !found {
+		httpx.NotFound(w, r)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toArtifactDetail(a, lang))
 }
 
 // decodeLang returns the language that the query selects, the default

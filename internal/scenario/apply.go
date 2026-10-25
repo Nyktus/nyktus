@@ -79,7 +79,7 @@ type Applied struct {
 // The trigger values of the honeytokens come from their store, so the
 // artifacts are rendered after the honeytokens are created, in the same
 // transaction. Every value of the application is validated before. The
-// secrets of the deception are generated once and live only in what is
+// secrets of the artifacts are generated once and live only in what is
 // rendered: the scenario is a snapshot, never rendered again.
 //
 // Apply returns a catalog.PersonaError for an invalid persona,
@@ -122,7 +122,7 @@ func Apply(ctx context.Context, d DB, actor audit.Actor, a Application) (Applied
 			applied.Honeytokens = append(applied.Honeytokens, h)
 		}
 
-		rendered, err := dec.Render(dec.Values(placed, persona, secrets), a.Language)
+		rendered, err := dec.Render(placed, persona, secrets, a.Language)
 		if err != nil {
 			return err
 		}
@@ -148,10 +148,10 @@ func Apply(ctx context.Context, d DB, actor audit.Actor, a Application) (Applied
 		files := artifact.NewStore(tx)
 		for _, r := range rendered.Artifacts {
 			art, err := files.Create(ctx, artifact.Spec{
-				ScenarioID: sc, DeceptionArtifact: r.Key, FileName: r.FileName, Format: r.Format, Content: r.Content,
+				ScenarioID: sc, DeceptionArtifact: r.ID, FileName: r.FileName, Format: r.Format, Content: r.Content,
 			})
 			if err != nil {
-				return fmt.Errorf("create artifact %s: %w", r.Key, err)
+				return fmt.Errorf("create artifact %s: %w", r.ID, err)
 			}
 			if err := record(ctx, tx, actor, audit.ActionArtifactCreate,
 				audit.Resource{Type: artifact.ResourceType, ID: art.ID}, nil); err != nil {

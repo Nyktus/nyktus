@@ -146,6 +146,13 @@ type Template struct {
 // that does not render with values of every kind, such as HTML whose branches
 // end in different contexts. name identifies the template in errors.
 func Compile(name string, f Format, src string, fields Fields) (*Template, error) {
+	return compile(name, f, src, fields, nil)
+}
+
+// compile is Compile with optional values, which a template may reference only
+// inside an {{if}} on the same value: a value that is not set would otherwise
+// render as nothing where the file needs something, such as an empty host.
+func compile(name string, f Format, src string, fields Fields, optional map[string]bool) (*Template, error) {
 	if !f.Valid() {
 		return nil, fmt.Errorf("%w: %s: unknown format %q", ErrInvalidTemplate, name, f)
 	}
@@ -168,7 +175,7 @@ func Compile(name string, f Format, src string, fields Fields) (*Template, error
 		static strings.Builder
 		values int
 	)
-	if err := walk(tt.Tree, tt.Root, &static, func(n parse.Node, path string) error {
+	if err := walk(tt.Tree, tt.Root, &static, nil, func(n parse.Node, path string, guards []string) error {
 		kind, ok := fields[path]
 		switch {
 		case !ok:
@@ -177,6 +184,9 @@ func Compile(name string, f Format, src string, fields Fields) (*Template, error
 			return nodeError(tt.Tree, n, fmt.Sprintf("free text .%s in a file that a tool interprets", path))
 		}
 		if _, ok := n.(*parse.ActionNode); ok {
+			if optional[path] && !slices.Contains(guards, path) {
+				return nodeError(tt.Tree, n, fmt.Sprintf("optional value .%s outside {{if .%[1]s}}", path))
+			}
 			values += maxValueBytes[kind] * maxEscapeFactor
 		}
 		used[path] = kind
@@ -239,12 +249,13 @@ func (t *Template) Render(values map[string]string) ([]byte, error) {
 }
 
 // walk checks the nodes below n, writes their text to static and calls field
-// for every value they reference, with its name.
-func walk(tree *parse.Tree, n parse.Node, static *strings.Builder, field func(n parse.Node, path string) error) error {
+// for every value they reference, with its name and the values whose {{if}}
+// the reference stands in, outside its {{else}}: guards are those of n.
+func walk(tree *parse.Tree, n parse.Node, static *strings.Builder, guards []string, field func(n parse.Node, path string, guards []string) error) error {
 	switch n := n.(type) {
 	case *parse.ListNode:
 		for _, child := range n.Nodes {
-			if err := walk(tree, child, static, field); err != nil {
+			if err := walk(tree, child, static, guards, field); err != nil {
 				return err
 			}
 		}
@@ -260,20 +271,20 @@ func walk(tree *parse.Tree, n parse.Node, static *strings.Builder, field func(n 
 		if err != nil {
 			return err
 		}
-		return field(n, path)
+		return field(n, path, guards)
 	case *parse.IfNode:
 		path, err := fieldOf(tree, n, n.Pipe)
 		if err != nil {
 			return err
 		}
-		if err := field(n, path); err != nil {
+		if err := field(n, path, guards); err != nil {
 			return err
 		}
-		if err := walk(tree, n.List, static, field); err != nil {
+		if err := walk(tree, n.List, static, append(slices.Clone(guards), path), field); err != nil {
 			return err
 		}
 		if n.ElseList != nil {
-			return walk(tree, n.ElseList, static, field)
+			return walk(tree, n.ElseList, static, guards, field)
 		}
 		return nil
 	default:

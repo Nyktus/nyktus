@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "mssql-backup-beacon",
   "category": "data",
   "title": {
@@ -35,9 +35,6 @@
       "example": "exports"
     }
   ],
-  "secrets": [],
-  "artifacts": [
-    {"key": "procedure", "file_name": "procedure.sql", "format": "config", "line_endings": "crlf", "template": "procedure.sql.tmpl"}
-  ],
+  "artifacts": ["mssql-backup-beacon"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

@@ -32,10 +32,11 @@ var update = flag.Bool("update", false, "rewrite the published catalog from the 
 const publishedPath = "../../../docs/public/deception-catalog.json"
 
 // publishedVersion is the version of the format of the published catalog.
-const publishedVersion = 1
+const publishedVersion = 2
 
-// published is the published catalog. Its deceptions are, in every language,
-// what GET /api/v1/catalog/deceptions/{id} returns.
+// published is the published catalog. Its deceptions and artifacts are, in
+// every language, what GET /api/v1/catalog/deceptions/{id} and
+// GET /api/v1/catalog/artifacts/{id} return.
 type published struct {
 	SchemaVersion int      `json:"schema_version"`
 	License       string   `json:"license"`
@@ -47,6 +48,7 @@ type published struct {
 	Techniques       map[string]reference         `json:"techniques"`
 	EngageActivities map[string]reference         `json:"engage_activities"`
 	Deceptions       map[string][]json.RawMessage `json:"deceptions"`
+	Artifacts        map[string][]json.RawMessage `json:"artifacts"`
 }
 
 type reference struct {
@@ -63,14 +65,14 @@ const (
 // chat. Unlike an artifact, it is not placed as a decoy, so it credits its
 // sources.
 var notice = []string{
-	"The deceptions of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License: https://creativecommons.org/licenses/by-sa/4.0/",
+	"The deceptions and artifacts of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License: https://creativecommons.org/licenses/by-sa/4.0/",
 	"Identifiers and names of techniques from MITRE ATT&CK(R) Enterprise: " + attackNotice,
 	"Identifiers and names of activities from MITRE Engage(TM): " + engageNotice,
 }
 
 // publish returns the published catalog of c. It asks the handler that
-// serves the API for every deception, so that the file holds what the server
-// returns. Nothing in it changes between two runs, such as a time, so that
+// serves the API for every deception and artifact, so that the file holds what
+// the server returns. Nothing in it changes between two runs, such as a time, so that
 // readers can compare versions of the file.
 func publish(t *testing.T, c *catalog.Catalog) []byte {
 	t.Helper()
@@ -79,7 +81,7 @@ func publish(t *testing.T, c *catalog.Catalog) []byte {
 		SchemaVersion: publishedVersion, License: "CC-BY-SA-4.0", Notice: notice,
 		AttackVersion: attack.Version(), EngageVersion: engage.Version(),
 		Techniques: map[string]reference{}, EngageActivities: map[string]reference{},
-		Deceptions: map[string][]json.RawMessage{},
+		Deceptions: map[string][]json.RawMessage{}, Artifacts: map[string][]json.RawMessage{},
 	}
 	for _, d := range c.Deceptions() {
 		for _, lang := range catalog.Languages {
@@ -114,6 +116,26 @@ func publish(t *testing.T, c *catalog.Catalog) []byte {
 			p.EngageActivities[id] = reference{Name: activity.Name}
 		}
 	}
+	for _, a := range c.Artifacts() {
+		for _, lang := range catalog.Languages {
+			rec := serve(t, h.GetArtifact, "/api/v1/catalog/artifacts/"+a.ID+"?lang="+lang, a.ID)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s?lang=%s: status %d, body %s", a.ID, lang, rec.Code, rec.Body)
+			}
+			var resp artifactDetail
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			p.Artifacts[lang] = append(p.Artifacts[lang], encode(t, resp, ""))
+		}
+		for _, id := range a.EngageActivities {
+			activity, ok := engage.Lookup(id)
+			if !ok {
+				t.Fatalf("%s: activity %s is not in the bundled list", a.ID, id)
+			}
+			p.EngageActivities[id] = reference{Name: activity.Name}
+		}
+	}
 	return encode(t, p, "  ")
 }
 
@@ -131,15 +153,15 @@ func encode(t *testing.T, v any, indent string) []byte {
 	return b.Bytes()
 }
 
-// The published catalog is what the server returns for every deception of
-// the embedded catalog, so that it cannot differ from the API. A changed,
-// added or removed deception changes it. Regenerate it with
+// The published catalog is what the server returns for every deception and
+// artifact of the embedded catalog, so that it cannot differ from the API. A changed,
+// added or removed entry changes it. Regenerate it with
 // go test ./internal/catalog/... -update and review the diff.
 //
 // The test does not run in parallel, so that it has rewritten the file
 // before the parallel tests read it.
 func TestPublishedCatalog_MatchesTheEmbeddedCatalog(t *testing.T) {
-	c, err := catalog.Load(embedded.Deceptions())
+	c, err := catalog.Load(embedded.FS())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +188,7 @@ func TestPublishedCatalog_MatchesTheEmbeddedCatalog(t *testing.T) {
 }
 
 // The file holds the members of its format and nothing else, and every
-// deception in it matches the schema of the API.
+// deception and artifact in it matches the schema of the API.
 func TestPublishedCatalog_MatchesTheSpecification(t *testing.T) {
 	t.Parallel()
 	schemas, err := apispec.ParseSchemas(api.OpenAPI())
@@ -195,11 +217,32 @@ func TestPublishedCatalog_MatchesTheSpecification(t *testing.T) {
 	if p.SchemaVersion != publishedVersion {
 		t.Errorf("schema_version = %d, want %d", p.SchemaVersion, publishedVersion)
 	}
-	if langs := slices.Sorted(maps.Keys(p.Deceptions)); !slices.Equal(langs, slices.Sorted(slices.Values(catalog.Languages))) {
-		t.Errorf("languages %v, want %v", langs, catalog.Languages)
+	for name, entries := range map[string]map[string][]json.RawMessage{"deceptions": p.Deceptions, "artifacts": p.Artifacts} {
+		if langs := slices.Sorted(maps.Keys(entries)); !slices.Equal(langs, slices.Sorted(slices.Values(catalog.Languages))) {
+			t.Errorf("%s: languages %v, want %v", name, langs, catalog.Languages)
+		}
 	}
 
 	techniques, activities := map[string]bool{}, map[string]bool{}
+	for lang, artifacts := range p.Artifacts {
+		if len(artifacts) == 0 {
+			t.Errorf("%s: no artifacts", lang)
+		}
+		for i, raw := range artifacts {
+			for _, problem := range schemas.Check("CatalogArtifact", raw) {
+				t.Errorf("artifacts %s[%d]: %s", lang, i, problem)
+			}
+			var a struct {
+				EngageActivities []string `json:"engage_activities"`
+			}
+			if err := json.Unmarshal(raw, &a); err != nil {
+				t.Fatalf("artifacts %s[%d]: %v", lang, i, err)
+			}
+			for _, id := range a.EngageActivities {
+				activities[id] = true
+			}
+		}
+	}
 	for lang, deceptions := range p.Deceptions {
 		if len(deceptions) == 0 {
 			t.Errorf("%s: no deceptions", lang)
@@ -240,7 +283,7 @@ func TestPublishedCatalog_MatchesTheSpecification(t *testing.T) {
 	} {
 		named := slices.Sorted(maps.Keys(tt.named))
 		if used := slices.Sorted(maps.Keys(tt.used)); !slices.Equal(named, used) {
-			t.Errorf("%s names %v, the deceptions use %v", name, named, used)
+			t.Errorf("%s names %v, the entries use %v", name, named, used)
 		}
 		for id, r := range tt.named {
 			if r.Name == "" {

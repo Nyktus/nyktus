@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "rdp-connection",
   "category": "network",
   "title": {
@@ -34,8 +34,6 @@
       "example": "adm.jdoe"
     }
   ],
-  "artifacts": [
-    {"key": "connection", "file_name": "Server.rdp", "format": "config", "line_endings": "crlf", "template": "connection.rdp.tmpl"}
-  ],
+  "artifacts": ["rdp-connection"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "ldap-profile",
   "category": "network",
   "title": {
@@ -35,9 +35,6 @@
       "example": "svc-ldap"
     }
   ],
-  "secrets": [{"key": "Password", "length": 20}],
-  "artifacts": [
-    {"key": "profile", "file_name": "ldap.ini", "format": "config", "line_endings": "lf", "template": "ldap.ini.tmpl"}
-  ],
+  "artifacts": ["ldap-profile"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

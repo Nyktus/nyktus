@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "kubeconfig",
   "category": "application",
   "title": {
@@ -35,9 +35,6 @@
       "example": "deploy"
     }
   ],
-  "secrets": [{"key": "Token", "length": 40}],
-  "artifacts": [
-    {"key": "config", "file_name": "config", "format": "config", "line_endings": "lf", "template": "config.tmpl"}
-  ],
+  "artifacts": ["kubeconfig"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

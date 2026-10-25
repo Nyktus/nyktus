@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "netrc",
   "category": "identity",
   "title": {
@@ -29,9 +29,6 @@
       "example": "deploy"
     }
   ],
-  "secrets": [{"key": "Password", "length": 20}],
-  "artifacts": [
-    {"key": "netrc", "file_name": "netrc", "format": "config", "line_endings": "lf", "template": "netrc.tmpl"}
-  ],
+  "artifacts": ["netrc"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

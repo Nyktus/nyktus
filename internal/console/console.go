@@ -50,7 +50,7 @@ type Deps struct {
 	Metrics http.Handler
 	// Accounts manages accounts and activates them.
 	Accounts Accounts
-	// Catalog lists the deceptions of the catalog.
+	// Catalog lists the deceptions and artifacts of the catalog.
 	Catalog Catalog
 	// Honeytokens manages the honeytokens of the team.
 	Honeytokens Honeytokens
@@ -97,10 +97,12 @@ type APIKeys struct {
 // Catalog are the handlers of the catalog.
 type Catalog struct {
 	List, Get http.Handler
+	// ListArtifacts and GetArtifact serve the artifacts of the catalog.
+	ListArtifacts, GetArtifact http.Handler
 }
 
 func (c Catalog) complete() bool {
-	return c.List != nil && c.Get != nil
+	return c.List != nil && c.Get != nil && c.ListArtifacts != nil && c.GetArtifact != nil
 }
 
 // Honeytokens are the handlers of the management of the honeytokens.
@@ -256,6 +258,8 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPost, "/api/v1/password-reset", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.ResetPassword))
 	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions", httpx.Require("catalog:read"), d.Catalog.List)
 	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions/{id}", httpx.Require("catalog:read"), d.Catalog.Get)
+	rt.Handle(http.MethodGet, "/api/v1/catalog/artifacts", httpx.Require("catalog:read"), d.Catalog.ListArtifacts)
+	rt.Handle(http.MethodGet, "/api/v1/catalog/artifacts/{id}", httpx.Require("catalog:read"), d.Catalog.GetArtifact)
 	// Applying a deception creates a scenario with its honeytokens and
 	// artifacts; the catalog stays as it is.
 	rt.Handle(http.MethodPost, "/api/v1/catalog/deceptions/{id}/apply", httpx.Require("scenarios:write"), d.Scenarios.Apply)

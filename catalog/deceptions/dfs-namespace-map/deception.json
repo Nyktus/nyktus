@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "dfs-namespace-map",
   "category": "network",
   "title": {
@@ -34,9 +34,6 @@
       "example": "Infrastructure team"
     }
   ],
-  "secrets": [],
-  "artifacts": [
-    {"key": "map", "file_name": "DFS-namespaces.txt", "format": "text", "line_endings": "lf", "template": "dfs-namespaces.txt.tmpl"}
-  ],
+  "artifacts": ["dfs-namespace-map"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

@@ -21,19 +21,17 @@ import (
 func TestEmbeddedCatalog_ExecutableFormatsTakeOnlyAllowedValues(t *testing.T) {
 	t.Parallel()
 
-	c, err := Load(embedded.Deceptions())
+	c, err := Load(embedded.FS())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, d := range c.Deceptions() {
-		for _, a := range d.Artifacts {
-			if a.Format.inert() {
-				continue
-			}
-			for path, kind := range a.Template.fields {
-				if kind != KindHost && kind != KindURL && kind != KindName && kind != KindSecret {
-					t.Errorf("%s/%s: .%s of kind %s in a file that a tool interprets", d.ID, a.Key, path, kind)
-				}
+	for _, a := range c.Artifacts() {
+		if a.Format.inert() {
+			continue
+		}
+		for path, kind := range a.Template.fields {
+			if kind != KindHost && kind != KindURL && kind != KindName && kind != KindSecret {
+				t.Errorf("%s: .%s of kind %s in a file that a tool interprets", a.ID, path, kind)
 			}
 		}
 	}
@@ -101,39 +99,38 @@ func TestFirstUnquoted(t *testing.T) {
 func TestEmbeddedCatalog_ScriptsTakeValuesOnlyInsideQuotes(t *testing.T) {
 	t.Parallel()
 
-	root := embedded.Deceptions()
+	root, err := fs.Sub(embedded.FS(), "artifacts")
+	if err != nil {
+		t.Fatal(err)
+	}
 	dirs, err := fs.ReadDir(root, ".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	checked := 0
 	for _, dir := range dirs {
-		raw, err := fs.ReadFile(root, path.Join(dir.Name(), "deception.json"))
+		raw, err := fs.ReadFile(root, path.Join(dir.Name(), "artifact.json"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		var def struct {
-			Artifacts []struct {
-				FileName string `json:"file_name"`
-				Template string `json:"template"`
-			} `json:"artifacts"`
+			FileName string `json:"file_name"`
+			Template string `json:"template"`
 		}
 		if err := json.Unmarshal(raw, &def); err != nil {
 			t.Fatal(err)
 		}
-		for _, a := range def.Artifacts {
-			if !slices.Contains(quotedExtensions, strings.ToLower(path.Ext(a.FileName))) {
-				continue
-			}
-			src, err := fs.ReadFile(root, path.Join(dir.Name(), a.Template))
-			if err != nil {
-				t.Fatal(err)
-			}
-			checked++
-			for n, line := range strings.Split(string(src), "\n") {
-				if ref, bad := firstUnquoted(line); bad {
-					t.Errorf("%s/%s line %d: a value outside quotes: %s", dir.Name(), a.Template, n+1, ref)
-				}
+		if !slices.Contains(quotedExtensions, strings.ToLower(path.Ext(def.FileName))) {
+			continue
+		}
+		src, err := fs.ReadFile(root, path.Join(dir.Name(), def.Template))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checked++
+		for n, line := range strings.Split(string(src), "\n") {
+			if ref, bad := firstUnquoted(line); bad {
+				t.Errorf("%s/%s line %d: a value outside quotes: %s", dir.Name(), def.Template, n+1, ref)
 			}
 		}
 	}

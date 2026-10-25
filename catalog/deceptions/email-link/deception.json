@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "email-link",
   "category": "data",
   "title": {
@@ -52,9 +52,6 @@
       "example": "IT Service Desk"
     }
   ],
-  "secrets": [],
-  "artifacts": [
-    {"key": "message", "file_name": "message.html", "format": "html", "line_endings": "lf", "template": "message.html.tmpl"}
-  ],
+  "artifacts": ["email-link"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }
