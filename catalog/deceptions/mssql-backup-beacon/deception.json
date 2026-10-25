@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "mssql-backup-beacon",
+  "category": "data",
+  "title": {
+    "en": "SQL Server procedure that travels with every backup",
+    "de": "SQL-Server-Prozedur, die in jeder Sicherung mitreist"
+  },
+  "summary": {
+    "en": "SQL for a stored procedure of your SQL Server database. Whoever restores a backup and runs the procedure resolves the name of a DNS honeytoken.",
+    "de": "SQL für eine gespeicherte Prozedur Ihrer SQL-Server-Datenbank. Wer eine Sicherung wiederherstellt und die Prozedur ausführt, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1213", "T1005"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Share",
+      "type": "dns",
+      "label": {"en": "Share host", "de": "Share-Host"},
+      "techniques": ["T1213", "T1005"],
+      "severity": "critical"
+    }
+  ],
+  "persona": [
+    {
+      "key": "ProcedureName",
+      "kind": "name",
+      "label": {"en": "Name of the procedure", "de": "Name der Prozedur"},
+      "example": "usp_ExportCustomerData"
+    },
+    {
+      "key": "ShareName",
+      "kind": "name",
+      "label": {"en": "Name of the share", "de": "Name der Freigabe"},
+      "example": "exports"
+    }
+  ],
+  "secrets": [],
+  "artifacts": [
+    {"key": "procedure", "file_name": "procedure.sql", "format": "config", "line_endings": "crlf", "template": "procedure.sql.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

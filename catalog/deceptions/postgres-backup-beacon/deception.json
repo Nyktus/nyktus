@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "id": "postgres-backup-beacon",
+  "category": "data",
+  "title": {
+    "en": "PostgreSQL objects that travel with every backup",
+    "de": "PostgreSQL-Objekte, die in jeder Sicherung mitreisen"
+  },
+  "summary": {
+    "en": "SQL for two objects of your PostgreSQL database. A restore of a dump on another machine resolves the name of a DNS honeytoken, and so does a query of the second object.",
+    "de": "SQL für zwei Objekte Ihrer PostgreSQL-Datenbank. Die Wiederherstellung eines Dumps auf einem anderen Rechner löst den Namen eines DNS-Honeytokens auf, ebenso eine Abfrage des zweiten Objekts."
+  },
+  "techniques": ["T1213", "T1005"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Database",
+      "type": "dns",
+      "label": {"en": "Database host", "de": "Datenbank-Host"},
+      "techniques": ["T1213", "T1005"],
+      "severity": "critical"
+    }
+  ],
+  "persona": [
+    {
+      "key": "FunctionName",
+      "kind": "name",
+      "label": {"en": "Name of the function", "de": "Name der Funktion"},
+      "example": "refresh_catalog_stats"
+    },
+    {
+      "key": "ViewName",
+      "kind": "name",
+      "label": {"en": "Name of the materialized view", "de": "Name der Materialized View"},
+      "example": "catalog_stats"
+    },
+    {
+      "key": "ServerName",
+      "kind": "name",
+      "label": {"en": "Name of the foreign server", "de": "Name des Fremdservers"},
+      "example": "reporting_replica"
+    },
+    {
+      "key": "TableName",
+      "kind": "name",
+      "label": {"en": "Name of the foreign table", "de": "Name der Fremdtabelle"},
+      "example": "customer_payment_tokens"
+    },
+    {
+      "key": "DatabaseName",
+      "kind": "name",
+      "label": {"en": "Name of the remote database", "de": "Name der entfernten Datenbank"},
+      "example": "analytics"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Remote account", "de": "Entferntes Konto"},
+      "example": "bi_reader"
+    }
+  ],
+  "secrets": [{"key": "Password", "length": 20}],
+  "artifacts": [
+    {"key": "restore", "file_name": "restore-hook.sql", "format": "config", "line_endings": "lf", "template": "restore-hook.sql.tmpl"},
+    {"key": "foreign", "file_name": "foreign-table.sql", "format": "config", "line_endings": "lf", "template": "foreign-table.sql.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "dfs-namespace-map",
+  "category": "network",
+  "title": {
+    "en": "Map of the DFS namespaces",
+    "de": "Übersicht der DFS-Namespaces"
+  },
+  "summary": {
+    "en": "A list of DFS namespaces and the file servers behind them. Opening the path of one of them resolves the name of a DNS honeytoken.",
+    "de": "Eine Liste von DFS-Namespaces und der Dateiserver dahinter. Wer den Pfad eines davon öffnet, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1135"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "FileServer",
+      "type": "dns",
+      "label": {"en": "File server", "de": "Dateiserver"},
+      "techniques": ["T1135"]
+    }
+  ],
+  "persona": [
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Internal domain", "de": "Interne Domain"},
+      "example": "corp.example.com"
+    },
+    {
+      "key": "Contact",
+      "kind": "text",
+      "label": {"en": "Contact", "de": "Ansprechpartner"},
+      "example": "Infrastructure team"
+    }
+  ],
+  "secrets": [],
+  "artifacts": [
+    {"key": "map", "file_name": "DFS-namespaces.txt", "format": "text", "line_endings": "lf", "template": "dfs-namespaces.txt.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

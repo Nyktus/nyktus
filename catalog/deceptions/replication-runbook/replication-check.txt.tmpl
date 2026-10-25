@@ -1,0 +1,14 @@
+Active Directory replication - check
+
+Domain: {{.Persona.Domain}}
+
+1. Summary of all domain controllers:
+   repadmin /replsummary
+
+2. Details of the controller that reports errors:
+   repadmin /showrepl {{.Honeytokens.Controller.Host}}
+
+3. Start a replication by hand:
+   repadmin /syncall {{.Honeytokens.Controller.Host}} /AdeP
+
+If the errors remain, call {{.Persona.Contact}}.

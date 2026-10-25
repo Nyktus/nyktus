@@ -1,0 +1,12 @@
+Group Policy backup
+
+Share:     \\shareq3xwz7a2kfm4ub6tyc5nre.d.example.net\GPOBackups$
+Account:   CORP\svc-gpo
+Password:  Xy7Xy7Xy7Xy7Xy7Xy7Xy
+
+Restore
+1. Connect the share with the account above.
+2. In the Group Policy Management console, right-click Group Policy Objects and choose Manage Backups.
+3. Select the share, choose the policy and click Restore.
+
+Contact: Infrastructure team

@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "password-export",
+  "category": "data",
+  "title": {
+    "en": "Password export of a browser",
+    "de": "Passwort-Export eines Browsers"
+  },
+  "summary": {
+    "en": "A CSV file in the format in which browsers export saved passwords, with one entry whose address is a URL. Whoever opens that address raises an event.",
+    "de": "Eine CSV-Datei in dem Format, in dem Browser gespeicherte Passwörter exportieren, mit einem Eintrag, dessen Adresse eine URL ist. Wer diese Adresse öffnet, löst ein Event aus."
+  },
+  "techniques": ["T1555.003"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Portal",
+      "type": "web_url",
+      "label": {"en": "Portal", "de": "Portal"},
+      "techniques": ["T1555.003", "T1078"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Internal domain", "de": "Interne Domain"},
+      "example": "corp.example.com"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "j.doe"
+    }
+  ],
+  "secrets": [{"key": "Password", "length": 16}, {"key": "WikiPassword", "length": 14}, {"key": "BuildPassword", "length": 18}],
+  "artifacts": [
+    {"key": "export", "file_name": "Passwords.csv", "format": "config", "line_endings": "crlf", "template": "passwords.csv.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

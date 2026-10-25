@@ -1,0 +1,18 @@
+# Notfallblatt für den lokalen Administrator
+
+Die Datei `Recovery.txt` ist ein Notfallblatt: Sie nennt den Server `{{.Honeytokens.Host.Host}}`, das Konto `Administrator` und ein zufälliges Passwort. Der Servername gehört zu einem DNS-Honeytoken: Wer sich über RDP oder WinRM mit dem Server verbindet, löst den Namen auf, was ein Event auslöst. Dahinter steht kein Server, und das Passwort gibt es nirgends.
+
+## Datei platzieren
+
+1. Drucken Sie das Blatt aus oder speichern Sie die Datei dort, wo der Notfallzugang aufbewahrt wird: in einem Ordner der IT, in den Dokumenten eines Kontos, das nur diesem Zweck dient, neben der Dokumentation der Domänencontroller.
+2. Ändern Sie `Contact` auf eine Nummer oder ein Team, das es gibt.
+3. Halten Sie in den Platzierungsnotizen des Artefakts fest, wo Sie es abgelegt haben.
+
+## Testen
+
+Lösen Sie den Namen mit `nslookup {{.Honeytokens.Host.Host}}` auf einem Rechner mit Zugang zum Internet auf. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Grenzen
+
+- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.
+- Der Servername ist ein zufälliges Label unter der Zone Ihrer DNS-Rolle. Ein Eindringling, der die Datei genau liest, kann ihn ungewöhnlich finden.

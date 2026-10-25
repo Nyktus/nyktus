@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "veeam-repository",
+  "category": "data",
+  "title": {
+    "en": "Notes on the backup repository",
+    "de": "Notizen zum Sicherungs-Repository"
+  },
+  "summary": {
+    "en": "A note on the repository of the backups with the share and the service account. Connecting to the share resolves the name of a DNS honeytoken.",
+    "de": "Eine Notiz zum Repository der Sicherungen mit Freigabe und Dienstkonto. Wer sich mit der Freigabe verbindet, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1490", "T1552.001"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "Repository",
+      "type": "dns",
+      "label": {"en": "Repository server", "de": "Repository-Server"},
+      "techniques": ["T1490", "T1552.001"],
+      "severity": "critical"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Netbios",
+      "kind": "name",
+      "label": {"en": "NetBIOS name of the domain", "de": "NetBIOS-Name der Domain"},
+      "example": "CORP"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Service account", "de": "Dienstkonto"},
+      "example": "svc-backup"
+    },
+    {
+      "key": "Contact",
+      "kind": "text",
+      "label": {"en": "Contact", "de": "Ansprechpartner"},
+      "example": "Backup team"
+    }
+  ],
+  "secrets": [{"key": "Password", "length": 20}],
+  "artifacts": [
+    {"key": "notes", "file_name": "Backup-repository.txt", "format": "text", "line_endings": "lf", "template": "backup-repository.txt.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "id": "email-link",
+  "category": "data",
+  "title": {
+    "en": "Saved e-mail with a link and an image",
+    "de": "Gespeicherte E-Mail mit Link und Bild"
+  },
+  "summary": {
+    "en": "An HTML e-mail as a file, with a link and an invisible image. Following the link or loading the image raises an event.",
+    "de": "Eine E-Mail als HTML-Datei mit einem Link und einem unsichtbaren Bild. Wer dem Link folgt oder das Bild lädt, löst ein Event aus."
+  },
+  "techniques": ["T1114"],
+  "engage_activities": ["EAC0005", "EAC0011", "EAC0009"],
+  "honeytokens": [
+    {
+      "key": "Link",
+      "type": "web_url",
+      "label": {"en": "Link", "de": "Link"},
+      "techniques": ["T1114", "T1204.001"]
+    },
+    {
+      "key": "Pixel",
+      "type": "web_image",
+      "label": {"en": "Image", "de": "Bild"},
+      "techniques": ["T1114"]
+    }
+  ],
+  "persona": [
+    {
+      "key": "Subject",
+      "kind": "text",
+      "label": {"en": "Subject", "de": "Betreff"},
+      "example": "Mailbox storage almost full"
+    },
+    {
+      "key": "Message",
+      "kind": "text",
+      "label": {"en": "Message", "de": "Nachricht"},
+      "example": "Your mailbox has reached 95% of its quota. Please review the overview and archive old messages."
+    },
+    {
+      "key": "LinkText",
+      "kind": "text",
+      "label": {"en": "Text of the link", "de": "Text des Links"},
+      "example": "Open mailbox overview"
+    },
+    {
+      "key": "Sender",
+      "kind": "text",
+      "label": {"en": "Sender", "de": "Absender"},
+      "example": "IT Service Desk"
+    }
+  ],
+  "secrets": [],
+  "artifacts": [
+    {"key": "message", "file_name": "message.html", "format": "html", "line_endings": "lf", "template": "message.html.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

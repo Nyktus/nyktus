@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "vsphere-profile",
+  "category": "network",
+  "title": {
+    "en": "PowerShell profile for vCenter",
+    "de": "PowerShell-Profil für vCenter"
+  },
+  "summary": {
+    "en": "A PowerShell script that connects to a vCenter server with a service account. Running it resolves the name of a DNS honeytoken.",
+    "de": "Ein PowerShell-Skript, das sich mit einem Dienstkonto mit einem vCenter-Server verbindet. Wer es ausführt, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1552.001", "T1018"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {
+      "key": "VCenter",
+      "type": "dns",
+      "label": {"en": "vCenter server", "de": "vCenter-Server"},
+      "techniques": ["T1552.001", "T1018"],
+      "severity": "critical"
+    }
+  ],
+  "persona": [
+    {
+      "key": "SsoDomain",
+      "kind": "host",
+      "label": {"en": "Single sign-on domain", "de": "Single-Sign-on-Domain"},
+      "example": "vsphere.local"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Service account", "de": "Dienstkonto"},
+      "example": "svc-vmops"
+    }
+  ],
+  "secrets": [{"key": "Password", "length": 20}],
+  "artifacts": [
+    {"key": "script", "file_name": "Connect-VCenter.ps1", "format": "config", "line_endings": "crlf", "template": "connect-vcenter.ps1.tmpl"}
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}
