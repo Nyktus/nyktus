@@ -614,7 +614,7 @@ describe('the events of an incident', () => {
   });
 
   test('draws what the attacker sent as text, in its own direction', async () => {
-    const hostile = event({ http: { method: 'GET', user_agent: '<img src=x onerror=alert(1)>\u05E9\u05DC\u05D5\u05DD', referer: '', accept_language: '' } });
+    const hostile = event({ http: { method: 'GET', user_agent: '<img src=x onerror=alert(1)>\u05E9\u05DC\u05D5\u05DD', referer: '', accept_language: '', body_excerpt: '' } });
     const { wrapper } = await boot(server('admin', { 'GET /api/v1/events': () => json(200, { events: [hostile] }) }), path);
     expect(wrapper.find('img[src=x]').exists()).toBe(false);
     expect(wrapper.get('.table tbody bdi').attributes('dir')).toBe('ltr');
@@ -673,7 +673,7 @@ describe('an event', () => {
   }
 
   test('shows a web request with the headers as text', async () => {
-    const e = event({ http: { method: 'GET', user_agent: 'curl/8.4.0', referer: 'https://wiki.example.net/backups', accept_language: 'de-DE' } });
+    const e = event({ http: { method: 'GET', user_agent: 'curl/8.4.0', referer: 'https://wiki.example.net/backups', accept_language: 'de-DE', body_excerpt: '' } });
     const { wrapper } = await boot(one(e), at(e.id));
     const text = wrapper.text();
     expect(text).toContain('Web request');
@@ -763,7 +763,8 @@ describe('an event', () => {
   });
 
   test.each([
-    ['the user agent', event({ http: { method: 'GET', user_agent: '<script>alert(1)</script>', referer: '', accept_language: '' } })],
+    ['the user agent', event({ http: { method: 'GET', user_agent: '<script>alert(1)</script>', referer: '', accept_language: '', body_excerpt: '' } })],
+    ['the body of a POST request', event({ http: { method: 'POST', user_agent: '', referer: '', accept_language: '', body_excerpt: '<script>alert(1)</script>' } })],
     ['a user name', sensorEvent({ sensor: { ...sensorEvent().sensor!, attempts: [{ username: '<script>alert(1)</script>', password_length: null, key_fingerprint: null }] } })],
     ['the search filter', sensorEvent({ sensor: { ...sensorEvent().sensor!, query: { base_dn: '<script>alert(1)</script>', filter: '<script>alert(1)</script>' } } })],
     ['the name before the zone', dnsEvent({ dns: { zone: 'z', prefix: '<script>alert(1)</script>', qtype: 'A', transport: 'tcp' } })],
@@ -774,13 +775,23 @@ describe('an event', () => {
   });
 
   test('marks a character that shows nothing, and isolates the direction of a value', async () => {
-    const e = event({ http: { method: 'GET', user_agent: `agent\u3164\u202E\u05E9`, referer: '', accept_language: '' } });
+    const e = event({ http: { method: 'GET', user_agent: `agent\u3164\u202E\u05E9`, referer: '', accept_language: '', body_excerpt: '' } });
     const { wrapper } = await boot(one(e), at(e.id));
     const markers = wrapper.findAll('.marker').map((m) => m.text());
     expect(markers).toEqual(['\u2039U+3164\u203A', '\u2039U+202E\u203A']);
     for (const bdi of wrapper.findAll('bdi.untrusted')) {
       expect(bdi.attributes('dir')).toBe('ltr');
     }
+  });
+
+  test('shows the start of the body for a POST request only', async () => {
+    const post = event({ http: { method: 'POST', user_agent: '', referer: '', accept_language: '', body_excerpt: 'user=alice' } });
+    const shown = await boot(one(post), at(post.id));
+    expect(shown.wrapper.text()).toContain('Start of the body');
+    expect(shown.wrapper.text()).toContain('user=alice');
+    document.body.innerHTML = '';
+    const hidden = await boot(one(event()), at(eventId));
+    expect(hidden.wrapper.text()).not.toContain('Start of the body');
   });
 
   test('says that a value is empty', async () => {

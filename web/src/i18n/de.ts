@@ -421,6 +421,7 @@ export const de: Record<MessageKey, string> = {
   'event.userAgent': 'User-Agent',
   'event.referer': 'Referer',
   'event.acceptLanguage': 'Accept-Language',
+  'event.bodyExcerpt': 'Anfang des Body',
   'event.zone': 'Zone',
   'event.prefix': 'Name vor der Zone',
   'event.qtype': 'Abfrageart',

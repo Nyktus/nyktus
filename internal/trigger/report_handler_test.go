@@ -43,8 +43,12 @@ func TestTrigger_ReportsAreAnsweredLikeEveryOtherPost(t *testing.T) {
 		return srv
 	}
 	want := fetch(t, serverFor(&fakeReporter{}), http.MethodPost, "/", nil, nil)
-	if want.status != http.StatusFound {
-		t.Fatalf("the answer to POST / is %d, want the default redirect", want.status)
+	if want.status != http.StatusOK || len(want.body) != 0 {
+		t.Fatalf("the answer to POST / is %d with %d bytes, want 200 without a body", want.status, len(want.body))
+	}
+	// It is the answer to a POST to a trigger value as well.
+	if other := fetch(t, serverFor(&fakeReporter{}), http.MethodPost, "/"+value, strings.NewReader("{}"), nil); !other.equal(want) {
+		t.Errorf("POST to a trigger value = %+v, want %+v as for a report", other, want)
 	}
 
 	for _, outcome := range []ReportOutcome{ReportUnknown, ReportDisabled, ReportRecorded, ReportLimited, ReportDuplicate, ReportInvalid} {

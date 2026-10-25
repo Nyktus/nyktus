@@ -149,7 +149,7 @@ func TestStore_OpensAnIncidentWithItsAlert(t *testing.T) {
 	f := newFixture(t)
 
 	id, value := f.honeytoken(t, "web_url", []string{"T1213"})
-	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')", value)
+	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '', '')", value)
 
 	p := f.process(t)
 	if !p.Opened || p.ResourceType != honeytoken.ResourceType || p.ResourceID != id || p.Severity != severity.Medium || p.IncidentID == "" {
@@ -182,7 +182,7 @@ func TestStore_SeverityIsFrozenOnTheEvent(t *testing.T) {
 	f := newFixture(t)
 
 	for _, record := range []string{
-		"SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')",
+		"SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '', '')",
 		"SELECT * FROM record_dns_query($1, 'd.example.com', '', 'A', 'udp', NULL, NULL)",
 	} {
 		id, value := f.honeytoken(t, "dns", nil)
@@ -945,14 +945,14 @@ func TestStore_IncidentKeepsTheNameItOpenedWith(t *testing.T) {
 
 	id, value := f.honeytoken(t, "web_url", nil)
 	f.exec(t, "UPDATE honeytokens SET name = 'Wiki' WHERE id = $1", id)
-	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')", value)
+	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '', '')", value)
 	opened := f.process(t)
 	if opened.ResourceName != "Wiki" {
 		t.Errorf("name of the processed incident = %q, want Wiki", opened.ResourceName)
 	}
 
 	f.exec(t, "UPDATE honeytokens SET name = 'Renamed' WHERE id = $1", id)
-	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '')", value)
+	f.exec(t, "SELECT * FROM record_honeytoken_request($1, 'GET', NULL, '', '', '', '')", value)
 	if again := f.process(t); again.IncidentID != opened.IncidentID {
 		t.Fatalf("event of the renamed honeytoken = %+v, want it in %s", again, opened.IncidentID)
 	}

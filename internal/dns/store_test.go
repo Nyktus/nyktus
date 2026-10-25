@@ -148,7 +148,7 @@ func TestStore_SharesTheLimitWithHTTP(t *testing.T) {
 	for range 6 {
 		var outcome string
 		err := f.owner.QueryRow(t.Context(),
-			"SELECT outcome FROM public.record_honeytoken_request($1, 'GET', NULL, '', '', '')", v).Scan(&outcome)
+			"SELECT outcome FROM public.record_honeytoken_request($1, 'GET', NULL, '', '', '', '')", v).Scan(&outcome)
 		if err != nil || outcome != "recorded" {
 			t.Fatalf("HTTP request = %q, %v; want recorded", outcome, err)
 		}

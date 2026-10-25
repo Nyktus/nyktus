@@ -42,7 +42,7 @@ func placeState(t *testing.T, owner *pgxpool.Pool) {
 	t.Helper()
 	for _, statement := range []string{
 		"INSERT INTO honeytokens (type, name, severity, trigger_value) VALUES ('web_url', '" + honeytokenName + "', 'medium', repeat('a', 26))",
-		"SELECT * FROM record_honeytoken_request(repeat('a', 26), 'GET', '" + clientIP + "', '" + userAgent + "', '', '')",
+		"SELECT * FROM record_honeytoken_request(repeat('a', 26), 'GET', '" + clientIP + "', '" + userAgent + "', '', '', '')",
 		`INSERT INTO honeypots (service, name, severity, secret_hash, created_at, last_seen_at) VALUES
 ('ssh', '` + honeypotName + `', 'medium', sha256('a'), now() - interval '2 hours', NULL),
 ('ssh', '` + honeypotName + `', 'medium', sha256('b'), now() - interval '2 hours', now() - interval '1 minute'),

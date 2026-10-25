@@ -232,7 +232,7 @@ export function event(overrides: Partial<Event> = {}): Event {
     recorded_at: '2026-10-22T07:00:05Z',
     channel: 'http',
     client_ip: '203.0.113.7',
-    http: { method: 'GET', user_agent: 'curl/8.4.0', referer: '', accept_language: 'en' },
+    http: { method: 'GET', user_agent: 'curl/8.4.0', referer: '', accept_language: 'en', body_excerpt: '' },
     dns: null,
     sensor: null,
     ...overrides,

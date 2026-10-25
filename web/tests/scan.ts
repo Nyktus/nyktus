@@ -24,6 +24,7 @@ export const attackerFields = [
   'user_agent',
   'referer',
   'accept_language',
+  'body_excerpt',
   'client_version',
   'database',
   'application_name',

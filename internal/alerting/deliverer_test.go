@@ -1030,3 +1030,70 @@ VALUES ('honeypot', $1, 'high', clock_timestamp(), clock_timestamp(), 'Name') RE
 		t.Errorf("mail body %q does not name the honeypot", mail.Body)
 	}
 }
+
+// The body of a POST request to a honeytoken may hold personal data, such as
+// account names and addresses. The event keeps it for the console; no alert
+// carries it, in any format, and neither does the log of the worker, which
+// reads the events.
+func TestProcess_CarriesNothingOfTheBodyOfAPost(t *testing.T) {
+	t.Parallel()
+	f := newDeliveryFixture(t)
+	const marker = "alice@corp.example"
+
+	var resourceID, incidentID string
+	if err := f.owner.QueryRow(t.Context(), `SELECT gen_random_uuid()`).Scan(&resourceID); err != nil {
+		t.Fatal(err)
+	}
+	err := f.owner.QueryRow(t.Context(), `
+INSERT INTO incidents (resource_type, resource_id, severity, techniques, first_event_at, last_event_at, resource_name)
+VALUES ('honeytoken', $1, 'high', '{T1078}', clock_timestamp(), clock_timestamp(), 'Name') RETURNING id`, resourceID).Scan(&incidentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.owner.Exec(t.Context(), `
+INSERT INTO events (resource_type, resource_id, honeytoken_type, techniques, severity, occurred_at, recorded_at, channel,
+	client_ip, method, body, incident_id, resource_name)
+VALUES ('honeytoken', $1, 'web_url', '{T1078}', 'high', clock_timestamp(), clock_timestamp(), 'http', '192.0.2.7', 'POST',
+	'{"TargetUserName":"`+marker+`"}', $2, 'Name')`, resourceID, incidentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.owner.Exec(t.Context(), `INSERT INTO alerts (incident_id, severity, techniques) VALUES ($1, 'high', '{T1078}')`, incidentID); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := f.worker.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(t.Context()) }()
+	m, err := loadAlert(t.Context(), tx, incidentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := Delivery{ID: "33333333-3333-4333-8333-333333333333", AlertID: &incidentID}
+	for _, typ := range []Type{TypeWebhook, TypeSlack, TypeTeams} {
+		body, _, err := format(typ, m, d, "https://nyktus.example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), "alice") || strings.Contains(string(body), "TargetUserName") {
+			t.Errorf("%s: body %s, want nothing of the body of the request", typ, body)
+		}
+	}
+	mail := emailMessage(m, d, []string{"soc@example.com"}, "https://nyktus.example.com")
+	if strings.Contains(mail.Body, "alice") || strings.Contains(mail.Body, "TargetUserName") {
+		t.Errorf("mail body %q holds the body of the request", mail.Body)
+	}
+
+	rcv := newReceiver(t, http.StatusNoContent)
+	f.channel(t, Spec{Name: "SOAR", Type: TypeWebhook, Enabled: true, URL: Secret(rcv.URL + "/hook")})
+	if _, err := Enqueue(t.Context(), f.worker, incidentID); err != nil {
+		t.Fatal(err)
+	}
+	if !process(t, f.deliverer(http.DefaultClient)) || rcv.count() != 1 {
+		t.Fatalf("delivered %d requests, want 1", rcv.count())
+	}
+	if strings.Contains(string(rcv.bodies[0]), "alice") || strings.Contains(f.logs.String(), "alice") {
+		t.Errorf("body %s, log %s: want nothing of the body of the request", rcv.bodies[0], f.logs)
+	}
+}

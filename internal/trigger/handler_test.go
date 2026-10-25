@@ -4,6 +4,7 @@
 package trigger
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -252,8 +254,9 @@ func TestPixel_IsATransparentImageOfOnePixel(t *testing.T) {
 	}
 }
 
-// Paths without a trigger value, unclean paths and methods other than GET and
-// HEAD are answered like an unknown value, without asking the database.
+// Paths without a trigger value, unclean paths and methods other than GET,
+// HEAD and POST are answered like an unknown value, without asking the
+// database.
 func TestTrigger_AnswersEverythingElseWithoutLookingItUp(t *testing.T) {
 	t.Parallel()
 
@@ -271,7 +274,7 @@ func TestTrigger_AnswersEverythingElseWithoutLookingItUp(t *testing.T) {
 			t.Errorf("GET %s = %+v, want %+v", path, got, want)
 		}
 	}
-	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch, http.MethodOptions, "PROPFIND"} {
+	for _, method := range []string{http.MethodPut, http.MethodDelete, http.MethodPatch, http.MethodOptions, "PROPFIND"} {
 		if got := fetch(t, srv, method, "/"+value, strings.NewReader("{}"), nil); !got.equal(want) {
 			t.Errorf("%s = %+v, want %+v", method, got, want)
 		}
@@ -286,20 +289,239 @@ func TestTrigger_AnswersEverythingElseWithoutLookingItUp(t *testing.T) {
 	}
 }
 
-// Request bodies on the trigger are limited to 64 KiB. Only the report of a
-// sensor is read, so a larger body to any other path changes nothing.
+// Request bodies on the trigger are limited to 64 KiB, and only the start of
+// the body of a POST is read: a larger body changes neither the answer nor what
+// is recorded.
 func TestTrigger_LargeBodyChangesNothing(t *testing.T) {
 	t.Parallel()
 
 	rec := &fakeRecorder{}
 	srv, _ := newServer(t, rec)
 	want := fetch(t, srv, http.MethodPost, "/"+value, nil, nil)
-	got := fetch(t, srv, http.MethodPost, "/"+value, bytes.NewReader(make([]byte, 1<<20)), nil)
+	got := fetch(t, srv, http.MethodPost, "/"+value, bytes.NewReader(bytes.Repeat([]byte("a"), 1<<20)), nil)
 	if !got.equal(want) {
 		t.Errorf("POST with 1 MiB = %+v, want %+v", got, want)
 	}
-	if len(rec.recorded()) != 0 {
-		t.Error("a POST was recorded")
+	requests := rec.recorded()
+	if len(requests) != 2 || requests[0].Body != "" || requests[1].Body != strings.Repeat("a", maxBodyExcerptBytes) {
+		t.Errorf("recorded %d requests, want the empty body and an excerpt of %d bytes", len(requests), maxBodyExcerptBytes)
+	}
+}
+
+// Every POST is answered with the same status and no body, whatever its path
+// and whatever became of it: a log shipper or a webhook repeats a request that
+// it does not see succeed, and an answer that differed for a value that is
+// unknown, disabled or limited would tell an observer which values are live.
+// The test uses a real server, because a recorder does not show what net/http
+// adds or removes.
+func TestTrigger_IdenticalResponsesToEveryPost(t *testing.T) {
+	t.Parallel()
+
+	results := map[string]Result{
+		"recordedaaaaaaaaaaaaaaaaaa": {Outcome: OutcomeRecorded, HoneytokenID: "1", RedirectURL: "https://wiki.example.com/finance"},
+		"disabledaaaaaaaaaaaaaaaaaa": {Outcome: OutcomeDisabled, HoneytokenID: "2"},
+		"limitedaaaaaaaaaaaaaaaaaaa": {Outcome: OutcomeLimited, HoneytokenID: "3"},
+	}
+	ok, _ := newServer(t, &fakeRecorder{results: results})
+	failing, _ := newServer(t, &fakeRecorder{err: errors.New("database unavailable")})
+	panicking, _ := newServer(t, &fakeRecorder{panics: true})
+
+	bodies := map[string][]byte{
+		"empty":          nil,
+		"json":           []byte(`{"TargetUserName":"svc-backup","IpAddress":"203.0.113.9"}`),
+		"not text":       {0xff, 0xfe, 0x00, 0x1b, '[', 0xe2, 0x80, 0xae, '\n'},
+		"beyond 4 KiB":   bytes.Repeat([]byte("x"), 2*maxBodyExcerptBytes),
+		"beyond 64 KiB":  bytes.Repeat([]byte("x"), maxBodyBytes+1),
+		"far beyond 64K": bytes.Repeat([]byte("x"), 1<<20),
+	}
+	for name, body := range bodies {
+		for _, suffix := range []string{"", ".gif"} {
+			want := fetch(t, ok, http.MethodPost, "/"+value+suffix, bytes.NewReader(body), nil)
+			if want.status != http.StatusOK || len(want.body) != 0 || want.header.Get("Location") != "" || want.header.Get("Content-Type") != "" {
+				t.Fatalf("POST answer = %+v, want 200 without a body, a Location or a Content-Type", want)
+			}
+			cases := map[string]response{
+				"recorded with a redirect": fetch(t, ok, http.MethodPost, "/recordedaaaaaaaaaaaaaaaaaa"+suffix, bytes.NewReader(body), nil),
+				"disabled":                 fetch(t, ok, http.MethodPost, "/disabledaaaaaaaaaaaaaaaaaa"+suffix, bytes.NewReader(body), nil),
+				"limited":                  fetch(t, ok, http.MethodPost, "/limitedaaaaaaaaaaaaaaaaaaa"+suffix, bytes.NewReader(body), nil),
+				"database failure":         fetch(t, failing, http.MethodPost, "/"+value+suffix, bytes.NewReader(body), nil),
+				"panic":                    fetch(t, panicking, http.MethodPost, "/"+value+suffix, bytes.NewReader(body), nil),
+				"no value":                 fetch(t, ok, http.MethodPost, "/robots"+suffix, bytes.NewReader(body), nil),
+				"root":                     fetch(t, ok, http.MethodPost, "/", bytes.NewReader(body), nil),
+				"root with a bearer":       fetch(t, ok, http.MethodPost, "/", bytes.NewReader(body), bearer(testSecret)),
+			}
+			for caseName, got := range cases {
+				if !got.equal(want) {
+					t.Errorf("body %s, %q, %s: response %+v, want %+v", name, suffix, caseName, got, want)
+				}
+			}
+		}
+	}
+}
+
+// The answer to a POST is the same after a panic in the handler.
+func TestTrigger_PanicOnAPostIsAnsweredLikeEveryOtherPost(t *testing.T) {
+	t.Parallel()
+
+	ok, _ := newServer(t, &fakeRecorder{})
+	want := fetch(t, ok, http.MethodPost, "/"+value, nil, nil)
+
+	var log bytes.Buffer
+	h := New(Options{Logger: slog.New(slog.NewJSONHandler(&log, nil)), Recorder: &fakeRecorder{}, Reporter: &fakeReporter{}, DefaultRedirect: defaultRedirect})
+	h.next = http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("handler failed") })
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	for _, path := range []string{"/" + value, "/" + value + ".gif", "/"} {
+		if got := fetch(t, srv, http.MethodPost, path, nil, nil); !got.equal(want) {
+			t.Errorf("POST %s after a panic = %+v, want %+v", path, got, want)
+		}
+	}
+}
+
+// Only a POST has a body that is recorded, and it is recorded as untrusted
+// text: line breaks and tabs become spaces, every other character that is not
+// printable is replaced, and the excerpt ends at a character, not inside one.
+func TestTrigger_PostRecordsTheBodyAsCleanedExcerpt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"empty", "", ""},
+		{"text", `{"user":"alice"}`, `{"user":"alice"}`},
+		{"line breaks and tabs", "a\r\nb\tc\nd", "a  b c d"},
+		{"control characters", "a\x00b\x1bc\x7fd", "a\uFFFDb\uFFFDc\uFFFDd"},
+		{"override of the writing direction", "a\u202Eb\u2028c", "a\uFFFDb\uFFFDc"},
+		{"invalid UTF-8", "a\xffb", "a\uFFFDb"},
+		// A run of invalid bytes becomes one replacement character, as in a header.
+		{"a run of invalid UTF-8", "a\xff\xfe\xfdb", "a\uFFFDb"},
+		{"exactly the limit", strings.Repeat("a", maxBodyExcerptBytes), strings.Repeat("a", maxBodyExcerptBytes)},
+		{"beyond the limit", strings.Repeat("a", maxBodyExcerptBytes+1), strings.Repeat("a", maxBodyExcerptBytes)},
+		// Two bytes each: 2048 characters fit exactly, a character that crosses the limit is cut as a whole.
+		{"characters of two bytes", strings.Repeat("\u00E9", 3000), strings.Repeat("\u00E9", maxBodyExcerptBytes/2)},
+		{"a character that crosses the limit", strings.Repeat("a", maxBodyExcerptBytes-1) + "\u00E9", strings.Repeat("a", maxBodyExcerptBytes-1)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := &fakeRecorder{}
+			srv, _ := newServer(t, rec)
+			fetch(t, srv, http.MethodPost, "/"+value, strings.NewReader(tt.body), nil)
+			got := rec.recorded()
+			if len(got) != 1 || got[0].Method != http.MethodPost || got[0].Body != tt.want {
+				t.Errorf("recorded %+v, want one POST with the body %q", got, tt.want)
+			}
+			if !utf8.ValidString(got[0].Body) || len(got[0].Body) > maxBodyExcerptBytes {
+				t.Errorf("body of %d bytes, want valid UTF-8 of at most %d", len(got[0].Body), maxBodyExcerptBytes)
+			}
+		})
+	}
+}
+
+// A GET or HEAD request is recorded without the body that it may carry, and
+// the other methods are not recorded.
+func TestTrigger_OnlyAPostRecordsABody(t *testing.T) {
+	t.Parallel()
+
+	rec := &fakeRecorder{}
+	srv, _ := newServer(t, rec)
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		fetch(t, srv, method, "/"+value, strings.NewReader("secret=1"), nil)
+	}
+	for _, method := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions} {
+		fetch(t, srv, method, "/"+value, strings.NewReader("secret=1"), nil)
+	}
+	got := rec.recorded()
+	if len(got) != 2 || got[0].Method != http.MethodGet || got[1].Method != http.MethodHead || got[0].Body != "" || got[1].Body != "" {
+		t.Errorf("recorded %+v, want a GET and a HEAD without a body", got)
+	}
+}
+
+// The body of a request that breaks off is recorded as far as it arrived: the
+// request happened all the same, and the answer does not depend on it.
+func TestTrigger_PostRecordsABodyThatBreaksOff(t *testing.T) {
+	t.Parallel()
+
+	rec := &fakeRecorder{}
+	srv, _ := newServer(t, rec)
+	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(t.Context(), "tcp", strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := io.WriteString(conn, "POST /"+value+" HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\nuser=alice"); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.(*net.TCPConn).CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	// The server answers once it has recorded, or closes; either way it ends the connection.
+	_, _ = io.Copy(io.Discard, conn)
+	got := rec.recorded()
+	if len(got) != 1 || got[0].Body != "user=alice" {
+		t.Errorf("recorded %+v, want one POST with the body that arrived", got)
+	}
+}
+
+// net/http answers Expect: 100-continue with an interim response only when the
+// handler reads the body. Every POST is read, so that the answer to one with a
+// value cannot be told from the answer to one without.
+func TestTrigger_PostIsReadWhateverItsPath(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newServer(t, &fakeRecorder{})
+	firstLine := func(path string) string {
+		t.Helper()
+		conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(t.Context(), "tcp", strings.TrimPrefix(srv.URL, "http://"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+		if _, err := io.WriteString(conn, "POST "+path+" HTTP/1.1\r\nHost: x\r\nExpect: 100-continue\r\nContent-Length: 4\r\n\r\n"); err != nil {
+			t.Fatal(err)
+		}
+		line, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		return line
+	}
+	want := firstLine("/" + value)
+	if !strings.Contains(want, "100") {
+		t.Fatalf("first line for a value = %q, want the interim response", want)
+	}
+	for _, path := range []string{"/", "/robots.txt", "/" + value + ".gif", "/" + value + "/"} {
+		if got := firstLine(path); got != want {
+			t.Errorf("first line for %s = %q, want %q", path, got, want)
+		}
+	}
+}
+
+// The body may hold personal data, so it never reaches the log, which names
+// the request by its outcome only.
+func TestTrigger_LogsNoBody(t *testing.T) {
+	t.Parallel()
+
+	const marker = "alice@example.com"
+	for name, rec := range map[string]*fakeRecorder{
+		"recorded": {results: map[string]Result{value: {Outcome: OutcomeRecorded, HoneytokenID: "1"}}},
+		"limited":  {results: map[string]Result{value: {Outcome: OutcomeLimited, HoneytokenID: "1"}}},
+		"failing":  {err: errors.New("database unavailable")},
+		"panics":   {panics: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			srv, log := newServer(t, rec)
+			fetch(t, srv, http.MethodPost, "/"+value, strings.NewReader(`{"user":"`+marker+`"}`), nil)
+			if strings.Contains(log.String(), marker) || strings.Contains(log.String(), "alice") {
+				t.Errorf("log = %s, want no part of the body", log.String())
+			}
+		})
 	}
 }
 
@@ -492,6 +714,83 @@ func TestTriggerValue(t *testing.T) {
 	} {
 		if _, ok := triggerValue(path); ok != want {
 			t.Errorf("triggerValue(%q) = %v, want %v", path, ok, want)
+		}
+	}
+}
+
+// Only the start of a body is read, so that a client cannot make the trigger
+// read and clean more than it records; the characters that cross the end are
+// read to the end of the character.
+func TestReadBodyExcerpt_ReadsNoMoreThanItNeeds(t *testing.T) {
+	t.Parallel()
+
+	src := &countingReader{r: strings.NewReader(strings.Repeat("a", 1<<20))}
+	if got := readBodyExcerpt(src); len(got) != maxBodyExcerptBytes {
+		t.Errorf("excerpt of %d bytes, want %d", len(got), maxBodyExcerptBytes)
+	}
+	if src.n > maxBodyExcerptBytes+utf8.UTFMax {
+		t.Errorf("read %d bytes, want at most %d", src.n, maxBodyExcerptBytes+utf8.UTFMax)
+	}
+}
+
+type countingReader struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += n
+	return n, err
+}
+
+// A client that sends the start of a body and then stalls does not hold the
+// recording back until the read timeout of the server: the body is read within
+// a short time, and what arrived is recorded while the connection is still
+// open.
+func TestTrigger_PostStallingBodyIsRecordedAfterAShortWait(t *testing.T) {
+	t.Parallel()
+
+	rec := &fakeRecorder{}
+	var log bytes.Buffer
+	h := New(Options{Logger: slog.New(slog.NewJSONHandler(&log, nil)), Recorder: rec, Reporter: &fakeReporter{}, DefaultRedirect: defaultRedirect})
+	h.bodyTimeout = 50 * time.Millisecond
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(t.Context(), "tcp", strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := io.WriteString(conn, "POST /"+value+" HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\nuser="); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for len(rec.recorded()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the request was not recorded while its body stalled")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := rec.recorded(); len(got) != 1 || got[0].Body != "user=" {
+		t.Errorf("recorded %+v, want one POST with the body that arrived", got)
+	}
+}
+
+// A POST is never read beyond the start of its body, except the report of a
+// sensor, which carries the form of a secret: a client without the form of one
+// cannot make the trigger buffer 64 KiB.
+func TestTrigger_PostIsReadOnlyAsFarAsItsExcerpt(t *testing.T) {
+	t.Parallel()
+
+	h := New(Options{Logger: slog.New(slog.DiscardHandler), Recorder: &fakeRecorder{}, Reporter: &fakeReporter{}, DefaultRedirect: defaultRedirect})
+	for _, path := range []string{"/", "/" + value, "/robots.txt"} {
+		body := &countingReader{r: strings.NewReader(strings.Repeat("a", 1<<20))}
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, path, body)
+		h.ServeHTTP(httptest.NewRecorder(), req)
+		if limit := maxBodyExcerptBytes + utf8.UTFMax + 1; body.n > limit {
+			t.Errorf("POST %s: read %d bytes, want at most %d", path, body.n, limit)
 		}
 	}
 }

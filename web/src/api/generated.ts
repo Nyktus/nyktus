@@ -538,10 +538,11 @@ export interface EventAttempt {
 }
 
 export interface EventRequest {
-  method: 'GET' | 'HEAD';
+  method: 'GET' | 'HEAD' | 'POST';
   user_agent: string;
   referer: string;
   accept_language: string;
+  body_excerpt: string;
 }
 
 export interface EventQuery {
