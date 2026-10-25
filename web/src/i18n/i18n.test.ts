@@ -40,7 +40,7 @@ describe('t', () => {
   });
 
   test('inserts the values as they are', () => {
-    expect(t('catalog.apply.required', { label: '<img src=x onerror=alert(1)> {label}' })).toBe('Enter a value for <img src=x onerror=alert(1)> {label}.');
+    expect(t('persona.required', { label: '<img src=x onerror=alert(1)> {label}' })).toBe('Enter a value for <img src=x onerror=alert(1)> {label}.');
   });
 
   test('follows the language', () => {

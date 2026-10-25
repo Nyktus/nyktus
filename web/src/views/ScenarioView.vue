@@ -17,8 +17,8 @@ import ScenarioForm from '../components/ScenarioForm.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
 import TimeStamp from '../components/TimeStamp.vue';
+import { carriesHoneytoken } from '../artifactRole';
 import { t } from '../i18n';
-import { sourceLabel } from '../scenarioSource';
 import { session } from '../session';
 import { usePagedList } from '../usePagedList';
 
@@ -56,6 +56,7 @@ const detaching = ref(false);
 
 const guides = ref<{ deception_id: string; language: string; content: string }[]>([]);
 const guideFailed = ref(false);
+const guidesLoaded = ref(false);
 
 const honeytokens = usePagedList<Honeytoken>(async (cursor) => {
   const { body } = await api.call('listHoneytokens', { query: { limit: 50, cursor, scenario_id: id.value } });
@@ -98,14 +99,20 @@ async function load(): Promise<void> {
 async function loadGuide(): Promise<void> {
   guides.value = [];
   guideFailed.value = false;
+  guidesLoaded.value = false;
   if (scenario.value?.deceptions.length === 0) {
     return;
   }
   try {
     guides.value = (await api.call('getScenarioGuide', { path: { id: id.value } })).body.guides;
+    guidesLoaded.value = true;
   } catch {
     guideFailed.value = true;
   }
+}
+
+function guideOf(deceptionId: string): string | undefined {
+  return guides.value.find((g) => g.deception_id === deceptionId)?.content;
 }
 
 async function update(body: OperationTypes['updateScenario']['body']): Promise<void> {
@@ -192,19 +199,13 @@ onMounted(load);
         <dl class="definition">
           <dt>{{ t('field.notes') }}</dt>
           <dd class="notes">{{ scenario.notes === '' ? t('common.none') : scenario.notes }}</dd>
-          <dt>{{ t('scenarios.source') }}</dt>
-          <dd>{{ sourceLabel(scenario) }}</dd>
-          <template v-if="scenario.deceptions.length > 0">
-            <dt>{{ t('scenarios.language') }}</dt>
-            <dd>{{ [...new Set(scenario.deceptions.map((d) => d.language))].join(', ') }}</dd>
-          </template>
           <template v-if="Object.keys(scenario.persona).length > 0">
             <dt>{{ t('scenarios.persona') }}</dt>
             <dd>
               <dl class="persona">
                 <template v-for="(value, key) in scenario.persona" :key="key">
                   <dt class="mono">{{ key }}</dt>
-                  <dd>{{ value }}</dd>
+                  <dd><bdi>{{ value }}</bdi></dd>
                 </template>
               </dl>
             </dd>
@@ -216,6 +217,26 @@ onMounted(load);
           <dt>{{ t('field.updated') }}</dt>
           <dd><TimeStamp :value="scenario.updated_at" /></dd>
         </dl>
+      </div>
+
+      <div class="section panel">
+        <div class="head">
+          <h2>{{ t('scenarios.stories') }}</h2>
+          <RouterLink v-if="canWrite" class="button button-ghost small" :to="{ name: 'scenario-add-deception', params: { id } }">{{ t('scenarios.addDeception.button') }}</RouterLink>
+        </div>
+        <p v-if="scenario.deceptions.length === 0" class="hint">{{ canWrite ? t('scenarios.stories.empty') : t('scenarios.stories.emptyRead') }}</p>
+        <p v-if="guideFailed" class="notice notice-error" role="alert">{{ t('scenarios.guideFailed') }}</p>
+        <article v-for="story in scenario.deceptions" :key="story.deception_id" class="story">
+          <h3>
+            <RouterLink class="mono" :to="{ name: 'catalog-deception', params: { id: story.deception_id } }">{{ story.deception_id }}</RouterLink>
+          </h3>
+          <p class="hint">{{ t('scenarios.stories.added', { language: story.language }) }} <TimeStamp :value="story.created_at" /></p>
+          <details :open="scenario.deceptions.length === 1">
+            <summary>{{ t('scenarios.guide') }}</summary>
+            <MarkdownView v-if="guideOf(story.deception_id) !== undefined" :source="guideOf(story.deception_id) ?? ''" />
+            <p v-else-if="!guideFailed && !guidesLoaded" role="status">{{ t('app.loading') }}</p>
+          </details>
+        </article>
       </div>
 
       <div class="section panel">
@@ -271,35 +292,31 @@ onMounted(load);
       </div>
 
       <div class="section panel">
-        <h2>{{ t('artifacts.ofScenario') }}</h2>
+        <div class="head">
+          <h2>{{ t('artifacts.ofScenario') }}</h2>
+          <RouterLink v-if="canWrite" class="button button-ghost small" :to="{ name: 'scenario-add-artifact', params: { id } }">{{ t('scenarios.addArtifact.button') }}</RouterLink>
+        </div>
         <p v-if="artifacts.error.value" class="notice notice-error" role="alert">{{ t('artifacts.loadFailed') }}</p>
         <p v-else-if="!artifacts.loaded.value && artifacts.items.value.length === 0" role="status">{{ t('app.loading') }}</p>
-        <p v-else-if="artifacts.loaded.value && artifacts.items.value.length === 0" class="hint">{{ t('artifacts.none') }}</p>
-        <div v-else-if="artifacts.items.value.length > 0" class="table-wrap">
-          <table class="table">
-            <tbody>
-              <tr v-for="artifact in artifacts.items.value" :key="artifact.id">
-                <td><RouterLink class="mono" :to="{ name: 'artifact', params: { id: artifact.id } }">{{ artifact.file_name }}</RouterLink></td>
-                <td>{{ t(`artifactFormat.${artifact.format}`) }}</td>
-                <td><FileSize :bytes="artifact.size" /></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <p v-else-if="artifacts.loaded.value && artifacts.items.value.length === 0" class="hint">{{ canWrite ? t('artifacts.noneHere') : t('artifacts.none') }}</p>
+        <template v-else-if="artifacts.items.value.length > 0">
+          <p class="hint">{{ t('artifacts.roleHint') }}</p>
+          <div class="table-wrap">
+            <table class="table">
+              <tbody>
+                <tr v-for="artifact in artifacts.items.value" :key="artifact.id">
+                  <td><RouterLink class="mono" :to="{ name: 'artifact', params: { id: artifact.id } }"><bdi>{{ artifact.file_name }}</bdi></RouterLink></td>
+                  <td>{{ t(`artifactFormat.${artifact.format}`) }}</td>
+                  <td>{{ carriesHoneytoken(artifact) ? t('artifacts.role.lure') : t('artifacts.role.litter') }}</td>
+                  <td><FileSize :bytes="artifact.size" /></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
         <p v-if="artifacts.next.value !== undefined">
           <button class="button button-ghost small" type="button" :disabled="artifacts.loading.value" @click="artifacts.more">{{ t('common.loadMore') }}</button>
         </p>
-      </div>
-
-      <div v-if="guides.length > 0 || guideFailed" class="section panel">
-        <h2>{{ t('scenarios.guide') }}</h2>
-        <p v-if="guideFailed" class="notice notice-error" role="alert">{{ t('scenarios.guideFailed') }}</p>
-        <template v-else>
-          <template v-for="g in guides" :key="g.deception_id">
-            <p class="hint">{{ guides.length > 1 ? t('scenarios.guideOf', { id: g.deception_id, language: g.language }) : t('scenarios.guideLanguage', { language: g.language }) }}</p>
-            <MarkdownView :source="g.content" />
-          </template>
-        </template>
       </div>
 
       <div v-if="canWrite" class="section panel narrow">
@@ -352,6 +369,29 @@ onMounted(load);
 
 .end {
   text-align: right;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.story {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.story h3 {
+  font-size: 0.95rem;
+}
+
+.story summary {
+  cursor: pointer;
+  font-weight: 600;
 }
 
 .hint {

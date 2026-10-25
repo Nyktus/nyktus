@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { expect, test } from 'vitest';
-import { checkPersonaValue, type PersonaKind, type PersonaProblem } from './personaRules';
+import { describe, expect, test } from 'vitest';
+import { checkPersonaValue, personaProblems, personaToSend, type PersonaField, type PersonaKind, type PersonaProblem } from './personaRules';
 
 test.each<[PersonaKind, string, PersonaProblem | undefined]>([
   ['host', 'jump02', undefined],
@@ -34,4 +34,26 @@ test.each<[PersonaKind, string, PersonaProblem | undefined]>([
   ['text', `\u00e9${'x'.repeat(199)}`, undefined],
 ])('checkPersonaValue(%s, %j) = %s', (kind, value, want) => {
   expect(checkPersonaValue(kind, value)).toBe(want);
+});
+
+describe('the values of a persona', () => {
+  const fields: PersonaField[] = [
+    { key: 'company', kind: 'text', label: 'Company', example: 'Acme Corp' },
+    { key: 'host', kind: 'host', label: 'Host', example: 'jump02' },
+  ];
+
+  test('are checked by key, and a key the scenario has is not checked', () => {
+    expect(personaProblems(fields, { company: '', host: 'Jump_02' })).toEqual({ company: 'required', host: 'host' });
+    expect(personaProblems(fields, { company: '', host: 'jump02' }, { company: 'Acme Corp' })).toEqual({});
+    expect(personaProblems(fields, {}, { company: 'Acme Corp' })).toEqual({ host: 'required' });
+  });
+
+  test('are sent trimmed, and without the keys the scenario has', () => {
+    expect(personaToSend(fields, { company: ' Acme Corp ', host: ' jump02 ' })).toEqual({ company: 'Acme Corp', host: 'jump02' });
+    expect(personaToSend(fields, { company: 'Other', host: ' jump02 ' }, { company: 'Acme Corp' })).toEqual({ host: 'jump02' });
+  });
+
+  test('treat a key as there even when its value is empty', () => {
+    expect(personaToSend(fields, { host: 'a' }, { company: '' })).toEqual({ host: 'a' });
+  });
 });

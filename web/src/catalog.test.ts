@@ -4,7 +4,7 @@
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { arrive, boot, submit, type } from './testing/boot';
-import { catalogDeception, catalogSummary, failure, fakeServer, joined, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { catalogArtifact, catalogArtifactSummary, catalogDeception, catalogSummary, failure, fakeServer, joined, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -20,6 +20,8 @@ function server(role: Role = 'admin', extra: Record<string, () => Response> = {}
   return fakeServer({
     'GET /api/v1/session': () => json(200, sessionBody(role)),
     'GET /api/v1/catalog/deceptions': () => json(200, { deceptions: [catalogSummary(), catalogSummary({ id: 'ssh-jump-host', category: 'network', title: 'SSH jump host' })] }),
+    'GET /api/v1/catalog/artifacts': () => json(200, { artifacts: [catalogArtifactSummary(), catalogArtifactSummary({ id: 'ssh-config', category: 'network', title: 'SSH client configuration' })] }),
+    'GET /api/v1/catalog/artifacts/bookmarks': () => json(200, catalogArtifact()),
     [`GET ${one}`]: () => json(200, catalogDeception()),
     'GET /api/v1/scenarios': () => json(200, { scenarios: [] }),
     ...extra,
@@ -59,6 +61,90 @@ describe('the catalog', () => {
   test('is in the navigation of every role', async () => {
     const { wrapper } = await boot(server('viewer'), '/catalog');
     expect(wrapper.get('nav').text()).toContain('Catalog');
+  });
+});
+
+describe('the artifacts of the catalog', () => {
+  test('are a tab of the catalog, and the list of deceptions is the other', async () => {
+    const s = server();
+    const { wrapper } = await boot(s, '/catalog/artifacts');
+    expect(wrapper.findAll('.card h2').map((h) => h.text())).toEqual(['Bookmarks file', 'SSH client configuration']);
+    expect(s.requests.at(-1)?.url).toBe('/api/v1/catalog/artifacts?lang=en');
+    expect(wrapper.get('.card a').attributes('href')).toBe('/catalog/artifacts/bookmarks');
+    const tabs = wrapper.get('nav[aria-label="Parts of the catalog"]').findAll('a');
+    expect(tabs.map((a) => [a.text(), a.attributes('href'), a.attributes('aria-current')])).toEqual([
+      ['Deceptions', '/catalog', undefined],
+      ['Artifacts', '/catalog/artifacts', 'page'],
+    ]);
+  });
+
+  test('are read when their tab is opened, not with the deceptions', async () => {
+    const s = server();
+    const { wrapper } = await boot(s, '/catalog');
+    expect(s.requests.some((r) => r.url.startsWith('/api/v1/catalog/artifacts'))).toBe(false);
+    await wrapper.get('nav[aria-label="Parts of the catalog"] a[href="/catalog/artifacts"]').trigger('click');
+    await vi.waitFor(() => expect(wrapper.findAll('.card h2').map((h) => h.text())).toEqual(['Bookmarks file', 'SSH client configuration']));
+    expect(wrapper.get('nav[aria-label="Parts of the catalog"] a[href="/catalog/artifacts"]').attributes('aria-current')).toBe('page');
+  });
+
+  test('narrow by category, and ask again when the language changes', async () => {
+    const s = server();
+    const { wrapper, i18n } = await boot(s, '/catalog/artifacts');
+    await wrapper.get('#filter-category').setValue('network');
+    expect(wrapper.findAll('.card h2').map((h) => h.text())).toEqual(['SSH client configuration']);
+    await wrapper.get('#filter-category').setValue('identity');
+    expect(wrapper.text()).toContain('No artifact matches the filter.');
+    i18n.setLocale('de');
+    await flushPromises();
+    expect(s.requests.at(-1)?.url).toBe('/api/v1/catalog/artifacts?lang=de');
+  });
+
+  test('say when they could not be loaded', async () => {
+    const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/artifacts': () => failure(503, 'unavailable') }), '/catalog/artifacts');
+    expect(wrapper.get('[role=alert]').text()).toContain('The catalog could not be loaded.');
+  });
+
+  describe('one of them', () => {
+    const path = '/catalog/artifacts/bookmarks';
+
+    test('shows its file, its slots and the values it uses, and says it is a lure carrier when a slot is required', async () => {
+      const { wrapper } = await boot(server('viewer'), path);
+      expect(wrapper.get('h1').text()).toBe('Bookmarks file');
+      expect(wrapper.text()).toContain('bookmarks.html');
+      expect(wrapper.text()).toContain('HTML');
+      const slot = wrapper.get('tbody tr');
+      expect(slot.text()).toContain('portal');
+      expect(slot.text()).toContain('Web URL');
+      expect(slot.text()).toContain('Required');
+      expect(wrapper.text()).toContain('always a lure carrier');
+      expect(wrapper.text()).toContain('Portal host');
+      expect(wrapper.get('a[href="/catalog/artifacts"]').text()).toBe('All artifacts of the catalog');
+    });
+
+    test('says it can be pocket litter when every slot is optional', async () => {
+      const optional = catalogArtifact({ slots: [{ key: 'portal', accepts: ['web_url', 'dns'], optional: true }] });
+      const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/artifacts/bookmarks': () => json(200, optional) }), path);
+      expect(wrapper.text()).toContain('If every slot stays empty, it is pocket litter.');
+      expect(wrapper.get('tbody tr').text()).toContain('Web URL, DNS name');
+      expect(wrapper.get('tbody tr').text()).toContain('Optional');
+    });
+
+    test('says it is always pocket litter when it has no slot', async () => {
+      const none = catalogArtifact({ slots: [] });
+      const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/artifacts/bookmarks': () => json(200, none) }), path);
+      expect(wrapper.text()).toContain('It is always pocket litter');
+      expect(wrapper.find('table').exists()).toBe(true); // the persona table
+    });
+
+    test('says when it does not exist', async () => {
+      const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/artifacts/bookmarks': () => failure(404, 'not_found') }), path);
+      expect(wrapper.get('[role=status]').text()).toBe('This does not exist.');
+    });
+
+    test('keeps the tab of the catalog marked in the navigation', async () => {
+      const { wrapper } = await boot(server(), path);
+      expect(wrapper.get('nav a.current').text()).toBe('Catalog');
+    });
   });
 });
 
@@ -139,6 +225,48 @@ describe('a deception', () => {
       expect(wrapper.text()).toContain('For example: portal.acme.example');
     });
 
+    test('chooses the recommended files at first, and offers no other', async () => {
+      const { wrapper } = await boot(server(), path);
+      const boxes = wrapper.findAll('fieldset input[type=checkbox]');
+      expect(boxes).toHaveLength(1);
+      expect((boxes[0]?.element as HTMLInputElement).checked).toBe(true);
+      expect(wrapper.get('fieldset.files').text()).toContain('bookmarks.html');
+      expect(wrapper.get('fieldset.files').text()).toContain('you can add other files to the scenario afterwards');
+    });
+
+    test('sends the files that stayed chosen, and none when all were taken away', async () => {
+      const two = catalogDeception({ artifacts: [{ key: 'bookmarks', file_name: 'bookmarks.html', format: 'html' }, { key: 'shortcut', file_name: 'portal.url', format: 'config' }] });
+      for (const [taken, want] of [[[], ['bookmarks', 'shortcut']], [['bookmarks'], ['shortcut']], [['bookmarks', 'shortcut'], []]] as const) {
+        const s = server('admin', { [apply]: created, [`GET ${one}`]: () => json(200, two), [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario()) });
+        const { wrapper } = await boot(s, path);
+        for (const key of taken) {
+          await wrapper.get(`input[type=checkbox][value="${key}"]`).setValue(false);
+        }
+        if (want.length === 0) {
+          expect(wrapper.get('fieldset.files').text()).toContain('No file is created now.');
+        }
+        await fill(wrapper);
+        await submit(wrapper);
+        expect((s.requests.find((r) => r.method === 'POST')?.body as { artifacts: string[] }).artifacts, taken.join()).toEqual(want);
+        document.body.innerHTML = '';
+      }
+    });
+
+    test('keeps the choice of files when the language changes', async () => {
+      const s = server();
+      const { wrapper, i18n } = await boot(s, path);
+      await wrapper.get('input[type=checkbox]').setValue(false);
+      i18n.setLocale('de');
+      await flushPromises();
+      expect((wrapper.get('input[type=checkbox]').element as HTMLInputElement).checked).toBe(false);
+    });
+
+    test('shows no choice of files for a deception that recommends none', async () => {
+      const bare = server('admin', { [`GET ${one}`]: () => json(200, catalogDeception({ artifacts: [] })) });
+      const { wrapper } = await boot(bare, path);
+      expect(wrapper.find('fieldset.files').exists()).toBe(false);
+    });
+
     test('asks for a name that is more than spaces, before it asks the server', async () => {
       const s = server('admin', { [apply]: created });
       const { wrapper } = await boot(s, path);
@@ -170,6 +298,7 @@ describe('a deception', () => {
         notes: 'On the file share.',
         language: 'de',
         persona: { company: 'Acme Corp', host: 'portal.acme.example' },
+        artifacts: ['bookmarks'],
       });
       await arrive(router, 'scenario');
     });
@@ -229,7 +358,7 @@ describe('the guide of a scenario', () => {
     expect(guide.get('h3').text()).toBe('Place it');
     expect(guide.findAll('ol li')).toHaveLength(2);
     expect(guide.get('pre').text()).toBe('open file');
-    expect(wrapper.text()).toContain('Language of the guide: en');
+    expect(wrapper.text()).toContain('Language: en.');
   });
 
   // The guide names values that a person typed, and the console shows them as text.
