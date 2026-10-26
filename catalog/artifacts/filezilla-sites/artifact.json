@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "filezilla-sites",
+  "category": "identity",
+  "title": {
+    "en": "FileZilla site manager",
+    "de": "FileZilla-Servermanager"
+  },
+  "summary": {
+    "en": "A sitemanager.xml file of FileZilla with the host, account and password of a transfer server. Connecting resolves the name of a DNS honeytoken.",
+    "de": "Eine sitemanager.xml-Datei von FileZilla mit Host, Konto und Passwort eines Übertragungsservers. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "slots": [
+    {"key": "Host", "accepts": ["dns"], "optional": false}
+  ],
+  "persona": [
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Transfer account", "de": "Übertragungskonto"},
+      "example": "deploy"
+    }
+  ],
+  "secrets": [
+    {"key": "Password", "length": 20}
+  ],
+  "file_name": "sitemanager.xml",
+  "format": "config",
+  "line_endings": "lf",
+  "template": "sitemanager.xml.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}

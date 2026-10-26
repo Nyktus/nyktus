@@ -62,6 +62,10 @@ The file `Passwords.csv` has the columns that Chrome, Edge and other browsers wr
 
 Open the URL of the third entry in a browser on a computer with access to the internet. Within a minute, the scenario shows an incident. Close the incident after the test.
 
+## Pocket litter
+
+The files `Meeting-notes.md` and `Favorites.html` hold no honeytoken and raise no event, whatever happens to them. They give the story a believable surrounding: place them in the same places as the other files of the story, beside the files that raise an event.
+
 ## Limits
 
 - Whoever reads one of the files, or looks at the properties of the shortcut, sees the URL. It names the address of your trigger and a random value.

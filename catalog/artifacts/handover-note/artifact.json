@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "handover-note",
+  "category": "data",
+  "title": {
+    "en": "Handover note",
+    "de": "Übergabenotiz"
+  },
+  "summary": {
+    "en": "A short note on the handover of the day-to-day operations of a domain, with open points. It holds no honeytoken and raises no event.",
+    "de": "Eine kurze Notiz zur Übergabe des laufenden Betriebs einer Domain, mit offenen Punkten. Sie enthält keinen Honeytoken und löst kein Event aus."
+  },
+  "slots": [],
+  "persona": [
+    {
+      "key": "Contact",
+      "kind": "text",
+      "label": {"en": "Contact", "de": "Ansprechpartner"},
+      "example": "Infrastructure team"
+    },
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Internal domain", "de": "Interne Domain"},
+      "example": "corp.example.com"
+    }
+  ],
+  "secrets": [],
+  "file_name": "Handover.txt",
+  "format": "text",
+  "line_endings": "lf",
+  "template": "handover.txt.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}

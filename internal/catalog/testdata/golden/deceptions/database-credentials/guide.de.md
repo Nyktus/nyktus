@@ -47,6 +47,21 @@ Die Datei `ldap.ini` konfiguriert, wie eine Anwendung sich mit ihrem Verzeichnis
 
 Lösen Sie den Namen mit `nslookup directoryq3xwz7a2kfm4ub6tyc5nre.d.example.net` auf einem Rechner mit Zugang zum Internet auf. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
+## Client-Dateien der Datenbank
+
+Die Dateien `pgpass` und `my.cnf` halten die Verbindung zur Datenbank in der Form fest, die die Clients von PostgreSQL und MySQL lesen: den Host `databaseq3xwz7a2kfm4ub6tyc5nre.d.example.net`, die Datenbank `billing`, das Konto `billing_app` und ein zufälliges Passwort. Ein Client, der sich damit verbindet, löst den Host-Namen auf, was ein Event auslöst. Dahinter steht keine Datenbank, und Konto und Passwort gibt es nirgends.
+
+### Datei platzieren
+
+1. Wählen Sie die Datei, die zum vorgetäuschten Datenbanksystem passt, oder legen Sie beide ab.
+2. Nennen Sie sie `.pgpass` und `.my.cnf` und legen Sie sie im Home-Verzeichnis eines Kontos auf einem Anwendungs- oder Administrationsserver ab. Beschränken Sie sie auf ihren Besitzer: `chmod 600 ~/.pgpass ~/.my.cnf`. libpq ignoriert eine `.pgpass`, die andere lesen können.
+3. Legen Sie sie nicht im Konto eines Dienstes ab, der sich mit einer echten Datenbank verbindet.
+4. Halten Sie in den Platzierungsnotizen des Artefakts fest, wo Sie es abgelegt haben.
+
+### Testen
+
+Lösen Sie den Host mit `nslookup databaseq3xwz7a2kfm4ub6tyc5nre.d.example.net` auf einem Rechner mit Zugang zum Internet auf, oder verbinden Sie sich mit `psql` oder `mysql` und der Datei am Platz. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
 ## Grenzen
 
 - Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.

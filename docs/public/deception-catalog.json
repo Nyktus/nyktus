@@ -24,6 +24,9 @@
     "T1021.004": {
       "name": "Remote Services: SSH"
     },
+    "T1021.006": {
+      "name": "Remote Services: Windows Remote Management"
+    },
     "T1039": {
       "name": "Data from Network Shared Drive"
     },
@@ -48,11 +51,17 @@
     "T1135": {
       "name": "Network Share Discovery"
     },
+    "T1195.001": {
+      "name": "Supply Chain Compromise: Compromise Software Dependencies and Development Tools"
+    },
     "T1204.001": {
       "name": "User Execution: Malicious Link"
     },
     "T1213": {
       "name": "Data from Information Repositories"
+    },
+    "T1213.003": {
+      "name": "Data from Information Repositories: Code Repositories"
     },
     "T1217": {
       "name": "Browser Information Discovery"
@@ -65,6 +74,12 @@
     },
     "T1552.002": {
       "name": "Unsecured Credentials: Credentials in Registry"
+    },
+    "T1552.003": {
+      "name": "Unsecured Credentials: Shell History"
+    },
+    "T1555": {
+      "name": "Credentials from Password Stores"
     },
     "T1555.003": {
       "name": "Credentials from Password Stores: Credentials from Web Browsers"
@@ -156,55 +171,10 @@
         ]
       },
       {
-        "id": "api-key-snippet",
-        "category": "application",
-        "title": "curl-Befehl mit API-Schlüssel",
-        "summary": "Eine Notiz mit einem curl-Befehl, der eine interne API mit einem Bearer-Token aufruft. Wer ihn ausführt, löst den Namen eines DNS-Honeytokens auf.",
-        "techniques": [
-          "T1552.001"
-        ],
-        "engage_activities": [
-          "EAC0005"
-        ],
-        "honeytokens": [
-          {
-            "key": "Api",
-            "type": "dns",
-            "label": "API-Host",
-            "techniques": [
-              "T1552.001",
-              "T1078"
-            ],
-            "severity": "high"
-          }
-        ],
-        "persona": [
-          {
-            "key": "Product",
-            "kind": "text",
-            "label": "Name des internen Dienstes",
-            "example": "Inventory service"
-          }
-        ],
-        "secrets": [
-          {
-            "key": "Token",
-            "length": 40
-          }
-        ],
-        "artifacts": [
-          {
-            "key": "api-key-snippet",
-            "file_name": "api-call.txt",
-            "format": "text"
-          }
-        ]
-      },
-      {
         "id": "database-credentials",
         "category": "application",
         "title": "Datenbank-Zugangsdaten in Konfigurationsdateien",
-        "summary": "Eine Anwendung hält die Verbindung zu ihrer Datenbank in einer INI-Datei und einer Umgebungsdatei, die zu ihrem Verzeichnis in einem Profil. Wer sich mit den Werten verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "summary": "Eine Anwendung hält die Verbindung zu ihrer Datenbank in einer INI-Datei, einer Umgebungsdatei und den Client-Dateien der Datenbank, die zu ihrem Verzeichnis in einem Profil. Wer sich mit den Werten verbindet, löst den Namen eines DNS-Honeytokens auf.",
         "techniques": [
           "T1552.001",
           "T1087.002"
@@ -283,6 +253,124 @@
             "key": "ldap-profile",
             "file_name": "ldap.ini",
             "format": "config"
+          },
+          {
+            "key": "pgpass",
+            "file_name": "pgpass",
+            "format": "config"
+          },
+          {
+            "key": "my-cnf",
+            "file_name": "my.cnf",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "developer-access",
+        "category": "application",
+        "title": "Zugänge, die Entwickler zurücklassen",
+        "summary": "Eine Notiz mit einem API-Aufruf, die Zugangsdaten eines Git-Servers und die Konfiguration der Paketmanager npm und pip, mit Host-Namen und Token. Wer sie benutzt, löst den Namen eines DNS-Honeytokens auf.",
+        "techniques": [
+          "T1552.001",
+          "T1213.003",
+          "T1195.001"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Api",
+            "type": "dns",
+            "label": "API-Host",
+            "techniques": [
+              "T1552.001",
+              "T1078"
+            ],
+            "severity": "high"
+          },
+          {
+            "key": "Git",
+            "type": "dns",
+            "label": "Git-Server",
+            "techniques": [
+              "T1552.001",
+              "T1213.003"
+            ],
+            "severity": "high"
+          },
+          {
+            "key": "Registry",
+            "type": "dns",
+            "label": "Paket-Registry",
+            "techniques": [
+              "T1552.001",
+              "T1195.001"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Product",
+            "kind": "text",
+            "label": "Name des internen Dienstes",
+            "example": "Inventory service"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "ci-pull"
+          },
+          {
+            "key": "Project",
+            "kind": "name",
+            "label": "Name des Projekts",
+            "example": "platform-prod"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          },
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "api-key-snippet",
+            "file_name": "api-call.txt",
+            "format": "text"
+          },
+          {
+            "key": "git-credentials",
+            "file_name": "git-credentials",
+            "format": "config"
+          },
+          {
+            "key": "git-config",
+            "file_name": "config",
+            "format": "config"
+          },
+          {
+            "key": "npmrc",
+            "file_name": "npmrc",
+            "format": "config"
+          },
+          {
+            "key": "pip-conf",
+            "file_name": "pip.conf",
+            "format": "config"
+          },
+          {
+            "key": "project-readme",
+            "file_name": "README.md",
+            "format": "markdown"
           }
         ]
       },
@@ -290,10 +378,11 @@
         "id": "directory-and-shares",
         "category": "network",
         "title": "Dokumentation von Verzeichnis und Dateifreigaben",
-        "summary": "Eine Übersicht der DFS-Namespaces und ein Runbook zur Prüfung der Replikation, mit den Namen eines Dateiservers und eines Domänencontrollers. Wer sie auflöst, löst ein Event aus.",
+        "summary": "Eine Übersicht der DFS-Namespaces, ein Runbook zur Prüfung der Replikation und ein Skript, das einen Computer im Verzeichnis anlegt, mit den Namen eines Dateiservers, eines Domänencontrollers und eines Computers. Wer einen Namen auflöst, löst ein Event aus; zwei Notizen daneben tun es nicht.",
         "techniques": [
           "T1135",
-          "T1018"
+          "T1018",
+          "T1087.002"
         ],
         "engage_activities": [
           "EAC0005"
@@ -316,6 +405,16 @@
               "T1018"
             ],
             "severity": "high"
+          },
+          {
+            "key": "Computer",
+            "type": "dns",
+            "label": "Computer im Verzeichnis",
+            "techniques": [
+              "T1018",
+              "T1087.002"
+            ],
+            "severity": "medium"
           }
         ],
         "persona": [
@@ -330,6 +429,12 @@
             "kind": "text",
             "label": "Ansprechpartner",
             "example": "Infrastructure team"
+          },
+          {
+            "key": "ComputerName",
+            "kind": "name",
+            "label": "Name des Computers",
+            "example": "fs-archive01"
           }
         ],
         "secrets": [],
@@ -342,6 +447,21 @@
           {
             "key": "replication-runbook",
             "file_name": "Replication-check.txt",
+            "format": "text"
+          },
+          {
+            "key": "ad-computer-object",
+            "file_name": "New-ServerObject.ps1",
+            "format": "config"
+          },
+          {
+            "key": "handover-note",
+            "file_name": "Handover.txt",
+            "format": "text"
+          },
+          {
+            "key": "ticket-export",
+            "file_name": "Tickets.csv",
             "format": "text"
           }
         ]
@@ -411,6 +531,143 @@
             "key": "email-link",
             "file_name": "message.html",
             "format": "html"
+          }
+        ]
+      },
+      {
+        "id": "file-transfer",
+        "category": "identity",
+        "title": "Zugang zur Dateiübertragung",
+        "summary": "Eine .netrc-Datei und der Servermanager von FileZilla mit Konto und Passwort für einen Übertragungsserver. Wer die Zugangsdaten nutzt, löst den Namen eines DNS-Honeytokens auf.",
+        "techniques": [
+          "T1552.001",
+          "T1555"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Host",
+            "type": "dns",
+            "label": "Host",
+            "techniques": [
+              "T1552.001",
+              "T1078",
+              "T1555"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "deploy"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "netrc",
+            "file_name": "netrc",
+            "format": "config"
+          },
+          {
+            "key": "filezilla-sites",
+            "file_name": "sitemanager.xml",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "internal-dns-alias",
+        "category": "network",
+        "title": "Interner Name, der auf einen Honeytoken zeigt",
+        "summary": "Ein Name in der internen DNS-Zone, etwa vault oder backup01, der auf den Namen eines DNS-Honeytokens zeigt. Wer den Namen nachschlägt, löst ein Event aus.",
+        "techniques": [
+          "T1018"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Target",
+            "type": "dns",
+            "label": "Ziel des Alias",
+            "techniques": [
+              "T1018"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Alias",
+            "kind": "name",
+            "label": "Name des Alias",
+            "example": "vault"
+          },
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Interne Domain",
+            "example": "corp.example.com"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "mcp-client-config",
+        "category": "application",
+        "title": "Konfiguration eines MCP-Clients",
+        "summary": "Die Konfiguration eines KI-Assistenten mit einem MCP-Server, der über HTTP erreicht wird, mit einem Authorization-Header. Wer sich mit dem Server verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "techniques": [
+          "T1213",
+          "T1552.001"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Mcp",
+            "type": "dns",
+            "label": "MCP-Server",
+            "techniques": [
+              "T1552.001",
+              "T1213"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "McpName",
+            "kind": "name",
+            "label": "Name des MCP-Servers",
+            "example": "knowledge-base"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "mcp-client-config",
+            "file_name": "mcp.json",
+            "format": "config"
           }
         ]
       },
@@ -521,51 +778,6 @@
           {
             "key": "mssql-backup-beacon",
             "file_name": "procedure.sql",
-            "format": "config"
-          }
-        ]
-      },
-      {
-        "id": "netrc",
-        "category": "identity",
-        "title": "Zugangsdaten in einer .netrc-Datei",
-        "summary": "Eine .netrc-Datei mit Konto und Passwort für einen Host, wie curl, Git und FTP-Clients sie lesen. Wer die Zugangsdaten nutzt, löst den Namen eines DNS-Honeytokens auf.",
-        "techniques": [
-          "T1552.001"
-        ],
-        "engage_activities": [
-          "EAC0005"
-        ],
-        "honeytokens": [
-          {
-            "key": "Host",
-            "type": "dns",
-            "label": "Host",
-            "techniques": [
-              "T1552.001",
-              "T1078"
-            ],
-            "severity": "high"
-          }
-        ],
-        "persona": [
-          {
-            "key": "Account",
-            "kind": "name",
-            "label": "Konto",
-            "example": "deploy"
-          }
-        ],
-        "secrets": [
-          {
-            "key": "Password",
-            "length": 20
-          }
-        ],
-        "artifacts": [
-          {
-            "key": "netrc",
-            "file_name": "netrc",
             "format": "config"
           }
         ]
@@ -697,6 +909,11 @@
             "key": "terraform-backend",
             "file_name": "backend.tf",
             "format": "config"
+          },
+          {
+            "key": "project-readme",
+            "file_name": "README.md",
+            "format": "markdown"
           }
         ]
       },
@@ -803,6 +1020,16 @@
             "key": "password-export",
             "file_name": "Passwords.csv",
             "format": "config"
+          },
+          {
+            "key": "meeting-notes",
+            "file_name": "Meeting-notes.md",
+            "format": "markdown"
+          },
+          {
+            "key": "bookmarks-plain",
+            "file_name": "Favorites.html",
+            "format": "html"
           }
         ]
       },
@@ -1080,6 +1307,90 @@
           {
             "key": "wireguard-config",
             "file_name": "wg0.conf",
+            "format": "config"
+          },
+          {
+            "key": "shell-history-plain",
+            "file_name": "shell-history.txt",
+            "format": "text"
+          },
+          {
+            "key": "ticket-export",
+            "file_name": "Tickets.csv",
+            "format": "text"
+          }
+        ]
+      },
+      {
+        "id": "shell-history",
+        "category": "endpoint",
+        "title": "Shell-Verlauf mit Befehlen für Server",
+        "summary": "Die Verlaufsdateien einer Linux-Shell und von PowerShell, mit einem Befehl, der sich an einer Datenbank anmeldet, und Befehlen, die eine Remote-Sitzung öffnen. Wer sie ausführt, löst den Namen eines DNS-Honeytokens auf.",
+        "techniques": [
+          "T1552.003",
+          "T1078",
+          "T1021.006"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Database",
+            "type": "dns",
+            "label": "Datenbank-Host",
+            "techniques": [
+              "T1552.003",
+              "T1078"
+            ],
+            "severity": "high"
+          },
+          {
+            "key": "Server",
+            "type": "dns",
+            "label": "Server",
+            "techniques": [
+              "T1552.003",
+              "T1021.006"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name der Datenbank",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "svc-ops"
+          },
+          {
+            "key": "Netbios",
+            "kind": "name",
+            "label": "NetBIOS-Name der Domain",
+            "example": "CORP"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "bash-history",
+            "file_name": "bash_history",
+            "format": "config"
+          },
+          {
+            "key": "psreadline-history",
+            "file_name": "ConsoleHost_history.txt",
             "format": "config"
           }
         ]
@@ -1397,55 +1708,10 @@
         ]
       },
       {
-        "id": "api-key-snippet",
-        "category": "application",
-        "title": "curl command with an API key",
-        "summary": "A note with a curl command that calls an internal API with a bearer token. Running it resolves the name of a DNS honeytoken.",
-        "techniques": [
-          "T1552.001"
-        ],
-        "engage_activities": [
-          "EAC0005"
-        ],
-        "honeytokens": [
-          {
-            "key": "Api",
-            "type": "dns",
-            "label": "API host",
-            "techniques": [
-              "T1552.001",
-              "T1078"
-            ],
-            "severity": "high"
-          }
-        ],
-        "persona": [
-          {
-            "key": "Product",
-            "kind": "text",
-            "label": "Name of the internal service",
-            "example": "Inventory service"
-          }
-        ],
-        "secrets": [
-          {
-            "key": "Token",
-            "length": 40
-          }
-        ],
-        "artifacts": [
-          {
-            "key": "api-key-snippet",
-            "file_name": "api-call.txt",
-            "format": "text"
-          }
-        ]
-      },
-      {
         "id": "database-credentials",
         "category": "application",
         "title": "Database credentials in configuration files",
-        "summary": "An application keeps the connection to its database in an INI file and an environment file, and the one to its directory in a profile. Connecting with the values resolves the name of a DNS honeytoken.",
+        "summary": "An application keeps the connection to its database in an INI file, an environment file and the client files of the database, and the one to its directory in a profile. Connecting with the values resolves the name of a DNS honeytoken.",
         "techniques": [
           "T1552.001",
           "T1087.002"
@@ -1524,6 +1790,124 @@
             "key": "ldap-profile",
             "file_name": "ldap.ini",
             "format": "config"
+          },
+          {
+            "key": "pgpass",
+            "file_name": "pgpass",
+            "format": "config"
+          },
+          {
+            "key": "my-cnf",
+            "file_name": "my.cnf",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "developer-access",
+        "category": "application",
+        "title": "Access that developers leave behind",
+        "summary": "A note with an API call, the credentials of a Git server and the configuration of the package managers npm and pip, with host names and tokens. Using them resolves the name of a DNS honeytoken.",
+        "techniques": [
+          "T1552.001",
+          "T1213.003",
+          "T1195.001"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Api",
+            "type": "dns",
+            "label": "API host",
+            "techniques": [
+              "T1552.001",
+              "T1078"
+            ],
+            "severity": "high"
+          },
+          {
+            "key": "Git",
+            "type": "dns",
+            "label": "Git server",
+            "techniques": [
+              "T1552.001",
+              "T1213.003"
+            ],
+            "severity": "high"
+          },
+          {
+            "key": "Registry",
+            "type": "dns",
+            "label": "Package registry",
+            "techniques": [
+              "T1552.001",
+              "T1195.001"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Product",
+            "kind": "text",
+            "label": "Name of the internal service",
+            "example": "Inventory service"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "ci-pull"
+          },
+          {
+            "key": "Project",
+            "kind": "name",
+            "label": "Name of the project",
+            "example": "platform-prod"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          },
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "api-key-snippet",
+            "file_name": "api-call.txt",
+            "format": "text"
+          },
+          {
+            "key": "git-credentials",
+            "file_name": "git-credentials",
+            "format": "config"
+          },
+          {
+            "key": "git-config",
+            "file_name": "config",
+            "format": "config"
+          },
+          {
+            "key": "npmrc",
+            "file_name": "npmrc",
+            "format": "config"
+          },
+          {
+            "key": "pip-conf",
+            "file_name": "pip.conf",
+            "format": "config"
+          },
+          {
+            "key": "project-readme",
+            "file_name": "README.md",
+            "format": "markdown"
           }
         ]
       },
@@ -1531,10 +1915,11 @@
         "id": "directory-and-shares",
         "category": "network",
         "title": "Documentation of directory and file shares",
-        "summary": "A map of the DFS namespaces and a runbook for the replication check, with the names of a file server and a domain controller. Resolving them raises an event.",
+        "summary": "A map of the DFS namespaces, a runbook for the replication check and a script that adds a computer to the directory, with the names of a file server, a domain controller and a computer. Resolving a name raises an event; two notes beside them raise none.",
         "techniques": [
           "T1135",
-          "T1018"
+          "T1018",
+          "T1087.002"
         ],
         "engage_activities": [
           "EAC0005"
@@ -1557,6 +1942,16 @@
               "T1018"
             ],
             "severity": "high"
+          },
+          {
+            "key": "Computer",
+            "type": "dns",
+            "label": "Computer in the directory",
+            "techniques": [
+              "T1018",
+              "T1087.002"
+            ],
+            "severity": "medium"
           }
         ],
         "persona": [
@@ -1571,6 +1966,12 @@
             "kind": "text",
             "label": "Contact",
             "example": "Infrastructure team"
+          },
+          {
+            "key": "ComputerName",
+            "kind": "name",
+            "label": "Name of the computer",
+            "example": "fs-archive01"
           }
         ],
         "secrets": [],
@@ -1583,6 +1984,21 @@
           {
             "key": "replication-runbook",
             "file_name": "Replication-check.txt",
+            "format": "text"
+          },
+          {
+            "key": "ad-computer-object",
+            "file_name": "New-ServerObject.ps1",
+            "format": "config"
+          },
+          {
+            "key": "handover-note",
+            "file_name": "Handover.txt",
+            "format": "text"
+          },
+          {
+            "key": "ticket-export",
+            "file_name": "Tickets.csv",
             "format": "text"
           }
         ]
@@ -1652,6 +2068,143 @@
             "key": "email-link",
             "file_name": "message.html",
             "format": "html"
+          }
+        ]
+      },
+      {
+        "id": "file-transfer",
+        "category": "identity",
+        "title": "Access to file transfer",
+        "summary": "A .netrc file and the site manager of FileZilla with an account and a password for a transfer server. Using the credentials resolves the name of a DNS honeytoken.",
+        "techniques": [
+          "T1552.001",
+          "T1555"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Host",
+            "type": "dns",
+            "label": "Host",
+            "techniques": [
+              "T1552.001",
+              "T1078",
+              "T1555"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "deploy"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "netrc",
+            "file_name": "netrc",
+            "format": "config"
+          },
+          {
+            "key": "filezilla-sites",
+            "file_name": "sitemanager.xml",
+            "format": "config"
+          }
+        ]
+      },
+      {
+        "id": "internal-dns-alias",
+        "category": "network",
+        "title": "Internal name that points to a honeytoken",
+        "summary": "A name in the internal DNS zone, such as vault or backup01, that points to the name of a DNS honeytoken. Looking up the name raises an event.",
+        "techniques": [
+          "T1018"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Target",
+            "type": "dns",
+            "label": "Target of the alias",
+            "techniques": [
+              "T1018"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "Alias",
+            "kind": "name",
+            "label": "Name of the alias",
+            "example": "vault"
+          },
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Internal domain",
+            "example": "corp.example.com"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "mcp-client-config",
+        "category": "application",
+        "title": "Configuration of an MCP client",
+        "summary": "The configuration of an AI assistant with an MCP server that is reached over HTTP, with an authorization header. Connecting to the server resolves the name of a DNS honeytoken.",
+        "techniques": [
+          "T1213",
+          "T1552.001"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Mcp",
+            "type": "dns",
+            "label": "MCP server",
+            "techniques": [
+              "T1552.001",
+              "T1213"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "McpName",
+            "kind": "name",
+            "label": "Name of the MCP server",
+            "example": "knowledge-base"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "mcp-client-config",
+            "file_name": "mcp.json",
+            "format": "config"
           }
         ]
       },
@@ -1762,51 +2315,6 @@
           {
             "key": "mssql-backup-beacon",
             "file_name": "procedure.sql",
-            "format": "config"
-          }
-        ]
-      },
-      {
-        "id": "netrc",
-        "category": "identity",
-        "title": "Credentials in a .netrc file",
-        "summary": "A .netrc file with an account and password for a host, as curl, Git and FTP clients read it. Using the credentials resolves the name of a DNS honeytoken.",
-        "techniques": [
-          "T1552.001"
-        ],
-        "engage_activities": [
-          "EAC0005"
-        ],
-        "honeytokens": [
-          {
-            "key": "Host",
-            "type": "dns",
-            "label": "Host",
-            "techniques": [
-              "T1552.001",
-              "T1078"
-            ],
-            "severity": "high"
-          }
-        ],
-        "persona": [
-          {
-            "key": "Account",
-            "kind": "name",
-            "label": "Account",
-            "example": "deploy"
-          }
-        ],
-        "secrets": [
-          {
-            "key": "Password",
-            "length": 20
-          }
-        ],
-        "artifacts": [
-          {
-            "key": "netrc",
-            "file_name": "netrc",
             "format": "config"
           }
         ]
@@ -1938,6 +2446,11 @@
             "key": "terraform-backend",
             "file_name": "backend.tf",
             "format": "config"
+          },
+          {
+            "key": "project-readme",
+            "file_name": "README.md",
+            "format": "markdown"
           }
         ]
       },
@@ -2044,6 +2557,16 @@
             "key": "password-export",
             "file_name": "Passwords.csv",
             "format": "config"
+          },
+          {
+            "key": "meeting-notes",
+            "file_name": "Meeting-notes.md",
+            "format": "markdown"
+          },
+          {
+            "key": "bookmarks-plain",
+            "file_name": "Favorites.html",
+            "format": "html"
           }
         ]
       },
@@ -2322,6 +2845,90 @@
             "key": "wireguard-config",
             "file_name": "wg0.conf",
             "format": "config"
+          },
+          {
+            "key": "shell-history-plain",
+            "file_name": "shell-history.txt",
+            "format": "text"
+          },
+          {
+            "key": "ticket-export",
+            "file_name": "Tickets.csv",
+            "format": "text"
+          }
+        ]
+      },
+      {
+        "id": "shell-history",
+        "category": "endpoint",
+        "title": "Shell history with commands for servers",
+        "summary": "The history files of a Linux shell and of PowerShell, with a command that logs in to a database and commands that open a remote session. Running them resolves the name of a DNS honeytoken.",
+        "techniques": [
+          "T1552.003",
+          "T1078",
+          "T1021.006"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Database",
+            "type": "dns",
+            "label": "Database host",
+            "techniques": [
+              "T1552.003",
+              "T1078"
+            ],
+            "severity": "high"
+          },
+          {
+            "key": "Server",
+            "type": "dns",
+            "label": "Server",
+            "techniques": [
+              "T1552.003",
+              "T1021.006"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name of the database",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "svc-ops"
+          },
+          {
+            "key": "Netbios",
+            "kind": "name",
+            "label": "NetBIOS name of the domain",
+            "example": "CORP"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ],
+        "artifacts": [
+          {
+            "key": "bash-history",
+            "file_name": "bash_history",
+            "format": "config"
+          },
+          {
+            "key": "psreadline-history",
+            "file_name": "ConsoleHost_history.txt",
+            "format": "config"
           }
         ]
       },
@@ -2589,6 +3196,32 @@
   "artifacts": {
     "de": [
       {
+        "id": "ad-computer-object",
+        "category": "network",
+        "title": "Skript, das einen Computer im Verzeichnis anlegt",
+        "summary": "Ein PowerShell-Skript, das ein Computerobjekt anlegt, dessen DNS-Hostname der Name eines DNS-Honeytokens ist. Ein Werkzeug, das sich per Namen mit den Computern der Domäne verbindet, löst ihn auf.",
+        "file_name": "New-ServerObject.ps1",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Computer",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "ComputerName",
+            "kind": "name",
+            "label": "Name des Computers",
+            "example": "fs-archive01"
+          }
+        ],
+        "secrets": []
+      },
+      {
         "id": "adcs-template-catalog-bookmark",
         "category": "identity",
         "title": "Lesezeichen zur Zertifikatanforderung",
@@ -2708,6 +3341,61 @@
             "length": 40
           }
         ]
+      },
+      {
+        "id": "bash-history",
+        "category": "endpoint",
+        "title": "Shell-Verlauf mit einer Datenbank-Anmeldung",
+        "summary": "Die .bash_history eines Kontos mit einem Befehl, der sich an einer Datenbank anmeldet, samt Passwort. Wer den Befehl ausführt, löst den Namen eines DNS-Honeytokens auf.",
+        "file_name": "bash_history",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name der Datenbank",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Datenbankkonto",
+            "example": "billing_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "bookmarks-plain",
+        "category": "data",
+        "title": "Browser-Lesezeichen ohne Köder",
+        "summary": "Ein Export von Browser-Lesezeichen mit Links auf öffentliche Dokumentation. Er enthält keinen Honeytoken und löst kein Event aus.",
+        "file_name": "Favorites.html",
+        "format": "html",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name der Organisation",
+            "example": "Example Corp"
+          }
+        ],
+        "secrets": []
       },
       {
         "id": "browser-bookmarks",
@@ -2938,6 +3626,94 @@
         "secrets": []
       },
       {
+        "id": "filezilla-sites",
+        "category": "identity",
+        "title": "FileZilla-Servermanager",
+        "summary": "Eine sitemanager.xml-Datei von FileZilla mit Host, Konto und Passwort eines Übertragungsservers. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "file_name": "sitemanager.xml",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Host",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Übertragungskonto",
+            "example": "deploy"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "git-config",
+        "category": "application",
+        "title": "Git-Repository-Konfiguration",
+        "summary": "Die Datei config eines Git-Repositorys mit einem Remote auf einem Git-Server. Wer abruft oder hochlädt, löst den Namen eines DNS-Honeytokens auf.",
+        "file_name": "config",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Git",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Project",
+            "kind": "name",
+            "label": "Name des Projekts",
+            "example": "platform-prod"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "git-credentials",
+        "category": "application",
+        "title": "Git-Zugangsdatendatei",
+        "summary": "Eine .git-credentials-Datei mit Konto und Token für einen Git-Server, wie der Credential-Helper store sie schreibt. Jede Verwendung der Zugangsdaten löst den Namen eines DNS-Honeytokens auf.",
+        "file_name": "git-credentials",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Git",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Git-Konto",
+            "example": "j.doe"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          }
+        ]
+      },
+      {
         "id": "gpo-backup-notes",
         "category": "endpoint",
         "title": "Notizen zur Sicherung der Gruppenrichtlinien",
@@ -2979,6 +3755,30 @@
             "length": 20
           }
         ]
+      },
+      {
+        "id": "handover-note",
+        "category": "data",
+        "title": "Übergabenotiz",
+        "summary": "Eine kurze Notiz zur Übergabe des laufenden Betriebs einer Domain, mit offenen Punkten. Sie enthält keinen Honeytoken und löst kein Event aus.",
+        "file_name": "Handover.txt",
+        "format": "text",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Ansprechpartner",
+            "example": "Infrastructure team"
+          },
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Interne Domain",
+            "example": "corp.example.com"
+          }
+        ],
+        "secrets": []
       },
       {
         "id": "kubeconfig",
@@ -3086,6 +3886,61 @@
         ]
       },
       {
+        "id": "mcp-client-config",
+        "category": "application",
+        "title": "Konfiguration eines MCP-Clients",
+        "summary": "Die Konfiguration eines KI-Assistenten mit einem MCP-Server, der über HTTP erreicht wird, mit einem Authorization-Header. Wer sich mit dem Server verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "file_name": "mcp.json",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Mcp",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "McpName",
+            "kind": "name",
+            "label": "Name des MCP-Servers",
+            "example": "knowledge-base"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          }
+        ]
+      },
+      {
+        "id": "meeting-notes",
+        "category": "data",
+        "title": "Besprechungsnotiz des IT-Teams",
+        "summary": "Notizen einer Besprechung des IT-Teams mit Tagesordnung und Beschlüssen. Sie enthalten keinen Honeytoken und lösen kein Event aus.",
+        "file_name": "Meeting-notes.md",
+        "format": "markdown",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name der Organisation",
+            "example": "Example Corp"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Ansprechpartner",
+            "example": "Service desk"
+          }
+        ],
+        "secrets": []
+      },
+      {
         "id": "mongodb-backup-beacon",
         "category": "data",
         "title": "MongoDB-Dokument mit Verbindungszeichenfolge",
@@ -3167,6 +4022,43 @@
         "secrets": []
       },
       {
+        "id": "my-cnf",
+        "category": "application",
+        "title": "MySQL-Client-Konfiguration",
+        "summary": "Eine my.cnf-Datei mit Host, Konto und Passwort in der Gruppe client, wie die MySQL-Clients sie lesen. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "file_name": "my.cnf",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name der Datenbank",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Datenbankkonto",
+            "example": "billing_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
         "id": "netrc",
         "category": "identity",
         "title": "Zugangsdaten in einer .netrc-Datei",
@@ -3194,6 +4086,30 @@
           {
             "key": "Password",
             "length": 20
+          }
+        ]
+      },
+      {
+        "id": "npmrc",
+        "category": "application",
+        "title": "npm-Konfiguration mit einer Registry",
+        "summary": "Eine .npmrc-Datei, die npm auf eine interne Registry verweist und ein Authentifizierungs-Token enthält. Jede Verwendung von npm damit löst den Namen eines DNS-Honeytokens auf.",
+        "file_name": "npmrc",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Registry",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 36
           }
         ]
       },
@@ -3239,6 +4155,74 @@
           {
             "key": "BuildPassword",
             "length": 18
+          }
+        ]
+      },
+      {
+        "id": "pgpass",
+        "category": "application",
+        "title": "PostgreSQL-Passwortdatei",
+        "summary": "Eine .pgpass-Datei mit Host, Datenbank, Konto und Passwort eines PostgreSQL-Servers, wie libpq sie liest. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf.",
+        "file_name": "pgpass",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name der Datenbank",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Datenbankkonto",
+            "example": "billing_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "pip-conf",
+        "category": "application",
+        "title": "pip-Konfiguration mit einem Index",
+        "summary": "Eine pip.conf-Datei, die pip auf einen internen Paketindex verweist, mit Konto und Passwort. Jede Verwendung von pip damit löst den Namen eines DNS-Honeytokens auf.",
+        "file_name": "pip.conf",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Registry",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto am Index",
+            "example": "ci-pull"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
           }
         ]
       },
@@ -3378,6 +4362,62 @@
         ]
       },
       {
+        "id": "project-readme",
+        "category": "application",
+        "title": "README eines Projekts",
+        "summary": "Das README eines internen Projekts mit Build und Deployment. Es enthält keinen Honeytoken und löst kein Event aus.",
+        "file_name": "README.md",
+        "format": "markdown",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Project",
+            "kind": "name",
+            "label": "Name des Projekts",
+            "example": "platform-prod"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "deploy"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "psreadline-history",
+        "category": "endpoint",
+        "title": "PowerShell-Verlauf mit einer Remote-Sitzung",
+        "summary": "Der PSReadLine-Verlauf eines Kontos mit den Befehlen, die eine Remote-Sitzung zu einem Server öffnen. Wer sie ausführt, löst den Namen eines DNS-Honeytokens auf.",
+        "file_name": "ConsoleHost_history.txt",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Server",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Netbios",
+            "kind": "name",
+            "label": "NetBIOS-Name der Domain",
+            "example": "CORP"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "svc-ops"
+          }
+        ],
+        "secrets": []
+      },
+      {
         "id": "rdp-connection",
         "category": "network",
         "title": "Remotedesktopverbindung",
@@ -3474,6 +4514,30 @@
             "kind": "text",
             "label": "Ansprechpartner",
             "example": "Infrastructure team"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "shell-history-plain",
+        "category": "endpoint",
+        "title": "Shell-Verlauf ohne Köder",
+        "summary": "Die .bash_history eines Kontos mit alltäglichen Befehlen. Sie enthält keinen Honeytoken und löst kein Event aus.",
+        "file_name": "shell-history.txt",
+        "format": "text",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Konto",
+            "example": "j.doe"
+          },
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Interne Domain",
+            "example": "corp.example.com"
           }
         ],
         "secrets": []
@@ -3578,6 +4642,24 @@
             "length": 24
           }
         ]
+      },
+      {
+        "id": "ticket-export",
+        "category": "data",
+        "title": "Export geschlossener und offener Tickets",
+        "summary": "Ein CSV-Export von Tickets des IT-Service-Desks. Er enthält keinen Honeytoken und löst kein Event aus.",
+        "file_name": "Tickets.csv",
+        "format": "text",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Interne Domain",
+            "example": "corp.example.com"
+          }
+        ],
+        "secrets": []
       },
       {
         "id": "veeam-repository",
@@ -3735,6 +4817,32 @@
     ],
     "en": [
       {
+        "id": "ad-computer-object",
+        "category": "network",
+        "title": "Script that adds a computer to the directory",
+        "summary": "A PowerShell script that creates a computer object whose DNS host name is the name of a DNS honeytoken. A tool that connects to the computers of the domain by name resolves it.",
+        "file_name": "New-ServerObject.ps1",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Computer",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "ComputerName",
+            "kind": "name",
+            "label": "Name of the computer",
+            "example": "fs-archive01"
+          }
+        ],
+        "secrets": []
+      },
+      {
         "id": "adcs-template-catalog-bookmark",
         "category": "identity",
         "title": "Bookmark for certificate enrollment",
@@ -3854,6 +4962,61 @@
             "length": 40
           }
         ]
+      },
+      {
+        "id": "bash-history",
+        "category": "endpoint",
+        "title": "Shell history with a database login",
+        "summary": "The .bash_history of an account with a command that logs in to a database, password included. Running the command resolves the name of a DNS honeytoken.",
+        "file_name": "bash_history",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name of the database",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Database account",
+            "example": "billing_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "bookmarks-plain",
+        "category": "data",
+        "title": "Browser bookmarks without a lure",
+        "summary": "An export of browser bookmarks with links to public documentation. It holds no honeytoken and raises no event.",
+        "file_name": "Favorites.html",
+        "format": "html",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name of the organization",
+            "example": "Example Corp"
+          }
+        ],
+        "secrets": []
       },
       {
         "id": "browser-bookmarks",
@@ -4084,6 +5247,94 @@
         "secrets": []
       },
       {
+        "id": "filezilla-sites",
+        "category": "identity",
+        "title": "FileZilla site manager",
+        "summary": "A sitemanager.xml file of FileZilla with the host, account and password of a transfer server. Connecting resolves the name of a DNS honeytoken.",
+        "file_name": "sitemanager.xml",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Host",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Transfer account",
+            "example": "deploy"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "git-config",
+        "category": "application",
+        "title": "Git repository configuration",
+        "summary": "The config file of a Git repository with a remote on a Git server. Fetching or pushing resolves the name of a DNS honeytoken.",
+        "file_name": "config",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Git",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Project",
+            "kind": "name",
+            "label": "Name of the project",
+            "example": "platform-prod"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "git-credentials",
+        "category": "application",
+        "title": "Git credentials file",
+        "summary": "A .git-credentials file with the account and token for a Git server, as the credential helper store writes it. Every use of the credentials resolves the name of a DNS honeytoken.",
+        "file_name": "git-credentials",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Git",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Git account",
+            "example": "j.doe"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          }
+        ]
+      },
+      {
         "id": "gpo-backup-notes",
         "category": "endpoint",
         "title": "Notes on the backup of group policies",
@@ -4125,6 +5376,30 @@
             "length": 20
           }
         ]
+      },
+      {
+        "id": "handover-note",
+        "category": "data",
+        "title": "Handover note",
+        "summary": "A short note on the handover of the day-to-day operations of a domain, with open points. It holds no honeytoken and raises no event.",
+        "file_name": "Handover.txt",
+        "format": "text",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Contact",
+            "example": "Infrastructure team"
+          },
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Internal domain",
+            "example": "corp.example.com"
+          }
+        ],
+        "secrets": []
       },
       {
         "id": "kubeconfig",
@@ -4232,6 +5507,61 @@
         ]
       },
       {
+        "id": "mcp-client-config",
+        "category": "application",
+        "title": "Configuration of an MCP client",
+        "summary": "The configuration of an AI assistant with an MCP server that is reached over HTTP, with an authorization header. Connecting to the server resolves the name of a DNS honeytoken.",
+        "file_name": "mcp.json",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Mcp",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "McpName",
+            "kind": "name",
+            "label": "Name of the MCP server",
+            "example": "knowledge-base"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 40
+          }
+        ]
+      },
+      {
+        "id": "meeting-notes",
+        "category": "data",
+        "title": "Meeting notes of the IT team",
+        "summary": "Notes of a meeting of the IT team with agenda and decisions. They hold no honeytoken and raise no event.",
+        "file_name": "Meeting-notes.md",
+        "format": "markdown",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Company",
+            "kind": "text",
+            "label": "Name of the organization",
+            "example": "Example Corp"
+          },
+          {
+            "key": "Contact",
+            "kind": "text",
+            "label": "Contact",
+            "example": "Service desk"
+          }
+        ],
+        "secrets": []
+      },
+      {
         "id": "mongodb-backup-beacon",
         "category": "data",
         "title": "MongoDB document with a connection string",
@@ -4313,6 +5643,43 @@
         "secrets": []
       },
       {
+        "id": "my-cnf",
+        "category": "application",
+        "title": "MySQL client configuration",
+        "summary": "A my.cnf file with the host, account and password in the client group, as the MySQL clients read it. Connecting resolves the name of a DNS honeytoken.",
+        "file_name": "my.cnf",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name of the database",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Database account",
+            "example": "billing_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
         "id": "netrc",
         "category": "identity",
         "title": "Credentials in a .netrc file",
@@ -4340,6 +5707,30 @@
           {
             "key": "Password",
             "length": 20
+          }
+        ]
+      },
+      {
+        "id": "npmrc",
+        "category": "application",
+        "title": "npm configuration with a registry",
+        "summary": "An .npmrc file that points npm to an internal registry and holds an authentication token. Every use of npm with it resolves the name of a DNS honeytoken.",
+        "file_name": "npmrc",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Registry",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [],
+        "secrets": [
+          {
+            "key": "Token",
+            "length": 36
           }
         ]
       },
@@ -4385,6 +5776,74 @@
           {
             "key": "BuildPassword",
             "length": 18
+          }
+        ]
+      },
+      {
+        "id": "pgpass",
+        "category": "application",
+        "title": "PostgreSQL password file",
+        "summary": "A .pgpass file with the host, database, account and password of a PostgreSQL server, as libpq reads it. Connecting resolves the name of a DNS honeytoken.",
+        "file_name": "pgpass",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Database",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "DatabaseName",
+            "kind": "name",
+            "label": "Name of the database",
+            "example": "billing"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Database account",
+            "example": "billing_app"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
+          }
+        ]
+      },
+      {
+        "id": "pip-conf",
+        "category": "application",
+        "title": "pip configuration with an index",
+        "summary": "A pip.conf file that points pip to an internal package index with an account and password. Every use of pip with it resolves the name of a DNS honeytoken.",
+        "file_name": "pip.conf",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Registry",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Index account",
+            "example": "ci-pull"
+          }
+        ],
+        "secrets": [
+          {
+            "key": "Password",
+            "length": 20
           }
         ]
       },
@@ -4524,6 +5983,62 @@
         ]
       },
       {
+        "id": "project-readme",
+        "category": "application",
+        "title": "README of a project",
+        "summary": "The README of an internal project with build and deployment. It holds no honeytoken and raises no event.",
+        "file_name": "README.md",
+        "format": "markdown",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Project",
+            "kind": "name",
+            "label": "Name of the project",
+            "example": "platform-prod"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "deploy"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "psreadline-history",
+        "category": "endpoint",
+        "title": "PowerShell history with a remote session",
+        "summary": "The PSReadLine history of an account with the commands that open a remote session to a server. Running them resolves the name of a DNS honeytoken.",
+        "file_name": "ConsoleHost_history.txt",
+        "format": "config",
+        "slots": [
+          {
+            "key": "Server",
+            "accepts": [
+              "dns"
+            ],
+            "optional": false
+          }
+        ],
+        "persona": [
+          {
+            "key": "Netbios",
+            "kind": "name",
+            "label": "NetBIOS name of the domain",
+            "example": "CORP"
+          },
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "svc-ops"
+          }
+        ],
+        "secrets": []
+      },
+      {
         "id": "rdp-connection",
         "category": "network",
         "title": "Remote Desktop connection",
@@ -4620,6 +6135,30 @@
             "kind": "text",
             "label": "Contact",
             "example": "Infrastructure team"
+          }
+        ],
+        "secrets": []
+      },
+      {
+        "id": "shell-history-plain",
+        "category": "endpoint",
+        "title": "Shell history without a lure",
+        "summary": "The .bash_history of an account with everyday commands. It holds no honeytoken and raises no event.",
+        "file_name": "shell-history.txt",
+        "format": "text",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Account",
+            "kind": "name",
+            "label": "Account",
+            "example": "j.doe"
+          },
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Internal domain",
+            "example": "corp.example.com"
           }
         ],
         "secrets": []
@@ -4724,6 +6263,24 @@
             "length": 24
           }
         ]
+      },
+      {
+        "id": "ticket-export",
+        "category": "data",
+        "title": "Export of closed and open tickets",
+        "summary": "A CSV export of tickets of the IT service desk. It holds no honeytoken and raises no event.",
+        "file_name": "Tickets.csv",
+        "format": "text",
+        "slots": [],
+        "persona": [
+          {
+            "key": "Domain",
+            "kind": "host",
+            "label": "Internal domain",
+            "example": "corp.example.com"
+          }
+        ],
+        "secrets": []
       },
       {
         "id": "veeam-repository",

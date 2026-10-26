@@ -7,10 +7,10 @@
     "de": "Dokumentation von Verzeichnis und Dateifreigaben"
   },
   "summary": {
-    "en": "A map of the DFS namespaces and a runbook for the replication check, with the names of a file server and a domain controller. Resolving them raises an event.",
-    "de": "Eine Übersicht der DFS-Namespaces und ein Runbook zur Prüfung der Replikation, mit den Namen eines Dateiservers und eines Domänencontrollers. Wer sie auflöst, löst ein Event aus."
+    "en": "A map of the DFS namespaces, a runbook for the replication check and a script that adds a computer to the directory, with the names of a file server, a domain controller and a computer. Resolving a name raises an event; two notes beside them raise none.",
+    "de": "Eine Übersicht der DFS-Namespaces, ein Runbook zur Prüfung der Replikation und ein Skript, das einen Computer im Verzeichnis anlegt, mit den Namen eines Dateiservers, eines Domänencontrollers und eines Computers. Wer einen Namen auflöst, löst ein Event aus; zwei Notizen daneben tun es nicht."
   },
-  "techniques": ["T1135", "T1018"],
+  "techniques": ["T1135", "T1018", "T1087.002"],
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
@@ -25,6 +25,12 @@
       "label": {"en": "Domain controller", "de": "Domänencontroller"},
       "techniques": ["T1018"],
       "severity": "high"
+    },
+    {
+      "key": "Computer",
+      "type": "dns",
+      "label": {"en": "Computer in the directory", "de": "Computer im Verzeichnis"},
+      "techniques": ["T1018", "T1087.002"]
     }
   ],
   "persona": [
@@ -39,8 +45,14 @@
       "kind": "text",
       "label": {"en": "Contact", "de": "Ansprechpartner"},
       "example": "Infrastructure team"
+    },
+    {
+      "key": "ComputerName",
+      "kind": "name",
+      "label": {"en": "Name of the computer", "de": "Name des Computers"},
+      "example": "fs-archive01"
     }
   ],
-  "artifacts": ["dfs-namespace-map", "replication-runbook"],
+  "artifacts": ["dfs-namespace-map", "replication-runbook", "ad-computer-object", "handover-note", "ticket-export"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

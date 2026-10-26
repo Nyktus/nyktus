@@ -1,0 +1,6 @@
+cd C:\Scripts
+Get-Service | Where-Object Status -eq 'Running'
+$cred = Get-Credential {{.Persona.Netbios}}\{{.Persona.Account}}
+Enter-PSSession -ComputerName {{.Honeytokens.Server.Host}} -Credential $cred
+Get-EventLog -LogName System -Newest 20
+exit

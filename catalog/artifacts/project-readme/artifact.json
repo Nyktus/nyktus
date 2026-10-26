@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "project-readme",
+  "category": "application",
+  "title": {
+    "en": "README of a project",
+    "de": "README eines Projekts"
+  },
+  "summary": {
+    "en": "The README of an internal project with build and deployment. It holds no honeytoken and raises no event.",
+    "de": "Das README eines internen Projekts mit Build und Deployment. Es enthält keinen Honeytoken und löst kein Event aus."
+  },
+  "slots": [],
+  "persona": [
+    {
+      "key": "Project",
+      "kind": "name",
+      "label": {"en": "Name of the project", "de": "Name des Projekts"},
+      "example": "platform-prod"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "deploy"
+    }
+  ],
+  "secrets": [],
+  "file_name": "README.md",
+  "format": "markdown",
+  "line_endings": "lf",
+  "template": "readme.md.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}

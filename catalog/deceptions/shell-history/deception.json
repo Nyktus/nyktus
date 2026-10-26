@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "id": "shell-history",
+  "category": "endpoint",
+  "title": {
+    "en": "Shell history with commands for servers",
+    "de": "Shell-Verlauf mit Befehlen für Server"
+  },
+  "summary": {
+    "en": "The history files of a Linux shell and of PowerShell, with a command that logs in to a database and commands that open a remote session. Running them resolves the name of a DNS honeytoken.",
+    "de": "Die Verlaufsdateien einer Linux-Shell und von PowerShell, mit einem Befehl, der sich an einer Datenbank anmeldet, und Befehlen, die eine Remote-Sitzung öffnen. Wer sie ausführt, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1552.003", "T1078", "T1021.006"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Database",
+      "type": "dns",
+      "label": {"en": "Database host", "de": "Datenbank-Host"},
+      "techniques": ["T1552.003", "T1078"],
+      "severity": "high"
+    },
+    {
+      "key": "Server",
+      "type": "dns",
+      "label": {"en": "Server", "de": "Server"},
+      "techniques": ["T1552.003", "T1021.006"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "DatabaseName",
+      "kind": "name",
+      "label": {"en": "Name of the database", "de": "Name der Datenbank"},
+      "example": "billing"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "svc-ops"
+    },
+    {
+      "key": "Netbios",
+      "kind": "name",
+      "label": {"en": "NetBIOS name of the domain", "de": "NetBIOS-Name der Domain"},
+      "example": "CORP"
+    }
+  ],
+  "artifacts": ["bash-history", "psreadline-history"],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}
