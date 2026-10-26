@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "id": "portal-access",
+  "category": "identity",
+  "title": {
+    "en": "Access to internal portals",
+    "de": "Zugang zu internen Portalen"
+  },
+  "summary": {
+    "en": "Bookmarks, an internet shortcut, a note on the reset of single sign-on and a password export that lead to internal portals. Opening an address raises an event.",
+    "de": "Lesezeichen, eine Internetverknüpfung, ein Hinweis zum Zurücksetzen der Single-Sign-on-Anmeldung und ein Passwort-Export, die zu internen Portalen führen. Wer eine Adresse öffnet, löst ein Event aus."
+  },
+  "techniques": ["T1217", "T1078", "T1083", "T1555.003"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Portal",
+      "type": "web_url",
+      "label": {"en": "Portal", "de": "Portal"},
+      "techniques": ["T1217", "T1078", "T1556", "T1555.003"],
+      "severity": "high"
+    },
+    {
+      "key": "Link",
+      "type": "web_url",
+      "label": {"en": "Link", "de": "Link"},
+      "techniques": ["T1083"]
+    }
+  ],
+  "persona": [
+    {
+      "key": "Company",
+      "kind": "text",
+      "label": {"en": "Name of the organization", "de": "Name der Organisation"},
+      "example": "Example Ltd"
+    },
+    {
+      "key": "PortalName",
+      "kind": "text",
+      "label": {"en": "Name of the portal", "de": "Name des Portals"},
+      "example": "VPN self-service"
+    },
+    {
+      "key": "Contact",
+      "kind": "text",
+      "label": {"en": "Contact", "de": "Ansprechpartner"},
+      "example": "Service desk"
+    },
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Internal domain", "de": "Interne Domain"},
+      "example": "corp.example.com"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "j.doe"
+    }
+  ],
+  "artifacts": ["browser-bookmarks", "sso-reset-note", "windows-shortcut", "password-export"],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

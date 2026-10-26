@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "id": "windows-administration",
+  "category": "endpoint",
+  "title": {
+    "en": "Scripts and notes of Windows administrators",
+    "de": "Skripte und Notizen von Windows-Administratoren"
+  },
+  "summary": {
+    "en": "A script that maps a share, a recovery sheet for the local administrator and notes on the backup of group policies, with server names and passwords. Using them resolves the name of a DNS honeytoken.",
+    "de": "Ein Skript, das eine Freigabe verbindet, ein Notfallblatt für den lokalen Administrator und Notizen zur Sicherung der Gruppenrichtlinien, mit Servernamen und Passwörtern. Wer sie benutzt, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1059.001", "T1552.001", "T1021.001", "T1135", "T1615"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Share",
+      "type": "dns",
+      "label": {"en": "File server", "de": "Dateiserver"},
+      "techniques": ["T1552.001", "T1135", "T1615"],
+      "severity": "high"
+    },
+    {
+      "key": "Host",
+      "type": "dns",
+      "label": {"en": "Server", "de": "Server"},
+      "techniques": ["T1552.001", "T1021.001"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Netbios",
+      "kind": "name",
+      "label": {"en": "NetBIOS name of the domain", "de": "NetBIOS-Name der Domain"},
+      "example": "CORP"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "svc-ops"
+    },
+    {
+      "key": "Contact",
+      "kind": "text",
+      "label": {"en": "Contact", "de": "Ansprechpartner"},
+      "example": "Service desk, extension 4711"
+    }
+  ],
+  "artifacts": ["powershell-script", "laps-recovery-sheet", "gpo-backup-notes"],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

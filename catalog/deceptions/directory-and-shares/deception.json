@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "id": "directory-and-shares",
+  "category": "network",
+  "title": {
+    "en": "Documentation of directory and file shares",
+    "de": "Dokumentation von Verzeichnis und Dateifreigaben"
+  },
+  "summary": {
+    "en": "A map of the DFS namespaces and a runbook for the replication check, with the names of a file server and a domain controller. Resolving them raises an event.",
+    "de": "Eine Übersicht der DFS-Namespaces und ein Runbook zur Prüfung der Replikation, mit den Namen eines Dateiservers und eines Domänencontrollers. Wer sie auflöst, löst ein Event aus."
+  },
+  "techniques": ["T1135", "T1018"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "FileServer",
+      "type": "dns",
+      "label": {"en": "File server", "de": "Dateiserver"},
+      "techniques": ["T1135"]
+    },
+    {
+      "key": "Controller",
+      "type": "dns",
+      "label": {"en": "Domain controller", "de": "Domänencontroller"},
+      "techniques": ["T1018"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Internal domain", "de": "Interne Domain"},
+      "example": "corp.example.com"
+    },
+    {
+      "key": "Contact",
+      "kind": "text",
+      "label": {"en": "Contact", "de": "Ansprechpartner"},
+      "example": "Infrastructure team"
+    }
+  ],
+  "artifacts": ["dfs-namespace-map", "replication-runbook"],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

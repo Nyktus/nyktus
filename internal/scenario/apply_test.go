@@ -137,7 +137,7 @@ func TestApply_PlacesTheURLsOfTheTrigger(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
 
-	applied, err := scenario.Apply(t.Context(), d.console, createUser(t, d), application(deception(t, "browser-bookmarks")))
+	applied, err := scenario.Apply(t.Context(), d.console, createUser(t, d), application(deception(t, "adcs-template-catalog")))
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
@@ -209,7 +209,7 @@ func assertNothingStored(t *testing.T, d testDB, name string) {
 // leaves nothing behind.
 func TestApply_IsAtomic(t *testing.T) {
 	t.Parallel()
-	dec := deception(t, "ssh-config")
+	dec := deception(t, "remote-access")
 
 	t.Run("render", func(t *testing.T) {
 		t.Parallel()
@@ -219,8 +219,8 @@ func TestApply_IsAtomic(t *testing.T) {
 		a.DNSZone = "canary.example.net"
 		_, err := scenario.Apply(t.Context(), d.console, createUser(t, d), a)
 		var re *catalog.RevealError
-		if !errors.As(err, &re) || re.Artifact != "ssh-config" || re.Marker != "canary" {
-			t.Errorf("Apply() error = %v, want a RevealError of ssh-config", err)
+		if !errors.As(err, &re) || re.Artifact != dec.Artifacts[0].ID || re.Marker != "canary" {
+			t.Errorf("Apply() error = %v, want a RevealError of %s", err, dec.Artifacts[0].ID)
 		}
 		assertNothingStored(t, d, "render")
 	})
@@ -260,7 +260,7 @@ func TestApply_ValidatesBeforeWriting(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
 	actor := createUser(t, d)
-	dec := deception(t, "ssh-config")
+	dec := deception(t, "remote-access")
 
 	for _, tt := range []struct {
 		name   string
@@ -281,7 +281,7 @@ func TestApply_ValidatesBeforeWriting(t *testing.T) {
 	}
 	assertNothingStored(t, d, "validation")
 	// Without a DNS honeytoken, no zone is needed.
-	a := application(deception(t, "browser-bookmarks"))
+	a := application(deception(t, "adcs-template-catalog"))
 	a.DNSZone = ""
 	if _, err := scenario.Apply(t.Context(), d.console, actor, a); err != nil {
 		t.Errorf("Apply(URL deception without zone) error = %v", err)
