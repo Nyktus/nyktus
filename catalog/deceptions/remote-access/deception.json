@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "id": "remote-access",
+  "category": "network",
+  "title": {
+    "en": "Remote access of administrators",
+    "de": "Fernzugriff von Administratoren"
+  },
+  "summary": {
+    "en": "Connections of administrators to servers: Remote Desktop, SSH, an Ansible inventory and a WireGuard tunnel. Connecting resolves the name of a DNS honeytoken.",
+    "de": "Verbindungen von Administratoren zu Servern: Remotedesktop, SSH, ein Ansible-Inventar und ein WireGuard-Tunnel. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1021.001", "T1021.004", "T1018", "T1133"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Server",
+      "type": "dns",
+      "label": {"en": "Server", "de": "Server"},
+      "techniques": ["T1021.001"]
+    },
+    {
+      "key": "JumpHost",
+      "type": "dns",
+      "label": {"en": "Jump host", "de": "Jump-Host"},
+      "techniques": ["T1021.004"]
+    },
+    {
+      "key": "Application",
+      "type": "dns",
+      "label": {"en": "Application server", "de": "Anwendungsserver"},
+      "techniques": ["T1021.004", "T1018"],
+      "severity": "high"
+    },
+    {
+      "key": "Gateway",
+      "type": "dns",
+      "label": {"en": "VPN gateway", "de": "VPN-Gateway"},
+      "techniques": ["T1133", "T1078"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Domain of the account", "de": "Domain des Kontos"},
+      "example": "corp.example.com"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "adm.jdoe"
+    }
+  ],
+  "artifacts": ["rdp-connection", "ssh-config", "ansible-inventory", "wireguard-config"],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

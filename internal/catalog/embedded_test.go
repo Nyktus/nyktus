@@ -86,7 +86,13 @@ func withoutOptional(a catalog.Artifact) map[string]catalog.Placed {
 // secrets and every slot bound.
 func renderAlone(t *testing.T, a catalog.Artifact) []byte {
 	t.Helper()
-	values, err := a.Values(bound(a), examples(a.Persona), goldenSecrets(a.Secrets))
+	return renderWith(t, a, examples(a.Persona))
+}
+
+// renderWith renders the artifact like renderAlone, with the persona given.
+func renderWith(t *testing.T, a catalog.Artifact, persona map[string]string) []byte {
+	t.Helper()
+	values, err := a.Values(bound(a), persona, goldenSecrets(a.Secrets))
 	if err != nil {
 		t.Fatalf("%s: Values() error = %v", a.ID, err)
 	}
@@ -131,10 +137,8 @@ func TestEmbeddedCatalog_RendersTheGoldenFiles(t *testing.T) {
 		}
 	}
 
-	alone := map[string][]byte{}
 	for _, a := range c.Artifacts() {
 		out := renderAlone(t, a)
-		alone[a.ID] = out
 		if a.LineEndings == catalog.CRLF && bytes.Count(out, []byte("\n")) != bytes.Count(out, []byte("\r\n")) {
 			t.Errorf("%s: not every line ends in CRLF", a.ID)
 		}
@@ -163,9 +167,16 @@ func TestEmbeddedCatalog_RendersTheGoldenFiles(t *testing.T) {
 			if len(r.Artifacts) != len(d.Artifacts) {
 				t.Errorf("%s/%s: rendered %d artifacts, want %d", d.ID, lang, len(r.Artifacts), len(d.Artifacts))
 			}
+			// The artifacts of a story share values of the persona but may
+			// give them other examples, so the artifact alone is rendered with
+			// the examples of the deception.
 			for _, a := range r.Artifacts {
-				if !bytes.Equal(a.Content, alone[a.ID]) {
-					t.Errorf("%s/%s: applying in %s renders another %s than the artifact alone", d.ID, a.ID, lang, a.FileName)
+				persona := map[string]string{}
+				for _, p := range a.Persona {
+					persona[p.Key] = examples(d.Persona)[p.Key]
+				}
+				if !bytes.Equal(a.Content, renderWith(t, a.Artifact, persona)) {
+					t.Errorf("%s/%s: applying in %s renders another %s than the artifact with the same values", d.ID, a.ID, lang, a.FileName)
 				}
 			}
 			check(filepath.Join("deceptions", d.ID, "guide."+lang+".md"), r.Guide)

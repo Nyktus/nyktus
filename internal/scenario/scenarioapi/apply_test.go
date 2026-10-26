@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"nyktus.org/nyktus/api"
+	"nyktus.org/nyktus/internal/honeytoken/honeytokenapi"
 	"nyktus.org/nyktus/internal/platform/apispec"
 	"nyktus.org/nyktus/internal/platform/schematest"
 )
@@ -32,31 +33,46 @@ func TestApply_ReturnsTheScenarioWithItsResources(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
-	got := f.apply(t, "ssh-config", sshConfig)
+	got := f.apply(t, "remote-access", sshConfig)
 	sc := got.Scenario
-	if sc.Name != "Jump server" || len(sc.Deceptions) != 1 || sc.Deceptions[0].DeceptionID != "ssh-config" ||
+	if sc.Name != "Jump server" || len(sc.Deceptions) != 1 || sc.Deceptions[0].DeceptionID != "remote-access" ||
 		sc.Deceptions[0].Language != "de" || sc.Persona["Account"] != "j.doe" ||
 		!slices.Equal(sc.EngageActivities, []string{"EAC0005", "EAC0012"}) {
 		t.Errorf("scenario = %+v", sc)
 	}
-	if len(got.Honeytokens) != 1 || got.Honeytokens[0].ScenarioID == nil || *got.Honeytokens[0].ScenarioID != sc.ID ||
-		len(got.Honeytokens[0].TriggerNames) != 2 || got.Honeytokens[0].TriggerNames[0] != got.Honeytokens[0].TriggerValue+"."+dnsZone {
-		t.Errorf("honeytokens = %+v, want one in the scenario with a name under each zone", got.Honeytokens)
+	if len(got.Honeytokens) != 4 {
+		t.Errorf("honeytokens = %+v, want the four of the deception", got.Honeytokens)
 	}
-	if len(got.Artifacts) != 1 || got.Artifacts[0].FileName != "config" || got.Artifacts[0].MediaType != "application/octet-stream" ||
-		got.Artifacts[0].Size == 0 || got.Artifacts[0].CatalogArtifact != "ssh-config" ||
-		got.Artifacts[0].Bindings["JumpHost"] != got.Honeytokens[0].ID {
-		t.Errorf("artifacts = %+v", got.Artifacts)
+	for _, h := range got.Honeytokens {
+		if h.ScenarioID == nil || *h.ScenarioID != sc.ID || len(h.TriggerNames) != 2 || h.TriggerNames[0] != h.TriggerValue+"."+dnsZone {
+			t.Errorf("honeytoken = %+v, want one in the scenario with a name under each zone", h)
+		}
+	}
+	if len(got.Artifacts) != 4 {
+		t.Errorf("artifacts = %+v, want the four of the deception", got.Artifacts)
+	}
+	var jumpHost string
+	for _, a := range got.Artifacts {
+		if a.CatalogArtifact != "ssh-config" {
+			continue
+		}
+		jumpHost = a.Bindings["JumpHost"]
+		if a.FileName != "config" || a.MediaType != "application/octet-stream" || a.Size == 0 {
+			t.Errorf("artifact = %+v", a)
+		}
+	}
+	if !slices.ContainsFunc(got.Honeytokens, func(h honeytokenapi.Response) bool { return h.ID == jumpHost }) {
+		t.Errorf("the artifact ssh-config is bound to %q, want a honeytoken of the scenario", jumpHost)
 	}
 
 	rec := f.serve(t, f.h.Guide, http.MethodGet, "/", sc.ID, "")
 	guides := decode[guidesResponse](t, rec)
-	if rec.Code != http.StatusOK || len(guides.Guides) != 1 || guides.Guides[0].DeceptionID != "ssh-config" ||
+	if rec.Code != http.StatusOK || len(guides.Guides) != 1 || guides.Guides[0].DeceptionID != "remote-access" ||
 		guides.Guides[0].Language != "de" || !strings.Contains(guides.Guides[0].Content, got.Honeytokens[0].TriggerNames[0]) {
 		t.Errorf("GET guide = %d %s", rec.Code, rec.Body)
 	}
 	// Without a language, the guide is English.
-	en := f.apply(t, "ssh-config", `{"name": "s", "persona": {"Domain": "corp.example.com", "Account": "j.doe"}}`)
+	en := f.apply(t, "remote-access", `{"name": "s", "persona": {"Domain": "corp.example.com", "Account": "j.doe"}}`)
 	if len(en.Scenario.Deceptions) != 1 || en.Scenario.Deceptions[0].Language != "en" {
 		t.Errorf("language without one = %+v, want en", en.Scenario.Deceptions)
 	}
@@ -72,18 +88,18 @@ func TestApply_RejectsInvalidRequests(t *testing.T) {
 		code, message   string
 	}{
 		{"telnet", sshConfig, http.StatusNotFound, "not_found", ""},
-		{"ssh-config", `{"persona": {"Domain": "corp.example.com", "Account": "j.doe"}}`, http.StatusBadRequest, "invalid_request", "name"},
-		{"ssh-config", strings.Replace(sshConfig, `"de"`, `"fr"`, 1), http.StatusBadRequest, "invalid_request", "language must be one of en, de"},
-		{"ssh-config", strings.Replace(sshConfig, `"de"`, `null`, 1), http.StatusBadRequest, "invalid_request", ""},
-		{"ssh-config", `{"name": "s"}`, http.StatusBadRequest, "invalid_request", "persona Domain: is required"},
-		{"ssh-config", `{"name": "s", "persona": null}`, http.StatusBadRequest, "invalid_request", ""},
-		{"ssh-config", strings.Replace(sshConfig, "corp.example.com", "Corp Example", 1), http.StatusBadRequest, "invalid_request", "persona Domain: must be a host name"},
-		{"ssh-config", strings.Replace(sshConfig, `"Account": "j.doe"`, `"Account": "j.doe", "Zone": "x"`, 1), http.StatusBadRequest, "invalid_request", "persona Zone: is not a value"},
-		{"ssh-config", strings.Replace(sshConfig, `"name"`, `"deception_id": "netrc", "name"`, 1), http.StatusBadRequest, "invalid_request", ""},
-		{"ssh-config", strings.Replace(sshConfig, `"name"`, `"artifacts": ["netrc"], "name"`, 1), http.StatusBadRequest, "invalid_request", "artifacts must name"},
-		{"ssh-config", strings.Replace(sshConfig, `"name"`, `"artifacts": ["ssh-config", "ssh-config"], "name"`, 1), http.StatusBadRequest, "invalid_request", "artifacts must name"},
-		{"ssh-config", strings.Replace(sshConfig, `"name"`, `"artifacts": null, "name"`, 1), http.StatusBadRequest, "invalid_request", ""},
-		{"ssh-config", strings.Replace(sshConfig, "corp.example.com", "decoy.example.com", 1), http.StatusUnprocessableEntity, "artifact_reveals_decoy", "the artifact ssh-config would contain"},
+		{"remote-access", `{"persona": {"Domain": "corp.example.com", "Account": "j.doe"}}`, http.StatusBadRequest, "invalid_request", "name"},
+		{"remote-access", strings.Replace(sshConfig, `"de"`, `"fr"`, 1), http.StatusBadRequest, "invalid_request", "language must be one of en, de"},
+		{"remote-access", strings.Replace(sshConfig, `"de"`, `null`, 1), http.StatusBadRequest, "invalid_request", ""},
+		{"remote-access", `{"name": "s"}`, http.StatusBadRequest, "invalid_request", "persona Domain: is required"},
+		{"remote-access", `{"name": "s", "persona": null}`, http.StatusBadRequest, "invalid_request", ""},
+		{"remote-access", strings.Replace(sshConfig, "corp.example.com", "Corp Example", 1), http.StatusBadRequest, "invalid_request", "persona Domain: must be a host name"},
+		{"remote-access", strings.Replace(sshConfig, `"Account": "j.doe"`, `"Account": "j.doe", "Zone": "x"`, 1), http.StatusBadRequest, "invalid_request", "persona Zone: is not a value"},
+		{"remote-access", strings.Replace(sshConfig, `"name"`, `"deception_id": "netrc", "name"`, 1), http.StatusBadRequest, "invalid_request", ""},
+		{"remote-access", strings.Replace(sshConfig, `"name"`, `"artifacts": ["netrc"], "name"`, 1), http.StatusBadRequest, "invalid_request", "artifacts must name"},
+		{"remote-access", strings.Replace(sshConfig, `"name"`, `"artifacts": ["ssh-config", "ssh-config"], "name"`, 1), http.StatusBadRequest, "invalid_request", "artifacts must name"},
+		{"remote-access", strings.Replace(sshConfig, `"name"`, `"artifacts": null, "name"`, 1), http.StatusBadRequest, "invalid_request", ""},
+		{"remote-access", strings.Replace(sshConfig, "corp.example.com", "decoy.example.com", 1), http.StatusUnprocessableEntity, "artifact_reveals_decoy", "the artifact rdp-connection would contain"},
 	} {
 		rec := f.serve(t, f.h.Apply, http.MethodPost, "/", tt.deception, tt.body)
 		if rec.Code != tt.status || errorCode(t, rec) != tt.code || !strings.Contains(rec.Body.String(), tt.message) {
@@ -112,11 +128,11 @@ VALUES ($1, 'user@example.com', 'Test User', 'user', 'active', '$argon2id$v=19$m
 		t.Fatal(err)
 	}
 
-	rec := f.serve(t, f.h.Apply, http.MethodPost, "/", "ssh-config", sshConfig)
+	rec := f.serve(t, f.h.Apply, http.MethodPost, "/", "remote-access", sshConfig)
 	if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != "dns_not_configured" {
-		t.Errorf("POST ssh-config without zones = %d %s, want 422 dns_not_configured", rec.Code, rec.Body)
+		t.Errorf("POST remote-access without zones = %d %s, want 422 dns_not_configured", rec.Code, rec.Body)
 	}
-	got := f.apply(t, "windows-shortcut", `{"name": "s", "persona": {}}`)
+	got := f.apply(t, "adcs-template-catalog", `{"name": "s", "persona": {"Company": "Example Ltd", "Authority": "Example CA"}}`)
 	if len(got.Honeytokens) != 1 || got.Honeytokens[0].TriggerURL == nil || !strings.HasPrefix(*got.Honeytokens[0].TriggerURL, triggerURL+"/") {
 		t.Errorf("honeytokens = %+v, want a URL of the trigger", got.Honeytokens)
 	}
@@ -153,7 +169,7 @@ func TestDelete_KeepsOrDeletesTheArtifacts(t *testing.T) {
 		{"?artifacts=delete", 0, 1},
 		{"?artifacts=keep&honeytokens=delete", 1, 0},
 	} {
-		got := f.apply(t, "ssh-config", sshConfig)
+		got := f.apply(t, "remote-access", sshConfig)
 		rec := f.serve(t, f.h.Delete, http.MethodDelete, "/api/v1/scenarios/"+got.Scenario.ID+tt.query, got.Scenario.ID, "")
 		if rec.Code != http.StatusNoContent {
 			t.Errorf("DELETE %s = %d %s, want 204", tt.query, rec.Code, rec.Body)
@@ -169,7 +185,7 @@ SELECT (SELECT count(*) FROM artifacts WHERE id = $1 AND scenario_id IS NULL),
 		}
 	}
 	for _, query := range []string{"?artifacts=cascade", "?artifacts=", "?artifacts=keep&artifacts=delete"} {
-		got := f.apply(t, "ssh-config", sshConfig)
+		got := f.apply(t, "remote-access", sshConfig)
 		rec := f.serve(t, f.h.Delete, http.MethodDelete, "/api/v1/scenarios/"+got.Scenario.ID+query, got.Scenario.ID, "")
 		if rec.Code != http.StatusBadRequest || errorCode(t, rec) != "invalid_request" {
 			t.Errorf("DELETE %s = %d %s, want 400 invalid_request", query, rec.Code, rec.Body)
@@ -187,14 +203,14 @@ func TestApplyAndGuide_MatchTheSpecification(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	applied := f.serve(t, f.h.Apply, http.MethodPost, "/", "ssh-config", sshConfig)
+	applied := f.serve(t, f.h.Apply, http.MethodPost, "/", "remote-access", sshConfig)
 	id := decode[applyResponse](t, applied).Scenario.ID
 	for _, b := range []struct {
 		schema string
 		body   []byte
 	}{
 		{"AppliedDeception", applied.Body.Bytes()},
-		{"AppliedDeception", f.serve(t, f.h.Apply, http.MethodPost, "/", "browser-bookmarks", `{"name": "b", "persona": {"Company": "Example Ltd", "PortalName": "Intranet"}}`).Body.Bytes()},
+		{"AppliedDeception", f.serve(t, f.h.Apply, http.MethodPost, "/", "adcs-template-catalog", `{"name": "b", "persona": {"Company": "Example Ltd", "Authority": "Example CA"}}`).Body.Bytes()},
 		{"ScenarioGuides", f.serve(t, f.h.Guide, http.MethodGet, "/", id, "").Body.Bytes()},
 		{"Scenario", f.serve(t, f.h.Get, http.MethodGet, "/", id, "").Body.Bytes()},
 	} {

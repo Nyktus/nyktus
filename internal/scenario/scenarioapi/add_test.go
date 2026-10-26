@@ -16,11 +16,11 @@ import (
 )
 
 const (
-	// browserBookmarks has a URL honeytoken and asks for the company and the
-	// name of the portal; dfsNamespaceMap a DNS honeytoken, the domain and a
+	// adcsCatalog has a URL honeytoken and asks for the company and the name
+	// of the authority; directoryAndShares a DNS honeytoken, the domain and a
 	// contact; sshConfig the domain and an account.
-	browserBookmarks = `{"deception_id": "browser-bookmarks", "persona": {"Company": "Example Ltd", "PortalName": "Intranet"}}`
-	dfsNamespaceMap  = `{"deception_id": "dfs-namespace-map", "language": "de", "persona": {"Contact": "IT service desk"}}`
+	adcsCatalog        = `{"deception_id": "adcs-template-catalog", "persona": {"Company": "Example Ltd", "Authority": "Example CA"}}`
+	directoryAndShares = `{"deception_id": "directory-and-shares", "language": "de", "persona": {"Contact": "IT service desk"}}`
 )
 
 func (f fixture) addDeception(t *testing.T, scenarioID, body string) applyResponse {
@@ -47,37 +47,37 @@ func (f fixture) addArtifact(t *testing.T, scenarioID, body string) addArtifactR
 func TestAddDeception_ReturnsTheScenarioAfterTheChange(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	first := f.apply(t, "ssh-config", sshConfig)
+	first := f.apply(t, "remote-access", sshConfig)
 	id := first.Scenario.ID
 
-	got := f.addDeception(t, id, `{"deception_id": "dfs-namespace-map", "language": "de", "persona": {"Domain": "corp.example.com", "Contact": "IT service desk"}}`)
+	got := f.addDeception(t, id, `{"deception_id": "directory-and-shares", "language": "de", "persona": {"Domain": "corp.example.com", "Contact": "IT service desk"}}`)
 	sc := got.Scenario
-	if sc.ID != id || len(sc.Deceptions) != 2 || sc.Deceptions[1].DeceptionID != "dfs-namespace-map" || sc.Deceptions[1].Language != "de" ||
+	if sc.ID != id || len(sc.Deceptions) != 2 || sc.Deceptions[1].DeceptionID != "directory-and-shares" || sc.Deceptions[1].Language != "de" ||
 		sc.Deceptions[0].Language != "de" || sc.Persona["Domain"] != "corp.example.com" || sc.Persona["Contact"] != "IT service desk" ||
 		sc.Persona["Account"] != "j.doe" {
 		t.Errorf("scenario = %+v", sc)
 	}
-	if len(got.Honeytokens) != 1 || got.Honeytokens[0].ScenarioID == nil || *got.Honeytokens[0].ScenarioID != id ||
-		len(got.Artifacts) != 1 || got.Artifacts[0].CatalogArtifact != "dfs-namespace-map" ||
+	if len(got.Honeytokens) != 2 || got.Honeytokens[0].ScenarioID == nil || *got.Honeytokens[0].ScenarioID != id ||
+		len(got.Artifacts) != 2 || got.Artifacts[0].CatalogArtifact != "dfs-namespace-map" ||
 		len(got.Artifacts[0].Bindings) != 1 || got.Artifacts[0].Bindings["FileServer"] != got.Honeytokens[0].ID {
 		t.Errorf("honeytokens %+v, artifacts %+v", got.Honeytokens, got.Artifacts)
 	}
 
 	rec := f.serve(t, f.h.Guide, http.MethodGet, "/", id, "")
 	guides := decode[guidesResponse](t, rec)
-	if len(guides.Guides) != 2 || guides.Guides[0].DeceptionID != "ssh-config" || guides.Guides[1].DeceptionID != "dfs-namespace-map" ||
+	if len(guides.Guides) != 2 || guides.Guides[0].DeceptionID != "remote-access" || guides.Guides[1].DeceptionID != "directory-and-shares" ||
 		!strings.Contains(guides.Guides[1].Content, got.Honeytokens[0].TriggerNames[0]) {
 		t.Errorf("guides = %+v", guides)
 	}
 	// The value may be left out: the scenario has it.
-	again := f.apply(t, "ssh-config", sshConfig)
-	left := f.addDeception(t, again.Scenario.ID, dfsNamespaceMap)
+	again := f.apply(t, "remote-access", sshConfig)
+	left := f.addDeception(t, again.Scenario.ID, directoryAndShares)
 	if left.Scenario.Persona["Domain"] != "corp.example.com" {
 		t.Errorf("persona = %v, want the domain of the scenario", left.Scenario.Persona)
 	}
 	// A scenario put together by hand takes a deception as well.
 	byHand := f.create(t, `{"name": "by hand"}`)
-	hand := f.addDeception(t, byHand.ID, browserBookmarks)
+	hand := f.addDeception(t, byHand.ID, adcsCatalog)
 	if len(hand.Scenario.Deceptions) != 1 || len(hand.Honeytokens) != 1 {
 		t.Errorf("by hand = %+v", hand)
 	}
@@ -86,30 +86,30 @@ func TestAddDeception_ReturnsTheScenarioAfterTheChange(t *testing.T) {
 func TestAddDeception_RejectsInvalidRequests(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	applied := f.apply(t, "ssh-config", sshConfig)
+	applied := f.apply(t, "remote-access", sshConfig)
 	id := applied.Scenario.ID
-	other := f.apply(t, "browser-bookmarks", `{"name": "b", "persona": {"Company": "Example Ltd", "PortalName": "Intranet"}}`)
+	other := f.apply(t, "adcs-template-catalog", `{"name": "b", "persona": {"Company": "Example Ltd", "Authority": "Example CA"}}`)
 
 	for _, tt := range []struct {
 		name, scenario, body string
 		status               int
 		code, message        string
 	}{
-		{"unknown scenario", "00000000-0000-4000-8000-000000000000", dfsNamespaceMap, http.StatusNotFound, "not_found", ""},
-		{"identifier that is no uuid", "not-a-uuid", dfsNamespaceMap, http.StatusNotFound, "not_found", ""},
+		{"unknown scenario", "00000000-0000-4000-8000-000000000000", directoryAndShares, http.StatusNotFound, "not_found", ""},
+		{"identifier that is no uuid", "not-a-uuid", directoryAndShares, http.StatusNotFound, "not_found", ""},
 		{"unknown deception", id, `{"deception_id": "telnet"}`, http.StatusBadRequest, "invalid_request", "deception_id must be a deception of the catalog"},
 		{"no deception", id, `{}`, http.StatusBadRequest, "invalid_request", "deception_id must be a deception"},
-		{"the deception twice", id, `{"deception_id": "ssh-config", "persona": {}}`, http.StatusConflict, "deception_already_added", "part of the scenario already"},
-		{"another value of the persona", id, `{"deception_id": "dfs-namespace-map", "persona": {"Domain": "other.example.com", "Contact": "IT"}}`, http.StatusConflict, "persona_conflict", "persona Domain"},
-		{"a key that is missing", other.Scenario.ID, `{"deception_id": "dfs-namespace-map"}`, http.StatusBadRequest, "invalid_request", "persona Domain: is required"},
-		{"a value of the wrong kind", id, `{"deception_id": "dfs-namespace-map", "persona": {"Contact": "a\nb"}}`, http.StatusBadRequest, "invalid_request", "persona Contact: must be text"},
-		{"a key that is not asked for", id, `{"deception_id": "dfs-namespace-map", "persona": {"Contact": "IT", "Zone": "x"}}`, http.StatusBadRequest, "invalid_request", "persona Zone: is not a value"},
-		{"artifacts of another deception", id, `{"deception_id": "dfs-namespace-map", "persona": {"Contact": "IT"}, "artifacts": ["ssh-config"]}`, http.StatusBadRequest, "invalid_request", "artifacts must name"},
-		{"unknown language", id, `{"deception_id": "dfs-namespace-map", "language": "fr", "persona": {"Contact": "IT"}}`, http.StatusBadRequest, "invalid_request", "language must be one of en, de"},
-		{"null persona", id, `{"deception_id": "dfs-namespace-map", "persona": null}`, http.StatusBadRequest, "invalid_request", ""},
-		{"null artifacts", id, `{"deception_id": "dfs-namespace-map", "artifacts": null}`, http.StatusBadRequest, "invalid_request", ""},
-		{"unknown member", id, `{"deception_id": "dfs-namespace-map", "name": "x"}`, http.StatusBadRequest, "invalid_request", ""},
-		{"trailing data", id, dfsNamespaceMap + ` {}`, http.StatusBadRequest, "invalid_request", ""},
+		{"the deception twice", id, `{"deception_id": "remote-access", "persona": {}}`, http.StatusConflict, "deception_already_added", "part of the scenario already"},
+		{"another value of the persona", id, `{"deception_id": "directory-and-shares", "persona": {"Domain": "other.example.com", "Contact": "IT"}}`, http.StatusConflict, "persona_conflict", "persona Domain"},
+		{"a key that is missing", other.Scenario.ID, `{"deception_id": "directory-and-shares"}`, http.StatusBadRequest, "invalid_request", "persona Domain: is required"},
+		{"a value of the wrong kind", id, `{"deception_id": "directory-and-shares", "persona": {"Contact": "a\nb"}}`, http.StatusBadRequest, "invalid_request", "persona Contact: must be text"},
+		{"a key that is not asked for", id, `{"deception_id": "directory-and-shares", "persona": {"Contact": "IT", "Zone": "x"}}`, http.StatusBadRequest, "invalid_request", "persona Zone: is not a value"},
+		{"artifacts of another deception", id, `{"deception_id": "directory-and-shares", "persona": {"Contact": "IT"}, "artifacts": ["ssh-config"]}`, http.StatusBadRequest, "invalid_request", "artifacts must name"},
+		{"unknown language", id, `{"deception_id": "directory-and-shares", "language": "fr", "persona": {"Contact": "IT"}}`, http.StatusBadRequest, "invalid_request", "language must be one of en, de"},
+		{"null persona", id, `{"deception_id": "directory-and-shares", "persona": null}`, http.StatusBadRequest, "invalid_request", ""},
+		{"null artifacts", id, `{"deception_id": "directory-and-shares", "artifacts": null}`, http.StatusBadRequest, "invalid_request", ""},
+		{"unknown member", id, `{"deception_id": "directory-and-shares", "name": "x"}`, http.StatusBadRequest, "invalid_request", ""},
+		{"trailing data", id, directoryAndShares + ` {}`, http.StatusBadRequest, "invalid_request", ""},
 		{"not JSON", id, `deception`, http.StatusBadRequest, "invalid_request", ""},
 	} {
 		rec := f.serve(t, f.h.AddDeception, http.MethodPost, "/", tt.scenario, tt.body)
@@ -124,7 +124,7 @@ func TestAddDeception_RejectsInvalidRequests(t *testing.T) {
 		}
 	}
 	// The body is bounded.
-	big := `{"deception_id": "dfs-namespace-map", "persona": {"Contact": "` + strings.Repeat("a", maxBodyBytes) + `"}}`
+	big := `{"deception_id": "directory-and-shares", "persona": {"Contact": "` + strings.Repeat("a", maxBodyBytes) + `"}}`
 	if rec := f.serve(t, f.h.AddDeception, http.MethodPost, "/", id, big); rec.Code != http.StatusRequestEntityTooLarge {
 		t.Errorf("POST a body of %d bytes = %d, want 413", len(big), rec.Code)
 	}
@@ -147,7 +147,7 @@ INSERT INTO scenario_deceptions (scenario_id, deception_id, language, guide)
 SELECT $1, 'filler-' || n, 'en', 'g' FROM generate_series(1, 20) AS n`, full.ID); err != nil {
 		t.Fatal(err)
 	}
-	if rec := f.serve(t, f.h.AddDeception, http.MethodPost, "/", full.ID, browserBookmarks); rec.Code != http.StatusConflict || errorCode(t, rec) != "scenario_limit" {
+	if rec := f.serve(t, f.h.AddDeception, http.MethodPost, "/", full.ID, adcsCatalog); rec.Code != http.StatusConflict || errorCode(t, rec) != "scenario_limit" {
 		t.Errorf("POST to a scenario with 20 deceptions = %d %s, want 409 scenario_limit", rec.Code, rec.Body)
 	}
 	crowded := f.create(t, `{"name": "crowded"}`)
@@ -156,12 +156,12 @@ INSERT INTO artifacts (scenario_id, catalog_artifact, file_name, format, content
 SELECT $1, 'filler', 'f', 'text', '\x41' FROM generate_series(1, 200)`, crowded.ID); err != nil {
 		t.Fatal(err)
 	}
-	if rec := f.serve(t, f.h.AddDeception, http.MethodPost, "/", crowded.ID, browserBookmarks); rec.Code != http.StatusConflict || errorCode(t, rec) != "scenario_limit" {
+	if rec := f.serve(t, f.h.AddDeception, http.MethodPost, "/", crowded.ID, adcsCatalog); rec.Code != http.StatusConflict || errorCode(t, rec) != "scenario_limit" {
 		t.Errorf("POST to a scenario with 200 artifacts = %d %s, want 409 scenario_limit", rec.Code, rec.Body)
 	}
 
 	byHand := f.create(t, `{"name": "s"}`)
-	reveal := `{"deception_id": "ssh-config", "persona": {"Domain": "decoy.example.com", "Account": "j.doe"}}`
+	reveal := `{"deception_id": "remote-access", "persona": {"Domain": "decoy.example.com", "Account": "j.doe"}}`
 	rec := f.serve(t, f.h.AddDeception, http.MethodPost, "/", byHand.ID, reveal)
 	if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != "artifact_reveals_decoy" || strings.Contains(rec.Body.String(), "decoy.example.com") {
 		t.Errorf("POST with a revealing value = %d %s, want 422 artifact_reveals_decoy without the value", rec.Code, rec.Body)
@@ -176,7 +176,7 @@ VALUES ($1, 'user@example.com', 'Test User', 'user', 'active', '$argon2id$v=19$m
 		t.Fatal(err)
 	}
 	sc := nz.create(t, `{"name": "s"}`)
-	rec = nz.serve(t, nz.h.AddDeception, http.MethodPost, "/", sc.ID, `{"deception_id": "ssh-config", "persona": {"Domain": "corp.example.com", "Account": "j.doe"}}`)
+	rec = nz.serve(t, nz.h.AddDeception, http.MethodPost, "/", sc.ID, `{"deception_id": "remote-access", "persona": {"Domain": "corp.example.com", "Account": "j.doe"}}`)
 	if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != "dns_not_configured" {
 		t.Errorf("POST without zones = %d %s, want 422 dns_not_configured", rec.Code, rec.Body)
 	}
@@ -188,7 +188,7 @@ VALUES ($1, 'user@example.com', 'Test User', 'user', 'active', '$argon2id$v=19$m
 func TestAddArtifact_HasThePropertiesOfAnAppliedArtifact(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	applied := f.apply(t, "ssh-config", sshConfig)
+	applied := f.apply(t, "remote-access", sshConfig)
 	id, jumpHost := applied.Scenario.ID, applied.Honeytokens[0]
 
 	got := f.addArtifact(t, id, `{"catalog_artifact": "ssh-config", "bindings": {"JumpHost": "`+jumpHost.ID+`"}}`)
@@ -237,9 +237,9 @@ type recorded struct {
 func TestAddArtifact_RejectsInvalidRequests(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	applied := f.apply(t, "ssh-config", sshConfig)
+	applied := f.apply(t, "remote-access", sshConfig)
 	id, jumpHost := applied.Scenario.ID, applied.Honeytokens[0].ID
-	other := f.apply(t, "ssh-config", sshConfig)
+	other := f.apply(t, "remote-access", sshConfig)
 	foreign := other.Honeytokens[0].ID
 	bind := func(slot, honeytoken string) string {
 		return `{"catalog_artifact": "ssh-config", "bindings": {"` + slot + `": "` + honeytoken + `"}}`
@@ -315,8 +315,8 @@ VALUES ('dns', 'h', 'medium', translate(substr(md5(random()::text), 1, 26), '018
 		t.Errorf("POST a body of %d bytes = %d, want 413", len(big), rec.Code)
 	}
 	var n int
-	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM artifacts WHERE scenario_id = $1`, id).Scan(&n); err != nil || n != 1 {
-		t.Errorf("%d artifacts, %v; want the one that was applied", n, err)
+	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM artifacts WHERE scenario_id = $1`, id).Scan(&n); err != nil || n != len(applied.Artifacts) {
+		t.Errorf("%d artifacts, %v; want the %d that were applied", n, err, len(applied.Artifacts))
 	}
 }
 
@@ -329,10 +329,10 @@ func TestAdd_MatchesTheSpecification(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	applied := f.apply(t, "ssh-config", sshConfig)
+	applied := f.apply(t, "remote-access", sshConfig)
 	id := applied.Scenario.ID
 
-	deception := f.serve(t, f.h.AddDeception, http.MethodPost, "/", id, dfsNamespaceMap)
+	deception := f.serve(t, f.h.AddDeception, http.MethodPost, "/", id, directoryAndShares)
 	artifactBody := `{"catalog_artifact": "ssh-config", "bindings": {"JumpHost": "` + applied.Honeytokens[0].ID + `"}}`
 	for _, b := range []struct {
 		schema string

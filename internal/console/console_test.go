@@ -285,8 +285,8 @@ func TestNew_RefusesAnInvalidCatalog(t *testing.T) {
 		return fsys
 	}
 	for path, want := range map[string]error{
-		"artifacts/ssh-config/artifact.json":   catalog.ErrInvalidArtifact,
-		"deceptions/ssh-config/deception.json": catalog.ErrInvalidDeception,
+		"artifacts/ssh-config/artifact.json":      catalog.ErrInvalidArtifact,
+		"deceptions/remote-access/deception.json": catalog.ErrInvalidDeception,
 	} {
 		invalid := embeddedCopy(path, `{"schema_version": 3}`)
 		if _, err := New(t.Context(), Options{Catalog: invalid}); !errors.Is(err, want) {

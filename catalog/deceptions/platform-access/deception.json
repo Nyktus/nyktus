@@ -1,0 +1,60 @@
+{
+  "schema_version": 2,
+  "id": "platform-access",
+  "category": "application",
+  "title": {
+    "en": "Access to registry, cluster and infrastructure state",
+    "de": "Zugang zu Registry, Cluster und Infrastruktur-State"
+  },
+  "summary": {
+    "en": "Credentials for a container registry, a Kubernetes cluster and the state of the infrastructure in the configuration files of a workstation or build server. Using them resolves the name of a DNS honeytoken.",
+    "de": "Zugangsdaten zu einer Container-Registry, einem Kubernetes-Cluster und dem State der Infrastruktur in den Konfigurationsdateien eines Arbeitsplatzes oder Build-Servers. Wer sie benutzt, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1552.001", "T1613"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Registry",
+      "type": "dns",
+      "label": {"en": "Registry", "de": "Registry"},
+      "techniques": ["T1552.001", "T1078"],
+      "severity": "high"
+    },
+    {
+      "key": "Api",
+      "type": "dns",
+      "label": {"en": "API server", "de": "API-Server"},
+      "techniques": ["T1552.001", "T1613"],
+      "severity": "high"
+    },
+    {
+      "key": "State",
+      "type": "dns",
+      "label": {"en": "State backend", "de": "State-Backend"},
+      "techniques": ["T1552.001", "T1078"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "ci-pull"
+    },
+    {
+      "key": "Cluster",
+      "kind": "name",
+      "label": {"en": "Name of the cluster", "de": "Name des Clusters"},
+      "example": "prod-eu1"
+    },
+    {
+      "key": "Project",
+      "kind": "name",
+      "label": {"en": "Name of the project", "de": "Name des Projekts"},
+      "example": "platform-prod"
+    }
+  ],
+  "artifacts": ["docker-registry", "kubeconfig", "terraform-backend"],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}
