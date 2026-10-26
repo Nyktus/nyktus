@@ -27,7 +27,7 @@ artifacts/
     config.tmpl
 ```
 
-Identifiers are lowercase letters and digits, separated by single hyphens, at most 64 characters. A deception and an artifact may have the same identifier. The identifier of an artifact is unique in the catalog: it names the artifact in the API and in what applying a deception stores. An artifact that belongs to one deception carries its identifier; a deception with several files names them `<deception>-<part>`, such as `postgres-backup-beacon-restore`.
+Identifiers are lowercase letters and digits, separated by single hyphens, at most 64 characters. A deception and an artifact may have the same identifier. The identifier of an artifact is unique in the catalog: it names the artifact in the API and in what applying a deception stores. An artifact is named after the file it makes, such as `ssh-config`; where a deception has several files of one kind, they are named `<deception>-<part>`, such as `postgres-backup-beacon-restore`.
 
 ## `deception.json`
 
@@ -74,9 +74,11 @@ A deception binds its honeytokens to the slots of its artifacts by key: the slot
 
 - every required slot has a honeytoken of its key, of a type that the slot accepts; an optional slot without a honeytoken stays empty,
 - every value of the persona that an artifact asks for is a value of the deception, of the same kind (labels and examples may differ),
-- every honeytoken and every value of the persona is referenced by the guide or by an artifact, so that nothing is asked for in vain, and
+- every honeytoken and every value of the persona is referenced by the guide or by an artifact, so that nothing is asked for in vain,
 - no artifact contains the identifier of the deception: it is the same in every installation, like the identifier of the artifact, and
 - a value of the persona has one kind in the whole catalog: the persona belongs to the scenario and only grows, so a value that a scenario holds must fit every entry that joins it later.
+
+Artifacts of one deception whose slots have the same key share that honeytoken: the same host name or URL stands in every file that names the same service. An event does not tell which of the files was used, and it need not: the files are there so that the story has places to put its trigger, and which of them an administrator places, and where, is up to them. Give a slot a key of its own only where a file names another service, such as the directory next to the database.
 
 ### Engage activities of a scenario
 

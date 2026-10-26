@@ -191,7 +191,7 @@ func TestCreate_RejectsInvalidRequests(t *testing.T) {
 		`{"name": "a", "engage_activities": null}`,
 		`{"name": "a", "engage_activities": ["EAC9999"]}`,
 		`{"name": "a", "engage_activities": ["EAC0005", "EAC0005"]}`,
-		`{"name": "a", "deception_id": "ssh-config"}`,
+		`{"name": "a", "deception_id": "remote-access"}`,
 		`{"name": "a", "honeytokens": []}`,
 	} {
 		rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/scenarios", "", body)
@@ -215,7 +215,7 @@ func TestUpdate(t *testing.T) {
 	if rec.Code != http.StatusOK || got.Name != "b" || got.Notes != "n" || got.EngageActivities == nil || len(got.EngageActivities) != 0 {
 		t.Errorf("PATCH = %d %s", rec.Code, rec.Body)
 	}
-	for _, body := range []string{`{}`, `{"name": null}`, `{"name": ""}`, `{"engage_activities": ["X"]}`, `{"deception_id": "ssh-config"}`} {
+	for _, body := range []string{`{}`, `{"name": null}`, `{"name": ""}`, `{"engage_activities": ["X"]}`, `{"deception_id": "remote-access"}`} {
 		if rec := f.serve(t, f.h.Update, http.MethodPatch, "/", sc.ID, body); rec.Code != http.StatusBadRequest {
 			t.Errorf("PATCH %s = %d %s, want 400", body, rec.Code, rec.Body)
 		}
@@ -351,7 +351,7 @@ func TestResponses_MatchTheSpecification(t *testing.T) {
 
 	created := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/scenarios", "", `{"name": "a", "engage_activities": ["EAC0005"]}`)
 	sc := decode[response](t, created)
-	applied := f.apply(t, "ssh-config", sshConfig)
+	applied := f.apply(t, "remote-access", sshConfig)
 	for _, b := range []struct {
 		schema string
 		rec    *httptest.ResponseRecorder

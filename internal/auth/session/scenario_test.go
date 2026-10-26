@@ -60,7 +60,7 @@ func TestScenarios_FollowRolesAndKeyScopes(t *testing.T) {
 	}
 	unknown := "/api/v1/scenarios/00000000-0000-4000-8000-000000000000"
 	assign := `{"scenario_id": "` + id + `"}`
-	addDeception := `{"deception_id": "browser-bookmarks", "persona": {"Company": "Example Ltd", "PortalName": "Intranet"}}`
+	addDeception := `{"deception_id": "adcs-template-catalog", "persona": {"Company": "Example Ltd", "Authority": "Example CA"}}`
 	addArtifact := `{"catalog_artifact": "browser-bookmarks"}`
 
 	for _, tt := range []struct {

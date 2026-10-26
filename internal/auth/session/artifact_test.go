@@ -49,14 +49,14 @@ func TestArtifacts_FollowRolesAndKeyScopes(t *testing.T) {
 	writer := keyWith("artifacts:write", "artifacts:read", "honeytokens:read")
 	tokens := keyWith("honeytokens:read")
 
-	applied := send(t, srv, http.MethodPost, "/api/v1/catalog/deceptions/windows-shortcut/apply", `{"name": "s", "persona": {}}`, user, nil)
+	applied := send(t, srv, http.MethodPost, "/api/v1/catalog/deceptions/adcs-template-catalog/apply", `{"name": "s", "persona": {"Company": "Example Ltd", "Authority": "Example CA"}}`, user, nil)
 	if applied.status != http.StatusCreated {
 		t.Fatalf("apply as user: %d %v", applied.status, applied.body)
 	}
 	sc, _ := applied.body["scenario"].(map[string]any)
 	artifacts, _ := applied.body["artifacts"].([]any)
-	if sc == nil || len(artifacts) != 1 {
-		t.Fatalf("apply = %v, want a scenario with one artifact", applied.body)
+	if sc == nil || len(artifacts) != 2 {
+		t.Fatalf("apply = %v, want a scenario with two artifacts", applied.body)
 	}
 	id, _ := artifacts[0].(map[string]any)["id"].(string)
 	path := "/api/v1/artifacts/" + id
