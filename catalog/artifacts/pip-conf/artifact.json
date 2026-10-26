@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "pip-conf",
+  "category": "application",
+  "title": {
+    "en": "pip configuration with an index",
+    "de": "pip-Konfiguration mit einem Index"
+  },
+  "summary": {
+    "en": "A pip.conf file that points pip to an internal package index with an account and password. Every use of pip with it resolves the name of a DNS honeytoken.",
+    "de": "Eine pip.conf-Datei, die pip auf einen internen Paketindex verweist, mit Konto und Passwort. Jede Verwendung von pip damit löst den Namen eines DNS-Honeytokens auf."
+  },
+  "slots": [
+    {"key": "Registry", "accepts": ["dns"], "optional": false}
+  ],
+  "persona": [
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Index account", "de": "Konto am Index"},
+      "example": "ci-pull"
+    }
+  ],
+  "secrets": [
+    {"key": "Password", "length": 20}
+  ],
+  "file_name": "pip.conf",
+  "format": "config",
+  "line_endings": "lf",
+  "template": "pip.conf.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}

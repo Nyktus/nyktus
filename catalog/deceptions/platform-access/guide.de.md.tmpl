@@ -46,6 +46,10 @@ Die Datei `backend.tf` konfiguriert ein HTTP-Backend für den State des Projekts
 
 Führen Sie `terraform init` in einem Verzeichnis mit der Datei auf einem Rechner mit Terraform und Zugang zum Internet aus. Der Befehl scheitert nach der Abfrage. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
+## Pocket Litter
+
+Die Datei `README.md` enthält keinen Honeytoken und löst kein Event aus, was auch mit ihr geschieht. Sie gibt der Geschichte eine glaubhafte Umgebung: Legen Sie sie am selben Ort ab wie die übrigen Dateien der Geschichte, neben den Dateien, die ein Event auslösen.
+
 ## Grenzen
 
 - Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.

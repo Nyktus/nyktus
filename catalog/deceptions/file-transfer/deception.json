@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "id": "file-transfer",
+  "category": "identity",
+  "title": {
+    "en": "Access to file transfer",
+    "de": "Zugang zur Dateiübertragung"
+  },
+  "summary": {
+    "en": "A .netrc file and the site manager of FileZilla with an account and a password for a transfer server. Using the credentials resolves the name of a DNS honeytoken.",
+    "de": "Eine .netrc-Datei und der Servermanager von FileZilla mit Konto und Passwort für einen Übertragungsserver. Wer die Zugangsdaten nutzt, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "techniques": ["T1552.001", "T1555"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Host",
+      "type": "dns",
+      "label": {"en": "Host", "de": "Host"},
+      "techniques": ["T1552.001", "T1078", "T1555"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "deploy"
+    }
+  ],
+  "artifacts": ["netrc", "filezilla-sites"],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

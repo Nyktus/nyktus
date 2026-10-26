@@ -46,6 +46,10 @@ The file `backend.tf` configures an HTTP backend for the state of the project `{
 
 Run `terraform init` in a directory with the file on a computer with Terraform and access to the internet. The command fails after the lookup. Within a minute, the scenario shows an incident. Close the incident after the test.
 
+## Pocket litter
+
+The file `README.md` holds no honeytoken and raises no event, whatever happens to it. It gives the story a believable surrounding: place it in the same place as the other files of the story, beside the files that raise an event.
+
 ## Limits
 
 - Only a lookup that reaches the DNS role of Nyktus raises an event. A network without name resolution to the internet, or a resolver that answers from its cache, prevents it.

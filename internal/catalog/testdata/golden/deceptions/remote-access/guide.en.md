@@ -60,6 +60,10 @@ The file `wg0.conf` is the client configuration of a WireGuard tunnel to the gat
 
 Run `nslookup gatewayq3xwz7a2kfm4ub6tyc5nre.d.example.net` on a computer with access to the internet; `sudo wg-quick up ./wg0.conf` on a computer with WireGuard has the same effect. Within a minute, the scenario shows an incident. Close the incident after the test.
 
+## Pocket litter
+
+The files `shell-history.txt` and `Tickets.csv` hold no honeytoken and raise no event, whatever happens to them. They give the story a believable surrounding: place them in the same places as the other files of the story, beside the files that raise an event.
+
 ## Limits
 
 - Only a lookup that reaches the DNS role of Nyktus raises an event. A network without name resolution to the internet, or a resolver that answers from its cache, prevents it.

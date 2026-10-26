@@ -30,9 +30,30 @@ The file `Replication-check.txt` is a runbook of an administrator for the replic
 
 Resolve the name with `nslookup {{.Honeytokens.Controller.Host}}` on a computer with access to the internet. Within a minute, the scenario shows an incident. Close the incident after the test.
 
+## Computer object in the directory
+
+The script `New-ServerObject.ps1` creates the computer object `{{.Persona.ComputerName}}` in the directory, with the DNS host name `{{.Honeytokens.Computer.Host}}`. The host name belongs to a DNS honeytoken: a tool that connects to the computers of the domain by their DNS name resolves it, which raises an event. The server does not exist; the object is the bait, and the file creates it only when someone runs it.
+
+### Placing the file
+
+1. Run the script once yourself, in a PowerShell session with the ActiveDirectory module and an account that may create computer objects.
+2. The object lands in the container for new computers. Move it to the organizational unit of your servers, so that it is found among them.
+3. Keep the script where the documentation of the directory is, if you want it to be found.
+4. Record where you placed it in the placement notes of the artifact.
+
+### Testing
+
+Check the object with `Get-ADComputer -Identity '{{.Persona.ComputerName}}' -Properties DNSHostName`, then resolve the host name with `nslookup {{.Honeytokens.Computer.Host}}` on a computer with access to the internet. Within a minute, the scenario shows an incident. Close the incident after the test.
+
+## Pocket litter
+
+The files `Handover.txt` and `Tickets.csv` hold no honeytoken and raise no event, whatever happens to them. They give the story a believable surrounding: place them in the same places as the other files of the story, beside the files that raise an event.
+
 ## Limits
 
 - Only a lookup that reaches the DNS role of Nyktus raises an event. A network without name resolution to the internet, or a resolver that answers from its cache, prevents it.
 - The host names are random labels under the zone of your DNS role. An intruder who reads the files carefully can find them unusual.
 - `DFS-namespaces.txt`: The namespaces under `{{.Persona.Domain}}` are not created. An intruder who opens one of them finds nothing, and no event happens.
 - `Replication-check.txt`: The controller is not part of your domain. An intruder who compares the name with the list of controllers can find it unusual.
+- `New-ServerObject.ps1`: Only a tool that resolves the DNS host name of the object raises an event. Which tools do, and with which method of collection, depends on the tool and its version; this has not been verified for BloodHound or PingCastle.
+- `New-ServerObject.ps1`: Inventory and vulnerability scanners that enumerate the directory can resolve the name and raise an event. Exclude the object from them.

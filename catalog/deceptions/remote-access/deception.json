@@ -54,6 +54,6 @@
       "example": "adm.jdoe"
     }
   ],
-  "artifacts": ["rdp-connection", "ssh-config", "ansible-inventory", "wireguard-config"],
+  "artifacts": ["rdp-connection", "ssh-config", "ansible-inventory", "wireguard-config", "shell-history-plain", "ticket-export"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

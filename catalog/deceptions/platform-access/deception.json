@@ -55,6 +55,6 @@
       "example": "platform-prod"
     }
   ],
-  "artifacts": ["docker-registry", "kubeconfig", "terraform-backend"],
+  "artifacts": ["docker-registry", "kubeconfig", "terraform-backend", "project-readme"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }
