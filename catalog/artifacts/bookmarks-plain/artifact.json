@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "bookmarks-plain",
+  "category": "data",
+  "title": {
+    "en": "Browser bookmarks without a lure",
+    "de": "Browser-Lesezeichen ohne Köder"
+  },
+  "summary": {
+    "en": "An export of browser bookmarks with links to public documentation. It holds no honeytoken and raises no event.",
+    "de": "Ein Export von Browser-Lesezeichen mit Links auf öffentliche Dokumentation. Er enthält keinen Honeytoken und löst kein Event aus."
+  },
+  "slots": [],
+  "persona": [
+    {
+      "key": "Company",
+      "kind": "text",
+      "label": {"en": "Name of the organization", "de": "Name der Organisation"},
+      "example": "Example Corp"
+    }
+  ],
+  "secrets": [],
+  "file_name": "Favorites.html",
+  "format": "html",
+  "line_endings": "lf",
+  "template": "favorites.html.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}

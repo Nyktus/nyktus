@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "id": "bash-history",
+  "category": "endpoint",
+  "title": {
+    "en": "Shell history with a database login",
+    "de": "Shell-Verlauf mit einer Datenbank-Anmeldung"
+  },
+  "summary": {
+    "en": "The .bash_history of an account with a command that logs in to a database, password included. Running the command resolves the name of a DNS honeytoken.",
+    "de": "Die .bash_history eines Kontos mit einem Befehl, der sich an einer Datenbank anmeldet, samt Passwort. Wer den Befehl ausführt, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "slots": [
+    {"key": "Database", "accepts": ["dns"], "optional": false}
+  ],
+  "persona": [
+    {
+      "key": "DatabaseName",
+      "kind": "name",
+      "label": {"en": "Name of the database", "de": "Name der Datenbank"},
+      "example": "billing"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Database account", "de": "Datenbankkonto"},
+      "example": "billing_app"
+    }
+  ],
+  "secrets": [
+    {"key": "Password", "length": 20}
+  ],
+  "file_name": "bash_history",
+  "format": "config",
+  "line_endings": "lf",
+  "template": "bash_history.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}

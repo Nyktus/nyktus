@@ -62,6 +62,10 @@ Die Datei `Passwords.csv` hat die Spalten, die Chrome, Edge und andere Browser s
 
 Öffnen Sie die URL des dritten Eintrags in einem Browser auf einem Rechner mit Zugang zum Internet. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
+## Pocket Litter
+
+Die Dateien `Meeting-notes.md` und `Favorites.html` enthalten keinen Honeytoken und lösen kein Event aus, was auch mit ihnen geschieht. Sie geben der Geschichte eine glaubhafte Umgebung: Legen Sie sie an denselben Orten ab wie die übrigen Dateien der Geschichte, neben den Dateien, die ein Event auslösen.
+
 ## Grenzen
 
 - Wer eine der Dateien liest oder die Eigenschaften der Verknüpfung ansieht, sieht die URL. Sie nennt die Adresse Ihres Triggers und einen Zufallswert.

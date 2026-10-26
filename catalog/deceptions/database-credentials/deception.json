@@ -7,8 +7,8 @@
     "de": "Datenbank-Zugangsdaten in Konfigurationsdateien"
   },
   "summary": {
-    "en": "An application keeps the connection to its database in an INI file and an environment file, and the one to its directory in a profile. Connecting with the values resolves the name of a DNS honeytoken.",
-    "de": "Eine Anwendung hält die Verbindung zu ihrer Datenbank in einer INI-Datei und einer Umgebungsdatei, die zu ihrem Verzeichnis in einem Profil. Wer sich mit den Werten verbindet, löst den Namen eines DNS-Honeytokens auf."
+    "en": "An application keeps the connection to its database in an INI file, an environment file and the client files of the database, and the one to its directory in a profile. Connecting with the values resolves the name of a DNS honeytoken.",
+    "de": "Eine Anwendung hält die Verbindung zu ihrer Datenbank in einer INI-Datei, einer Umgebungsdatei und den Client-Dateien der Datenbank, die zu ihrem Verzeichnis in einem Profil. Wer sich mit den Werten verbindet, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1552.001", "T1087.002"],
   "engage_activities": ["EAC0005"],
@@ -48,6 +48,6 @@
       "example": "corp.example.com"
     }
   ],
-  "artifacts": ["config-file", "ci-env-file", "ldap-profile"],
+  "artifacts": ["config-file", "ci-env-file", "ldap-profile", "pgpass", "my-cnf"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

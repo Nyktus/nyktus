@@ -59,6 +59,6 @@
       "example": "j.doe"
     }
   ],
-  "artifacts": ["browser-bookmarks", "sso-reset-note", "windows-shortcut", "password-export"],
+  "artifacts": ["browser-bookmarks", "sso-reset-note", "windows-shortcut", "password-export", "meeting-notes", "bookmarks-plain"],
   "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
 }

@@ -258,10 +258,38 @@ func TestEmbeddedCatalog_ArtifactsRenderWithBoundAndEmptySlots(t *testing.T) {
 	}
 }
 
+// An artifact without a slot is pocket litter: it raises no event, whatever
+// happens to it. Its placing text tells the administrator where to put it
+// beside a lure and that it triggers nothing on its own, so that nobody takes
+// it for a lure.
+func TestEmbeddedCatalog_PocketLitterSaysWhereToPlaceIt(t *testing.T) {
+	t.Parallel()
+
+	c, err := catalog.Load(embedded.FS())
+	if err != nil {
+		t.Fatal(err)
+	}
+	litter := 0
+	for _, a := range c.Artifacts() {
+		if len(a.Slots) != 0 {
+			continue
+		}
+		litter++
+		for _, lang := range catalog.Languages {
+			if a.Placing[lang] == nil {
+				t.Errorf("%s: no placing text in %s", a.ID, lang)
+			}
+		}
+	}
+	if litter == 0 {
+		t.Error("the embedded catalog has no pocket litter")
+	}
+}
+
 // Applying any deception of the embedded catalog carries out activities that
-// exist in Engage, at most as many as a scenario may name, and its lures. The
-// artifacts of a deception bind to its honeytokens, so none of them is pocket
-// litter.
+// exist in Engage, at most as many as a scenario may name, and its lures.
+// Pocket litter is among them exactly when the deception recommends an
+// artifact without a slot.
 func TestEmbeddedCatalog_DeceptionsCarryOutLures(t *testing.T) {
 	t.Parallel()
 
@@ -278,8 +306,9 @@ func TestEmbeddedCatalog_DeceptionsCarryOutLures(t *testing.T) {
 		if len(got) > 20 || !slices.Contains(got, catalog.ActivityLures) {
 			t.Errorf("%s: activities = %v, want at most 20 with %s", d.ID, got, catalog.ActivityLures)
 		}
-		if slices.Contains(got, catalog.ActivityPocketLitter) {
-			t.Errorf("%s: activities = %v, want no pocket litter: its artifacts carry its honeytokens", d.ID, got)
+		litter := slices.ContainsFunc(d.Artifacts, func(a catalog.Artifact) bool { return len(a.Slots) == 0 })
+		if slices.Contains(got, catalog.ActivityPocketLitter) != litter {
+			t.Errorf("%s: activities = %v, want pocket litter = %t: it follows from the artifacts without a slot", d.ID, got, litter)
 		}
 		for _, id := range got {
 			if _, ok := engage.Lookup(id); !ok {

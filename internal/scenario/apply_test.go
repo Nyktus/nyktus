@@ -14,7 +14,6 @@ import (
 	"nyktus.org/nyktus/internal/catalog"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/scenario"
-	"nyktus.org/nyktus/internal/severity"
 )
 
 const (
@@ -70,7 +69,7 @@ func TestApply_CreatesTheScenarioWithItsResources(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
 	actor := createUser(t, d)
-	dec := deception(t, "netrc")
+	dec := deception(t, "registry-export")
 
 	applied, err := scenario.Apply(t.Context(), d.console, actor, application(dec))
 	if err != nil {
@@ -78,7 +77,7 @@ func TestApply_CreatesTheScenarioWithItsResources(t *testing.T) {
 	}
 	sc := applied.Scenario
 	if sc.Name != "Jump server" || sc.Notes != "admin workstation" || len(sc.Deceptions) != 1 ||
-		sc.Deceptions[0].DeceptionID != "netrc" || sc.Deceptions[0].Language != "de" ||
+		sc.Deceptions[0].DeceptionID != "registry-export" || sc.Deceptions[0].Language != "de" ||
 		!slices.Equal(sc.EngageActivities, []string{"EAC0005", "EAC0012"}) ||
 		len(sc.Persona) != len(dec.Persona) || sc.Persona["Account"] != examples(dec)["Account"] {
 		t.Errorf("scenario = %+v", sc)
@@ -90,7 +89,7 @@ func TestApply_CreatesTheScenarioWithItsResources(t *testing.T) {
 	h := applied.Honeytokens[0]
 	slot := dec.Honeytokens[0]
 	if h.ScenarioID == nil || *h.ScenarioID != sc.ID || h.Name != slot.Label["de"] || h.Type != slot.Type ||
-		h.Severity != severity.High || !slices.Equal(h.Techniques, slot.Techniques) || !h.Enabled {
+		h.Severity != slot.Severity || !slices.Equal(h.Techniques, slot.Techniques) || !h.Enabled {
 		t.Errorf("honeytoken = %+v, want the slot %+v in the scenario", h, slot)
 	}
 
@@ -113,7 +112,7 @@ func TestApply_CreatesTheScenarioWithItsResources(t *testing.T) {
 	}
 
 	guides, err := scenario.NewStore(d.console).Guides(t.Context(), sc.ID)
-	if err != nil || len(guides) != 1 || guides[0].DeceptionID != "netrc" || guides[0].Language != "de" ||
+	if err != nil || len(guides) != 1 || guides[0].DeceptionID != "registry-export" || guides[0].Language != "de" ||
 		!strings.Contains(guides[0].Content, name) || !strings.Contains(guides[0].Content, "## ") {
 		t.Errorf("Guides() = %+v, %v; want the German guide with %s", guides, err, name)
 	}

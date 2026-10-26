@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "ad-computer-object",
+  "category": "network",
+  "title": {
+    "en": "Script that adds a computer to the directory",
+    "de": "Skript, das einen Computer im Verzeichnis anlegt"
+  },
+  "summary": {
+    "en": "A PowerShell script that creates a computer object whose DNS host name is the name of a DNS honeytoken. A tool that connects to the computers of the domain by name resolves it.",
+    "de": "Ein PowerShell-Skript, das ein Computerobjekt anlegt, dessen DNS-Hostname der Name eines DNS-Honeytokens ist. Ein Werkzeug, das sich per Namen mit den Computern der Domäne verbindet, löst ihn auf."
+  },
+  "slots": [
+    {"key": "Computer", "accepts": ["dns"], "optional": false}
+  ],
+  "persona": [
+    {
+      "key": "ComputerName",
+      "kind": "name",
+      "label": {"en": "Name of the computer", "de": "Name des Computers"},
+      "example": "fs-archive01"
+    }
+  ],
+  "secrets": [],
+  "file_name": "New-ServerObject.ps1",
+  "format": "config",
+  "line_endings": "lf",
+  "template": "new-server-object.ps1.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}

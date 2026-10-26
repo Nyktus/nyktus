@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "id": "psreadline-history",
+  "category": "endpoint",
+  "title": {
+    "en": "PowerShell history with a remote session",
+    "de": "PowerShell-Verlauf mit einer Remote-Sitzung"
+  },
+  "summary": {
+    "en": "The PSReadLine history of an account with the commands that open a remote session to a server. Running them resolves the name of a DNS honeytoken.",
+    "de": "Der PSReadLine-Verlauf eines Kontos mit den Befehlen, die eine Remote-Sitzung zu einem Server öffnen. Wer sie ausführt, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "slots": [
+    {"key": "Server", "accepts": ["dns"], "optional": false}
+  ],
+  "persona": [
+    {
+      "key": "Netbios",
+      "kind": "name",
+      "label": {"en": "NetBIOS name of the domain", "de": "NetBIOS-Name der Domain"},
+      "example": "CORP"
+    },
+    {
+      "key": "Account",
+      "kind": "name",
+      "label": {"en": "Account", "de": "Konto"},
+      "example": "svc-ops"
+    }
+  ],
+  "secrets": [],
+  "file_name": "ConsoleHost_history.txt",
+  "format": "config",
+  "line_endings": "lf",
+  "template": "consolehost-history.txt.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}

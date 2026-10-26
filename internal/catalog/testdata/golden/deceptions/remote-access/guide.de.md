@@ -60,6 +60,10 @@ Die Datei `wg0.conf` ist die Clientkonfiguration eines WireGuard-Tunnels zum Gat
 
 Führen Sie `nslookup gatewayq3xwz7a2kfm4ub6tyc5nre.d.example.net` auf einem Rechner mit Zugang zum Internet aus; `sudo wg-quick up ./wg0.conf` auf einem Rechner mit WireGuard wirkt genauso. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
+## Pocket Litter
+
+Die Dateien `shell-history.txt` und `Tickets.csv` enthalten keinen Honeytoken und lösen kein Event aus, was auch mit ihnen geschieht. Sie geben der Geschichte eine glaubhafte Umgebung: Legen Sie sie an denselben Orten ab wie die übrigen Dateien der Geschichte, neben den Dateien, die ein Event auslösen.
+
 ## Grenzen
 
 - Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.

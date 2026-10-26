@@ -20,7 +20,7 @@ const (
 	// of the authority; directoryAndShares a DNS honeytoken, the domain and a
 	// contact; sshConfig the domain and an account.
 	adcsCatalog        = `{"deception_id": "adcs-template-catalog", "persona": {"Company": "Example Ltd", "Authority": "Example CA"}}`
-	directoryAndShares = `{"deception_id": "directory-and-shares", "language": "de", "persona": {"Contact": "IT service desk"}}`
+	directoryAndShares = `{"deception_id": "directory-and-shares", "language": "de", "persona": {"Contact": "IT service desk", "ComputerName": "fs-archive01"}}`
 )
 
 func (f fixture) addDeception(t *testing.T, scenarioID, body string) applyResponse {
@@ -50,15 +50,15 @@ func TestAddDeception_ReturnsTheScenarioAfterTheChange(t *testing.T) {
 	first := f.apply(t, "remote-access", sshConfig)
 	id := first.Scenario.ID
 
-	got := f.addDeception(t, id, `{"deception_id": "directory-and-shares", "language": "de", "persona": {"Domain": "corp.example.com", "Contact": "IT service desk"}}`)
+	got := f.addDeception(t, id, `{"deception_id": "directory-and-shares", "language": "de", "persona": {"Domain": "corp.example.com", "Contact": "IT service desk", "ComputerName": "fs-archive01"}}`)
 	sc := got.Scenario
 	if sc.ID != id || len(sc.Deceptions) != 2 || sc.Deceptions[1].DeceptionID != "directory-and-shares" || sc.Deceptions[1].Language != "de" ||
 		sc.Deceptions[0].Language != "de" || sc.Persona["Domain"] != "corp.example.com" || sc.Persona["Contact"] != "IT service desk" ||
 		sc.Persona["Account"] != "j.doe" {
 		t.Errorf("scenario = %+v", sc)
 	}
-	if len(got.Honeytokens) != 2 || got.Honeytokens[0].ScenarioID == nil || *got.Honeytokens[0].ScenarioID != id ||
-		len(got.Artifacts) != 2 || got.Artifacts[0].CatalogArtifact != "dfs-namespace-map" ||
+	if len(got.Honeytokens) != 3 || got.Honeytokens[0].ScenarioID == nil || *got.Honeytokens[0].ScenarioID != id ||
+		len(got.Artifacts) != 5 || got.Artifacts[0].CatalogArtifact != "dfs-namespace-map" ||
 		len(got.Artifacts[0].Bindings) != 1 || got.Artifacts[0].Bindings["FileServer"] != got.Honeytokens[0].ID {
 		t.Errorf("honeytokens %+v, artifacts %+v", got.Honeytokens, got.Artifacts)
 	}
@@ -100,12 +100,12 @@ func TestAddDeception_RejectsInvalidRequests(t *testing.T) {
 		{"unknown deception", id, `{"deception_id": "telnet"}`, http.StatusBadRequest, "invalid_request", "deception_id must be a deception of the catalog"},
 		{"no deception", id, `{}`, http.StatusBadRequest, "invalid_request", "deception_id must be a deception"},
 		{"the deception twice", id, `{"deception_id": "remote-access", "persona": {}}`, http.StatusConflict, "deception_already_added", "part of the scenario already"},
-		{"another value of the persona", id, `{"deception_id": "directory-and-shares", "persona": {"Domain": "other.example.com", "Contact": "IT"}}`, http.StatusConflict, "persona_conflict", "persona Domain"},
+		{"another value of the persona", id, `{"deception_id": "directory-and-shares", "persona": {"Domain": "other.example.com", "Contact": "IT", "ComputerName": "fs-archive01"}}`, http.StatusConflict, "persona_conflict", "persona Domain"},
 		{"a key that is missing", other.Scenario.ID, `{"deception_id": "directory-and-shares"}`, http.StatusBadRequest, "invalid_request", "persona Domain: is required"},
 		{"a value of the wrong kind", id, `{"deception_id": "directory-and-shares", "persona": {"Contact": "a\nb"}}`, http.StatusBadRequest, "invalid_request", "persona Contact: must be text"},
-		{"a key that is not asked for", id, `{"deception_id": "directory-and-shares", "persona": {"Contact": "IT", "Zone": "x"}}`, http.StatusBadRequest, "invalid_request", "persona Zone: is not a value"},
-		{"artifacts of another deception", id, `{"deception_id": "directory-and-shares", "persona": {"Contact": "IT"}, "artifacts": ["ssh-config"]}`, http.StatusBadRequest, "invalid_request", "artifacts must name"},
-		{"unknown language", id, `{"deception_id": "directory-and-shares", "language": "fr", "persona": {"Contact": "IT"}}`, http.StatusBadRequest, "invalid_request", "language must be one of en, de"},
+		{"a key that is not asked for", id, `{"deception_id": "directory-and-shares", "persona": {"Contact": "IT", "ComputerName": "fs-archive01", "Zone": "x"}}`, http.StatusBadRequest, "invalid_request", "persona Zone: is not a value"},
+		{"artifacts of another deception", id, `{"deception_id": "directory-and-shares", "persona": {"Contact": "IT", "ComputerName": "fs-archive01"}, "artifacts": ["ssh-config"]}`, http.StatusBadRequest, "invalid_request", "artifacts must name"},
+		{"unknown language", id, `{"deception_id": "directory-and-shares", "language": "fr", "persona": {"Contact": "IT", "ComputerName": "fs-archive01"}}`, http.StatusBadRequest, "invalid_request", "language must be one of en, de"},
 		{"null persona", id, `{"deception_id": "directory-and-shares", "persona": null}`, http.StatusBadRequest, "invalid_request", ""},
 		{"null artifacts", id, `{"deception_id": "directory-and-shares", "artifacts": null}`, http.StatusBadRequest, "invalid_request", ""},
 		{"unknown member", id, `{"deception_id": "directory-and-shares", "name": "x"}`, http.StatusBadRequest, "invalid_request", ""},

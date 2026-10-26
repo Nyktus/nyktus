@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "knowledge-base": {
+      "type": "http",
+      "url": "https://mcpq3xwz7a2kfm4ub6tyc5nre.d.example.net/mcp",
+      "headers": {
+        "Authorization": "Bearer Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7X"
+      }
+    }
+  }
+}

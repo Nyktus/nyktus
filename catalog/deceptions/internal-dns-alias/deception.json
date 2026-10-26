@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "id": "internal-dns-alias",
+  "category": "network",
+  "title": {
+    "en": "Internal name that points to a honeytoken",
+    "de": "Interner Name, der auf einen Honeytoken zeigt"
+  },
+  "summary": {
+    "en": "A name in the internal DNS zone, such as vault or backup01, that points to the name of a DNS honeytoken. Looking up the name raises an event.",
+    "de": "Ein Name in der internen DNS-Zone, etwa vault oder backup01, der auf den Namen eines DNS-Honeytokens zeigt. Wer den Namen nachschlägt, löst ein Event aus."
+  },
+  "techniques": ["T1018"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Target",
+      "type": "dns",
+      "label": {"en": "Target of the alias", "de": "Ziel des Alias"},
+      "techniques": ["T1018"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "Alias",
+      "kind": "name",
+      "label": {"en": "Name of the alias", "de": "Name des Alias"},
+      "example": "vault"
+    },
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Internal domain", "de": "Interne Domain"},
+      "example": "corp.example.com"
+    }
+  ],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

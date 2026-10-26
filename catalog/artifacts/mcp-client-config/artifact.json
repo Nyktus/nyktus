@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "mcp-client-config",
+  "category": "application",
+  "title": {
+    "en": "Configuration of an MCP client",
+    "de": "Konfiguration eines MCP-Clients"
+  },
+  "summary": {
+    "en": "The configuration of an AI assistant with an MCP server that is reached over HTTP, with an authorization header. Connecting to the server resolves the name of a DNS honeytoken.",
+    "de": "Die Konfiguration eines KI-Assistenten mit einem MCP-Server, der über HTTP erreicht wird, mit einem Authorization-Header. Wer sich mit dem Server verbindet, löst den Namen eines DNS-Honeytokens auf."
+  },
+  "slots": [
+    {"key": "Mcp", "accepts": ["dns"], "optional": false}
+  ],
+  "persona": [
+    {
+      "key": "McpName",
+      "kind": "name",
+      "label": {"en": "Name of the MCP server", "de": "Name des MCP-Servers"},
+      "example": "knowledge-base"
+    }
+  ],
+  "secrets": [
+    {"key": "Token", "length": 40}
+  ],
+  "file_name": "mcp.json",
+  "format": "config",
+  "line_endings": "lf",
+  "template": "mcp.json.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}

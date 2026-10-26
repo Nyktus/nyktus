@@ -37,7 +37,7 @@ func TestApply_ReturnsTheScenarioWithItsResources(t *testing.T) {
 	sc := got.Scenario
 	if sc.Name != "Jump server" || len(sc.Deceptions) != 1 || sc.Deceptions[0].DeceptionID != "remote-access" ||
 		sc.Deceptions[0].Language != "de" || sc.Persona["Account"] != "j.doe" ||
-		!slices.Equal(sc.EngageActivities, []string{"EAC0005", "EAC0012"}) {
+		!slices.Equal(sc.EngageActivities, []string{"EAC0005", "EAC0011", "EAC0022", "EAC0012"}) {
 		t.Errorf("scenario = %+v", sc)
 	}
 	if len(got.Honeytokens) != 4 {
@@ -48,8 +48,8 @@ func TestApply_ReturnsTheScenarioWithItsResources(t *testing.T) {
 			t.Errorf("honeytoken = %+v, want one in the scenario with a name under each zone", h)
 		}
 	}
-	if len(got.Artifacts) != 4 {
-		t.Errorf("artifacts = %+v, want the four of the deception", got.Artifacts)
+	if len(got.Artifacts) != 6 {
+		t.Errorf("artifacts = %+v, want the six of the deception", got.Artifacts)
 	}
 	var jumpHost string
 	for _, a := range got.Artifacts {

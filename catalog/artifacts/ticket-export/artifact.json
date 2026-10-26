@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "ticket-export",
+  "category": "data",
+  "title": {
+    "en": "Export of closed and open tickets",
+    "de": "Export geschlossener und offener Tickets"
+  },
+  "summary": {
+    "en": "A CSV export of tickets of the IT service desk. It holds no honeytoken and raises no event.",
+    "de": "Ein CSV-Export von Tickets des IT-Service-Desks. Er enthält keinen Honeytoken und löst kein Event aus."
+  },
+  "slots": [],
+  "persona": [
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Internal domain", "de": "Interne Domain"},
+      "example": "corp.example.com"
+    }
+  ],
+  "secrets": [],
+  "file_name": "Tickets.csv",
+  "format": "text",
+  "line_endings": "lf",
+  "template": "tickets.csv.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}
