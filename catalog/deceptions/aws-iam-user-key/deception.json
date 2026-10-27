@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "id": "aws-iam-user-key",
+  "category": "cloud",
+  "title": {
+    "en": "AWS: access key of an IAM user without rights",
+    "de": "AWS: Zugriffsschlüssel eines IAM-Benutzers ohne Rechte"
+  },
+  "summary": {
+    "en": "An IAM user with an access key and no permissions. Whoever signs a request with the key is recorded by CloudTrail, and an EventBridge rule reports the call, with the address it came from, to the URL of a honeytoken.",
+    "de": "Ein IAM-Benutzer mit Zugriffsschlüssel und ohne Berechtigungen. Wer eine Anfrage mit dem Schlüssel signiert, wird von CloudTrail aufgezeichnet, und eine EventBridge-Regel meldet den Aufruf samt Herkunftsadresse an die URL eines Honeytokens."
+  },
+  "techniques": ["T1078.004", "T1552.001"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Webhook",
+      "type": "web_url",
+      "label": {"en": "Webhook of the EventBridge rule", "de": "Webhook der EventBridge-Regel"},
+      "techniques": ["T1078.004", "T1552.001"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "IamUser",
+      "kind": "name",
+      "label": {"en": "Name of the IAM user", "de": "Name des IAM-Benutzers"},
+      "example": "svc-reporting-sync"
+    },
+    {
+      "key": "AwsRegion",
+      "kind": "name",
+      "label": {"en": "AWS region of your workloads", "de": "AWS-Region Ihrer Workloads"},
+      "example": "eu-central-1"
+    },
+    {
+      "key": "AlertName",
+      "kind": "name",
+      "label": {"en": "Prefix of the forwarding resources (up to 40 characters)", "de": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)"},
+      "example": "audit-notify"
+    }
+  ],
+  "artifacts": [],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}
