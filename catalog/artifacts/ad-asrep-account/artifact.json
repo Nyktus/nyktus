@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "ad-asrep-account",
+  "category": "identity",
+  "title": {
+    "en": "Script that adds an account without Kerberos preauthentication",
+    "de": "Skript, das ein Konto ohne Kerberos-Preauthentifizierung anlegt"
+  },
+  "summary": {
+    "en": "A PowerShell script that creates an account for which Kerberos does not require preauthentication, with a random password that nobody learns. A request for a ticket without preauthentication raises an event on the domain controller that served it.",
+    "de": "Ein PowerShell-Skript, das ein Konto anlegt, für das Kerberos keine Preauthentifizierung verlangt, mit einem zufälligen Passwort, das niemand erfährt. Wer ein Ticket ohne Preauthentifizierung anfordert, löst auf dem Domänencontroller, der es ausstellt, ein Ereignis aus."
+  },
+  "slots": [],
+  "persona": [
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Internal domain", "de": "Interne Domain"},
+      "example": "corp.example.com"
+    },
+    {
+      "key": "LegacyAccount",
+      "kind": "name",
+      "label": {"en": "Account without preauthentication (up to 20 characters)", "de": "Konto ohne Preauthentifizierung (höchstens 20 Zeichen)"},
+      "example": "svc-legacy-scan"
+    }
+  ],
+  "secrets": [],
+  "file_name": "New-LegacyAccount.ps1",
+  "format": "config",
+  "line_endings": "crlf",
+  "template": "new-legacy-account.ps1.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}
