@@ -1,0 +1,94 @@
+# Köderkonten im Verzeichnis
+
+Drei Konten, nach denen ein Eindringling sucht, wenn er eine Domäne erkundet, und die niemand benutzt: ein Dienstkonto mit SPN, ein Konto ohne Kerberos-Preauthentifizierung und das Konto eines Administrators. Diese Geschichte wartet nicht auf eine Anfrage an eine URL. Windows hält jede Anfrage für diese Konten im Sicherheitsprotokoll des Domänencontrollers fest, der sie bedient hat, und ein Log-Forwarder auf jedem Controller schickt die passenden Ereignisse per `POST` an die URL eines Honeytokens. Die Konten sind echte Objekte Ihres Verzeichnisses. Die drei Skripte legen sie an, Sie entscheiden, welche Sie ausführen, und eines genügt. Die Namen der Konten unterscheiden sich voneinander und von jedem vorhandenen Konto, und ein Name hat höchstens 20 Zeichen.
+
+## Domänencontroller und Log-Forwarder
+
+Die URL des Honeytokens lautet `{{.Honeytokens.Ingest.URL}}`. Sie steht in der Konfiguration des Forwarders auf dem Domänencontroller und nur dort. Behandeln Sie sie als Geheimnis: Wer sie kennt, kann gefälschte Ereignisse senden.
+
+1. Das Sicherheitsprotokoll gehört dem einzelnen Domänencontroller, eine Anfrage erscheint also nur im Protokoll des Controllers, der sie bedient hat. Jeder Controller braucht einen Forwarder.
+2. Geben Sie jedem Controller einen eigenen Honeytoken, damit der Alert sagt, welcher Controller gemeldet hat. Benennen Sie den Honeytoken `Ingest` nach dem ersten Controller um. Legen Sie für jeden weiteren Controller einen Honeytoken vom Typ `web_url` an, benannt nach ihm, mit dem Schweregrad „critical“ und denselben Techniken, und ordnen Sie ihn dem Szenario zu. Ein Forwarder benutzt nur die URL seines eigenen Controllers.
+3. Schalten Sie die Überwachungsrichtlinie in der Gruppenrichtlinie der Domänencontroller ein, Kategorie Account Logon: `Audit Kerberos Service Ticket Operations` (Ereignis 4769), `Audit Kerberos Authentication Service` (Ereignisse 4768 und 4771) und `Audit Credential Validation` (Ereignis 4776), jeweils für Erfolg und Fehler. `auditpol /list /subcategory:*` zeigt die Namen der Unterkategorien.
+4. Konfigurieren Sie den Forwarder so, dass er nur die folgenden Ereignisse sendet, und nur für die Konten dieser Geschichte. Die Beispielkonfiguration und ihre Erklärung stehen in der Betreiber-Dokumentation (docs.nyktus.org), nicht hier. Das Volumen der Kerberos-Ereignisse ist auf einem Domänencontroller sehr hoch, der Forwarder muss also filtern.
+
+| Konto | Ereignis auf dem Domänencontroller | Was der Forwarder auswählt |
+|---|---|---|
+| `{{.Persona.ServiceAccount}}` | 4769, ein Dienstticket wurde angefordert | `ServiceName` ist das Konto |
+| `{{.Persona.LegacyAccount}}` | 4768, ein Ticket Granting Ticket wurde angefordert | `TargetUserName` ist das Konto; eine Anfrage ohne Preauthentifizierung hat `PreAuthType` 0 |
+| `{{.Persona.AdminAccount}}` | 4768, 4771 (Preauthentifizierung fehlgeschlagen) und 4776 (Zugangsdaten per NTLM geprüft) | `TargetUserName` ist das Konto |
+
+## Dienstkonto mit SPN
+
+Das Skript `New-ServiceAccount.ps1` legt das Konto `{{.Persona.ServiceAccount}}` mit dem Service Principal Name `MSSQLSvc/{{.Persona.ServiceHost}}:1433` und einem zufälligen Passwort an, das es nicht behält. Ein Eindringling, der nach Konten mit SPN sucht und dafür ein Ticket anfordert, um das Passwort offline zu knacken, löst das Ereignis 4769 mit dem Konto als `ServiceName` aus. Niemand hat einen Grund, dieses Ticket anzufordern. Wählen Sie einen Hostnamen, den kein Computer Ihres Verzeichnisses oder DNS benutzt: Ein Name gehört zu einem Konto, und ein echter Server würde seinen Dienstnamen an dieses Konto verlieren.
+
+### Datei platzieren
+
+1. Führen Sie das Skript einmal selbst aus, in einer PowerShell-Sitzung mit dem Modul ActiveDirectory und mit einem Konto, das Benutzer anlegen darf.
+2. Verschieben Sie das Konto in die Organisationseinheit Ihrer Dienstkonten, damit es unter ihnen gefunden wird.
+3. Bewahren Sie das Skript bei der Dokumentation des Verzeichnisses auf, wenn es gefunden werden soll, oder löschen Sie es.
+4. Notieren Sie in den Platzierungsnotizen des Artefakts, wo Sie es abgelegt haben.
+
+### Testen
+
+Fordern Sie auf einem Computer der Domäne mit `klist get MSSQLSvc/{{.Persona.ServiceHost}}:1433` ein Ticket an. Der Domänencontroller, der die Anfrage bedient hat, protokolliert das Ereignis 4769 mit `ServiceName` `{{.Persona.ServiceAccount}}`. Sobald der Forwarder es gesendet hat, zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+### Entfernen
+
+`Remove-ADUser -Identity '{{.Persona.ServiceAccount}}' -Confirm:$false`
+
+Das Skript hält beim ersten Fehler an. Meldet es einen, nachdem es das Konto angelegt hat, entfernen Sie das Konto mit diesem Befehl, bevor Sie es erneut ausführen.
+
+## Konto ohne Preauthentifizierung
+
+Das Skript `New-LegacyAccount.ps1` legt das Konto `{{.Persona.LegacyAccount}}` mit einem zufälligen Passwort an, das es nicht behält, und stellt ein, dass Kerberos für das Konto keine Preauthentifizierung verlangt. Ein Eindringling, der nach solchen Konten sucht, fordert beim Domänencontroller ein Ticket an, ohne etwas zu belegen, und knackt es offline. Die Anfrage löst das Ereignis 4768 mit `PreAuthType` 0 aus.
+
+### Datei platzieren
+
+1. Führen Sie das Skript einmal selbst aus, in einer PowerShell-Sitzung mit dem Modul ActiveDirectory und mit einem Konto, das Benutzer anlegen und deren Kontooptionen ändern darf.
+2. Verschieben Sie das Konto in die Organisationseinheit Ihrer Dienstkonten.
+3. Bewahren Sie das Skript bei der Dokumentation des Verzeichnisses auf, wenn es gefunden werden soll, oder löschen Sie es.
+4. Notieren Sie in den Platzierungsnotizen des Artefakts, wo Sie es abgelegt haben.
+
+### Testen
+
+Windows hat keinen Befehl, der ein Ticket ohne Preauthentifizierung anfordert. Führen Sie ein Werkzeug für AS-REP-Roasting von einem Testcomputer aus gegen `{{.Persona.LegacyAccount}}` aus, in Absprache mit dem Verantwortlichen für das Netzwerk. Der Domänencontroller protokolliert das Ereignis 4768 mit `PreAuthType` 0 und dem Konto als `TargetUserName`. Ohne ein solches Werkzeug können Sie nur mit `Get-ADUser -Identity '{{.Persona.LegacyAccount}}'` prüfen, dass das Konto existiert.
+
+### Entfernen
+
+`Remove-ADUser -Identity '{{.Persona.LegacyAccount}}' -Confirm:$false`
+
+Das Skript hält beim ersten Fehler an. Meldet es einen, nachdem es das Konto angelegt hat, etwa weil Ihr Konto Kontooptionen nicht ändern darf, entfernen Sie das Konto mit diesem Befehl, bevor Sie es erneut ausführen: Ein Konto, das noch eine Preauthentifizierung verlangt, löst kein Ereignis aus.
+
+## Administratorkonto, das niemand benutzt
+
+Das Skript `New-AdminAccount.ps1` legt das Konto `{{.Persona.AdminAccount}}` mit einem zufälligen Passwort an, das es nicht behält. Das Konto hat keine Rechte: Der Name ist der Köder. Wer Passwörter über die Konten der Domäne sprüht oder gestohlene Zugangsdaten ausprobiert, erreicht es früher oder später, und jeder Versuch löst je nachdem, wie er sich authentifiziert, das Ereignis 4771 (Kerberos, falsches Passwort), 4776 (NTLM) oder 4768 aus. Sie können dem Konto stattdessen den Namen eines ausgeschiedenen Mitarbeiters geben; die Ereignisse sind dieselben.
+
+Niemand, auch Sie nicht, darf sich mit diesem Konto anmelden oder sein Passwort zurücksetzen: Jeder Versuch ist ein Alarm.
+
+### Datei platzieren
+
+1. Führen Sie das Skript einmal selbst aus, in einer PowerShell-Sitzung mit dem Modul ActiveDirectory und mit einem Konto, das Benutzer anlegen darf.
+2. Verschieben Sie das Konto in die Organisationseinheit Ihrer Administratorkonten.
+3. Bewahren Sie das Skript bei der Dokumentation des Verzeichnisses auf, wenn es gefunden werden soll, oder löschen Sie es.
+4. Notieren Sie in den Platzierungsnotizen des Artefakts, wo Sie es abgelegt haben.
+
+### Testen
+
+Führen Sie auf einem Computer der Domäne `runas /user:{{.Persona.AdminAccount}}@{{.Persona.Domain}} cmd` aus und geben Sie ein beliebiges Passwort ein. Die Anmeldung scheitert, und der Domänencontroller, der sie geprüft hat, protokolliert das Ereignis 4771 oder 4776. Sobald der Forwarder es gesendet hat, zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+### Entfernen
+
+`Remove-ADUser -Identity '{{.Persona.AdminAccount}}' -Confirm:$false`
+
+Das Skript hält beim ersten Fehler an. Meldet es einen, nachdem es das Konto angelegt hat, entfernen Sie das Konto mit diesem Befehl, bevor Sie es erneut ausführen.
+
+## Grenzen
+
+- Es kommen nur Ereignisse eines Domänencontrollers mit Forwarder an. Ein Controller ohne Forwarder oder ohne die Überwachungsrichtlinie oben meldet nichts für die Anfragen, die er bedient, und ein Eindringling kann den Controller wählen.
+- Nichts geschieht, wenn ein Eindringling diese Konten nie berührt. Die Geschichte sieht die Anfragen, die sie nennen, nicht andere Angriffe auf die Domäne.
+- Der Honeytoken trägt die Techniken aller drei Konten, und der Alert sagt nicht, welches getroffen wurde. Der Anfang des Bodys sagt es, ist aber nicht Teil des Alerts.
+- Die Namen sind für jedes Konto des Verzeichnisses sichtbar. Ein Eindringling, der sie mit den echten Konten vergleicht, kann sie ungewöhnlich finden.
+- Der Honeytoken speichert höchstens 10 Events je Minute, und das erste hat den Alert schon ausgelöst. Der Forwarder sollte seine Ereignisse selbst begrenzen.
+- Der Anfang des Bodys, den der Forwarder sendet, bleibt mit dem Event gespeichert, bis zu 4 KiB, und ist nie Teil eines Alerts. Er kann personenbezogene Daten enthalten, etwa Kontonamen und Adressen von Computern, und ist mit der Berechtigung zum Lesen von Events lesbar.
+- Welche Felder der Forwarder liefert, hängt von seiner Konfiguration und seiner Version ab. Prüfen Sie ein echtes Ereignis Ihres Domänencontrollers, bevor Sie sich auf einen Filter verlassen.
+- Ein Werkzeug, das die Konten des Verzeichnisses über LDAP auflistet, ohne ein Ticket anzufordern oder sich anzumelden, löst nichts aus.
