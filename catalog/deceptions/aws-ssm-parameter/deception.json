@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "id": "aws-ssm-parameter",
+  "category": "cloud",
+  "title": {
+    "en": "AWS: secure parameter in Parameter Store",
+    "de": "AWS: sicherer Parameter im Parameter Store"
+  },
+  "summary": {
+    "en": "A SecureString parameter with a random value. Whoever reads it is recorded by CloudTrail, and an EventBridge rule reports the call, with the address and the identity it came from, to the URL of a honeytoken.",
+    "de": "Ein SecureString-Parameter mit zufälligem Wert. Wer ihn liest, wird von CloudTrail aufgezeichnet, und eine EventBridge-Regel meldet den Aufruf samt Herkunftsadresse und Identität an die URL eines Honeytokens."
+  },
+  "techniques": ["T1555.006", "T1078.004"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Webhook",
+      "type": "web_url",
+      "label": {"en": "Webhook of the EventBridge rule", "de": "Webhook der EventBridge-Regel"},
+      "techniques": ["T1555.006", "T1078.004"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "AwsParameterName",
+      "kind": "name",
+      "label": {"en": "Name of the parameter (no slashes)", "de": "Name des Parameters (ohne Schrägstriche)"},
+      "example": "prod-orders-api-key"
+    },
+    {
+      "key": "AwsRegion",
+      "kind": "name",
+      "label": {"en": "AWS region of your workloads", "de": "AWS-Region Ihrer Workloads"},
+      "example": "eu-central-1"
+    },
+    {
+      "key": "AlertName",
+      "kind": "name",
+      "label": {"en": "Name prefix of the forwarding resources", "de": "Namenspräfix der Weiterleitungsressourcen"},
+      "example": "audit-notify"
+    }
+  ],
+  "artifacts": [],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}
