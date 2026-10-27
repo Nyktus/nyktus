@@ -36,6 +36,9 @@
     "T1078": {
       "name": "Valid Accounts"
     },
+    "T1078.004": {
+      "name": "Valid Accounts: Cloud Accounts"
+    },
     "T1083": {
       "name": "File and Directory Discovery"
     },
@@ -78,6 +81,9 @@
     "T1490": {
       "name": "Inhibit System Recovery"
     },
+    "T1530": {
+      "name": "Data from Cloud Storage"
+    },
     "T1552.001": {
       "name": "Unsecured Credentials: Credentials In Files"
     },
@@ -92,6 +98,9 @@
     },
     "T1555.003": {
       "name": "Credentials from Password Stores: Credentials from Web Browsers"
+    },
+    "T1555.006": {
+      "name": "Credentials from Password Stores: Cloud Secrets Management Stores"
     },
     "T1556": {
       "name": "Modify Authentication Process"
@@ -265,6 +274,310 @@
             "format": "html"
           }
         ]
+      },
+      {
+        "id": "aws-assume-role",
+        "category": "cloud",
+        "title": "AWS: IAM-Rolle, die nichts gewährt",
+        "summary": "Eine IAM-Rolle mit verlockendem Namen, einer Vertrauensrichtlinie für das Konto und ohne Berechtigungen. Wer sie anzunehmen versucht, wird von CloudTrail aufgezeichnet, und eine EventBridge-Regel meldet den Aufruf samt Herkunftsadresse und Identität an die URL eines Honeytokens.",
+        "techniques": [
+          "T1078.004"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook der EventBridge-Regel",
+            "techniques": [
+              "T1078.004"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "AwsRoleName",
+            "kind": "name",
+            "label": "Name der Rolle",
+            "example": "deploy-admin"
+          },
+          {
+            "key": "AwsRegion",
+            "kind": "name",
+            "label": "AWS-Region Ihrer Workloads",
+            "example": "eu-central-1"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "aws-iam-user-key",
+        "category": "cloud",
+        "title": "AWS: Zugriffsschlüssel eines IAM-Benutzers ohne Rechte",
+        "summary": "Ein IAM-Benutzer mit Zugriffsschlüssel und ohne Berechtigungen. Wer eine Anfrage mit dem Schlüssel signiert, wird von CloudTrail aufgezeichnet, und eine EventBridge-Regel meldet den Aufruf samt Herkunftsadresse an die URL eines Honeytokens.",
+        "techniques": [
+          "T1078.004",
+          "T1552.001"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook der EventBridge-Regel",
+            "techniques": [
+              "T1078.004",
+              "T1552.001"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "IamUser",
+            "kind": "name",
+            "label": "Name des IAM-Benutzers",
+            "example": "svc-reporting-sync"
+          },
+          {
+            "key": "AwsRegion",
+            "kind": "name",
+            "label": "AWS-Region Ihrer Workloads",
+            "example": "eu-central-1"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "aws-secrets-manager-secret",
+        "category": "cloud",
+        "title": "AWS: Secret im Secrets Manager",
+        "summary": "Ein Secret mit erfundenen Datenbank-Zugangsdaten. Wer es liest oder beschreibt, wird von CloudTrail aufgezeichnet, und eine EventBridge-Regel meldet den Aufruf samt Herkunftsadresse und Identität an die URL eines Honeytokens.",
+        "techniques": [
+          "T1555.006",
+          "T1078.004"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook der EventBridge-Regel",
+            "techniques": [
+              "T1555.006",
+              "T1078.004"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "AwsSecretName",
+            "kind": "name",
+            "label": "Name des Secrets",
+            "example": "prod-orders-db-credentials"
+          },
+          {
+            "key": "AwsSecretUser",
+            "kind": "name",
+            "label": "Benutzername im Secret",
+            "example": "orders_app"
+          },
+          {
+            "key": "AwsRegion",
+            "kind": "name",
+            "label": "AWS-Region Ihrer Workloads",
+            "example": "eu-central-1"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "aws-ssm-parameter",
+        "category": "cloud",
+        "title": "AWS: sicherer Parameter im Parameter Store",
+        "summary": "Ein SecureString-Parameter mit zufälligem Wert. Wer ihn liest, wird von CloudTrail aufgezeichnet, und eine EventBridge-Regel meldet den Aufruf samt Herkunftsadresse und Identität an die URL eines Honeytokens.",
+        "techniques": [
+          "T1555.006",
+          "T1078.004"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook der EventBridge-Regel",
+            "techniques": [
+              "T1555.006",
+              "T1078.004"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "AwsParameterName",
+            "kind": "name",
+            "label": "Name des Parameters (ohne Schrägstriche)",
+            "example": "prod-orders-api-key"
+          },
+          {
+            "key": "AwsRegion",
+            "kind": "name",
+            "label": "AWS-Region Ihrer Workloads",
+            "example": "eu-central-1"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "azure-key-vault-secret",
+        "category": "cloud",
+        "title": "Azure: Secret in einem Key Vault",
+        "summary": "Ein Secret mit zufälligem Wert in einem Key Vault. Wer es liest, steht im Auditlog des Vaults, und eine Alertregel meldet das Lesen samt Herkunftsadresse und Client an die URL eines Honeytokens.",
+        "techniques": [
+          "T1555.006",
+          "T1078.004"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook der Aktionsgruppe",
+            "techniques": [
+              "T1555.006",
+              "T1078.004"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "VaultName",
+            "kind": "name",
+            "label": "Name eines vorhandenen Key Vaults",
+            "example": "kv-orders-prod"
+          },
+          {
+            "key": "VaultSecretName",
+            "kind": "name",
+            "label": "Name des Secrets im Vault",
+            "example": "orders-db-password"
+          },
+          {
+            "key": "AzureRegion",
+            "kind": "name",
+            "label": "Azure-Region Ihrer Workloads",
+            "example": "germanywestcentral"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "azure-storage-blob",
+        "category": "cloud",
+        "title": "Azure: Blob-Container mit einer Sicherungsdatei",
+        "summary": "Ein privater Container in einem Speicherkonto mit einer Datei aus Zufallsbytes, die wie eine Sicherung aussieht. Wer ihn auflistet oder liest, steht in den Blob-Logs, und eine Alertregel meldet den Zugriff samt Herkunftsadresse und Client an die URL eines Honeytokens.",
+        "techniques": [
+          "T1530",
+          "T1078.004"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook der Aktionsgruppe",
+            "techniques": [
+              "T1530",
+              "T1078.004"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "StorageAccount",
+            "kind": "name",
+            "label": "Name eines vorhandenen Speicherkontos",
+            "example": "stordersprod01"
+          },
+          {
+            "key": "ContainerName",
+            "kind": "name",
+            "label": "Name des Containers",
+            "example": "db-backups"
+          },
+          {
+            "key": "BlobName",
+            "kind": "name",
+            "label": "Name der Datei im Container",
+            "example": "orders-2026-03.bak"
+          },
+          {
+            "key": "AzureRegion",
+            "kind": "name",
+            "label": "Azure-Region Ihrer Workloads",
+            "example": "germanywestcentral"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
       },
       {
         "id": "database-credentials",
@@ -1883,6 +2196,310 @@
             "format": "html"
           }
         ]
+      },
+      {
+        "id": "aws-assume-role",
+        "category": "cloud",
+        "title": "AWS: IAM role that grants nothing",
+        "summary": "An IAM role with an inviting name, a trust policy for the account and no permissions. Whoever tries to assume it is recorded by CloudTrail, and an EventBridge rule reports the call, with the address and the identity it came from, to the URL of a honeytoken.",
+        "techniques": [
+          "T1078.004"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook of the EventBridge rule",
+            "techniques": [
+              "T1078.004"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "AwsRoleName",
+            "kind": "name",
+            "label": "Name of the role",
+            "example": "deploy-admin"
+          },
+          {
+            "key": "AwsRegion",
+            "kind": "name",
+            "label": "AWS region of your workloads",
+            "example": "eu-central-1"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "aws-iam-user-key",
+        "category": "cloud",
+        "title": "AWS: access key of an IAM user without rights",
+        "summary": "An IAM user with an access key and no permissions. Whoever signs a request with the key is recorded by CloudTrail, and an EventBridge rule reports the call, with the address it came from, to the URL of a honeytoken.",
+        "techniques": [
+          "T1078.004",
+          "T1552.001"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook of the EventBridge rule",
+            "techniques": [
+              "T1078.004",
+              "T1552.001"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "IamUser",
+            "kind": "name",
+            "label": "Name of the IAM user",
+            "example": "svc-reporting-sync"
+          },
+          {
+            "key": "AwsRegion",
+            "kind": "name",
+            "label": "AWS region of your workloads",
+            "example": "eu-central-1"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "aws-secrets-manager-secret",
+        "category": "cloud",
+        "title": "AWS: secret in Secrets Manager",
+        "summary": "A secret with invented database credentials. Whoever reads or describes it is recorded by CloudTrail, and an EventBridge rule reports the call, with the address and the identity it came from, to the URL of a honeytoken.",
+        "techniques": [
+          "T1555.006",
+          "T1078.004"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook of the EventBridge rule",
+            "techniques": [
+              "T1555.006",
+              "T1078.004"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "AwsSecretName",
+            "kind": "name",
+            "label": "Name of the secret",
+            "example": "prod-orders-db-credentials"
+          },
+          {
+            "key": "AwsSecretUser",
+            "kind": "name",
+            "label": "User name inside the secret",
+            "example": "orders_app"
+          },
+          {
+            "key": "AwsRegion",
+            "kind": "name",
+            "label": "AWS region of your workloads",
+            "example": "eu-central-1"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "aws-ssm-parameter",
+        "category": "cloud",
+        "title": "AWS: secure parameter in Parameter Store",
+        "summary": "A SecureString parameter with a random value. Whoever reads it is recorded by CloudTrail, and an EventBridge rule reports the call, with the address and the identity it came from, to the URL of a honeytoken.",
+        "techniques": [
+          "T1555.006",
+          "T1078.004"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook of the EventBridge rule",
+            "techniques": [
+              "T1555.006",
+              "T1078.004"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "AwsParameterName",
+            "kind": "name",
+            "label": "Name of the parameter (no slashes)",
+            "example": "prod-orders-api-key"
+          },
+          {
+            "key": "AwsRegion",
+            "kind": "name",
+            "label": "AWS region of your workloads",
+            "example": "eu-central-1"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "azure-key-vault-secret",
+        "category": "cloud",
+        "title": "Azure: secret in a key vault",
+        "summary": "A secret with a random value in a key vault. Whoever reads it is recorded in the audit log of the vault, and an alert rule reports the read, with the address and the client it came from, to the URL of a honeytoken.",
+        "techniques": [
+          "T1555.006",
+          "T1078.004"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook of the action group",
+            "techniques": [
+              "T1555.006",
+              "T1078.004"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "VaultName",
+            "kind": "name",
+            "label": "Name of an existing key vault",
+            "example": "kv-orders-prod"
+          },
+          {
+            "key": "VaultSecretName",
+            "kind": "name",
+            "label": "Name of the secret in the vault",
+            "example": "orders-db-password"
+          },
+          {
+            "key": "AzureRegion",
+            "kind": "name",
+            "label": "Azure region of your workloads",
+            "example": "germanywestcentral"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
+      },
+      {
+        "id": "azure-storage-blob",
+        "category": "cloud",
+        "title": "Azure: blob container with a backup file",
+        "summary": "A private container in a storage account with one file of random bytes that looks like a backup. Whoever lists or reads it is recorded in the blob logs, and an alert rule reports the access, with the address and the client it came from, to the URL of a honeytoken.",
+        "techniques": [
+          "T1530",
+          "T1078.004"
+        ],
+        "engage_activities": [
+          "EAC0005"
+        ],
+        "honeytokens": [
+          {
+            "key": "Webhook",
+            "type": "web_url",
+            "label": "Webhook of the action group",
+            "techniques": [
+              "T1530",
+              "T1078.004"
+            ],
+            "severity": "high"
+          }
+        ],
+        "persona": [
+          {
+            "key": "StorageAccount",
+            "kind": "name",
+            "label": "Name of an existing storage account",
+            "example": "stordersprod01"
+          },
+          {
+            "key": "ContainerName",
+            "kind": "name",
+            "label": "Name of the container",
+            "example": "db-backups"
+          },
+          {
+            "key": "BlobName",
+            "kind": "name",
+            "label": "Name of the file in the container",
+            "example": "orders-2026-03.bak"
+          },
+          {
+            "key": "AzureRegion",
+            "kind": "name",
+            "label": "Azure region of your workloads",
+            "example": "germanywestcentral"
+          },
+          {
+            "key": "AlertName",
+            "kind": "name",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
+            "example": "audit-notify"
+          }
+        ],
+        "secrets": [],
+        "artifacts": []
       },
       {
         "id": "database-credentials",

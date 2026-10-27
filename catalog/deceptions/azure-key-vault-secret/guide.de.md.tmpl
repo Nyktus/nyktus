@@ -1,0 +1,107 @@
+# Azure: Secret in einem Key Vault
+
+Ein Secret mit zufälligem Wert in einem Key Vault Ihres Abonnements. Ein Eindringling, der eine Identität übernommen hat, die den Vault lesen darf, listet die Secrets auf, findet eines mit einem Namen wie `{{.Persona.VaultSecretName}}` und liest es. Der Vault schreibt das Lesen in sein Auditlog, eine Alertregel findet es dort, und eine Aktionsgruppe leitet den Alert per `POST` an die URL eines Honeytokens weiter. Der Alert sagt, dass das Secret gelesen wurde. Adresse und Client des Aufrufers stehen im Anfang des Request-Body, den der Honeytoken aufbewahrt, nicht im Alert: Die Adresse des Events selbst ist die des Azure-Dienstes, der den Webhook sendet.
+
+Die Befehle sind für eine Shell wie bash oder zsh gedacht, mit der Azure CLI, angemeldet im Abonnement des Vaults. Sie wurden an der Dokumentation der Azure CLI, von Azure Monitor und von Key Vault geprüft, nicht an einem Abonnement ausgeführt. Die Azure CLI bietet gegebenenfalls an, eine Erweiterung zu installieren, wenn ein Befehl sie braucht.
+
+## Was der Köder im Abonnement bewirkt
+
+- Das Secret enthält einen zufälligen Wert mit etwa 30 Zeichen, den Sie erzeugen und nirgends aufbewahren. Er gehört zu nichts: Das Lesen öffnet nichts.
+- Der Vault ist einer, der existiert. Der Köder steht unter seinen echten Secrets, deshalb taugt ein vorhandener Vault besser als ein neuer, den niemand benutzt. Die Befehle ändern nichts an seinen Zugriffsregeln.
+- Alles, was der Vault protokolliert, geht in einen Log-Analytics-Workspace, nicht nur dieses Secret. Das kostet Aufnahme im Verhältnis zum Datenverkehr des Vaults, und die Alertregel kostet je nachdem, wie oft sie ausgewertet wird; siehe die Preisseiten von Azure Monitor. Wählen Sie einen Vault mit wenig Verkehr oder einen, der schon in einen Workspace protokolliert.
+- Alles von Ihnen, das alle Secrets des Vaults liest, etwa eine Sicherung oder ein Scanner, liest auch dieses und löst den Alert aus.
+
+## Was dazu nötig ist
+
+1. **Ein Konto**, das Secrets im Vault setzen darf (zum Beispiel mit der Rolle Key Vault Secrets Officer), Ressourcen in der Ressourcengruppe des Vaults anlegen und Alertregeln erstellen darf (zum Beispiel mit der Rolle Monitoring Contributor), oder das Besitzer der Ressourcengruppe ist.
+2. **Die URL des Honeytokens**, `{{.Honeytokens.Webhook.URL}}`. Sie steht in der Aktionsgruppe in Ihrem Abonnement. Behandeln Sie sie als Geheimnis: Wer sie kennt, kann gefälschte Events senden, und wer die Aktionsgruppe lesen darf, kann sie finden.
+3. **Namen, die Azure akzeptiert.** Die Namen des Secrets und des Präfixes dürfen nur Buchstaben, Ziffern und Bindestriche enthalten, und das Präfix muss Platz für die längeren Namen lassen, die daraus gebildet werden (ein Workspace-Name hat höchstens 63 Zeichen). Die Console akzeptiert mehr, und ein Befehl scheitert mittendrin, wenn es nicht passt.
+
+## Schritt 1: Variablen und das Secret
+
+```bash
+LOCATION={{.Persona.AzureRegion}}
+VAULT={{.Persona.VaultName}}
+SUB=$(az account show --query id --output tsv)
+RG=$(az keyvault show --name "$VAULT" --query resourceGroup --output tsv)
+VAULT_ID=$(az keyvault show --name "$VAULT" --query id --output tsv)
+az keyvault secret set --vault-name "$VAULT" --name {{.Persona.VaultSecretName}} --value "$(openssl rand -base64 24 | tr -d '/+=')" --query id --output tsv
+```
+
+Das `--query` hält den Wert aus der Ausgabe. Der Wert steht, solange der Befehl läuft, auf der Befehlszeile und ist damit für einen Augenblick für andere Benutzer desselben Rechners sichtbar; für einen Wert, der nichts öffnet, ist das hinnehmbar. Wählen Sie für das Secret einen Namen, der dazu passt, wie Ihre Teams Secrets benennen.
+
+## Schritt 2: den Vault in einen Workspace protokollieren
+
+Sendet der Vault sein Auditlog (`AuditEvent`) schon an einen Log-Analytics-Workspace, zeigt es `az monitor diagnostic-settings list --resource "$VAULT_ID"`. Nehmen Sie dann diesen Workspace für die nächsten Schritte: Setzen Sie `WS_ID` auf seine Ressourcen-ID und `LOCATION` auf seine Region mit `LOCATION=$(az monitor log-analytics workspace show --ids "$WS_ID" --query location --output tsv)`, weil die Alertregel in der Region des Workspaces liegen muss. Lesen Sie die Anmerkung zu den Tabellen unten. Sonst legen Sie einen an:
+
+```bash
+az monitor log-analytics workspace create --resource-group "$RG" --workspace-name {{.Persona.AlertName}}-vault-logs --location "$LOCATION"
+WS_ID=$(az monitor log-analytics workspace show --resource-group "$RG" --workspace-name {{.Persona.AlertName}}-vault-logs --query id --output tsv)
+az monitor diagnostic-settings create --name {{.Persona.AlertName}}-vault-diag --resource "$VAULT_ID" --workspace "$WS_ID" --logs '[{"category":"AuditEvent","enabled":true}]'
+```
+
+Die Abfrage in Schritt 4 liest die Tabelle `AzureDiagnostics`, in die die Logs eines Vaults standardmäßig gehen. Schreibt die vorhandene Einstellung stattdessen in die Tabelle `AZKVAuditLogs` (das dedizierte Ziel), ändern Sie Abfrage und Dimensionen so, wie die Tabellenreferenz von Azure Monitor die Spalten aufführt: `AZKVAuditLogs` statt `AzureDiagnostics` und keine Bedingung an `ResourceProvider`, `RequestUri` für `requestUri_s`, `CallerIpAddress` für `CallerIPAddress`, `ResultType` für `ResultSignature` und keine Dimension `clientInfo_s`, deren Inhalt in der Spalte `Properties` steht.
+
+## Schritt 3: Aktionsgruppe
+
+Die Aktionsgruppe sendet den Alert an den Honeytoken. Das Common Alert Schema ist das einzige Format, das die Alertregel aus Schritt 4 unterstützt.
+
+```bash
+az monitor action-group create --resource-group "$RG" --name {{.Persona.AlertName}}-vault-ag --short-name notify --action webhook notify '{{.Honeytokens.Webhook.URL}}' usecommonalertschema
+AG_ID=$(az monitor action-group show --resource-group "$RG" --name {{.Persona.AlertName}}-vault-ag --query id --output tsv)
+```
+
+## Schritt 4: Alertregel
+
+Die Regel sucht alle fünf Minuten in den letzten zehn nach Lesezugriffen auf dieses Secret. Sie teilt den Alert nach Adresse des Aufrufers, Client und Ergebnis auf, damit diese drei Werte in der Liste `dimensions` im Body der Anfrage stehen. Der Befehl `az monitor scheduled-query create` kann nicht nach Dimensionen aufteilen, die Regel geht deshalb mit `az rest` über die REST-API von Azure Monitor. Die Abfrage wird nicht geprüft, weil die Spalten der Tabelle `AzureDiagnostics` erst existieren, wenn das erste Log angekommen ist.
+
+```bash
+cat > rule.json <<EOF
+{"location":"$LOCATION","properties":{"severity":1,"enabled":true,"evaluationFrequency":"PT5M","windowSize":"PT10M","scopes":["$WS_ID"],"criteria":{"allOf":[{"query":"AzureDiagnostics | where ResourceProvider == 'MICROSOFT.KEYVAULT' and OperationName == 'SecretGet' and _ResourceId =~ '$VAULT_ID' and (requestUri_s contains '/secrets/{{.Persona.VaultSecretName}}/' or requestUri_s contains '/secrets/{{.Persona.VaultSecretName}}?')","timeAggregation":"Count","dimensions":[{"name":"CallerIPAddress","operator":"Include","values":["*"]},{"name":"clientInfo_s","operator":"Include","values":["*"]},{"name":"ResultSignature","operator":"Include","values":["*"]}],"operator":"GreaterThan","threshold":0,"failingPeriods":{"numberOfEvaluationPeriods":1,"minFailingPeriodsToAlert":1}}]},"actions":{"actionGroups":["$AG_ID"]},"skipQueryValidation":true}}
+EOF
+az rest --method put --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Insights/scheduledQueryRules/{{.Persona.AlertName}}-vault-rule?api-version=2021-08-01" --body @rule.json
+rm rule.json
+```
+
+## Den Köder platzieren
+
+Das Secret findet man, indem man die Secrets des Vaults auflistet, es braucht also keine Datei. Damit es früher gefunden wird, nennen Sie seinen Namen dort, wo es die Menschen der Geschichte täten: in der Readme eines Repositorys, in einer Deployment-Konfiguration (`{{.Persona.VaultSecretName}}` als Name des zu ladenden Secrets) oder in einem Ticket. Vermerken Sie im Szenario, wo Sie das getan haben.
+
+## Testen
+
+Lesen Sie das Secret mit Ihrem eigenen Konto:
+
+```bash
+az keyvault secret show --vault-name "$VAULT" --name {{.Persona.VaultSecretName}} --query id --output tsv
+```
+
+Das Auditlog erreicht den Workspace nach einigen Minuten, und die Regel sieht alle fünf Minuten nach. Azure Monitor garantiert keine Verzögerung, rechnen Sie also mit einer Viertelstunde, beim ersten Mal vielleicht mit mehr. Dann zeigt das Szenario einen Incident. Sehen Sie sich den Body seines Events an: Nach den Feldern des Alerts enthält er die Liste `dimensions` mit Adresse, Client und Ergebnis:
+
+```json
+{"name":"CallerIPAddress","value":"203.0.113.10"},{"name":"clientInfo_s","value":"azsdk-python-keyvault-secrets/4.x ..."},{"name":"ResultSignature","value":"OK"}
+```
+
+Endet der Body vor `dimensions`, wurde er bei 4096 Byte abgeschnitten: Die Namen von Abonnement, Ressourcengruppe und Regel davor sind zu lang. Nehmen Sie kürzere Namen für die Ressourcengruppe der Weiterleitungsressourcen und für das Präfix und wiederholen Sie den Test. Schließen Sie den Incident nach dem Test.
+
+## Entfernen
+
+```bash
+az rest --method delete --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Insights/scheduledQueryRules/{{.Persona.AlertName}}-vault-rule?api-version=2021-08-01"
+az monitor action-group delete --resource-group "$RG" --name {{.Persona.AlertName}}-vault-ag
+az monitor diagnostic-settings delete --name {{.Persona.AlertName}}-vault-diag --resource "$VAULT_ID"
+az monitor log-analytics workspace delete --resource-group "$RG" --workspace-name {{.Persona.AlertName}}-vault-logs --yes
+az keyvault secret delete --vault-name "$VAULT" --name {{.Persona.VaultSecretName}}
+```
+
+Lassen Sie den dritten und vierten Befehl aus, wenn Sie einen Workspace benutzt haben, den es schon gab. Ein gelöschtes Secret bleibt im Vault im gelöschten Zustand, bis seine Aufbewahrung endet oder jemand es endgültig löscht.
+
+## Grenzen
+
+- **Nur Lesezugriffe, die der Vault protokolliert.** Ein Vault, dessen Auditlog nicht an den Workspace geht oder dessen Einstellung jemand entfernt, meldet nichts, und der Alert endet ohne Anzeichen.
+- **Verzögerung.** Minuten. Das Log braucht Zeit, bis es ankommt, und die Regel läuft alle fünf Minuten über ein Fenster von zehn.
+- **Wiederholung.** Azure Monitor behandelt einen Alert als einen, bis seine Bedingung weggefallen ist. Ein zweites Lesen von derselben Adresse, mit demselben Client und Ergebnis in kurzer Zeit wird womöglich nicht noch einmal gemeldet, und ein Lesen, das in zwei Fenster fällt, womöglich zweimal. Der Honeytoken beantwortet jede Anfrage gleich.
+- **Der Alert nennt den Honeytoken, nicht den Aufrufer.** Die Adresse des Events ist die des Azure-Dienstes, der den Webhook sendet. Aufrufer, Adresse und Client stehen nur im Anfang des Body, den die Console als Text eines Angreifers zeigt und der in keinem Alert steht.
+- **Die Identität steht nicht im Body.** Die Liste enthält Adresse, Client und Ergebnis. Wer sich angemeldet hat, steht zum Zeitpunkt des Alerts im Auditlog des Vaults in Ihrem Workspace.
+- **Was erfasst wird.** Das Lesen des Wertes des Secrets über seinen Namen. Das Auflisten der Secrets löst nichts aus.
+- **Ihre eigenen Werkzeuge.** Alles von Ihnen, das das Secret liest, auch Sie selbst, löst den Alert aus.
+- **Sichtbar für jeden, der nachsieht.** Ein Eindringling mit Leserechten an der Aktionsgruppe sieht die URL.

@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "id": "aws-secrets-manager-secret",
+  "category": "cloud",
+  "title": {
+    "en": "AWS: secret in Secrets Manager",
+    "de": "AWS: Secret im Secrets Manager"
+  },
+  "summary": {
+    "en": "A secret with invented database credentials. Whoever reads or describes it is recorded by CloudTrail, and an EventBridge rule reports the call, with the address and the identity it came from, to the URL of a honeytoken.",
+    "de": "Ein Secret mit erfundenen Datenbank-Zugangsdaten. Wer es liest oder beschreibt, wird von CloudTrail aufgezeichnet, und eine EventBridge-Regel meldet den Aufruf samt Herkunftsadresse und Identität an die URL eines Honeytokens."
+  },
+  "techniques": ["T1555.006", "T1078.004"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Webhook",
+      "type": "web_url",
+      "label": {"en": "Webhook of the EventBridge rule", "de": "Webhook der EventBridge-Regel"},
+      "techniques": ["T1555.006", "T1078.004"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "AwsSecretName",
+      "kind": "name",
+      "label": {"en": "Name of the secret", "de": "Name des Secrets"},
+      "example": "prod-orders-db-credentials"
+    },
+    {
+      "key": "AwsSecretUser",
+      "kind": "name",
+      "label": {"en": "User name inside the secret", "de": "Benutzername im Secret"},
+      "example": "orders_app"
+    },
+    {
+      "key": "AwsRegion",
+      "kind": "name",
+      "label": {"en": "AWS region of your workloads", "de": "AWS-Region Ihrer Workloads"},
+      "example": "eu-central-1"
+    },
+    {
+      "key": "AlertName",
+      "kind": "name",
+      "label": {"en": "Prefix of the forwarding resources (up to 40 characters)", "de": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)"},
+      "example": "audit-notify"
+    }
+  ],
+  "artifacts": [],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}

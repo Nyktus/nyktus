@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "id": "aws-assume-role",
+  "category": "cloud",
+  "title": {
+    "en": "AWS: IAM role that grants nothing",
+    "de": "AWS: IAM-Rolle, die nichts gewährt"
+  },
+  "summary": {
+    "en": "An IAM role with an inviting name, a trust policy for the account and no permissions. Whoever tries to assume it is recorded by CloudTrail, and an EventBridge rule reports the call, with the address and the identity it came from, to the URL of a honeytoken.",
+    "de": "Eine IAM-Rolle mit verlockendem Namen, einer Vertrauensrichtlinie für das Konto und ohne Berechtigungen. Wer sie anzunehmen versucht, wird von CloudTrail aufgezeichnet, und eine EventBridge-Regel meldet den Aufruf samt Herkunftsadresse und Identität an die URL eines Honeytokens."
+  },
+  "techniques": ["T1078.004"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Webhook",
+      "type": "web_url",
+      "label": {"en": "Webhook of the EventBridge rule", "de": "Webhook der EventBridge-Regel"},
+      "techniques": ["T1078.004"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "AwsRoleName",
+      "kind": "name",
+      "label": {"en": "Name of the role", "de": "Name der Rolle"},
+      "example": "deploy-admin"
+    },
+    {
+      "key": "AwsRegion",
+      "kind": "name",
+      "label": {"en": "AWS region of your workloads", "de": "AWS-Region Ihrer Workloads"},
+      "example": "eu-central-1"
+    },
+    {
+      "key": "AlertName",
+      "kind": "name",
+      "label": {"en": "Prefix of the forwarding resources (up to 40 characters)", "de": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)"},
+      "example": "audit-notify"
+    }
+  ],
+  "artifacts": [],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}
