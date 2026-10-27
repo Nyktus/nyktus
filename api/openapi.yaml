@@ -4511,7 +4511,7 @@ components:
           pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
         category:
           type: string
-          enum: [identity, network, data, endpoint, application]
+          enum: [identity, network, data, endpoint, application, cloud]
         title:
           type: string
         summary:
@@ -4543,7 +4543,7 @@ components:
           pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
         category:
           type: string
-          enum: [identity, network, data, endpoint, application]
+          enum: [identity, network, data, endpoint, application, cloud]
         title:
           type: string
         summary:
@@ -4667,7 +4667,7 @@ components:
           pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
         category:
           type: string
-          enum: [identity, network, data, endpoint, application]
+          enum: [identity, network, data, endpoint, application, cloud]
         title:
           type: string
         summary:
@@ -4682,7 +4682,7 @@ components:
           pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
         category:
           type: string
-          enum: [identity, network, data, endpoint, application]
+          enum: [identity, network, data, endpoint, application, cloud]
         title:
           type: string
         summary:

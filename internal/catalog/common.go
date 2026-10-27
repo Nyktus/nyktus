@@ -39,10 +39,13 @@ const (
 	// CategoryApplication pretends to be configuration or credentials of an
 	// application.
 	CategoryApplication Category = "application"
+	// CategoryCloud pretends to be resources of a cloud account, such as
+	// users, secrets or storage.
+	CategoryCloud Category = "cloud"
 )
 
 // Categories lists every category.
-var Categories = []Category{CategoryIdentity, CategoryNetwork, CategoryData, CategoryEndpoint, CategoryApplication}
+var Categories = []Category{CategoryIdentity, CategoryNetwork, CategoryData, CategoryEndpoint, CategoryApplication, CategoryCloud}
 
 // Languages lists the languages of the texts and guides of every entry.
 var Languages = []string{"en", "de"}
