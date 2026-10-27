@@ -67,7 +67,7 @@ Das Ziel sendet nur, was Sie brauchen, damit der Request-Body weit unter den 409
 
 ```bash
 cat > targets.json <<EOF
-[{"Id":"1","Arn":"$DEST_ARN","RoleArn":"arn:aws:iam::$ACCOUNT:role/{{.Persona.AlertName}}-param-role","InputTransformer":{"InputPathsMap":{"eventName":"\$.detail.eventName","sourceIPAddress":"\$.detail.sourceIPAddress","userAgent":"\$.detail.userAgent","userArn":"\$.detail.userIdentity.arn","region":"\$.detail.awsRegion","time":"\$.time"},"InputTemplate":"{\"eventName\":<eventName>,\"sourceIPAddress\":<sourceIPAddress>,\"userAgent\":<userAgent>,\"userArn\":<userArn>,\"region\":<region>,\"time\":<time>}"}}]
+[{"Id":"1","Arn":"$DEST_ARN","RoleArn":"arn:aws:iam::$ACCOUNT:role/{{.Persona.AlertName}}-param-role","InputTransformer":{"InputPathsMap":{"eventName":"\$.detail.eventName","sourceIPAddress":"\$.detail.sourceIPAddress","userAgent":"\$.detail.userAgent","userArn":"\$.detail.userIdentity.arn","userType":"\$.detail.userIdentity.type","accountId":"\$.detail.userIdentity.accountId","region":"\$.detail.awsRegion","time":"\$.time"},"InputTemplate":"{\"eventName\":<eventName>,\"sourceIPAddress\":<sourceIPAddress>,\"userAgent\":<userAgent>,\"userArn\":<userArn>,\"userType\":<userType>,\"accountId\":<accountId>,\"region\":<region>,\"time\":<time>}"}}]
 EOF
 aws events put-targets --region "$REGION" --rule {{.Persona.AlertName}}-param-rule --targets file://targets.json
 rm pattern.json targets.json
@@ -90,7 +90,7 @@ aws ssm get-parameter --region "$REGION" --name {{.Persona.AwsParameterName}} --
 CloudTrail liefert ein Ereignis im Durchschnitt etwa fünf Minuten nach dem Aufruf, garantiert ist das von AWS nicht. Dann zeigt das Szenario einen Incident, und das Event enthält einen Body wie diesen:
 
 ```json
-{"eventName":"GetParameter","sourceIPAddress":"203.0.113.10","userAgent":"aws-cli/2.x ...","userArn":"arn:aws:sts::123456789012:assumed-role/NAME/SESSION","region":"eu-central-1","time":"2026-01-01T10:00:00Z"}
+{"eventName":"GetParameter","sourceIPAddress":"203.0.113.10","userAgent":"aws-cli/2.x ...","userArn":"arn:aws:sts::123456789012:assumed-role/NAME/SESSION","userType":"AssumedRole","accountId":"123456789012","region":"eu-central-1","time":"2026-01-01T10:00:00Z"}
 ```
 
 Schließen Sie den Incident nach dem Test.

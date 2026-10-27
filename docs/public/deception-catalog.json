@@ -313,7 +313,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Namenspräfix der Weiterleitungsressourcen",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
             "example": "audit-notify"
           }
         ],
@@ -360,7 +360,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Namenspräfix der Weiterleitungsressourcen",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
             "example": "audit-notify"
           }
         ],
@@ -413,7 +413,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Namenspräfix der Weiterleitungsressourcen",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
             "example": "audit-notify"
           }
         ],
@@ -460,7 +460,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Namenspräfix der Weiterleitungsressourcen",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
             "example": "audit-notify"
           }
         ],
@@ -513,7 +513,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Namenspräfix der Weiterleitungsressourcen",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
             "example": "audit-notify"
           }
         ],
@@ -572,7 +572,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Namenspräfix der Weiterleitungsressourcen",
+            "label": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)",
             "example": "audit-notify"
           }
         ],
@@ -2235,7 +2235,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Name prefix of the forwarding resources",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
             "example": "audit-notify"
           }
         ],
@@ -2282,7 +2282,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Name prefix of the forwarding resources",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
             "example": "audit-notify"
           }
         ],
@@ -2335,7 +2335,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Name prefix of the forwarding resources",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
             "example": "audit-notify"
           }
         ],
@@ -2382,7 +2382,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Name prefix of the forwarding resources",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
             "example": "audit-notify"
           }
         ],
@@ -2435,7 +2435,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Name prefix of the forwarding resources",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
             "example": "audit-notify"
           }
         ],
@@ -2494,7 +2494,7 @@
           {
             "key": "AlertName",
             "kind": "name",
-            "label": "Name prefix of the forwarding resources",
+            "label": "Prefix of the forwarding resources (up to 40 characters)",
             "example": "audit-notify"
           }
         ],

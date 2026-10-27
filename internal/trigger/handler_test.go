@@ -430,7 +430,7 @@ func TestTrigger_PostRecordsTheBodyAsCleanedExcerpt(t *testing.T) {
 func TestTrigger_PostKeepsTheCallerOfACloudWebhook(t *testing.T) {
 	t.Parallel()
 
-	eventBridge := `{"eventName":"GetSecretValue","sourceIPAddress":"203.0.113.10","userAgent":"aws-cli/2.17.0 md/awscrt#0.20.11 ua/2.0 os/linux#6.1 md/arch#x86_64 lang/python#3.12.4 md/pyimpl#CPython cfg/retry-mode#standard md/installer#exe md/prompt#off md/command#secretsmanager.get-secret-value","userArn":"arn:aws:sts::123456789012:assumed-role/ops/jane","region":"eu-central-1","time":"2026-01-01T10:00:00Z"}`
+	eventBridge := `{"eventName":"GetSecretValue","sourceIPAddress":"203.0.113.10","userAgent":"aws-cli/2.17.0 md/awscrt#0.20.11 ua/2.0 os/linux#6.1 md/arch#x86_64 lang/python#3.12.4 md/pyimpl#CPython cfg/retry-mode#standard md/installer#exe md/prompt#off md/command#secretsmanager.get-secret-value","userArn":"arn:aws:sts::123456789012:assumed-role/ops/jane","userType":"AssumedRole","accountId":"123456789012","region":"eu-central-1","time":"2026-01-01T10:00:00Z"}`
 	link := "https://portal.azure.com#@00000000-0000-0000-0000-000000000000/blade/Microsoft_Azure_Monitoring_Logs/LogsBlade/source/Alerts.EmailLinks/scope/" + strings.Repeat("%7B%22resources%22", 30)
 	azure := `{"schemaId":"azureMonitorCommonAlertSchema","data":{"essentials":{` +
 		`"alertId":"/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.AlertsManagement/alerts/00000000-0000-0000-0000-000000000000",` +

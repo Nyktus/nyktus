@@ -37,7 +37,7 @@
     {
       "key": "AlertName",
       "kind": "name",
-      "label": {"en": "Name prefix of the forwarding resources", "de": "Namenspräfix der Weiterleitungsressourcen"},
+      "label": {"en": "Prefix of the forwarding resources (up to 40 characters)", "de": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)"},
       "example": "audit-notify"
     }
   ],

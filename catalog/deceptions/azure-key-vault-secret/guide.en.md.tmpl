@@ -28,11 +28,11 @@ VAULT_ID=$(az keyvault show --name "$VAULT" --query id --output tsv)
 az keyvault secret set --vault-name "$VAULT" --name {{.Persona.VaultSecretName}} --value "$(openssl rand -base64 24 | tr -d '/+=')" --query id --output tsv
 ```
 
-The `--query` keeps the value out of the output. Choose a name for the secret that fits the way your teams name secrets.
+The `--query` keeps the value out of the output. The value stands on the command line while the command runs, so that other users of the same computer can see it for a moment; for a value that opens nothing, that is acceptable. Choose a name for the secret that fits the way your teams name secrets.
 
 ## Step 2: log the vault to a workspace
 
-If the vault already sends its audit log (`AuditEvent`) to a Log Analytics workspace, `az monitor diagnostic-settings list --resource "$VAULT_ID"` shows it. Then use that workspace in the next steps (`WS_ID` is its resource ID), and read the note on tables below. Otherwise create one:
+If the vault already sends its audit log (`AuditEvent`) to a Log Analytics workspace, `az monitor diagnostic-settings list --resource "$VAULT_ID"` shows it. Then use that workspace in the next steps: set `WS_ID` to its resource ID and `LOCATION` to its region with `LOCATION=$(az monitor log-analytics workspace show --ids "$WS_ID" --query location --output tsv)`, because the alert rule must be in the region of the workspace. Read the note on tables below. Otherwise create one:
 
 ```bash
 az monitor log-analytics workspace create --resource-group "$RG" --workspace-name {{.Persona.AlertName}}-vault-logs --location "$LOCATION"
@@ -57,7 +57,7 @@ The rule looks every five minutes at the last ten for reads of this secret. It s
 
 ```bash
 cat > rule.json <<EOF
-{"location":"$LOCATION","properties":{"severity":1,"enabled":true,"evaluationFrequency":"PT5M","windowSize":"PT10M","scopes":["$WS_ID"],"criteria":{"allOf":[{"query":"AzureDiagnostics | where ResourceProvider == 'MICROSOFT.KEYVAULT' and OperationName == 'SecretGet' and (requestUri_s contains '/secrets/{{.Persona.VaultSecretName}}/' or requestUri_s contains '/secrets/{{.Persona.VaultSecretName}}?')","timeAggregation":"Count","dimensions":[{"name":"CallerIPAddress","operator":"Include","values":["*"]},{"name":"clientInfo_s","operator":"Include","values":["*"]},{"name":"ResultSignature","operator":"Include","values":["*"]}],"operator":"GreaterThan","threshold":0,"failingPeriods":{"numberOfEvaluationPeriods":1,"minFailingPeriodsToAlert":1}}]},"actions":{"actionGroups":["$AG_ID"]},"skipQueryValidation":true}}
+{"location":"$LOCATION","properties":{"severity":1,"enabled":true,"evaluationFrequency":"PT5M","windowSize":"PT10M","scopes":["$WS_ID"],"criteria":{"allOf":[{"query":"AzureDiagnostics | where ResourceProvider == 'MICROSOFT.KEYVAULT' and OperationName == 'SecretGet' and _ResourceId =~ '$VAULT_ID' and (requestUri_s contains '/secrets/{{.Persona.VaultSecretName}}/' or requestUri_s contains '/secrets/{{.Persona.VaultSecretName}}?')","timeAggregation":"Count","dimensions":[{"name":"CallerIPAddress","operator":"Include","values":["*"]},{"name":"clientInfo_s","operator":"Include","values":["*"]},{"name":"ResultSignature","operator":"Include","values":["*"]}],"operator":"GreaterThan","threshold":0,"failingPeriods":{"numberOfEvaluationPeriods":1,"minFailingPeriodsToAlert":1}}]},"actions":{"actionGroups":["$AG_ID"]},"skipQueryValidation":true}}
 EOF
 az rest --method put --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Insights/scheduledQueryRules/{{.Persona.AlertName}}-vault-rule?api-version=2021-08-01" --body @rule.json
 rm rule.json

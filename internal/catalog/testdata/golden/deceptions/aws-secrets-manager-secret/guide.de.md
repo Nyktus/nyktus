@@ -28,7 +28,7 @@ Sie brauchen einen Trail mit `IsLogging` wahr, der die Region des Secrets umfass
 
 ## Schritt 2: Secret anlegen
 
-Das Passwort kommt von AWS und läuft durch eine Shell-Variable, damit es nie in einer Befehlszeile steht:
+Das Passwort kommt von AWS und läuft durch eine Shell-Variable, damit es nicht ausgegeben wird. In der Befehlszeile von `create-secret` steht es für einen Moment, wo andere Benutzer desselben Rechners es sehen können. Das ist für einen Wert vertretbar, der nichts öffnet:
 
 ```bash
 REGION=eu-central-1
@@ -70,7 +70,7 @@ Das Ziel sendet nur, was Sie brauchen, damit der Request-Body weit unter den 409
 
 ```bash
 cat > targets.json <<EOF
-[{"Id":"1","Arn":"$DEST_ARN","RoleArn":"arn:aws:iam::$ACCOUNT:role/audit-notify-secret-role","InputTransformer":{"InputPathsMap":{"eventName":"\$.detail.eventName","sourceIPAddress":"\$.detail.sourceIPAddress","userAgent":"\$.detail.userAgent","userArn":"\$.detail.userIdentity.arn","region":"\$.detail.awsRegion","time":"\$.time"},"InputTemplate":"{\"eventName\":<eventName>,\"sourceIPAddress\":<sourceIPAddress>,\"userAgent\":<userAgent>,\"userArn\":<userArn>,\"region\":<region>,\"time\":<time>}"}}]
+[{"Id":"1","Arn":"$DEST_ARN","RoleArn":"arn:aws:iam::$ACCOUNT:role/audit-notify-secret-role","InputTransformer":{"InputPathsMap":{"eventName":"\$.detail.eventName","sourceIPAddress":"\$.detail.sourceIPAddress","userAgent":"\$.detail.userAgent","userArn":"\$.detail.userIdentity.arn","userType":"\$.detail.userIdentity.type","accountId":"\$.detail.userIdentity.accountId","region":"\$.detail.awsRegion","time":"\$.time"},"InputTemplate":"{\"eventName\":<eventName>,\"sourceIPAddress\":<sourceIPAddress>,\"userAgent\":<userAgent>,\"userArn\":<userArn>,\"userType\":<userType>,\"accountId\":<accountId>,\"region\":<region>,\"time\":<time>}"}}]
 EOF
 aws events put-targets --region "$REGION" --rule audit-notify-secret-rule --targets file://targets.json
 rm pattern.json targets.json
@@ -93,7 +93,7 @@ aws secretsmanager get-secret-value --region "$REGION" --secret-id prod-orders-d
 CloudTrail liefert ein Ereignis im Durchschnitt etwa fünf Minuten nach dem Aufruf, garantiert ist das von AWS nicht. Dann zeigt das Szenario einen Incident, und das Event enthält einen Body wie diesen:
 
 ```json
-{"eventName":"GetSecretValue","sourceIPAddress":"203.0.113.10","userAgent":"aws-cli/2.x ...","userArn":"arn:aws:sts::123456789012:assumed-role/NAME/SESSION","region":"eu-central-1","time":"2026-01-01T10:00:00Z"}
+{"eventName":"GetSecretValue","sourceIPAddress":"203.0.113.10","userAgent":"aws-cli/2.x ...","userArn":"arn:aws:sts::123456789012:assumed-role/NAME/SESSION","userType":"AssumedRole","accountId":"123456789012","region":"eu-central-1","time":"2026-01-01T10:00:00Z"}
 ```
 
 Schließen Sie den Incident nach dem Test.
@@ -107,7 +107,7 @@ aws events delete-api-destination --region "$REGION" --name audit-notify-secret-
 aws events delete-connection --region "$REGION" --name audit-notify-secret-conn
 aws iam delete-role-policy --role-name audit-notify-secret-role --policy-name invoke
 aws iam delete-role --role-name audit-notify-secret-role
-aws secretsmanager delete-secret --region "$REGION" --secret-id prod-orders-db-credentials --recovery-window-in-days 7
+aws secretsmanager delete-secret --region "$REGION" --secret-id prod-orders-db-credentials --force-delete-without-recovery
 ```
 
 ## Grenzen

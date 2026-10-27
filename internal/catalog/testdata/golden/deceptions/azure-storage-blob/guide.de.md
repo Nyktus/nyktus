@@ -35,7 +35,7 @@ Tun Sie das vor der Protokollierung in Schritt 2, damit Ihr eigener Upload nicht
 
 ## Schritt 2: den Blob-Dienst in einen Workspace protokollieren
 
-Sendet der Blob-Dienst sein Lese-Log (`StorageRead`) schon an einen Log-Analytics-Workspace, zeigt es `az monitor diagnostic-settings list --resource "$STORAGE_ID/blobServices/default"`. Nehmen Sie dann diesen Workspace für die nächsten Schritte (`WS_ID` ist seine Ressourcen-ID). Sonst legen Sie einen an:
+Sendet der Blob-Dienst sein Lese-Log (`StorageRead`) schon an einen Log-Analytics-Workspace, zeigt es `az monitor diagnostic-settings list --resource "$STORAGE_ID/blobServices/default"`. Nehmen Sie dann diesen Workspace für die nächsten Schritte: Setzen Sie `WS_ID` auf seine Ressourcen-ID und `LOCATION` auf seine Region mit `LOCATION=$(az monitor log-analytics workspace show --ids "$WS_ID" --query location --output tsv)`, weil die Alertregel in der Region des Workspaces liegen muss. Sonst legen Sie einen an:
 
 ```bash
 az monitor log-analytics workspace create --resource-group "$RG" --workspace-name audit-notify-blob-logs --location "$LOCATION"
@@ -60,7 +60,7 @@ Die Regel sucht alle fünf Minuten in den letzten zehn nach Auflisten oder Lesen
 
 ```bash
 cat > rule.json <<EOF
-{"location":"$LOCATION","properties":{"severity":1,"enabled":true,"evaluationFrequency":"PT5M","windowSize":"PT10M","scopes":["$WS_ID"],"criteria":{"allOf":[{"query":"StorageBlobLogs | where OperationName in ('GetBlob','GetBlobProperties','ListBlobs') and (Uri contains '/db-backups/' or Uri contains '/db-backups?')","timeAggregation":"Count","dimensions":[{"name":"CallerIpAddress","operator":"Include","values":["*"]},{"name":"UserAgentHeader","operator":"Include","values":["*"]},{"name":"AuthenticationType","operator":"Include","values":["*"]},{"name":"StatusText","operator":"Include","values":["*"]}],"operator":"GreaterThan","threshold":0,"failingPeriods":{"numberOfEvaluationPeriods":1,"minFailingPeriodsToAlert":1}}]},"actions":{"actionGroups":["$AG_ID"]},"skipQueryValidation":true}}
+{"location":"$LOCATION","properties":{"severity":1,"enabled":true,"evaluationFrequency":"PT5M","windowSize":"PT10M","scopes":["$WS_ID"],"criteria":{"allOf":[{"query":"StorageBlobLogs | where AccountName =~ '$ACCOUNT' and OperationName in ('GetBlob','GetBlobProperties','ListBlobs') and (Uri contains '/db-backups/' or Uri contains '/db-backups?')","timeAggregation":"Count","dimensions":[{"name":"CallerIpAddress","operator":"Include","values":["*"]},{"name":"UserAgentHeader","operator":"Include","values":["*"]},{"name":"AuthenticationType","operator":"Include","values":["*"]},{"name":"StatusText","operator":"Include","values":["*"]}],"operator":"GreaterThan","threshold":0,"failingPeriods":{"numberOfEvaluationPeriods":1,"minFailingPeriodsToAlert":1}}]},"actions":{"actionGroups":["$AG_ID"]},"skipQueryValidation":true}}
 EOF
 az rest --method put --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Insights/scheduledQueryRules/audit-notify-blob-rule?api-version=2021-08-01" --body @rule.json
 rm rule.json
