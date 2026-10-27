@@ -331,6 +331,7 @@ export const de: Record<MessageKey, string> = {
   'category.data': 'Daten',
   'category.endpoint': 'Endgerät',
   'category.application': 'Anwendung',
+  'category.cloud': 'Cloud',
 
   'persona.required': 'Geben Sie einen Wert für {label} ein.',
   'persona.host': 'Ein Hostname aus Kleinbuchstaben, Ziffern, Bindestrichen und Punkten.',

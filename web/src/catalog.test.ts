@@ -53,6 +53,15 @@ describe('the catalog', () => {
     expect(wrapper.text()).toContain('No deception matches the filter.');
   });
 
+  test('offers the cloud category in the filter, in both languages', async () => {
+    const { wrapper, i18n } = await boot(server(), '/catalog');
+    const option = () => wrapper.get('#filter-category option[value=cloud]').text();
+    expect(option()).toBe('Cloud');
+    i18n.setLocale('de');
+    await flushPromises();
+    expect(option()).toBe('Cloud');
+  });
+
   test('says when it could not be loaded', async () => {
     const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/deceptions': () => failure(503, 'unavailable') }), '/catalog');
     expect(wrapper.get('[role=alert]').text()).toContain('The catalog could not be loaded.');

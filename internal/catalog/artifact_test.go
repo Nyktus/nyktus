@@ -55,7 +55,7 @@ func TestLoad_RejectsInvalidArtifacts(t *testing.T) {
 		"malformed JSON":       {cfg(`"schema_version": 1,`, `"schema_version": 1`), "artifact.json:"},
 		"schema version":       {cfg(`"schema_version": 1`, `"schema_version": 2`), "schema version 2"},
 		"identifier":           {cfg(`"id": "config"`, `"id": "other"`), "differs from the name"},
-		"category":             {cfg(`"category": "network"`, `"category": "cloud"`), "unknown category"},
+		"category":             {cfg(`"category": "network"`, `"category": "mainframe"`), "unknown category"},
 		"title language":       {cfg(`"title": {"en": "Config", "de": "Einstellung"}`, `"title": {"en": "Config"}`), "title: want a text in each"},
 		"title too long":       {cfg(`"de": "Einstellung"`, `"de": "`+strings.Repeat("a", maxTitleLength+1)+`"`), "title: de: want 1 to"},
 		"summary too long":     {cfg(`"de": "Eine Einstellung."`, `"de": "`+strings.Repeat("a", maxSummaryLength+1)+`"`), "summary: de: want 1 to"},
