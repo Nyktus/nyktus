@@ -421,6 +421,66 @@ func TestTrigger_PostRecordsTheBodyAsCleanedExcerpt(t *testing.T) {
 	}
 }
 
+// The webhooks of the cloud deceptions report the caller only in the body. The
+// EventBridge input transformer of the guides yields a short JSON object that
+// is kept whole. The alert of Azure Monitor in the common schema (built in the
+// order of the sample in its documentation) is longer than the excerpt, and the
+// dimensions with the address of the caller must lie within it, before the long
+// links that the alert carries after them.
+func TestTrigger_PostKeepsTheCallerOfACloudWebhook(t *testing.T) {
+	t.Parallel()
+
+	eventBridge := `{"eventName":"GetSecretValue","sourceIPAddress":"203.0.113.10","userAgent":"aws-cli/2.17.0 md/awscrt#0.20.11 ua/2.0 os/linux#6.1 md/arch#x86_64 lang/python#3.12.4 md/pyimpl#CPython cfg/retry-mode#standard md/installer#exe md/prompt#off md/command#secretsmanager.get-secret-value","userArn":"arn:aws:sts::123456789012:assumed-role/ops/jane","region":"eu-central-1","time":"2026-01-01T10:00:00Z"}`
+	link := "https://portal.azure.com#@00000000-0000-0000-0000-000000000000/blade/Microsoft_Azure_Monitoring_Logs/LogsBlade/source/Alerts.EmailLinks/scope/" + strings.Repeat("%7B%22resources%22", 30)
+	azure := `{"schemaId":"azureMonitorCommonAlertSchema","data":{"essentials":{` +
+		`"alertId":"/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.AlertsManagement/alerts/00000000-0000-0000-0000-000000000000",` +
+		`"alertRule":"audit-notify-rule","severity":"Sev1","signalType":"Log","monitorCondition":"Fired","monitoringService":"Log Alerts V2",` +
+		`"alertTargetIDs":["/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/rg-orders/providers/microsoft.operationalinsights/workspaces/audit-notify-logs"],` +
+		`"configurationItems":[],"originAlertId":"00000000-0000-0000-0000-000000000000","firedDateTime":"2026-01-01T10:05:00.1234567Z","description":"","essentialsVersion":"1.0","alertContextVersion":"1.0",` +
+		`"alertRuleID":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-orders/providers/microsoft.insights/scheduledqueryrules/audit-notify-rule"},` +
+		`"alertContext":{"properties":null,"conditionType":"LogQueryCriteria","condition":{"windowSize":"PT10M","allOf":[{` +
+		`"searchQuery":"AzureDiagnostics | where ResourceProvider == 'MICROSOFT.KEYVAULT' and OperationName == 'SecretGet' and requestUri_s has '/secrets/orders-db-password/'",` +
+		`"metricMeasureColumn":null,"targetResourceTypes":"['Microsoft.OperationalInsights/workspaces']","operator":"GreaterThan","threshold":"0","timeAggregation":"Count",` +
+		`"dimensions":[{"name":"CallerIPAddress","value":"203.0.113.10"},{"name":"clientInfo_s","value":"azsdk-python-keyvault-secrets/4.8.0 Python/3.12.4 (Linux)"},{"name":"ResultSignature","value":"OK"}],` +
+		`"metricValue":1.0,"failingPeriods":{"numberOfEvaluationPeriods":1,"minFailingPeriodsToAlert":1},` +
+		`"linkToSearchResultsUI":"` + link + `","linkToFilteredSearchResultsUI":"` + link + `",` +
+		`"linkToSearchResultsAPI":"` + link + `","linkToFilteredSearchResultsAPI":"` + link + `"}],` +
+		`"windowStartTime":"2026-01-01T09:55:00Z","windowEndTime":"2026-01-01T10:05:00Z"}}}}`
+	if len(azure) <= maxBodyExcerptBytes {
+		t.Fatalf("the sample alert has %d bytes, want more than the excerpt of %d", len(azure), maxBodyExcerptBytes)
+	}
+
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{"EventBridge", eventBridge, []string{`"sourceIPAddress":"203.0.113.10"`, `"userArn":"arn:aws:sts::123456789012:assumed-role/ops/jane"`}},
+		{"Azure Monitor", azure, []string{`{"name":"CallerIPAddress","value":"203.0.113.10"}`, `{"name":"ResultSignature","value":"OK"}`}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := &fakeRecorder{}
+			srv, _ := newServer(t, rec)
+			fetch(t, srv, http.MethodPost, "/"+value, strings.NewReader(tt.body), http.Header{"Content-Type": {"application/json"}})
+			got := rec.recorded()
+			if len(got) != 1 || got[0].Method != http.MethodPost {
+				t.Fatalf("recorded %+v, want one POST", got)
+			}
+			if !strings.HasPrefix(tt.body, got[0].Body) {
+				t.Errorf("recorded body is no prefix of the sent body")
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(got[0].Body, w) {
+					t.Errorf("recorded body lacks %s", w)
+				}
+			}
+		})
+	}
+}
+
 // A GET or HEAD request is recorded without the body that it may carry, and
 // the other methods are not recorded.
 func TestTrigger_OnlyAPostRecordsABody(t *testing.T) {

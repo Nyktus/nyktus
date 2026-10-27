@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "id": "azure-key-vault-secret",
+  "category": "cloud",
+  "title": {
+    "en": "Azure: secret in a key vault",
+    "de": "Azure: Secret in einem Key Vault"
+  },
+  "summary": {
+    "en": "A secret with a random value in a key vault. Whoever reads it is recorded in the audit log of the vault, and an alert rule reports the read, with the address and the client it came from, to the URL of a honeytoken.",
+    "de": "Ein Secret mit zufälligem Wert in einem Key Vault. Wer es liest, steht im Auditlog des Vaults, und eine Alertregel meldet das Lesen samt Herkunftsadresse und Client an die URL eines Honeytokens."
+  },
+  "techniques": ["T1555.006", "T1078.004"],
+  "engage_activities": ["EAC0005"],
+  "honeytokens": [
+    {
+      "key": "Webhook",
+      "type": "web_url",
+      "label": {"en": "Webhook of the action group", "de": "Webhook der Aktionsgruppe"},
+      "techniques": ["T1555.006", "T1078.004"],
+      "severity": "high"
+    }
+  ],
+  "persona": [
+    {
+      "key": "VaultName",
+      "kind": "name",
+      "label": {"en": "Name of an existing key vault", "de": "Name eines vorhandenen Key Vaults"},
+      "example": "kv-orders-prod"
+    },
+    {
+      "key": "VaultSecretName",
+      "kind": "name",
+      "label": {"en": "Name of the secret in the vault", "de": "Name des Secrets im Vault"},
+      "example": "orders-db-password"
+    },
+    {
+      "key": "AzureRegion",
+      "kind": "name",
+      "label": {"en": "Azure region of your workloads", "de": "Azure-Region Ihrer Workloads"},
+      "example": "germanywestcentral"
+    },
+    {
+      "key": "AlertName",
+      "kind": "name",
+      "label": {"en": "Name prefix of the forwarding resources", "de": "Namenspräfix der Weiterleitungsressourcen"},
+      "example": "audit-notify"
+    }
+  ],
+  "artifacts": [],
+  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+}
