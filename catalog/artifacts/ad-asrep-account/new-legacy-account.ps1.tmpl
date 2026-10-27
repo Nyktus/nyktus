@@ -1,0 +1,10 @@
+$ErrorActionPreference = 'Stop'
+Import-Module ActiveDirectory
+$bytes = New-Object byte[] 48
+$generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$generator.GetBytes($bytes)
+$generator.Dispose()
+$plain = [Convert]::ToBase64String($bytes) + 'aA1!'
+$password = ConvertTo-SecureString $plain -AsPlainText -Force
+New-ADUser -Name '{{.Persona.LegacyAccount}}' -SamAccountName '{{.Persona.LegacyAccount}}' -UserPrincipalName '{{.Persona.LegacyAccount}}@{{.Persona.Domain}}' -AccountPassword $password -Enabled $true -PasswordNeverExpires $true
+Set-ADAccountControl -Identity '{{.Persona.LegacyAccount}}' -DoesNotRequirePreAuth $true

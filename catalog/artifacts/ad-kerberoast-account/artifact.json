@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "ad-kerberoast-account",
+  "category": "identity",
+  "title": {
+    "en": "Script that adds a service account with an SPN",
+    "de": "Skript, das ein Dienstkonto mit SPN anlegt"
+  },
+  "summary": {
+    "en": "A PowerShell script that creates a service account with a service principal name and a random password that nobody learns. A request for a service ticket of the name raises an event on the domain controller that served it.",
+    "de": "Ein PowerShell-Skript, das ein Dienstkonto mit einem Service Principal Name und einem zufälligen Passwort anlegt, das niemand erfährt. Wer ein Dienstticket für den Namen anfordert, löst auf dem Domänencontroller, der es ausstellt, ein Ereignis aus."
+  },
+  "slots": [],
+  "persona": [
+    {
+      "key": "Domain",
+      "kind": "host",
+      "label": {"en": "Internal domain", "de": "Interne Domain"},
+      "example": "corp.example.com"
+    },
+    {
+      "key": "ServiceAccount",
+      "kind": "name",
+      "label": {"en": "Service account with an SPN (up to 20 characters)", "de": "Dienstkonto mit SPN (höchstens 20 Zeichen)"},
+      "example": "svc-reporting"
+    },
+    {
+      "key": "ServiceHost",
+      "kind": "host",
+      "label": {"en": "Host name in the SPN (used by no computer)", "de": "Hostname im SPN (von keinem Computer benutzt)"},
+      "example": "sql-reporting01.corp.example.com"
+    }
+  ],
+  "secrets": [],
+  "file_name": "New-ServiceAccount.ps1",
+  "format": "config",
+  "line_endings": "crlf",
+  "template": "new-service-account.ps1.tmpl",
+  "placing": {"en": "placing.en.md.tmpl", "de": "placing.de.md.tmpl"}
+}
