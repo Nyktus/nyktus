@@ -57,7 +57,7 @@ Unknown members are an error. `persona`, `artifacts` and the `techniques` of a h
 |---|---|
 | `schema_version` | `2`. |
 | `id` | The name of the directory. |
-| `category` | `identity`, `network`, `data`, `endpoint` or `application`. |
+| `category` | `identity`, `network`, `data`, `endpoint`, `application` or `cloud`. |
 | `title`, `summary` | A text in English (`en`) and German (`de`) each: one line, up to 100 and 500 characters. |
 | `techniques` | 1 to 20 distinct identifiers of MITRE ATT&CK techniques that a trigger suggests, from the version that Nyktus bundles. |
 | `engage_activities` | 1 to 20 distinct engagement activities of MITRE Engage that the story of the deception carries out, such as `EAC0005` (Lures). Applying the deception adds those that follow from what the scenario holds, see below. |

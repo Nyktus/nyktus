@@ -328,6 +328,7 @@ export const en = {
   'category.data': 'Data',
   'category.endpoint': 'Endpoint',
   'category.application': 'Application',
+  'category.cloud': 'Cloud',
 
   'persona.required': 'Enter a value for {label}.',
   'persona.host': 'A host name of lowercase letters, digits, hyphens and dots.',

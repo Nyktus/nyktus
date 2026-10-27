@@ -255,7 +255,7 @@ export interface CatalogDeceptionList {
 
 export interface CatalogDeceptionSummary {
   id: string;
-  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application';
+  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application' | 'cloud';
   title: string;
   summary: string;
   techniques: string[];
@@ -264,7 +264,7 @@ export interface CatalogDeceptionSummary {
 
 export interface CatalogDeception {
   id: string;
-  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application';
+  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application' | 'cloud';
   title: string;
   summary: string;
   techniques: string[];
@@ -299,14 +299,14 @@ export interface CatalogArtifactList {
 
 export interface CatalogArtifactSummary {
   id: string;
-  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application';
+  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application' | 'cloud';
   title: string;
   summary: string;
 }
 
 export interface CatalogArtifact {
   id: string;
-  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application';
+  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application' | 'cloud';
   title: string;
   summary: string;
   file_name: string;

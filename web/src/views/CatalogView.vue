@@ -93,6 +93,7 @@ watch(locale, () => {
           <option value="data">{{ t('category.data') }}</option>
           <option value="endpoint">{{ t('category.endpoint') }}</option>
           <option value="application">{{ t('category.application') }}</option>
+          <option value="cloud">{{ t('category.cloud') }}</option>
         </select>
       </div>
     </div>

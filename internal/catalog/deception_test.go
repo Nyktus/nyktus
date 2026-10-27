@@ -228,7 +228,7 @@ func TestLoad_RejectsInvalidDeceptions(t *testing.T) {
 		"malformed JSON":         {def(`"schema_version": 2,`, `"schema_version": 2`), "deception.json:"},
 		"schema version":         {def(`"schema_version": 2`, `"schema_version": 1`), "schema version 1"},
 		"identifier":             {def(`"id": "sample"`, `"id": "other"`), "differs from the name"},
-		"category":               {def(`"category": "network"`, `"category": "cloud"`), "unknown category"},
+		"category":               {def(`"category": "network"`, `"category": "mainframe"`), "unknown category"},
 		"title language missing": {def(`"title": {"en": "Sample", "de": "Beispiel"}`, `"title": {"en": "Sample"}`), "title: want a text in each"},
 		"title language unknown": {def(`"title": {"en": "Sample", "de": "Beispiel"}`, `"title": {"en": "Sample", "fr": "Modele"}`), "title: de: want 1 to"},
 		"title extra language":   {def(`"title": {"en": "Sample", "de": "Beispiel"}`, `"title": {"en": "Sample", "de": "Beispiel", "fr": "Modele"}`), "title: want a text in each"},
