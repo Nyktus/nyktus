@@ -81,12 +81,12 @@ describe('the account', () => {
     const s = server(true);
     const { wrapper } = await boot(s, '/account');
     expect(s.requests.filter((r) => r.url === '/api/v1/session').length).toBeGreaterThanOrEqual(2);
-    expect(wrapper.text()).toContain('A second factor is on');
+    expect(wrapper.text()).toContain('MFA is on');
   });
 
   test('offers nothing to an account of the identity provider, and says where to change it', async () => {
     const { wrapper } = await boot(server(false, 'oidc'), '/account');
-    expect(wrapper.text()).toContain('signs in through the identity provider');
+    expect(wrapper.text()).toContain('managed by an identity provider');
     expect(wrapper.find('form').exists()).toBe(false);
     expect(wrapper.find('input[type=password]').exists()).toBe(false);
     expect(button(wrapper, 'Set up a second factor')).toBeUndefined();
@@ -205,6 +205,18 @@ describe('the second factor', () => {
       expect(requestsOf(s, 'POST')).toHaveLength(0);
     });
 
+    // A password manager files a password under an account, so the form of the dialog names it.
+    test('names the account in the form of the password, for a password manager', async () => {
+      const { wrapper } = await boot(one(), '/account');
+      await button(wrapper, 'Set up a second factor')!.trigger('click');
+      await flushPromises();
+      const form = dialog(wrapper).get('form');
+      expect(form.get('input[autocomplete=username]').element.getAttribute('value')).toBe('ada@example.com');
+      expect(form.get('input[type=password]').attributes('autocomplete')).toBe('current-password');
+      // Without a submit button, Enter in the password field does nothing once the form has the second text field.
+      expect(form.find('button[type=submit]').exists()).toBe(true);
+    });
+
     test('shows the code to scan, the key as text and until when it is valid', async () => {
       const s = one();
       const { wrapper } = await begin(s);
@@ -234,7 +246,7 @@ describe('the second factor', () => {
       expect(wrapper.find('dialog[open]').exists()).toBe(false);
       expect(wrapper.get('[role=alert]').text()).toBe('This account has a second factor already.');
       expect(button(wrapper, 'Set up a second factor')).toBeUndefined();
-      expect(button(wrapper, 'Remove the second factor')).toBeDefined();
+      expect(button(wrapper, 'Turn off MFA')).toBeDefined();
     });
 
     describe('confirmed', () => {
@@ -245,7 +257,7 @@ describe('the second factor', () => {
         const { wrapper } = await begin(s);
         await enter(wrapper, '123 456');
         expect(requestsOf(s, 'POST').at(-1)?.body).toEqual({ code: '123456' });
-        expect(wrapper.text()).toContain('A second factor is on');
+        expect(wrapper.text()).toContain('MFA is on');
         expect(wrapper.find('svg.qr').exists()).toBe(false);
         expect(wrapper.html()).not.toContain(secret);
       });
@@ -262,7 +274,6 @@ describe('the second factor', () => {
         await enter(wrapper, '123456');
         const region = wrapper.get('[role=region]');
         expect(region.findAll('li').map((li) => li.text())).toEqual(codes);
-        expect(region.text()).toContain('shown only now');
       });
 
       test('lets the field take a code that is pasted with its separators', async () => {
@@ -306,7 +317,7 @@ describe('the second factor', () => {
         await enter(wrapper, '123456');
         expect(requestsOf(s, 'POST').filter((r) => r.url.endsWith('/confirmation'))).toHaveLength(1);
         expect(wrapper.find('[role=alert]').exists()).toBe(false);
-        expect(wrapper.text()).toContain('A second factor is on');
+        expect(wrapper.text()).toContain('MFA is on');
       });
 
       test('takes a code that the app shows with spaces or hyphens', async () => {
@@ -417,7 +428,7 @@ describe('the second factor', () => {
       const { wrapper } = await boot(on(), '/account');
       expect(button(wrapper, 'Set up a second factor')).toBeUndefined();
       expect(button(wrapper, 'Replace the recovery codes')).toBeDefined();
-      expect(button(wrapper, 'Remove the second factor')).toBeDefined();
+      expect(button(wrapper, 'Turn off MFA')).toBeDefined();
     });
 
     describe('replacing the recovery codes', () => {
@@ -504,34 +515,34 @@ describe('the second factor', () => {
     describe('removing the factor', () => {
       test('sends the password and a code, and the account has no factor afterwards', async () => {
         const s = on({ [removeRoute]: noContent });
-        const { wrapper } = await open(s, 'Remove the second factor');
+        const { wrapper } = await open(s, 'Turn off MFA');
         await confirm(wrapper, '654321');
         expect(requestsOf(s, 'DELETE').map((r) => r.body)).toEqual([{ password: typed, code: '654321' }]);
         expect(button(wrapper, 'Set up a second factor')).toBeDefined();
-        expect(button(wrapper, 'Remove the second factor')).toBeUndefined();
+        expect(button(wrapper, 'Turn off MFA')).toBeUndefined();
       });
 
       test('says so in the dialog when the code is wrong, and keeps the factor', async () => {
         const s = on({ [removeRoute]: () => failure(403, 'wrong_code') });
-        const { wrapper } = await open(s, 'Remove the second factor');
+        const { wrapper } = await open(s, 'Turn off MFA');
         await confirm(wrapper, '654321');
         expect(dialog(wrapper).get('[role=alert]').text()).toBe('The code is wrong.');
-        expect(wrapper.text()).toContain('A second factor is on');
+        expect(wrapper.text()).toContain('MFA is on');
       });
 
       test('says so when the account has no factor any more, and offers to set one up', async () => {
         const s = on({ [removeRoute]: () => failure(409, 'totp_not_enabled') });
-        const { wrapper } = await open(s, 'Remove the second factor');
+        const { wrapper } = await open(s, 'Turn off MFA');
         await confirm(wrapper, '654321');
         expect(wrapper.find('dialog[open]').exists()).toBe(false);
         expect(wrapper.get('[role=alert]').text()).toBe('This account has no second factor.');
         expect(button(wrapper, 'Set up a second factor')).toBeDefined();
-        expect(button(wrapper, 'Remove the second factor')).toBeUndefined();
+        expect(button(wrapper, 'Turn off MFA')).toBeUndefined();
       });
 
       test('forgets the code that was typed when the password is wrong, and says so', async () => {
         const s = on({ [removeRoute]: () => failure(403, 'wrong_password') });
-        const { wrapper } = await open(s, 'Remove the second factor');
+        const { wrapper } = await open(s, 'Turn off MFA');
         await confirm(wrapper, '654321');
         expect(dialog(wrapper).get('[role=alert]').text()).toBe('The password is wrong.');
         expect((dialog(wrapper).get('input[autocomplete=one-time-code]').element as HTMLInputElement).value).toBe('');
@@ -543,7 +554,7 @@ describe('the second factor', () => {
         const { wrapper } = await open(s, 'Replace the recovery codes');
         await confirm(wrapper, '654321');
         expect(wrapper.find('[role=region]').exists()).toBe(true);
-        await button(wrapper, 'Remove the second factor')!.trigger('click');
+        await button(wrapper, 'Turn off MFA')!.trigger('click');
         await flushPromises();
         await confirm(wrapper, '654321');
         expect(wrapper.find('[role=region]').exists()).toBe(false);
@@ -553,11 +564,11 @@ describe('the second factor', () => {
       test('leaves no earlier refusal on the page once it went through', async () => {
         let refuse = true;
         const s = on({ [removeRoute]: () => (refuse ? failure(500, 'internal_error') : noContent()) });
-        const { wrapper } = await open(s, 'Remove the second factor');
+        const { wrapper } = await open(s, 'Turn off MFA');
         await confirm(wrapper, '654321');
         expect(wrapper.get('[role=alert]').text()).toBe('Something went wrong on the server.');
         refuse = false;
-        await button(wrapper, 'Remove the second factor')!.trigger('click');
+        await button(wrapper, 'Turn off MFA')!.trigger('click');
         await flushPromises();
         await confirm(wrapper, '654321');
         expect(wrapper.find('[role=alert]').exists()).toBe(false);
@@ -565,7 +576,7 @@ describe('the second factor', () => {
 
       test('keeps neither the password nor the code', async () => {
         const s = on({ [removeRoute]: noContent });
-        const { wrapper, router } = await open(s, 'Remove the second factor');
+        const { wrapper, router } = await open(s, 'Turn off MFA');
         await confirm(wrapper, '654321');
         expect(wrapper.html()).not.toContain(typed);
         expect(elsewhere(s, router, (r) => r.method === 'DELETE')).not.toContain('654321');
@@ -583,7 +594,7 @@ describe('the page in German', () => {
     const { wrapper, i18n } = await boot(server(), '/account');
     i18n.setLocale('de');
     await flushPromises();
-    expect(wrapper.text()).toContain('Zweiter Faktor');
+    expect(wrapper.text()).toContain('Zweiten Faktor einrichten');
     expect(wrapper.text()).toContain('ada@example.com');
   });
 });

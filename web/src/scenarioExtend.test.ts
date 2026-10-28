@@ -54,8 +54,8 @@ describe('the stories of a scenario', () => {
     const stories = wrapper.findAll('article.story');
     expect(stories.map((a) => a.get('h3 a').text())).toEqual(['ssh-jump-host', 'browser-bookmarks']);
     expect(stories[0]?.get('h3 a').attributes('href')).toBe('/catalog/ssh-jump-host');
-    expect(stories[0]?.text()).toContain('Language: en.');
-    expect(stories[1]?.text()).toContain('Language: de.');
+    expect(stories[0]?.text()).toContain('Added');
+    expect(stories[1]?.text()).toContain('Added');
     expect(stories[0]?.get('.markdown h2').text()).toBe('One');
     expect(stories[1]?.get('.markdown h2').text()).toBe('Two');
     expect(stories.map((a) => a.get('details').attributes('open'))).toEqual([undefined, undefined]);
@@ -74,8 +74,8 @@ describe('the stories of a scenario', () => {
 
   test('explain what to do next when there are none, to whoever may add one', async () => {
     for (const [role, text] of [
-      ['admin', 'Add one to get honeytokens, files and a guide.'],
-      ['viewer', 'No deception has joined this scenario.'],
+      ['admin', 'No deception has been assigned to this scenario yet.'],
+      ['viewer', 'No deception has been assigned to this scenario.'],
     ] as const) {
       const s = server(role, { [`GET ${detail}`]: () => json(200, scenario()) });
       const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
@@ -109,7 +109,7 @@ describe('the files of a scenario', () => {
 
   test('explain what to do next when there are none', async () => {
     for (const [role, text] of [
-      ['admin', 'Use "Add artifact" to add one from the catalog.'],
+      ['admin', 'Use "Add artifact" to add files from the catalog.'],
       ['viewer', 'None.'],
     ] as const) {
       const { wrapper } = await boot(server(role), `/scenarios/${scenarioId}`);
@@ -159,7 +159,7 @@ describe('adding a deception', () => {
   test('says that nothing is left to add', async () => {
     const all = server('admin', { 'GET /api/v1/catalog/deceptions': () => json(200, { deceptions: [catalogSummary({ id: 'ssh-jump-host' })] }) });
     const { wrapper } = await boot(all, path);
-    expect(wrapper.text()).toContain('No deception is left to add.');
+    expect(wrapper.text()).toContain('No deceptions left to add.');
     expect(wrapper.find('form').exists()).toBe(false);
   });
 
@@ -175,11 +175,12 @@ describe('adding a deception', () => {
     expect(host.readOnly).toBe(false);
   });
 
-  test('sends only the values the scenario lacks, the files that stayed chosen and the language', async () => {
+  test('sends only the values the scenario lacks, the files that stayed chosen and the language of the console', async () => {
     const s = server('admin', { [add]: added });
-    const { wrapper, router } = await boot(s, path);
+    const { wrapper, router, i18n } = await boot(s, path);
+    i18n.setLocale('de');
+    await flushPromises();
     await choose(wrapper);
-    await wrapper.get('#guide-language').setValue('de');
     await type(wrapper, '#persona-host', ' portal.acme.example ');
     await submit(wrapper);
     expect(s.requests.find((r) => r.method === 'POST')?.body).toEqual({
@@ -218,7 +219,7 @@ describe('adding a deception', () => {
     await type(wrapper, '#persona-host', 'portal.acme.example');
     await submit(wrapper);
     const alert = wrapper.get('[role=alert]').text();
-    expect(alert).toContain('differs from the one that the scenario already has');
+    expect(alert).toContain('Persona values conflict');
     expect(alert).not.toContain('Acme Corp');
     expect(alert).not.toContain('portal.acme.example');
     expect((wrapper.get('#persona-host').element as HTMLInputElement).value).toBe('portal.acme.example');
@@ -226,8 +227,8 @@ describe('adding a deception', () => {
 
   test('says why the server refused it', async () => {
     for (const [status, code, text] of [
-      [409, 'deception_already_added', 'already part of the scenario'],
-      [409, 'scenario_limit', 'as many deceptions or files as it can'],
+      [409, 'deception_already_added', 'already assigned to the scenario'],
+      [409, 'scenario_limit', 'limit of deceptions or files'],
       [422, 'dns_not_configured', 'NYKTUS_DNS_ZONES'],
       [422, 'artifact_reveals_decoy', 'reveal what it is'],
     ] as const) {
@@ -268,7 +269,7 @@ describe('adding a deception', () => {
 
   test('says when the scenario does not exist', async () => {
     const { wrapper } = await boot(server('admin', { [`GET ${detail}`]: () => failure(404, 'not_found') }), path);
-    expect(wrapper.get('[role=status]').text()).toBe('This does not exist.');
+    expect(wrapper.get('[role=status]').text()).toBe('Nothing found here.');
   });
 
   test('shows what was chosen last when the answers come in the other order', async () => {
@@ -326,9 +327,9 @@ describe('adding an artifact', () => {
     const optional = catalogArtifact({ slots: [{ key: 'portal', accepts: ['web_url'], optional: true }] });
     const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/artifacts/bookmarks': () => json(200, optional) }), path);
     await choose(wrapper);
-    expect(wrapper.get('.verdict').text()).toBe('Pocket litter. It carries no honeytoken. It makes the story believable and never raises an event itself.');
+    expect(wrapper.get('.verdict').text()).toBe('Pocket litter. Contains no honeytoken. Pocket litter makes a story believable and never raises an event itself.');
     await wrapper.get('#slot-portal').setValue(webToken.id);
-    expect(wrapper.get('.verdict').text()).toBe('Lure carrier. It leads to a honeytoken of this scenario, so using what it names raises an event.');
+    expect(wrapper.get('.verdict').text()).toBe('Lure carrier. Leads to a honeytoken of this scenario. Using it raises an event.');
     expect(wrapper.get('#slot-portal-hint').text()).toBe(`Leads to ${webToken.trigger_url}`);
     await wrapper.get('#slot-portal').setValue('');
     expect(wrapper.get('.verdict').text()).toContain('Pocket litter.');
@@ -344,10 +345,11 @@ describe('adding an artifact', () => {
 
   test('sends the honeytoken for a bound slot and the values the scenario lacks, and shows the new file', async () => {
     const s = server('admin', { [add]: added, [`GET /api/v1/artifacts/${artifactId}`]: () => json(200, artifact()) });
-    const { wrapper, router } = await boot(s, path);
+    const { wrapper, router, i18n } = await boot(s, path);
+    i18n.setLocale('de');
+    await flushPromises();
     await choose(wrapper);
     await wrapper.get('#slot-portal').setValue(webToken.id);
-    await wrapper.get('#placing-language').setValue('de');
     await type(wrapper, '#persona-host', 'portal.acme.example');
     await submit(wrapper);
     expect(s.requests.find((r) => r.method === 'POST')?.body).toEqual({
@@ -383,7 +385,7 @@ describe('adding an artifact', () => {
     const s = server('admin', { 'GET /api/v1/honeytokens': () => json(200, { honeytokens: [dnsToken] }) });
     const { wrapper } = await boot(s, path);
     await choose(wrapper);
-    expect(wrapper.get('#slot-portal-hint').text()).toContain('no honeytoken of a type that this slot accepts');
+    expect(wrapper.get('#slot-portal-hint').text()).toContain('no honeytoken of a type this slot accepts');
     expect(wrapper.get('button[type=submit]').attributes('disabled')).toBeDefined();
   });
 
@@ -401,8 +403,8 @@ describe('adding an artifact', () => {
 
   test('says why the server refused it', async () => {
     for (const [status, code, text] of [
-      [409, 'persona_conflict', 'differs from the one that the scenario already has'],
-      [409, 'scenario_limit', 'as many deceptions or files as it can'],
+      [409, 'persona_conflict', 'Persona values conflict'],
+      [409, 'scenario_limit', 'limit of deceptions or files'],
       [422, 'artifact_reveals_decoy', 'reveal what it is'],
       [400, 'invalid_request', 'The input is not valid.'],
     ] as const) {

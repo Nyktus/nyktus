@@ -43,6 +43,7 @@ const needsReauthentication = ref(false);
 const reauthenticationFailed = ref(false);
 
 const local = computed(() => session.state.session?.user.sign_in_method !== 'oidc');
+const account = computed(() => session.state.session?.user.email ?? '');
 const label = computed(() => (needsReauthentication.value ? t('confirm.reauthenticate') : props.confirm));
 
 onMounted(() => {
@@ -109,11 +110,13 @@ async function run(): Promise<void> {
     <div class="stack">
       <slot />
       <form v-if="local" class="field" @submit.prevent="run">
+        <!-- A password manager files a password under an account, so the form names it; the field is not for the user. -->
+        <input class="visually-hidden" type="text" name="username" autocomplete="username" :value="account" readonly tabindex="-1" aria-hidden="true" />
+        <!-- With two text fields the browser no longer submits on Enter by itself, so the form needs a submit button. -->
+        <button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
         <label :for="`${id}-password`">{{ t('confirm.password') }}</label>
-        <input :id="`${id}-password`" v-model="password" type="password" autocomplete="current-password" required :aria-describedby="`${id}-hint`" />
-        <span :id="`${id}-hint`" class="hint">{{ t('confirm.passwordHint') }}</span>
+        <input :id="`${id}-password`" v-model="password" type="password" name="password" autocomplete="current-password" required />
       </form>
-      <p v-else class="hint">{{ t('confirm.reauthenticateExplain') }}</p>
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
     </div>
   </ConfirmDialog>

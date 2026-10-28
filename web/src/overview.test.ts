@@ -7,7 +7,6 @@ import { boot } from './testing/boot';
 import { failure, fakeServer, honeypot, honeypotId, honeytoken, incident, incidentId, json, sessionBody, type Handler } from './testing/fakeServer';
 import {
   countLabel,
-  listedHoneypots,
   listedIncidents,
   summarizeHoneypots,
   summarizeHoneytokens,
@@ -80,21 +79,23 @@ describe('summarizeHoneypots', () => {
 
   test('does not call a disabled honeypot that is silent a fault', () => {
     const summary = summarizeHoneypots(page([honeypot({ status: 'offline', enabled: false }), honeypot({ id: uuid(2), status: 'never', enabled: false })]));
-    expect(summary.silent).toEqual([]);
     expect(summary.offline + summary.never).toBe(0);
+    expect(summary.byService).toEqual([]);
   });
 
-  test('names the ones that stopped before the ones that never began', () => {
+  test('counts the enabled ones by service in a fixed order, and leaves out a service that has none', () => {
     const summary = summarizeHoneypots(
-      page([honeypot({ id: uuid(1), status: 'never' }), honeypot({ id: uuid(2), status: 'online' }), honeypot({ id: uuid(3), status: 'offline' })]),
+      page([
+        honeypot({ id: uuid(1), service: 'ldap' }),
+        honeypot({ id: uuid(2), service: 'ssh' }),
+        honeypot({ id: uuid(3), service: 'ldap' }),
+        honeypot({ id: uuid(4), service: 'telnet', enabled: false }),
+      ]),
     );
-    expect(summary.silent.map((h) => h.id)).toEqual([uuid(3), uuid(1)]);
-  });
-
-  test('names only the first few', () => {
-    const many = Array.from({ length: listedHoneypots + 2 }, (_, i) => honeypot({ id: uuid(i + 1), status: 'offline' }));
-    expect(summarizeHoneypots(page(many)).silent).toHaveLength(listedHoneypots);
-    expect(summarizeHoneypots(page(many)).offline).toBe(listedHoneypots + 2);
+    expect(summary.byService).toEqual([
+      { service: 'ssh', count: 1 },
+      { service: 'ldap', count: 2 },
+    ]);
   });
 });
 
@@ -180,15 +181,14 @@ describe('the overview', () => {
     test('say so when there are none, without saying that nothing is wrong', async () => {
       const { wrapper } = await boot(server('admin', { 'GET /api/v1/incidents': () => json(200, { incidents: [] }) }), '/');
       const t = tile(wrapper, 'Incidents');
-      expect(t.text()).toContain('No incident is waiting for triage.');
-      expect(t.text()).toContain('An incident opens when someone touches a decoy.');
+      expect(t.text()).toContain('No unprocessed incidents.');
       expect(wrapper.text()).not.toMatch(/\b(safe|secure|all clear)\b/i);
     });
 
     test('are shown as a lower bound when the server has more than the page', async () => {
       const { wrapper } = await boot(server('admin', { 'GET /api/v1/incidents': () => json(200, { incidents: [incident()], next_cursor: 'more' }) }), '/');
       expect(tile(wrapper, 'Incidents').findAll('.count').map((c) => c.text())).toEqual(['Open1+', 'Acknowledged0+']);
-      expect(tile(wrapper, 'Incidents').text()).toContain('There are more incidents than the overview reads. It lists the newest.');
+      expect(tile(wrapper, 'Incidents').text()).toContain('The incident list is limited. Use the filter to narrow the selection.');
     });
 
     test('say nothing of more incidents when the page holds them all', async () => {
@@ -210,7 +210,7 @@ describe('the overview', () => {
   });
 
   describe('the honeypots', () => {
-    test('are counted by status, and the ones that do not report are named', async () => {
+    test('are counted by status and, when enabled, by service', async () => {
       const gone = honeypot({ id: honeypotId, name: 'Jump host', status: 'offline', last_seen_at: '2026-10-22T07:55:00Z' });
       const fresh = honeypot({ id: 'c0ffee00-2222-4222-8333-944444444444', name: 'Wiki DB', service: 'postgres', status: 'never', last_seen_at: null });
       const fine = honeypot({ id: 'c0ffee00-3333-4222-8333-944444444444', name: 'Router', service: 'telnet', status: 'online' });
@@ -219,18 +219,17 @@ describe('the overview', () => {
       const t = tile(wrapper, 'Honeypots');
       expect(t.findAll('.count').map((c) => c.text())).toEqual(['Online1', 'Offline1', 'No report1']);
       expect(t.findAll('.count')[1]!.classes()).toContain('alarm');
-      expect(t.findAll('.row').map((r) => r.get('a').text())).toEqual(['Jump host', 'Wiki DB']);
-      expect(t.findAll('.row')[0]!.get('a').attributes('href')).toBe(`/honeypots/${honeypotId}`);
-      expect(t.findAll('.row')[0]!.text()).toContain('Offline');
-      expect(t.findAll('.row')[1]!.text()).toContain('No report yet');
+      expect(t.get('h3').text()).toBe('Active by type');
+      expect(t.findAll('.types li').map((li) => li.text())).toEqual(['SSH 1', 'Telnet 1', 'PostgreSQL 1']);
+      expect(t.find('.rows').exists()).toBe(false);
     });
 
-    test('count a disabled one apart and do not name it', async () => {
+    test('count a disabled one apart and not by service', async () => {
       const off = honeypot({ enabled: false, status: 'offline' });
       const { wrapper } = await boot(server('admin', { 'GET /api/v1/honeypots': () => json(200, { honeypots: [off] }) }), '/');
       const t = tile(wrapper, 'Honeypots');
       expect(t.findAll('.count').map((c) => c.text())).toEqual(['Online0', 'Offline0', 'No report0', 'Disabled1']);
-      expect(t.find('.rows').exists()).toBe(false);
+      expect(t.find('.types').exists()).toBe(false);
       expect(t.findAll('.count').some((c) => c.classes().includes('alarm'))).toBe(false);
     });
 
@@ -273,7 +272,7 @@ describe('the overview', () => {
   describe('when a list cannot be read', () => {
     test('the others are still shown, and the tile says that it failed', async () => {
       const { wrapper } = await boot(server('admin', { 'GET /api/v1/honeypots': () => failure(500, 'internal_error') }), '/');
-      expect(tile(wrapper, 'Honeypots').get('[role=alert]').text()).toBe('This could not be loaded.');
+      expect(tile(wrapper, 'Honeypots').get('[role=alert]').text()).toBe('Loading failed. Try again.');
       expect(tile(wrapper, 'Incidents').find('[role=alert]').exists()).toBe(false);
       expect(tile(wrapper, 'Incidents').findAll('.count')).toHaveLength(2);
       expect(tile(wrapper, 'Honeytokens').findAll('.count')).toHaveLength(2);
@@ -313,7 +312,7 @@ describe('the overview', () => {
       expect(tile(wrapper, 'Incidents').findAll('.count')[0]!.text()).toBe('Open1');
       const incidents = tile(wrapper, 'Incidents');
       expect(incidents.find('[role=alert]').exists(), 'a failed look is no reason to hide what is known').toBe(false);
-      expect(incidents.get('[role=status]').text()).toBe('This could not be refreshed. The figures may be out of date.');
+      expect(incidents.get('[role=status]').text()).toBe('Refreshing failed. The data may be out of date.');
       expect(tile(wrapper, 'Honeypots').find('.notice').exists(), 'only the tile that failed says so').toBe(false);
       answer = () => json(200, { incidents: [incident(), incident({ id: 'f00dfeed-2222-4222-8333-944444444444' })] });
       await wrapper.get('.page-head button').trigger('click');

@@ -24,7 +24,6 @@ function download(): void {
 <template>
   <div class="section panel" role="region" :aria-label="t('account.codes.title')">
     <h2>{{ t('account.codes.title') }}</h2>
-    <p class="notice" role="status">{{ t('account.codes.warning') }}</p>
     <ul class="codes mono">
       <li v-for="code in codes" :key="code">{{ code }}</li>
     </ul>

@@ -230,7 +230,7 @@ onMounted(load);
           <h3>
             <RouterLink class="mono" :to="{ name: 'catalog-deception', params: { id: story.deception_id } }">{{ story.deception_id }}</RouterLink>
           </h3>
-          <p class="hint">{{ t('scenarios.stories.added', { language: story.language }) }} <TimeStamp :value="story.created_at" /></p>
+          <p class="hint">{{ t('scenarios.stories.added') }} <TimeStamp :value="story.created_at" /></p>
           <details :open="scenario.deceptions.length === 1">
             <summary>{{ t('scenarios.guide') }}</summary>
             <MarkdownView v-if="guideOf(story.deception_id) !== undefined" :source="guideOf(story.deception_id) ?? ''" />

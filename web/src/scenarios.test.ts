@@ -34,7 +34,7 @@ describe('the list of scenarios', () => {
     const fromCatalog = scenario({ id: 'dec0de00-2222-4222-8333-944444444444', name: 'SSH jump host', deceptions: [joined('ssh-jump-host')], persona: { host: 'jump02' } });
     const { wrapper } = await boot(server('admin', { 'GET /api/v1/scenarios': () => json(200, { scenarios: [scenario(), fromCatalog] }) }), '/scenarios');
     const rows = wrapper.findAll('tbody tr');
-    expect(rows[0]?.text()).toContain('Put together by hand');
+    expect(rows[0]?.text()).toContain('Custom scenario');
     expect(rows[1]?.text()).toContain('From the deception ssh-jump-host');
     expect(rows[0]?.get('a').attributes('href')).toBe(`/scenarios/${scenarioId}`);
   });
@@ -85,7 +85,7 @@ describe('creating a scenario', () => {
     await type(wrapper, '#name', 'x');
     await type(wrapper, '#engage', 'EAC0005, T1078');
     await submit(wrapper);
-    expect(wrapper.text()).toContain('These are not Engage activity identifiers: T1078');
+    expect(wrapper.text()).toContain('Unknown Engage activities: T1078');
     expect(s.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
   });
 
@@ -129,7 +129,7 @@ describe('a scenario', () => {
 
   test('says when it has none', async () => {
     const { wrapper } = await boot(server(), path);
-    expect(wrapper.findAll('.hint').filter((h) => h.text().startsWith('None yet')).length).toBe(2);
+    expect(wrapper.findAll('.hint').filter((h) => h.text().startsWith('No honeytokens or honeypots')).length).toBe(2);
   });
 
   test('removes a honeytoken from itself, which then stands alone', async () => {
@@ -182,7 +182,7 @@ describe('a scenario', () => {
 
   test('says when it does not exist', async () => {
     const { wrapper } = await boot(server('admin', { [`GET ${detail}`]: () => failure(404, 'not_found') }), path);
-    expect(wrapper.get('[role=status]').text()).toBe('This does not exist.');
+    expect(wrapper.get('[role=status]').text()).toBe('Nothing found here.');
   });
 
   describe('deleted', () => {
@@ -286,7 +286,7 @@ describe('the scenario of a honeytoken', () => {
   test('can be chosen, and is then shown by name', async () => {
     const s = ht('admin', honeytoken(), { [`PUT ${htPath}/scenario`]: () => json(200, honeytoken({ scenario_id: scenarioId })) });
     const { wrapper } = await boot(s, path);
-    expect(wrapper.text()).toContain('Stands alone');
+    expect(wrapper.text()).toContain('Standalone');
     await wrapper.get('#scenario-honeytoken').setValue(scenarioId);
     await wrapper.get('.assign-form').trigger('submit');
     await flushPromises();
@@ -301,7 +301,7 @@ describe('the scenario of a honeytoken', () => {
     expect(wrapper.get('.assign a').text()).toBe('Stolen backup');
     await wrapper.findAll('.assign button').find((b) => b.text() === 'Remove from scenario')!.trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('Stands alone');
+    expect(wrapper.text()).toContain('Standalone');
   });
 
   test('says when the server refuses, and keeps what it shows', async () => {
@@ -311,7 +311,7 @@ describe('the scenario of a honeytoken', () => {
     await wrapper.get('.assign-form').trigger('submit');
     await flushPromises();
     expect(wrapper.get('.assign [role=alert]').text()).toContain('conflicts with the current state');
-    expect(wrapper.text()).toContain('Stands alone');
+    expect(wrapper.text()).toContain('Standalone');
   });
 
   test('is only read by a viewer', async () => {
@@ -338,7 +338,7 @@ describe('the scenario of a honeytoken', () => {
     const s = ht('admin', honeytoken(), { 'GET /api/v1/scenarios': () => json(200, { scenarios: [scenario()], next_cursor: 'more' }) });
     const { wrapper } = await boot(s, path);
     expect(s.requests.filter((r) => r.url.startsWith('/api/v1/scenarios'))).toHaveLength(10);
-    expect(wrapper.get('.assign').text()).toContain('Only the first 10 scenarios are offered.');
+    expect(wrapper.get('.assign').text()).toContain('Limit reached: only the first 10 scenarios are shown.');
   });
 
   test('offers no choice when there is no scenario', async () => {

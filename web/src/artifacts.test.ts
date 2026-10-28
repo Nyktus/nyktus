@@ -87,12 +87,12 @@ describe('an artifact', () => {
 
   test('says when its scenario was deleted', async () => {
     const { wrapper } = await boot(server('admin', { [`GET ${one}`]: () => json(200, artifact({ scenario_id: null })) }), path);
-    expect(wrapper.text()).toContain('None; the scenario was deleted');
+    expect(wrapper.text()).toContain('The scenario was deleted');
   });
 
   test('says when it does not exist', async () => {
     const { wrapper } = await boot(server('admin', { [`GET ${one}`]: () => failure(404, 'not_found') }), path);
-    expect(wrapper.get('[role=status]').text()).toBe('This does not exist.');
+    expect(wrapper.get('[role=status]').text()).toBe('Nothing found here.');
   });
 
   describe('downloaded', () => {
@@ -210,7 +210,7 @@ describe('an artifact', () => {
     test('not at all when it is not text', async () => {
       const binary = artifact({ file_name: 'link.lnk', format: 'config', media_type: 'application/octet-stream' });
       const { wrapper } = await boot(server('admin', { [`GET ${one}`]: () => json(200, binary) }), path);
-      expect(wrapper.text()).toContain('This file is not text; download it to open it.');
+      expect(wrapper.text()).toContain('The content of this file cannot be displayed. Download it to read the content.');
       expect(wrapper.findAll('button').map((b) => b.text())).not.toContain('Show the content');
     });
   });
@@ -334,7 +334,7 @@ describe('the role of an artifact', () => {
     const { wrapper } = await boot(server('admin', { [`GET ${one}`]: () => json(200, bound) }), path);
     const dl = wrapper.get('dl');
     expect(dl.text()).toContain('Lure carrier.');
-    expect(dl.text()).toContain('It carries a honeytoken of its scenario.');
+    expect(dl.text()).toContain('The file contains a honeytoken.');
     expect(dl.get(`a[href="/honeytokens/${token}"]`).text()).toBe(token);
     expect(dl.text()).toContain('portal');
     expect(dl.get('a[href="/catalog/artifacts/bookmarks"]').text()).toBe('bookmarks');

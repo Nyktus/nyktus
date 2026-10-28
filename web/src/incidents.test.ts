@@ -84,13 +84,13 @@ describe('the list of incidents', () => {
   test('says so when none wait, when there are none at all, and when the filter finds none', async () => {
     const s = server('admin', { 'GET /api/v1/incidents': () => json(200, { incidents: [] }) });
     const { wrapper } = await boot(s, '/incidents');
-    expect(wrapper.text()).toContain('No incident is waiting for triage.');
+    expect(wrapper.text()).toContain('No unprocessed incidents.');
     await wrapper.get('#filter-status').setValue('');
     await flushPromises();
     expect(wrapper.text()).toContain('There are no incidents yet.');
     await wrapper.get('#filter-status').setValue('closed');
     await flushPromises();
-    expect(wrapper.text()).toContain('No incident matches the filter.');
+    expect(wrapper.text()).toContain('No incidents found.');
   });
 
   test('reads the next page with the cursor of the last one', async () => {
@@ -320,7 +320,7 @@ describe('an incident', () => {
         json(200, incident({ severity: 'info', severity_override: 'info', techniques: [], techniques_override: [], event_techniques: ['T1078'] })),
     });
     const { wrapper } = await boot(s, path);
-    expect(wrapper.get('dl').text()).toContain('Overridden; the events suggest High.');
+    expect(wrapper.get('dl').text()).toContain('Recommended severity: High.');
     expect(wrapper.get('dl').text()).toContain('Techniques of the events');
     expect((wrapper.get('#severity').element as HTMLSelectElement).value).toBe('info');
     expect((wrapper.get('#override-techniques').element as HTMLInputElement).checked).toBe(true);
@@ -335,7 +335,7 @@ describe('an incident', () => {
 
   test('says when it does not exist', async () => {
     const { wrapper } = await boot(server('admin', { [`GET ${detail}`]: () => failure(404, 'not_found') }), path);
-    expect(wrapper.text()).toContain('This does not exist.');
+    expect(wrapper.text()).toContain('Nothing found here.');
   });
 
   test('says when it cannot be loaded', async () => {
@@ -403,7 +403,7 @@ describe('an incident', () => {
       const { wrapper } = await boot(s, path);
       await button(wrapper, 'Acknowledge')!.trigger('click');
       await flushPromises();
-      expect(wrapper.get('[role=alert]').text()).toContain('someone else has changed it');
+      expect(wrapper.get('[role=alert]').text()).toContain('Invalid state. Reload the page and try again.');
       expect(wrapper.get('.badges').text()).toContain('Closed');
       expect(button(wrapper, 'Acknowledge')).toBeUndefined();
     });
@@ -416,7 +416,7 @@ describe('an incident', () => {
       await wrapper.get('dialog[open] .danger').trigger('click');
       await flushPromises();
       expect(wrapper.find('dialog[open]').exists()).toBe(false);
-      expect(wrapper.get('[role=alert]').text()).toContain('someone else has changed it');
+      expect(wrapper.get('[role=alert]').text()).toContain('Invalid state. Reload the page and try again.');
     });
 
     test('does not show the message of the server', async () => {
@@ -623,7 +623,7 @@ describe('the events of an incident', () => {
 
   test('says so when there are none, and when they cannot be loaded', async () => {
     const none = await boot(server('admin', { 'GET /api/v1/events': () => json(200, { events: [] }) }), path);
-    expect(none.wrapper.text()).toContain('This incident lists no events.');
+    expect(none.wrapper.text()).toContain('This incident has no events.');
     document.body.innerHTML = '';
     const failed = await boot(server('admin', { 'GET /api/v1/events': () => failure(500, 'internal_error') }), path);
     expect(failed.wrapper.text()).toContain('The events could not be loaded.');
@@ -817,7 +817,7 @@ describe('an event', () => {
 
   test('says when it does not exist', async () => {
     const { wrapper } = await boot(server('admin', { [`GET /api/v1/events/${eventId}`]: () => failure(404, 'not_found') }), at(eventId));
-    expect(wrapper.text()).toContain('This does not exist.');
+    expect(wrapper.text()).toContain('Nothing found here.');
   });
 
   test('says when it cannot be loaded', async () => {
@@ -832,7 +832,7 @@ describe('the pages in German', () => {
     i18n.setLocale('de');
     await flushPromises();
     expect(wrapper.text()).toContain('Triage');
-    expect(wrapper.text()).toContain('Was geschah');
+    expect(wrapper.text()).toContain('Inhalt');
     expect(wrapper.text()).toContain('curl/8.4.0');
   });
 });
