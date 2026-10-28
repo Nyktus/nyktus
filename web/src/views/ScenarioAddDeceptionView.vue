@@ -12,7 +12,7 @@ import type { CatalogDeception, CatalogDeceptionSummary, Scenario } from '../api
 import { errorText } from '../api/messages';
 import FileChoice from '../components/FileChoice.vue';
 import PersonaFields from '../components/PersonaFields.vue';
-import { locale, t, type Locale } from '../i18n';
+import { locale, t } from '../i18n';
 import { personaProblems, personaToSend } from '../personaRules';
 import { personaProblemTexts } from '../personaText';
 
@@ -31,7 +31,6 @@ const busy = ref(false);
 const chosen = ref('');
 const deception = ref<CatalogDeception | undefined>();
 const detailError = ref<string | undefined>();
-const language = ref<Locale>(locale.value);
 const persona = ref<Record<string, string>>({});
 const problems = ref<Record<string, string>>({});
 const selected = ref<string[]>([]);
@@ -112,7 +111,7 @@ async function submit(): Promise<void> {
       path: { id: id.value },
       body: {
         deception_id: deception.value.id,
-        language: language.value,
+        language: locale.value,
         // A key that the scenario has is not sent: its value stays, and a different one would be refused.
         persona: personaToSend(deception.value.persona, persona.value, scenario.value.persona),
         artifacts: deception.value.artifacts.map((a) => a.key).filter((key) => selected.value.includes(key)),
@@ -188,14 +187,6 @@ watch(locale, () => {
           <template v-if="deception">
             <p>{{ deception.summary }}</p>
             <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
-
-            <div class="field">
-              <label for="guide-language">{{ t('catalog.apply.language') }}</label>
-              <select id="guide-language" v-model="language">
-                <option value="en">English</option>
-                <option value="de">Deutsch</option>
-              </select>
-            </div>
 
             <PersonaFields
               v-model="persona"

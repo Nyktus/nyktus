@@ -12,7 +12,7 @@ import type { CatalogArtifact, CatalogArtifactSummary, Honeytoken, Scenario } fr
 import { errorText } from '../api/messages';
 import PersonaFields from '../components/PersonaFields.vue';
 import { isolate } from '../format';
-import { locale, t, type Locale } from '../i18n';
+import { locale, t } from '../i18n';
 import { personaProblems, personaToSend } from '../personaRules';
 import { personaProblemTexts } from '../personaText';
 
@@ -36,7 +36,6 @@ const busy = ref(false);
 const chosen = ref('');
 const artifact = ref<CatalogArtifact | undefined>();
 const detailError = ref<string | undefined>();
-const language = ref<Locale>(locale.value);
 const persona = ref<Record<string, string>>({});
 const problems = ref<Record<string, string>>({});
 // The honeytoken for each slot by its key; an empty string leaves the slot empty.
@@ -160,7 +159,7 @@ async function submit(): Promise<void> {
       path: { id: id.value },
       body: {
         catalog_artifact: artifact.value.id,
-        language: language.value,
+        language: locale.value,
         persona: personaToSend(artifact.value.persona, persona.value, scenario.value.persona),
         bindings,
       },
@@ -262,14 +261,6 @@ watch(locale, () => {
               <strong>{{ carries ? t('artifacts.role.lure') : t('artifacts.role.litter') }}.</strong>
               {{ carries ? t('scenarios.addArtifact.lureVerdict') : t('scenarios.addArtifact.litterVerdict') }}
             </p>
-
-            <div class="field">
-              <label for="placing-language">{{ t('scenarios.addArtifact.language') }}</label>
-              <select id="placing-language" v-model="language">
-                <option value="en">English</option>
-                <option value="de">Deutsch</option>
-              </select>
-            </div>
 
             <PersonaFields
               v-model="persona"

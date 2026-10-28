@@ -19,6 +19,8 @@ const router = useRouter();
 const types = ['webhook', 'slack', 'teams', 'email'] as const;
 
 const type = ref<AlertChannel['type']>('webhook');
+// A webhook takes any receiver of JSON, so there is nothing to say about it.
+const typeHint = computed(() => (type.value === 'webhook' ? undefined : t(`alertChannelType.${type.value}.hint`)));
 const name = ref('');
 const enabled = ref(true);
 const url = ref('');
@@ -95,10 +97,10 @@ async function created(): Promise<void> {
     <form class="stack narrow" @submit.prevent="ask">
       <div class="field">
         <label for="channel-type">{{ t('field.type') }}</label>
-        <select id="channel-type" v-model="type" aria-describedby="channel-type-hint">
+        <select id="channel-type" v-model="type" :aria-describedby="typeHint === undefined ? undefined : 'channel-type-hint'">
           <option v-for="option in types" :key="option" :value="option">{{ t(`alertChannelType.${option}`) }}</option>
         </select>
-        <span id="channel-type-hint" class="hint">{{ t(`alertChannelType.${type}.hint`) }}</span>
+        <span v-if="typeHint !== undefined" id="channel-type-hint" class="hint">{{ typeHint }}</span>
       </div>
 
       <div class="field">

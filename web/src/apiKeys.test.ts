@@ -302,7 +302,7 @@ describe('a new API key', () => {
     test('is shown once, with the warning', async () => {
       const { wrapper } = await make();
       expect(wrapper.get('[role=region]').text()).toContain(keySecret);
-      expect(wrapper.get('[role=region]').text()).toContain('This is the only time the key is shown.');
+      expect(wrapper.get('[role=region]').text()).toContain('The key is shown only this once.');
       expect(wrapper.find('form.stack').exists()).toBe(false);
     });
 
@@ -361,7 +361,7 @@ describe('a new API key', () => {
 
   describe('when the server refuses', () => {
     test.each([
-      [409, 'too_many_api_keys', 'reached the limit'],
+      [409, 'too_many_api_keys', 'limit of active API keys has been reached'],
       [400, 'invalid_request', 'The input is not valid.'],
     ])('says what is wrong for %i %s, closes the dialog and keeps the form', async (status, code, text) => {
       const { wrapper } = await make(creating({ 'POST /api/v1/api-keys': () => failure(status, code) }));

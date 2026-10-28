@@ -55,8 +55,8 @@ describe('a server that does not answer when the page asks for the session', () 
   test('does not send the user to sign in: the page says that it cannot tell, and asks again on request', async () => {
     let answer: () => Response = () => failure(503, 'unavailable');
     const { wrapper, router } = await boot(server(() => answer()), '/');
-    expect(wrapper.get('h1').text()).toBe('Cannot check your session');
-    expect(wrapper.get('[role=alert]').text()).toContain('Your session may be valid');
+    expect(wrapper.get('h1').text()).toBe('Could not verify your session');
+    expect(wrapper.get('[role=alert]').text()).toContain('Try again later');
     expect(router.currentRoute.value.name).toBe('home');
     expect(wrapper.find('nav').exists()).toBe(false);
 
@@ -212,11 +212,19 @@ describe('the second factor', () => {
 
   test('asks for a code after the password and signs in with it', async () => {
     const { wrapper, router, s } = await toSecondFactor();
-    expect(wrapper.get('h1').text()).toBe('Second factor');
+    expect(wrapper.get('h1').text()).toBe('Two-factor authentication');
     await type(wrapper, '#code', '123456');
     await submit(wrapper);
     await arrive(router, 'home');
     expect(s.requests.filter((r) => r.method === 'POST').at(-1)?.body).toEqual({ code: '123456' });
+  });
+
+  // A password manager finds the field of the code by its autocomplete value and its name.
+  test('names the field of the code so that a password manager offers its code', async () => {
+    const { wrapper } = await toSecondFactor();
+    const field = wrapper.get('#code');
+    expect(field.attributes('autocomplete')).toBe('one-time-code');
+    expect(field.attributes('name')).toBe('totp');
   });
 
   test('takes a recovery code instead', async () => {
@@ -232,7 +240,7 @@ describe('the second factor', () => {
     const { wrapper } = await toSecondFactor(server({ 'POST /api/v1/session/second-factor': () => failure(401, 'invalid_code') }));
     await type(wrapper, '#code', '000000');
     await submit(wrapper);
-    expect(wrapper.get('h1').text()).toBe('Second factor');
+    expect(wrapper.get('h1').text()).toBe('Two-factor authentication');
     expect(wrapper.get('[role=alert]').text()).toBe('The code is not valid.');
   });
 

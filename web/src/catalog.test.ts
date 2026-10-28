@@ -50,7 +50,7 @@ describe('the catalog', () => {
     await wrapper.get('#filter-category').setValue('network');
     expect(wrapper.findAll('.card h2').map((h) => h.text())).toEqual(['SSH jump host']);
     await wrapper.get('#filter-category').setValue('identity');
-    expect(wrapper.text()).toContain('No deception matches the filter.');
+    expect(wrapper.text()).toContain('No deceptions found.');
   });
 
   test('offers the cloud category in the filter, in both languages', async () => {
@@ -102,7 +102,7 @@ describe('the artifacts of the catalog', () => {
     await wrapper.get('#filter-category').setValue('network');
     expect(wrapper.findAll('.card h2').map((h) => h.text())).toEqual(['SSH client configuration']);
     await wrapper.get('#filter-category').setValue('identity');
-    expect(wrapper.text()).toContain('No artifact matches the filter.');
+    expect(wrapper.text()).toContain('No artifacts found.');
     i18n.setLocale('de');
     await flushPromises();
     expect(s.requests.at(-1)?.url).toBe('/api/v1/catalog/artifacts?lang=de');
@@ -125,7 +125,7 @@ describe('the artifacts of the catalog', () => {
       expect(slot.text()).toContain('portal');
       expect(slot.text()).toContain('Web URL');
       expect(slot.text()).toContain('Required');
-      expect(wrapper.text()).toContain('always a lure carrier');
+      expect(wrapper.text()).toContain('A honeytoken must be assigned to this artifact.');
       expect(wrapper.text()).toContain('Portal host');
       expect(wrapper.get('a[href="/catalog/artifacts"]').text()).toBe('All artifacts of the catalog');
     });
@@ -141,13 +141,13 @@ describe('the artifacts of the catalog', () => {
     test('says it is always pocket litter when it has no slot', async () => {
       const none = catalogArtifact({ slots: [] });
       const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/artifacts/bookmarks': () => json(200, none) }), path);
-      expect(wrapper.text()).toContain('It is always pocket litter');
+      expect(wrapper.text()).toContain('This artifact is pocket litter');
       expect(wrapper.find('table').exists()).toBe(true); // the persona table
     });
 
     test('says when it does not exist', async () => {
       const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/artifacts/bookmarks': () => failure(404, 'not_found') }), path);
-      expect(wrapper.get('[role=status]').text()).toBe('This does not exist.');
+      expect(wrapper.get('[role=status]').text()).toBe('Nothing found here.');
     });
 
     test('keeps the tab of the catalog marked in the navigation', async () => {
@@ -168,7 +168,7 @@ describe('a deception', () => {
     expect(wrapper.text()).toContain('Web URL');
     expect(wrapper.text()).toContain('bookmarks.html');
     expect(wrapper.text()).toContain('HTML');
-    expect(wrapper.text()).toContain('1 generated when it is applied');
+    expect(wrapper.text()).toContain('1 generated when applied');
     expect(wrapper.text()).toContain('T1217');
     expect(wrapper.text()).toContain('EAC0005');
   });
@@ -176,13 +176,13 @@ describe('a deception', () => {
   test('says when it consists of its guide', async () => {
     const guide = server('admin', { [`GET ${one}`]: () => json(200, catalogDeception({ honeytokens: [], artifacts: [], secrets: [], persona: [] })) });
     const { wrapper } = await boot(guide, path);
-    expect(wrapper.text()).toContain('This deception consists of its guide.');
+    expect(wrapper.text()).toContain('This deception is a guide only, with no honeytokens, honeypots or artifacts.');
     expect(wrapper.find('fieldset').exists()).toBe(false);
   });
 
   test('says when it does not exist', async () => {
     const { wrapper } = await boot(server('admin', { [`GET ${one}`]: () => failure(404, 'not_found') }), path);
-    expect(wrapper.get('[role=status]').text()).toBe('This does not exist.');
+    expect(wrapper.get('[role=status]').text()).toBe('Nothing found here.');
   });
 
   test('is only read by a viewer', async () => {
@@ -240,7 +240,7 @@ describe('a deception', () => {
       expect(boxes).toHaveLength(1);
       expect((boxes[0]?.element as HTMLInputElement).checked).toBe(true);
       expect(wrapper.get('fieldset.files').text()).toContain('bookmarks.html');
-      expect(wrapper.get('fieldset.files').text()).toContain('you can add other files to the scenario afterwards');
+      expect(wrapper.get('fieldset.files').text()).toContain('Files you leave unselected can be added later.');
     });
 
     test('sends the files that stayed chosen, and none when all were taken away', async () => {
@@ -252,7 +252,7 @@ describe('a deception', () => {
           await wrapper.get(`input[type=checkbox][value="${key}"]`).setValue(false);
         }
         if (want.length === 0) {
-          expect(wrapper.get('fieldset.files').text()).toContain('No file is created now.');
+          expect(wrapper.get('fieldset.files').text()).toContain('No file is created.');
         }
         await fill(wrapper);
         await submit(wrapper);
@@ -294,12 +294,13 @@ describe('a deception', () => {
       expect(s.requests.find((r) => r.method === 'POST')?.body).toMatchObject({ persona: { company: 'Acme Corp', host: 'portal.acme.example' } });
     });
 
-    test('sends the name, the language and every value, and shows the new scenario', async () => {
+    test('sends the name, the language of the console and every value, and shows the new scenario', async () => {
       const s = server('admin', { [apply]: created, [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario({ deceptions: [joined('browser-bookmarks')] })), [`GET /api/v1/scenarios/${scenarioId}/guide`]: () => json(200, { guides: [{ deception_id: 'browser-bookmarks', language: 'en', content: '# Guide' }] }) });
-      const { wrapper, router } = await boot(s, path);
+      const { wrapper, router, i18n } = await boot(s, path);
+      i18n.setLocale('de');
+      await flushPromises();
       await type(wrapper, '#name', '  Bookmarks of IT  ');
       await type(wrapper, '#notes', 'On the file share.');
-      await wrapper.get('#guide-language').setValue('de');
       await fill(wrapper, '  Acme Corp ');
       await submit(wrapper);
       expect(s.requests.find((r) => r.method === 'POST')?.body).toEqual({
@@ -367,7 +368,7 @@ describe('the guide of a scenario', () => {
     expect(guide.get('h3').text()).toBe('Place it');
     expect(guide.findAll('ol li')).toHaveLength(2);
     expect(guide.get('pre').text()).toBe('open file');
-    expect(wrapper.text()).toContain('Language: en.');
+    expect(wrapper.text()).toContain('Added');
   });
 
   // The guide names values that a person typed, and the console shows them as text.

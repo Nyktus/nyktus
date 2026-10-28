@@ -138,7 +138,6 @@ const number = (n: number): string => new Intl.NumberFormat(locale.value).format
           </ul>
           <div v-else class="empty">
             <p>{{ t('incidents.emptyActive') }}</p>
-            <p class="meta">{{ t('home.incidents.emptyHint') }}</p>
           </div>
           <p v-if="incidentSummary.more" class="meta">{{ t('home.incidents.truncated') }}</p>
         </template>

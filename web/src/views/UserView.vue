@@ -253,7 +253,6 @@ onMounted(load);
             <button class="button button-ghost" type="button" :disabled="busy" @click="issue('activation')">{{ t('users.activation.new') }}</button>
           </div>
           <div v-if="user.status === 'active' && !oidc">
-            <p class="hint">{{ t('users.reset.hint') }}</p>
             <button class="button button-ghost" type="button" :disabled="busy" @click="issue('reset')">{{ t('users.reset.new') }}</button>
           </div>
           <div v-if="user.totp_enabled && !own">
@@ -294,9 +293,7 @@ onMounted(load);
         @done="factorRemoved"
         @cancel="removingFactor = false"
         @failed="factorRefused"
-      >
-        {{ t('users.factor.body') }}
-      </ConfirmWithPassword>
+      />
 
       <ConfirmDialog
         v-if="canWrite"

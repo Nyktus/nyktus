@@ -65,7 +65,7 @@ describe('the list of honeytokens', () => {
     expect(wrapper.text()).toContain('There are no honeytokens yet.');
     await wrapper.get('#filter-type').setValue('dns');
     await flushPromises();
-    expect(wrapper.text()).toContain('No honeytoken matches the filter.');
+    expect(wrapper.text()).toContain('No honeytokens found.');
   });
 
   test('asks for what the filters name, and starts again from the first page', async () => {
@@ -199,7 +199,7 @@ describe('creating a honeytoken', () => {
     await type(wrapper, '#name', 'x');
     await type(wrapper, '#techniques', 'T1078, banana');
     await submit(wrapper);
-    expect(wrapper.text()).toContain('These are not technique identifiers: banana');
+    expect(wrapper.text()).toContain('These techniques were not found: banana');
     expect(s.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
   });
 
@@ -269,7 +269,7 @@ describe('a honeytoken', () => {
 
   test('says when it does not exist', async () => {
     const { wrapper } = await boot(one(honeytoken(), { 'GET /api/v1/honeytokens/c0ffee00-1111-4222-8333-944444444444': () => failure(404, 'not_found') }), path);
-    expect(wrapper.get('[role=status]').text()).toBe('This does not exist.');
+    expect(wrapper.get('[role=status]').text()).toBe('Nothing found here.');
     expect(wrapper.find('h1').exists()).toBe(false);
   });
 

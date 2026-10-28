@@ -194,7 +194,7 @@ function switchFactor(): void {
           ref="code-input"
           v-model="code"
           type="text"
-          name="code"
+          :name="recovery ? 'recovery_code' : 'totp'"
           :inputmode="recovery ? 'text' : 'numeric'"
           autocomplete="one-time-code"
           :pattern="recovery ? undefined : '[0-9]{6}'"

@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
 import type { OperationTypes } from '../api/generated';
@@ -15,15 +16,28 @@ import { t } from '../i18n';
 
 type Body = OperationTypes['createHoneypot']['body'];
 
+const router = useRouter();
 const busy = ref(false);
 const error = ref<string | undefined>();
 const createdId = ref<string | undefined>();
+// Set when the page of the honeypot did not open, so that the user is not left with a title and nothing else.
+const leaveFailed = ref(false);
 // The secret is shown once. It lives here and nowhere else, and goes when the user
 // is done or leaves the page: it is in no store, no address and no history.
 const once = ref<{ secret: string; config: string } | undefined>();
 
 function discard(): void {
   once.value = undefined;
+}
+
+// The secret is gone with the click, so the page has nothing left to show: the user lands on the honeypot.
+async function finish(): Promise<void> {
+  const id = createdId.value;
+  discard();
+  if (id !== undefined) {
+    const failure = await router.replace({ name: 'honeypot', params: { id } }).catch(() => true);
+    leaveFailed.value = failure !== undefined;
+  }
 }
 
 async function create(body: Body): Promise<void> {
@@ -50,8 +64,8 @@ onBeforeUnmount(discard);
     <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
 
     <template v-if="createdId !== undefined">
-      <SecretReveal v-if="once" :secret="once.secret" :config="once.config" @done="discard" />
-      <p>
+      <SecretReveal v-if="once" :secret="once.secret" :config="once.config" @done="finish" />
+      <p v-else-if="leaveFailed">
         <RouterLink class="button button-primary" :to="{ name: 'honeypot', params: { id: createdId } }">{{ t('honeypots.title') }}</RouterLink>
       </p>
     </template>

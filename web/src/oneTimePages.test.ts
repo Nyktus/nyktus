@@ -28,7 +28,7 @@ const pages = [
     path: '/activate',
     route: 'POST /api/v1/activation',
     title: 'Activate your account',
-    done: 'Your account is active. Sign in with your email address and the new password.',
+    done: 'Your account is activated. You can now sign in.',
     submitText: 'Activate account',
   },
   {
@@ -36,7 +36,7 @@ const pages = [
     path: '/reset-password',
     route: 'POST /api/v1/password-reset',
     title: 'Choose a new password',
-    done: 'The password has been changed. Sign in with the new password.',
+    done: 'Your password has been changed. You can now sign in with it.',
     submitText: 'Change password',
   },
 ] as const;
@@ -92,7 +92,7 @@ describe.each(pages)('the $name page', (page) => {
     const s = server();
     const { wrapper } = await boot(s, page.path);
     expect(wrapper.find('form').exists()).toBe(false);
-    expect(wrapper.get('[role=status]').text()).toContain('This link is not valid');
+    expect(wrapper.get('[role=status]').text()).toContain('This link is invalid');
     expect(s.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
   });
 
@@ -101,7 +101,7 @@ describe.each(pages)('the $name page', (page) => {
     async (_, hash) => {
       const { s, wrapper } = await start(server(), hash);
       expect(wrapper.find('form').exists()).toBe(false);
-      expect(wrapper.get('[role=status]').text()).toContain('This link is not valid');
+      expect(wrapper.get('[role=status]').text()).toContain('This link is invalid');
       expect(s.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
     },
   );
@@ -126,7 +126,7 @@ describe.each(pages)('the $name page', (page) => {
     await submit(wrapper);
     expect(wrapper.find('form').exists()).toBe(false);
     expect(wrapper.find('input').exists()).toBe(false);
-    expect(wrapper.get('[role=status]').text()).toContain('This link is not valid');
+    expect(wrapper.get('[role=status]').text()).toContain('This link is invalid');
     expect(wrapper.html()).not.toContain(strongPassword);
   });
 
@@ -279,7 +279,7 @@ describe('the setup page', () => {
     const { wrapper } = await start(server({ 'POST /api/v1/setup': () => failure(404, 'not_found') }));
     await fill(wrapper);
     await submit(wrapper);
-    expect(wrapper.get('[role=status]').text()).toContain('This setup link is not valid.');
+    expect(wrapper.get('[role=status]').text()).toContain('This setup link is invalid.');
     expect(wrapper.html()).not.toContain('ada@example.com');
   });
 

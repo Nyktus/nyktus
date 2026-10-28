@@ -180,15 +180,14 @@ describe('the overview', () => {
     test('say so when there are none, without saying that nothing is wrong', async () => {
       const { wrapper } = await boot(server('admin', { 'GET /api/v1/incidents': () => json(200, { incidents: [] }) }), '/');
       const t = tile(wrapper, 'Incidents');
-      expect(t.text()).toContain('No incident is waiting for triage.');
-      expect(t.text()).toContain('An incident opens when someone touches a decoy.');
+      expect(t.text()).toContain('No unprocessed incidents.');
       expect(wrapper.text()).not.toMatch(/\b(safe|secure|all clear)\b/i);
     });
 
     test('are shown as a lower bound when the server has more than the page', async () => {
       const { wrapper } = await boot(server('admin', { 'GET /api/v1/incidents': () => json(200, { incidents: [incident()], next_cursor: 'more' }) }), '/');
       expect(tile(wrapper, 'Incidents').findAll('.count').map((c) => c.text())).toEqual(['Open1+', 'Acknowledged0+']);
-      expect(tile(wrapper, 'Incidents').text()).toContain('There are more incidents than the overview reads. It lists the newest.');
+      expect(tile(wrapper, 'Incidents').text()).toContain('The incident list is limited. Use the filter to narrow the selection.');
     });
 
     test('say nothing of more incidents when the page holds them all', async () => {
@@ -273,7 +272,7 @@ describe('the overview', () => {
   describe('when a list cannot be read', () => {
     test('the others are still shown, and the tile says that it failed', async () => {
       const { wrapper } = await boot(server('admin', { 'GET /api/v1/honeypots': () => failure(500, 'internal_error') }), '/');
-      expect(tile(wrapper, 'Honeypots').get('[role=alert]').text()).toBe('This could not be loaded.');
+      expect(tile(wrapper, 'Honeypots').get('[role=alert]').text()).toBe('Loading failed. Try again.');
       expect(tile(wrapper, 'Incidents').find('[role=alert]').exists()).toBe(false);
       expect(tile(wrapper, 'Incidents').findAll('.count')).toHaveLength(2);
       expect(tile(wrapper, 'Honeytokens').findAll('.count')).toHaveLength(2);
@@ -313,7 +312,7 @@ describe('the overview', () => {
       expect(tile(wrapper, 'Incidents').findAll('.count')[0]!.text()).toBe('Open1');
       const incidents = tile(wrapper, 'Incidents');
       expect(incidents.find('[role=alert]').exists(), 'a failed look is no reason to hide what is known').toBe(false);
-      expect(incidents.get('[role=status]').text()).toBe('This could not be refreshed. The figures may be out of date.');
+      expect(incidents.get('[role=status]').text()).toBe('Refreshing failed. The data may be out of date.');
       expect(tile(wrapper, 'Honeypots').find('.notice').exists(), 'only the tile that failed says so').toBe(false);
       answer = () => json(200, { incidents: [incident(), incident({ id: 'f00dfeed-2222-4222-8333-944444444444' })] });
       await wrapper.get('.page-head button').trigger('click');
