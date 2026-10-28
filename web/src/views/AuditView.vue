@@ -31,7 +31,6 @@ onMounted(list.reload);
       <button class="button button-ghost" type="button" :disabled="list.loading.value" @click="list.reload">{{ t('common.refresh') }}</button>
     </div>
 
-    <p class="hint">{{ t('audit.personalData') }}</p>
     <p v-if="list.error.value" class="notice notice-error" role="alert">{{ t('audit.loadFailed') }} {{ list.error.value }}</p>
     <p v-if="!list.loaded.value && list.loading.value" role="status">{{ t('app.loading') }}</p>
     <p v-else-if="list.loaded.value && list.items.value.length === 0" class="notice" role="status">{{ t('audit.empty') }}</p>

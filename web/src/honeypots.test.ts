@@ -104,30 +104,41 @@ describe('the secret of a new honeypot', () => {
     const { wrapper } = await make();
     expect(wrapper.get('[role=region]').text()).toContain(honeypotSecret);
     expect(wrapper.get('pre').text()).toBe(honeypotConfig.trimEnd());
-    expect(wrapper.text()).toContain('This is the only time the secret is shown.');
+    expect(wrapper.text()).toContain('The secret is shown only this once.');
   });
 
-  test('is gone once the user says that they copied it', async () => {
-    const { wrapper } = await make();
+  test('is gone once the user says that they copied it, and the page of the honeypot opens', async () => {
+    const { wrapper, router } = await make();
     await wrapper.get('[role=region] button.button-primary').trigger('click');
+    await arrive(router, 'honeypot');
+    expect(router.currentRoute.value.params.id).toBe(honeypot().id);
     expect(wrapper.html()).not.toContain(honeypotSecret);
     expect(wrapper.find('[role=region]').exists()).toBe(false);
+  });
+
+  test('leaves a way to the honeypot when its page does not open', async () => {
+    const { wrapper, router } = await make();
+    router.beforeEach((to) => (to.name === 'honeypot' ? false : true));
+    await wrapper.get('[role=region] button.button-primary').trigger('click');
+    await flushPromises();
+    expect(wrapper.html()).not.toContain(honeypotSecret);
+    expect(wrapper.get('a.button-primary').attributes('href')).toBe(`/honeypots/${honeypot().id}`);
   });
 
   // The state of the page is what scripts of the console can read, so the secret is out of it, not only out of the picture.
   test('is gone from the state of the page once the user says that they copied it', async () => {
     const { wrapper } = await make();
-    const state = () => wrapper.findComponent({ name: 'HoneypotNewView' }).vm as unknown as { once: unknown; createdId: unknown };
-    expect(JSON.stringify(state().once)).toContain(honeypotSecret);
+    const state = wrapper.findComponent({ name: 'HoneypotNewView' }).vm as unknown as { once: unknown; createdId: unknown };
+    expect(JSON.stringify(state.once)).toContain(honeypotSecret);
     await wrapper.get('[role=region] button.button-primary').trigger('click');
-    expect(state().once).toBeUndefined();
-    expect(JSON.stringify(state())).not.toContain(honeypotSecret);
+    expect(state.once).toBeUndefined();
+    expect(JSON.stringify(state)).not.toContain(honeypotSecret);
   });
 
   test('is gone when the user leaves, and the page that they go to does not have it', async () => {
     const { wrapper, router } = await make();
-    await wrapper.get('a.button-primary').trigger('click');
-    await arrive(router, 'honeypot');
+    await router.push({ name: 'honeypots' });
+    await arrive(router, 'honeypots');
     expect(wrapper.html()).not.toContain(honeypotSecret);
     expect(wrapper.find('[role=region]').exists()).toBe(false);
   });
@@ -227,7 +238,7 @@ describe('a honeypot', () => {
     test('asks first, and says what it costs', async () => {
       const { wrapper, s } = await ask();
       expect(wrapper.find('dialog[open]').exists()).toBe(true);
-      expect(wrapper.get('dialog[open]').text()).toContain('shut out until you configure it with the new one');
+      expect(wrapper.get('dialog[open]').text()).toContain('cannot report events until it is configured with the new one');
       expect(s.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
     });
 
@@ -298,6 +309,6 @@ describe('a honeypot', () => {
 
   test('says when it does not exist', async () => {
     const { wrapper } = await boot(one(honeypot(), { [`GET ${detail}`]: () => failure(404, 'not_found') }), path);
-    expect(wrapper.get('[role=status]').text()).toBe('This does not exist.');
+    expect(wrapper.get('[role=status]').text()).toBe('Nothing found here.');
   });
 });

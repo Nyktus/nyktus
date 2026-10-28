@@ -101,7 +101,7 @@ describe('the list of alert channels', () => {
 
   test('says so when there are none, and when they cannot be loaded', async () => {
     const none = await boot(server('admin', { 'GET /api/v1/alert-channels': () => json(200, { alert_channels: [] }) }), '/alert-channels');
-    expect(none.wrapper.text()).toContain('Without one, incidents raise no alert.');
+    expect(none.wrapper.text()).toContain('Without a configured alert channel, incidents raise no alerts.');
     document.body.innerHTML = '';
     const failed = await boot(server('admin', { 'GET /api/v1/alert-channels': () => failure(500, 'internal_error') }), '/alert-channels');
     expect(failed.wrapper.get('[role=alert]').text()).toContain('The alert channels could not be loaded.');
@@ -388,9 +388,9 @@ describe('a new alert channel', () => {
   describe('when the server refuses the channel', () => {
     test.each([
       [422, 'target_not_allowed', 'The URL is not allowed.'],
-      [422, 'header_not_allowed', 'Only a webhook can have a header.'],
-      [409, 'name_taken', 'Another alert channel has this name.'],
-      [409, 'too_many_alert_channels', 'at most 20 alert channels'],
+      [422, 'header_not_allowed', 'An extra header can be configured only for webhooks.'],
+      [409, 'name_taken', 'This name is already used by another alert channel.'],
+      [409, 'too_many_alert_channels', 'limit of 20 alert channels'],
       [400, 'invalid_request', 'The input is not valid.'],
     ])('says what is wrong for %i %s, closes the dialog and keeps the form', async (status, code, text) => {
       const s = creating({ 'POST /api/v1/alert-channels': () => failure(status, code) });
@@ -412,7 +412,6 @@ describe('a new alert channel', () => {
       await fill(wrapper, { '#channel-name': 'SOAR', '#channel-url': secretUrl });
       await submit(wrapper);
       expect(dialog(wrapper).find('input[type=password]').exists()).toBe(false);
-      expect(dialog(wrapper).text()).toContain('you confirm by signing in there again');
       await confirm(wrapper);
       expect(requestsOf(s, 'POST')[0]?.body).not.toHaveProperty('password');
       await arrive(router, 'alert-channel');
@@ -460,7 +459,7 @@ describe('a new alert channel', () => {
     test('says so when the identity provider could not confirm the user, and removes the fragment', async () => {
       history.replaceState(null, '', '/alert-channels/new#error=reauthentication');
       const { wrapper } = await boot(creating({}, 'oidc'), create);
-      expect(wrapper.get('[role=alert]').text()).toBe('The identity provider could not confirm you. Try again.');
+      expect(wrapper.get('[role=alert]').text()).toBe('The identity provider could not confirm your sign-in. Try again.');
       expect(globalThis.location.hash).toBe('');
     });
   });
@@ -482,19 +481,19 @@ describe('an alert channel', () => {
     const text = wrapper.get('dl').text();
     expect(text).toContain('https://soar.example.com');
     expect(text).toContain('Authorization');
-    expect(text).toContain('never shown again');
+    expect(text).toContain('Enter the value again to replace it.');
   });
 
   test('shows the recipients of a mail channel', async () => {
     const mail = emailChannel();
     const { wrapper } = await boot(server('admin', { [`GET /api/v1/alert-channels/${mail.id}`]: () => json(200, mail) }), `/alert-channels/${mail.id}`);
     expect(wrapper.get('dl').text()).toContain('soc@example.com, it@example.com');
-    expect(wrapper.get('dl').text()).not.toContain('never shown again');
+    expect(wrapper.get('dl').text()).not.toContain('Enter the value again to replace it.');
   });
 
   test('says when it does not exist, and when it cannot be loaded', async () => {
     const gone = await boot(server('admin', { [`GET ${detail}`]: () => failure(404, 'not_found') }), path);
-    expect(gone.wrapper.text()).toContain('This does not exist.');
+    expect(gone.wrapper.text()).toContain('Nothing found here.');
     document.body.innerHTML = '';
     const failed = await boot(server('admin', { [`GET ${detail}`]: () => failure(500, 'internal_error') }), path);
     expect(failed.wrapper.get('[role=alert]').text()).toBe('Something went wrong on the server.');
@@ -560,7 +559,7 @@ describe('an alert channel', () => {
       await wrapper.get('#channel-name').setValue('Other');
       await wrapper.findAll('form')[0]!.trigger('submit');
       await flushPromises();
-      expect(wrapper.get('section > [role=alert]').text()).toBe('Another alert channel has this name.');
+      expect(wrapper.get('section > [role=alert]').text()).toBe('This name is already used by another alert channel.');
     });
   });
 
@@ -588,12 +587,12 @@ describe('an alert channel', () => {
       expect(dialog(wrapper).get('h2').text()).toBe('Enable this channel?');
     });
 
-    test('enabling again reminds the user that the target may have changed hands', async () => {
+    test('enabling again says that the channel will be enabled', async () => {
       const s = server('admin', { [`GET ${detail}`]: () => json(200, alertChannel({ enabled: false })) });
       const { wrapper } = await boot(s, path);
       await button(wrapper, 'Enable')!.trigger('click');
       await flushPromises();
-      expect(dialog(wrapper).text()).toContain('can change hands');
+      expect(dialog(wrapper).text()).toContain('The alert channel will be enabled.');
     });
 
     test('does nothing when the user cancels', async () => {
@@ -807,13 +806,13 @@ describe('an alert channel', () => {
       await button(wrapper, 'Send a test')!.trigger('click');
       await flushPromises();
       expect(requestsOf(s, 'POST').map((r) => r.url)).toEqual([`${detail}/test`]);
-      expect(wrapper.text()).toContain('Waiting for the worker.');
+      expect(wrapper.text()).toContain('Waiting...');
       await vi.advanceTimersByTimeAsync(1999);
       expect(deliveryGets(s)).toBe(0);
       await vi.advanceTimersByTimeAsync(1);
       await flushPromises();
       expect(deliveryGets(s)).toBe(1);
-      expect(wrapper.text()).toContain('Waiting for the worker.');
+      expect(wrapper.text()).toContain('Waiting...');
       await vi.advanceTimersByTimeAsync(2000);
       await flushPromises();
       expect(wrapper.text()).toContain('The test message was delivered.');
@@ -849,7 +848,7 @@ describe('an alert channel', () => {
       await vi.advanceTimersByTimeAsync(60_000);
       await flushPromises();
       expect(deliveryGets(s)).toBe(15);
-      expect(wrapper.text()).toContain('The worker has not sent the test yet.');
+      expect(wrapper.text()).toContain('The test has not been sent yet.');
       await button(wrapper, 'Check again')!.trigger('click');
       await flushPromises();
       expect(deliveryGets(s)).toBe(16);
@@ -868,7 +867,7 @@ describe('an alert channel', () => {
       const { wrapper } = await boot(s, path);
       await button(wrapper, 'Send a test')!.trigger('click');
       await flushPromises();
-      expect(wrapper.get('[role=alert]').text()).toBe('A test of this channel is already waiting for the worker.');
+      expect(wrapper.get('[role=alert]').text()).toBe('A test alert is already queued. Wait until it has been delivered or canceled.');
       expect(button(wrapper, 'Send a test')!.attributes('disabled')).toBeUndefined();
     });
 
@@ -998,7 +997,7 @@ describe('the deliveries of an incident', () => {
 
   test('says so when no channel was enabled', async () => {
     const { wrapper } = await boot(viewing('admin', []), incidentPath);
-    expect(wrapper.text()).toContain('No channel was enabled when this incident opened, so no alert was sent.');
+    expect(wrapper.text()).toContain('No alert was sent because no alert channel was enabled.');
   });
 
   test('says so when the deliveries cannot be loaded', async () => {

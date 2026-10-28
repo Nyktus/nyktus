@@ -323,8 +323,7 @@ onBeforeUnmount(() => {
           <form class="stack" @submit.prevent="rename">
             <div class="field">
               <label for="channel-name">{{ t('field.name') }}</label>
-              <input id="channel-name" v-model="name" type="text" required maxlength="64" aria-describedby="channel-name-hint" />
-              <span id="channel-name-hint" class="hint">{{ t('alerts.renameHint') }}</span>
+              <input id="channel-name" v-model="name" type="text" required maxlength="64" />
             </div>
             <div class="actions-row">
               <button class="button button-primary" type="submit" :disabled="busy">{{ busy ? t('app.saving') : t('common.save') }}</button>

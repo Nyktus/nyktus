@@ -53,7 +53,7 @@ describe('the list of accounts', () => {
     expect(rows[3]?.text()).toContain('Deactivated');
     expect(rows[3]?.get('.badge').classes()).toContain('badge-muted');
     expect(rows[0]?.get('.badge').classes()).not.toContain('badge-muted');
-    expect(rows[3]?.text()).toContain('Password, second factor on');
+    expect(rows[3]?.text()).toContain('Password, MFA on');
     expect(rows[1]?.get('a').attributes('href')).toBe('/users/a5e70000-2222-4222-8333-944444444444');
   });
 
@@ -118,15 +118,15 @@ describe('a new account', () => {
   test('starts as a viewer, who can change nothing, and says what each role does', async () => {
     const { wrapper } = await boot(server(), '/users/new');
     expect((wrapper.get('#role').element as HTMLSelectElement).value).toBe('viewer');
-    expect(wrapper.get('#role-hint').text()).toContain('changes nothing');
+    expect(wrapper.get('#role-hint').text()).toContain('Reads decoys');
     await wrapper.get('#role').setValue('admin');
-    expect(wrapper.get('#role-hint').text()).toContain('Manages the installation');
+    expect(wrapper.get('#role-hint').text()).toContain('Manages users, roles');
   });
 
   test('shows the activation link once, with when it expires', async () => {
     const { wrapper } = await make();
     expect(wrapper.get('[role=region]').text()).toContain(link);
-    expect(wrapper.get('[role=region]').text()).toContain('This is the only time the link is shown.');
+    expect(wrapper.get('[role=region]').text()).toContain('The link is shown only this once.');
     expect(wrapper.get('[role=region] time').attributes('datetime')).toBe('2026-10-26T08:00:00Z');
   });
 
@@ -172,7 +172,7 @@ describe('a new account', () => {
   });
 
   test.each([
-    [409, 'email_taken', 'Another account uses this email address.'],
+    [409, 'email_taken', 'This email address is already in use.'],
     [400, 'invalid_request', 'The input is not valid.'],
   ])('says what is wrong when the server answers %i %s, and shows no link', async (status, code, text) => {
     const { wrapper } = await make(server('admin', { 'POST /api/v1/users': () => failure(status, code) }));
@@ -187,13 +187,13 @@ describe('an account', () => {
     const { wrapper } = await boot(server('admin', { [`GET ${detail}`]: () => json(200, userRecord({ totp_enabled: true })) }), path);
     expect(wrapper.get('h1').text()).toBe('Jane Doe');
     expect(wrapper.get('dl').text()).toContain('jane@example.com');
-    expect(wrapper.get('dl').text()).toContain('Second factor on');
+    expect(wrapper.get('dl').text()).toContain('MFA on');
     expect(wrapper.get('.badges').text()).toContain('Active');
   });
 
   test('says when it does not exist, and when it cannot be loaded', async () => {
     const gone = await boot(server('admin', { [`GET ${detail}`]: () => failure(404, 'not_found') }), path);
-    expect(gone.wrapper.text()).toContain('This does not exist.');
+    expect(gone.wrapper.text()).toContain('Nothing found here.');
     document.body.innerHTML = '';
     const failed = await boot(server('admin', { [`GET ${detail}`]: () => failure(500, 'internal_error') }), path);
     expect(failed.wrapper.get('[role=alert]').text()).toBe('Something went wrong on the server.');
@@ -277,7 +277,7 @@ describe('an account', () => {
       const { wrapper } = await boot(s, path);
       await wrapper.get('#role').setValue('viewer');
       await save(wrapper);
-      expect(dialog(wrapper).get('h2').text()).toBe('End the sessions of this account?');
+      expect(dialog(wrapper).get('h2').text()).toBe('End all sessions of this account?');
       expect(requestsOf(s, 'PATCH')).toHaveLength(0);
       await dialog(wrapper).get('.button-primary').trigger('click');
       await flushPromises();
@@ -322,7 +322,7 @@ describe('an account', () => {
     test.each([
       [409, 'last_active_admin', 'At least one active administrator must remain.'],
       [409, 'oidc_account', 'signs in through the identity provider'],
-      [409, 'own_account', 'You cannot do this to your own account.'],
+      [409, 'own_account', 'This change has to be made by another administrator.'],
       [400, 'invalid_request', 'The input is not valid.'],
     ])('says what is wrong when the server answers %i %s', async (status, code, text) => {
       const s = server('admin', { [`PATCH ${detail}`]: () => failure(status, code) });
@@ -361,7 +361,7 @@ describe('an account', () => {
     test('has no button to remove its second factor, which is done in the account', async () => {
       const s = mine({ [`GET ${ownDetail}`]: () => json(200, ownRecord({ totp_enabled: true })) });
       const { wrapper } = await boot(s, `/users/${own.id}`);
-      expect(button(wrapper, 'Remove the second factor')).toBeUndefined();
+      expect(button(wrapper, 'Remove MFA')).toBeUndefined();
     });
   });
 
@@ -372,7 +372,7 @@ describe('an account', () => {
     test('has a role that follows the groups, and no password to reset', async () => {
       const { wrapper } = await boot(one(), path);
       expect(wrapper.get('#role').attributes('disabled')).toBeDefined();
-      expect(wrapper.get('#role-hint').text()).toContain('follows the groups');
+      expect(wrapper.get('#role-hint').text()).toContain('assigned by the identity provider');
       expect(button(wrapper, 'New password reset link')).toBeUndefined();
       expect(wrapper.get('dl').text()).toContain('Managed by the identity provider');
     });
@@ -457,7 +457,7 @@ describe('an account', () => {
       const s = server('admin', { [`GET ${detail}`]: () => json(200, userRecord({ status: 'deactivated' })) });
       const { wrapper } = await boot(s, path);
       expect(button(wrapper, 'New password reset link')).toBeUndefined();
-      expect(wrapper.text()).toContain('Nothing to hand out for this account.');
+      expect(wrapper.text()).toContain('No access');
     });
 
     test('keeps the link nowhere but the page', async () => {
@@ -507,19 +507,19 @@ describe('an account', () => {
     const secured = () => server('admin', { [`GET ${detail}`]: () => json(200, userRecord({ totp_enabled: true })) });
     const open = async (s: ReturnType<typeof server>) => {
       const app = await boot(s, path);
-      await button(app.wrapper, 'Remove the second factor')!.trigger('click');
+      await button(app.wrapper, 'Remove MFA')!.trigger('click');
       await flushPromises();
       return app;
     };
 
     test('is only offered when there is one', async () => {
-      expect(button((await boot(server(), path)).wrapper, 'Remove the second factor')).toBeUndefined();
+      expect(button((await boot(server(), path)).wrapper, 'Remove MFA')).toBeUndefined();
     });
 
     test('asks for the password of the administrator, and sends nothing before it', async () => {
       const s = secured();
       const { wrapper } = await open(s);
-      expect(dialog(wrapper).get('h2').text()).toBe('Remove the second factor?');
+      expect(dialog(wrapper).get('h2').text()).toBe('Turn off MFA?');
       expect(dialog(wrapper).find('input[type=password]').exists()).toBe(true);
       expect(requestsOf(s, 'PATCH')).toHaveLength(0);
     });
@@ -532,8 +532,8 @@ describe('an account', () => {
       await dialog(wrapper).get('.button-primary').trigger('click');
       await flushPromises();
       expect(requestsOf(s, 'PATCH').map((r) => r.body)).toEqual([{ totp_enabled: false, password: typed }]);
-      expect(wrapper.get('dl').text()).toContain('No second factor');
-      expect(button(wrapper, 'Remove the second factor')).toBeUndefined();
+      expect(wrapper.get('dl').text()).toContain('MFA off');
+      expect(button(wrapper, 'Remove MFA')).toBeUndefined();
       expect(document.body.innerHTML).not.toContain(typed);
     });
 
@@ -546,7 +546,7 @@ describe('an account', () => {
       await flushPromises();
       expect(wrapper.find('[role=alert]').exists()).toBe(true);
       s.on(`PATCH ${detail}`, () => json(200, userRecord({ totp_enabled: false })));
-      await button(wrapper, 'Remove the second factor')!.trigger('click');
+      await button(wrapper, 'Remove MFA')!.trigger('click');
       await flushPromises();
       expect(wrapper.findAll('[role=alert]').filter((e) => e.element.closest('dialog') === null)).toHaveLength(0);
       await dialog(wrapper).get('input[type=password]').setValue(typed);
@@ -575,7 +575,7 @@ describe('an account', () => {
       await dialog(wrapper).get('.button-primary').trigger('click');
       await flushPromises();
       expect(wrapper.find('dialog[open]').exists()).toBe(false);
-      expect(wrapper.get('section > [role=alert]').text()).toContain('You cannot do this to your own account.');
+      expect(wrapper.get('section > [role=alert]').text()).toContain('This change has to be made by another administrator.');
     });
   });
 

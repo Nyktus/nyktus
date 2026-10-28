@@ -13,7 +13,7 @@ import { errorText } from '../api/messages';
 import FileChoice from '../components/FileChoice.vue';
 import PersonaFields from '../components/PersonaFields.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
-import { locale, t, type Locale } from '../i18n';
+import { locale, t } from '../i18n';
 import { personaProblems, personaToSend } from '../personaRules';
 import { personaProblemTexts } from '../personaText';
 import { session } from '../session';
@@ -33,7 +33,6 @@ const canApply = computed(() => session.can('scenarios:write'));
 
 const name = ref('');
 const notes = ref('');
-const language = ref<Locale>(locale.value);
 const persona = ref<Record<string, string>>({});
 const problems = ref<Record<string, string>>({});
 // The artifacts that the deception recommends are all chosen at first; the user takes away the ones they do not want.
@@ -99,7 +98,7 @@ async function apply(): Promise<void> {
       body: {
         name: name.value.trim(),
         notes: notes.value,
-        language: language.value,
+        language: locale.value,
         persona: personaToSend(deception.value.persona, persona.value),
         artifacts: deception.value.artifacts.map((a) => a.key).filter((key) => selected.value.includes(key)),
       },
@@ -191,14 +190,6 @@ watch(locale, load);
             <label for="notes">{{ t('field.notes') }}</label>
             <textarea id="notes" v-model="notes" maxlength="2000"></textarea>
           </div>
-          <div class="field">
-            <label for="guide-language">{{ t('catalog.apply.language') }}</label>
-            <select id="guide-language" v-model="language">
-              <option value="en">English</option>
-              <option value="de">Deutsch</option>
-            </select>
-          </div>
-
           <PersonaFields
             v-model="persona"
             :fields="deception.persona"

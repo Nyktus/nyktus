@@ -227,8 +227,7 @@ onMounted(load);
         <form class="stack" @submit.prevent="saveNotes">
           <div class="field">
             <label for="placement">{{ t('artifacts.placement') }}</label>
-            <textarea id="placement" v-model="notes" maxlength="2000" aria-describedby="placement-hint"></textarea>
-            <span id="placement-hint" class="hint">{{ t('artifacts.placementHint') }}</span>
+            <textarea id="placement" v-model="notes" maxlength="2000"></textarea>
           </div>
           <div class="actions-row">
             <button class="button button-primary" type="submit" :disabled="busy">{{ busy ? t('app.saving') : t('common.save') }}</button>

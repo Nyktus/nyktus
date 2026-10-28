@@ -135,9 +135,8 @@ describe('the audit log', () => {
     expect(wrapper.findAll('tbody tr')).toHaveLength(1);
   });
 
-  test('says that reading it is recorded, and what it is when there is nothing', async () => {
+  test('says so when there is nothing', async () => {
     const { wrapper } = await boot(server('admin', { 'GET /api/v1/audit-entries': () => json(200, { entries: [] }) }), '/audit');
-    expect(wrapper.text()).toContain('Reading the audit log is itself recorded.');
     expect(wrapper.text()).toContain('There are no entries.');
   });
 

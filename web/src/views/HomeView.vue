@@ -7,7 +7,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, useId, type ShallowRef } from 'vue';
 import { api } from '../api/client';
 import DocsHint from '../components/DocsHint.vue';
-import HoneypotStatusBadge from '../components/HoneypotStatusBadge.vue';
 import IncidentStatusBadge from '../components/IncidentStatusBadge.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import TimeStamp from '../components/TimeStamp.vue';
@@ -138,7 +137,6 @@ const number = (n: number): string => new Intl.NumberFormat(locale.value).format
           </ul>
           <div v-else class="empty">
             <p>{{ t('incidents.emptyActive') }}</p>
-            <p class="meta">{{ t('home.incidents.emptyHint') }}</p>
           </div>
           <p v-if="incidentSummary.more" class="meta">{{ t('home.incidents.truncated') }}</p>
         </template>
@@ -177,20 +175,10 @@ const number = (n: number): string => new Intl.NumberFormat(locale.value).format
               <dd>{{ countLabel(honeypotSummary.disabled, honeypotSummary.more, number) }}</dd>
             </div>
           </dl>
-          <div v-if="honeypotSummary.silent.length > 0">
-            <h3>{{ t('home.honeypots.attention') }}</h3>
-            <ul class="rows">
-              <li v-for="honeypot in honeypotSummary.silent" :key="honeypot.id" class="row">
-                <div class="what">
-                  <RouterLink :to="{ name: 'honeypot', params: { id: honeypot.id } }">{{ honeypot.name }}</RouterLink>
-                  <span class="meta">
-                    {{ t(`honeypotService.${honeypot.service}`) }} ·
-                    <template v-if="honeypot.last_seen_at !== null">{{ t('honeypots.lastSeen') }} <TimeStamp :value="honeypot.last_seen_at" /></template>
-                    <template v-else>{{ t('honeypots.never') }}</template>
-                  </span>
-                </div>
-                <HoneypotStatusBadge :status="honeypot.status" />
-              </li>
+          <div v-if="honeypotSummary.byService.length > 0">
+            <h3>{{ t('home.honeypots.byType') }}</h3>
+            <ul class="types">
+              <li v-for="entry in honeypotSummary.byService" :key="entry.service" class="badge">{{ t(`honeypotService.${entry.service}`) }} {{ number(entry.count) }}</li>
             </ul>
           </div>
         </template>

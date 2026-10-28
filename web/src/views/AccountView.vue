@@ -256,7 +256,6 @@ function refused(failure: ApiError): void {
                 <button class="button button-ghost" type="button" @click="replacing = true">{{ t('account.codes.replace') }}</button>
               </div>
               <div>
-                <p class="hint">{{ t('account.factor.removeHint') }}</p>
                 <button class="button button-ghost" type="button" @click="removing = true">{{ t('account.factor.remove') }}</button>
               </div>
             </div>
@@ -276,7 +275,7 @@ function refused(failure: ApiError): void {
             <form class="stack" @submit.prevent="confirmSetup">
               <div class="field">
                 <label for="setup-code">{{ t('account.setup.code') }}</label>
-                <input id="setup-code" v-model="setupCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="16" required />
+                <input id="setup-code" v-model="setupCode" type="text" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="16" required />
               </div>
               <p v-if="setupError" class="notice notice-error" role="alert">{{ setupError }}</p>
               <div class="actions-row">
@@ -316,7 +315,7 @@ function refused(failure: ApiError): void {
         >
           <div class="field">
             <label :for="replaceCodeId">{{ t('account.confirm.code') }}</label>
-            <input :id="replaceCodeId" v-model="dialogCode" type="text" autocomplete="one-time-code" spellcheck="false" required />
+            <input :id="replaceCodeId" v-model="dialogCode" type="text" name="totp" autocomplete="one-time-code" spellcheck="false" required />
           </div>
         </ConfirmWithPassword>
 
@@ -332,7 +331,7 @@ function refused(failure: ApiError): void {
           <p>{{ t('account.factor.removeBody') }}</p>
           <div class="field">
             <label :for="removeCodeId">{{ t('account.confirm.code') }}</label>
-            <input :id="removeCodeId" v-model="dialogCode" type="text" autocomplete="one-time-code" spellcheck="false" required />
+            <input :id="removeCodeId" v-model="dialogCode" type="text" name="totp" autocomplete="one-time-code" spellcheck="false" required />
           </div>
         </ConfirmWithPassword>
       </template>
