@@ -26,7 +26,7 @@ export const de: Record<MessageKey, string> = {
   'home.incidents.truncated': 'Die Liste der Incidents wurde begrenzt. Nutzen Sie den Filter, um die Auswahl zu begrenzen.',
   'home.incidents.all': 'Alle Incidents',
   'home.honeypots.all': 'Alle Honeypots',
-  'home.honeypots.attention': 'Beobachten gerade nichts',
+  'home.honeypots.byType': 'Aktiv nach Typ',
   'home.honeypots.empty': 'Es ist noch kein Honeypot eingerichtet.',
   'home.honeytokens.all': 'Alle Honeytokens',
   'home.honeytokens.active': 'Aktiv',

@@ -28,7 +28,7 @@ export const en = {
   'home.incidents.truncated': 'The incident list is limited. Use the filter to narrow the selection.',
   'home.incidents.all': 'All incidents',
   'home.honeypots.all': 'All honeypots',
-  'home.honeypots.attention': 'Watching nothing right now',
+  'home.honeypots.byType': 'Active by type',
   'home.honeypots.empty': 'No honeypot is set up.',
   'home.honeytokens.all': 'All honeytokens',
   'home.honeytokens.active': 'Active',

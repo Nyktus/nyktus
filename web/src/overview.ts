@@ -55,23 +55,23 @@ export interface HoneypotSummary {
   /** Disabled honeypots record nothing, so they are no fault when they are silent. */
   disabled: number;
   more: boolean;
-  /** The enabled honeypots that do not report, those that stopped first and those that never began after. */
-  silent: Honeypot[];
+  /** The enabled ones by service, in the order of the services, without a service that has none. */
+  byService: { service: Honeypot['service']; count: number }[];
 }
 
-export const listedHoneypots = 4;
+const honeypotServices: readonly Honeypot['service'][] = ['ssh', 'telnet', 'postgres', 'ldap'];
 
 export function summarizeHoneypots(page: Counted<Honeypot>): HoneypotSummary {
   const enabled = page.items.filter((honeypot) => honeypot.enabled);
-  const silent = enabled.filter((honeypot) => honeypot.status !== 'online');
-  const rank = (honeypot: Honeypot): number => (honeypot.status === 'offline' ? 1 : 0);
   return {
     online: enabled.filter((honeypot) => honeypot.status === 'online').length,
     offline: enabled.filter((honeypot) => honeypot.status === 'offline').length,
     never: enabled.filter((honeypot) => honeypot.status === 'never').length,
     disabled: page.items.length - enabled.length,
     more: page.more,
-    silent: [...silent].sort((a, b) => rank(b) - rank(a)).slice(0, listedHoneypots),
+    byService: honeypotServices
+      .map((service) => ({ service, count: enabled.filter((honeypot) => honeypot.service === service).length }))
+      .filter((entry) => entry.count > 0),
   };
 }
 
