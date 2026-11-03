@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, ref } from 'vue';
 import type { Honeypot, OperationTypes } from '../api/generated';
 import { t } from '../i18n';
+import ScenarioSelect from './ScenarioSelect.vue';
 import { parseTechniques } from '../techniques';
 
 type Create = OperationTypes['createHoneypot']['body'];
@@ -15,6 +16,8 @@ type Update = OperationTypes['updateHoneypot']['body'];
 const props = defineProps<{
   /** The honeypot to change; without one, the form creates a new honeypot. */
   existing?: Honeypot;
+  /** The scenario that a new honeypot joins unless the person chooses another; only at creation. */
+  scenario?: string;
   busy: boolean;
   submitLabel: string;
 }>();
@@ -31,6 +34,7 @@ const enabled = ref(props.existing?.enabled ?? true);
 const techniques = ref(props.existing?.techniques.join(', ') ?? '');
 // An empty choice at creation means the default of the server.
 const severity = ref<Honeypot['severity'] | ''>(props.existing?.severity ?? '');
+const scenarioId = ref('');
 
 const parsed = computed(() => parseTechniques(techniques.value));
 const problem = computed(() =>
@@ -51,6 +55,9 @@ function send(): void {
     const body: Create = { service: service.value, name: trimmed, notes: notes.value, enabled: enabled.value, techniques: parsed.value.ids };
     if (severity.value !== '') {
       body.severity = severity.value;
+    }
+    if (scenarioId.value !== '') {
+      body.scenario_id = scenarioId.value;
     }
     emit('create', body);
     return;
@@ -121,6 +128,8 @@ function send(): void {
       <span id="techniques-hint" class="hint">{{ t('honeytokens.techniquesHint') }}</span>
       <span v-if="problem" class="hint problem" role="alert">{{ problem }}</span>
     </div>
+
+    <ScenarioSelect v-if="existing === undefined" v-model="scenarioId" :preselected="scenario" />
 
     <div class="field">
       <label class="check" for="enabled"><input id="enabled" v-model="enabled" type="checkbox" />{{ t('field.enabled') }}</label>

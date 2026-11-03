@@ -29,6 +29,14 @@ func TestMapWriteError_MapsTheChecksOfTheSchema(t *testing.T) {
 			t.Errorf("mapWriteError(%s) = %v, want %v", constraint, got, want)
 		}
 	}
+	missing := fmt.Errorf("insert: %w", &pgconn.PgError{Code: db.ForeignKeyViolation, ConstraintName: "honeypots_scenario_id_fkey"})
+	if got := mapWriteError(missing); !errors.Is(got, ErrScenarioNotFound) {
+		t.Errorf("mapWriteError(scenario key) = %v, want ErrScenarioNotFound", got)
+	}
+	otherKey := &pgconn.PgError{Code: db.ForeignKeyViolation, ConstraintName: "honeypots_other_fkey"}
+	if got := mapWriteError(otherKey); !errors.Is(got, otherKey) {
+		t.Errorf("mapWriteError(other key) = %v, want it unchanged", got)
+	}
 	other := &pgconn.PgError{Code: db.CheckViolation, ConstraintName: "honeypots_updated_at_check"}
 	if got := mapWriteError(other); !errors.Is(got, other) {
 		t.Errorf("mapWriteError(other check) = %v, want it unchanged", got)

@@ -1755,7 +1755,13 @@ paths:
         A `dns` honeytoken needs the zones of the DNS role. Without them, the
         request receives `422` with the code `dns_not_configured`.
 
-        The audit log records the creation as `honeytoken.create`.
+        With `scenario_id`, the honeytoken joins that scenario when it is
+        created, as `PUT /api/v1/honeytokens/{id}/scenario` would let it join
+        it afterwards. A scenario that does not exist receives `422` with the
+        code `scenario_not_found`, and nothing is created.
+
+        The audit log records the creation as `honeytoken.create`, with the
+        field `scenario_id` if the honeytoken joined a scenario.
       tags: [honeytokens]
       x-access: honeytokens:write
       security:
@@ -1785,7 +1791,7 @@ paths:
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
         "422":
-          description: The request creates a `dns` honeytoken, but the console knows no zone of the DNS role (`dns_not_configured`).
+          description: The request creates a `dns` honeytoken, but the console knows no zone of the DNS role (`dns_not_configured`), or the scenario does not exist (`scenario_not_found`).
           content:
             application/json:
               schema:
@@ -2085,7 +2091,13 @@ paths:
         The service cannot be changed, because the sensor is configured for
         it: to emulate another service, create a new honeypot.
 
-        The audit log records the creation as `honeypot.create`.
+        With `scenario_id`, the honeypot joins that scenario when it is
+        created, as `PUT /api/v1/honeypots/{id}/scenario` would let it join it
+        afterwards. A scenario that does not exist receives `422` with the code
+        `scenario_not_found`, and nothing is created.
+
+        The audit log records the creation as `honeypot.create`, with the field
+        `scenario_id` if the honeypot joined a scenario.
       tags: [honeypots]
       x-access: honeypots:write
       security:
@@ -2114,6 +2126,12 @@ paths:
           $ref: "#/components/responses/BodyTooLarge"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: The scenario does not exist (`scenario_not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
@@ -5000,6 +5018,10 @@ components:
           type: string
           enum: [low, medium, high, critical]
           description: The severity that the events of the honeypot receive. Without it, `medium`.
+        scenario_id:
+          type: string
+          format: uuid
+          description: The scenario that the honeypot joins when it is created. Without it, the honeypot stands alone.
 
     UpdateHoneypotRequest:
       type: object
@@ -5412,6 +5434,10 @@ components:
           type: string
           enum: [low, medium, high, critical]
           description: The severity that the events of the honeytoken receive. Without it, the default of the type.
+        scenario_id:
+          type: string
+          format: uuid
+          description: The scenario that the honeytoken joins when it is created. Without it, the honeytoken stands alone.
 
     UpdateHoneytokenRequest:
       type: object

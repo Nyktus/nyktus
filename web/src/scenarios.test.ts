@@ -127,6 +127,15 @@ describe('a scenario', () => {
     expect(s.requests.map((r) => r.url)).toContain(`/api/v1/honeypots?limit=50&scenario_id=${scenarioId}`);
   });
 
+  test('links to the forms that create a honeytoken or a honeypot in it, for whoever may create them', async () => {
+    for (const [role, offered] of [['admin', true], ['user', true], ['viewer', false]] as const) {
+      const { wrapper } = await boot(server(role), path);
+      const links = wrapper.findAll('a').map((a) => a.attributes('href'));
+      expect(links.includes(`/honeytokens/new?scenario=${scenarioId}`), role).toBe(offered);
+      expect(links.includes(`/honeypots/new?scenario=${scenarioId}`), role).toBe(offered);
+    }
+  });
+
   test('says when it has none', async () => {
     const { wrapper } = await boot(server(), path);
     expect(wrapper.findAll('.hint').filter((h) => h.text().startsWith('No honeytokens or honeypots')).length).toBe(2);

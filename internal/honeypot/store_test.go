@@ -959,3 +959,119 @@ func TestStore_List_FiltersByScenario(t *testing.T) {
 		t.Errorf("List(scenario, disabled) = %+v, %v; want the two disabled honeypots", page, err)
 	}
 }
+
+// createIn creates a honeypot that joins a scenario, in a transaction, as the
+// package function does.
+func createIn(ctx context.Context, d testDB, spec honeypot.Spec) (honeypot.Created, error) {
+	var c honeypot.Created
+	err := pgx.BeginFunc(ctx, d.console, func(tx pgx.Tx) error {
+		var err error
+		c, err = honeypot.NewStore(tx).Create(ctx, spec)
+		return err
+	})
+	return c, err
+}
+
+func countHoneypots(t *testing.T, d testDB) int {
+	t.Helper()
+	var n int
+	if err := d.owner.QueryRow(t.Context(), `SELECT count(*) FROM honeypots`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// A honeypot created with a scenario belongs to it from the start; one that
+// names a scenario that does not exist, or whose identifier is not one, is not
+// created.
+func TestStore_Create_JoinsAScenario(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	sc := createScenario(t, d)
+
+	c, err := createIn(t.Context(), d, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", ScenarioID: sc})
+	if err != nil || c.ScenarioID == nil || *c.ScenarioID != sc {
+		t.Fatalf("Create() = %+v, %v; want it in the scenario", c.Honeypot, err)
+	}
+	if got, err := honeypot.NewStore(d.console).Get(t.Context(), c.ID); err != nil || got.ScenarioID == nil || *got.ScenarioID != sc {
+		t.Errorf("Get() = %+v, %v; want it in the scenario", got, err)
+	}
+
+	for _, id := range []string{"00000000-0000-4000-8000-000000000000", "not-a-uuid"} {
+		if _, err := createIn(t.Context(), d, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "b", ScenarioID: id}); !errors.Is(err, honeypot.ErrScenarioNotFound) {
+			t.Errorf("Create(scenario %q) error = %v, want ErrScenarioNotFound", id, err)
+		}
+	}
+	if n := countHoneypots(t, d); n != 1 {
+		t.Errorf("honeypots = %d, want only the first", n)
+	}
+}
+
+// A creation that waits for a scenario that is deleted meanwhile finds no
+// scenario, instead of failing on the foreign key or joining one that is gone.
+func TestStore_Create_ToAScenarioDeletedMeanwhile(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	sc := createScenario(t, d)
+
+	deleter, err := d.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = deleter.Rollback(context.WithoutCancel(t.Context())) }()
+	if _, err := deleter.Exec(t.Context(), `SELECT FROM scenarios WHERE id = $1 FOR UPDATE`, sc); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := createIn(t.Context(), d, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", ScenarioID: sc})
+		done <- err
+	}()
+	waitForLockWait(t, d)
+	if _, err := deleter.Exec(t.Context(), `DELETE FROM scenarios WHERE id = $1`, sc); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleter.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, honeypot.ErrScenarioNotFound) {
+		t.Errorf("Create() error = %v, want ErrScenarioNotFound", err)
+	}
+	if n := countHoneypots(t, d); n != 0 {
+		t.Errorf("honeypots = %d, want none", n)
+	}
+}
+
+// The creation names the field scenario_id only when the honeypot joins a
+// scenario, and a failed entry leaves no honeypot behind.
+func TestCreate_WithAScenarioRecordsTheField(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	actor := createUser(t, d)
+	sc := createScenario(t, d)
+	ctx := t.Context()
+
+	ghost := audit.Actor{Kind: audit.ActorUser, Method: audit.AuthSession, UserID: "00000000-0000-4000-8000-000000000000"}
+	if _, err := honeypot.Create(ctx, d.console, ghost, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", ScenarioID: sc}); err == nil {
+		t.Error("Create() without audit entry succeeded")
+	}
+	if n := countHoneypots(t, d); n != 0 {
+		t.Errorf("honeypots = %d after the failed creation, want none", n)
+	}
+
+	in, err := honeypot.Create(ctx, d.console, actor, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", ScenarioID: sc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alone, err := honeypot.Create(ctx, d.console, actor, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []entry{
+		{"honeypot.create", "honeypot", in.ID, []string{"scenario_id"}, actor.UserID},
+		{"honeypot.create", "honeypot", alone.ID, []string{}, actor.UserID},
+	}
+	if got := entries(t, d); !sameEntries(got, want) {
+		t.Errorf("audit entries = %+v, want %+v", got, want)
+	}
+}
