@@ -78,9 +78,20 @@ func scan(row pgx.Row) (Honeytoken, error) {
 // The fields are validated before the insert, although the schema checks the
 // same rules, so that the stored techniques exist in the bundled version of
 // ATT&CK and a failing row never reaches the log of the database.
+//
+// A honeytoken that joins a scenario with spec.ScenarioID is created under the
+// same lock as SetScenario takes, so Create must then run in a transaction. It
+// returns ErrScenarioNotFound if there is no such scenario.
 func (s *Store) Create(ctx context.Context, spec Spec) (Honeytoken, error) {
 	if err := spec.validate(); err != nil {
 		return Honeytoken{}, err
+	}
+	var scenarioID *string
+	if spec.ScenarioID != "" {
+		if err := s.lockScenario(ctx, spec.ScenarioID); err != nil {
+			return Honeytoken{}, err
+		}
+		scenarioID = &spec.ScenarioID
 	}
 	techniques := spec.Techniques
 	if techniques == nil {
@@ -91,10 +102,10 @@ func (s *Store) Create(ctx context.Context, spec Spec) (Honeytoken, error) {
 		level = *spec.Severity
 	}
 	h, err := scan(s.db.QueryRow(ctx, `
-INSERT INTO honeytokens (type, name, notes, enabled, redirect_url, techniques, severity, trigger_value)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO honeytokens (type, name, notes, enabled, redirect_url, techniques, severity, trigger_value, scenario_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING `+columns, spec.Type, spec.Name, spec.Notes, spec.Enabled, spec.RedirectURL, techniques, level,
-		newTriggerValue()))
+		newTriggerValue(), scenarioID))
 	if err != nil {
 		return Honeytoken{}, fmt.Errorf("create honeytoken: %w", mapWriteError(err))
 	}
@@ -310,6 +321,21 @@ func (s *Store) GetForShare(ctx context.Context, id string) (Honeytoken, error) 
 	return h, nil
 }
 
+// lockScenario keeps the scenario id from being deleted until the end of the
+// transaction, before the honeytoken that refers to it is written. It returns
+// ErrScenarioNotFound if there is none.
+func (s *Store) lockScenario(ctx context.Context, id string) error {
+	var found bool
+	err := s.db.QueryRow(ctx, `SELECT true FROM scenarios WHERE id = $1 FOR KEY SHARE`, id).Scan(&found)
+	if db.NotFound(err) {
+		return ErrScenarioNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock scenario %s: %w", id, err)
+	}
+	return nil
+}
+
 // SetScenario assigns the honeytoken id to the scenario scenarioID, or
 // detaches it from its scenario if scenarioID is empty. It returns the
 // honeytoken after the change and whether it changed: a honeytoken that is
@@ -330,13 +356,8 @@ func (s *Store) SetScenario(ctx context.Context, id, scenarioID string) (Honeyto
 		return Honeytoken{}, false, err
 	}
 	if scenarioID != "" {
-		var found bool
-		err := s.db.QueryRow(ctx, `SELECT true FROM scenarios WHERE id = $1 FOR KEY SHARE`, scenarioID).Scan(&found)
-		if db.NotFound(err) {
-			return Honeytoken{}, false, ErrScenarioNotFound
-		}
-		if err != nil {
-			return Honeytoken{}, false, fmt.Errorf("lock scenario %s: %w", scenarioID, err)
+		if err := s.lockScenario(ctx, scenarioID); err != nil {
+			return Honeytoken{}, false, err
 		}
 	}
 	current, err := scan(s.db.QueryRow(ctx, `SELECT `+columns+` FROM honeytokens WHERE id = $1 FOR UPDATE`, id))
@@ -386,7 +407,7 @@ func record(ctx context.Context, q db.Querier, actor audit.Actor, action audit.A
 }
 
 // Create creates a honeytoken on behalf of actor and records it in the audit
-// log.
+// log, with the field scenario_id if it joins a scenario.
 func Create(ctx context.Context, d DB, actor audit.Actor, spec Spec) (Honeytoken, error) {
 	var h Honeytoken
 	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
@@ -394,7 +415,11 @@ func Create(ctx context.Context, d DB, actor audit.Actor, spec Spec) (Honeytoken
 		if h, err = NewStore(tx).Create(ctx, spec); err != nil {
 			return err
 		}
-		return record(ctx, tx, actor, audit.ActionHoneytokenCreate, h.ID, nil)
+		var changed []string
+		if spec.ScenarioID != "" {
+			changed = []string{FieldScenarioID}
+		}
+		return record(ctx, tx, actor, audit.ActionHoneytokenCreate, h.ID, changed)
 	})
 	if err != nil {
 		return Honeytoken{}, fmt.Errorf("create honeytoken: %w", err)

@@ -269,6 +269,8 @@ export const de: Record<MessageKey, string> = {
   'scenarios.delete.artifacts': 'Artefakte',
   'scenarios.delete.confirm': 'Szenario löschen',
 
+  'scenarioSelect.label': 'Szenario',
+  'scenarioSelect.none': 'Keines, einzeln',
   'scenarioAssign.none': 'Einzelbetrieb',
   'scenarioAssign.choose': 'Szenario wählen',
   'scenarioAssign.assign': 'Zum Szenario hinzufügen',

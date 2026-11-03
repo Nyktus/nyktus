@@ -1229,11 +1229,12 @@ REVOKE ALL ON FUNCTION public.attack_technique_ids_valid(text[]) FROM PUBLIC, ny
 -- The console evaluates the check of the techniques when it writes. It creates,
 -- lists, changes and deletes honeytokens and assigns them to scenarios; it
 -- cannot change the type or the trigger value of one, and identifiers and
--- creation times come from the database. A honeytoken is created alone and
--- joins a scenario through its own change.
+-- creation times come from the database. A honeytoken may join a scenario when
+-- it is created or later through its own change; the store locks the scenario
+-- first in both cases.
 GRANT EXECUTE ON FUNCTION public.attack_technique_ids_valid(text[]) TO nyktus_console;
 GRANT SELECT, DELETE ON public.honeytokens TO nyktus_console;
-GRANT INSERT (type, name, notes, enabled, redirect_url, techniques, severity, trigger_value) ON public.honeytokens TO nyktus_console;
+GRANT INSERT (type, name, notes, enabled, redirect_url, techniques, severity, trigger_value, scenario_id) ON public.honeytokens TO nyktus_console;
 GRANT UPDATE (name, notes, enabled, redirect_url, techniques, severity, scenario_id, updated_at) ON public.honeytokens TO nyktus_console;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
@@ -1245,7 +1246,7 @@ BEGIN
 		OR NOT has_function_privilege('nyktus_console', 'public.attack_technique_ids_valid(text[])', 'EXECUTE')
 		OR EXISTS (
 			SELECT FROM unnest(ARRAY['type', 'name', 'notes', 'enabled', 'redirect_url', 'techniques', 'severity',
-				'trigger_value']) AS c (name)
+				'trigger_value', 'scenario_id']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'INSERT')
 		)
 		OR EXISTS (
@@ -1259,7 +1260,7 @@ BEGIN
 	IF has_table_privilege('nyktus_console', 'public.honeytokens', 'INSERT, UPDATE, TRUNCATE, REFERENCES, TRIGGER')
 		OR has_any_column_privilege('nyktus_console', 'public.honeytokens', 'REFERENCES')
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['id', 'scenario_id', 'created_at', 'updated_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['id', 'created_at', 'updated_at']) AS c (name)
 			WHERE has_column_privilege('nyktus_console', 'public.honeytokens', c.name, 'INSERT')
 		)
 		OR EXISTS (
@@ -1374,7 +1375,7 @@ REVOKE ALL ON FUNCTION public.honeypots_clear_report() FROM PUBLIC, nyktus_conso
 -- database. It reads the hash of the secret, as it does for
 -- API keys: the hash of a random value of 256 bits reveals nothing usable.
 GRANT SELECT, DELETE ON public.honeypots TO nyktus_console;
-GRANT INSERT (service, name, notes, enabled, techniques, severity, secret_hash) ON public.honeypots TO nyktus_console;
+GRANT INSERT (service, name, notes, enabled, techniques, severity, secret_hash, scenario_id) ON public.honeypots TO nyktus_console;
 GRANT UPDATE (name, notes, enabled, techniques, severity, secret_hash, scenario_id, updated_at) ON public.honeypots TO nyktus_console;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
@@ -1385,7 +1386,7 @@ BEGIN
 		OR NOT has_table_privilege('nyktus_console', 'public.honeypots', 'DELETE')
 		OR EXISTS (
 			SELECT FROM unnest(ARRAY['service', 'name', 'notes', 'enabled', 'techniques', 'severity',
-				'secret_hash']) AS c (name)
+				'secret_hash', 'scenario_id']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.honeypots', c.name, 'INSERT')
 		)
 		OR EXISTS (
@@ -1400,7 +1401,7 @@ BEGIN
 		OR has_any_column_privilege('nyktus_console', 'public.honeypots', 'REFERENCES')
 		OR has_function_privilege('nyktus_console', 'public.honeypots_clear_report()', 'EXECUTE')
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['id', 'scenario_id', 'last_seen_at', 'sensor_version', 'created_at',
+			SELECT FROM unnest(ARRAY['id', 'last_seen_at', 'sensor_version', 'created_at',
 				'updated_at']) AS c (name)
 			WHERE has_column_privilege('nyktus_console', 'public.honeypots', c.name, 'INSERT')
 		)

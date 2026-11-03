@@ -183,6 +183,9 @@ type Spec struct {
 	// Severity is the severity of the honeytoken, or nil for the default of
 	// its type.
 	Severity *severity.Level
+	// ScenarioID is the scenario the honeytoken joins when it is created, or
+	// empty for one that stands alone.
+	ScenarioID string
 }
 
 func (s Spec) validate() error {

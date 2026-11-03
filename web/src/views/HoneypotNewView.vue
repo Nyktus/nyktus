@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
 import type { OperationTypes } from '../api/generated';
@@ -16,7 +16,10 @@ import { t } from '../i18n';
 
 type Body = OperationTypes['createHoneypot']['body'];
 
+const route = useRoute();
 const router = useRouter();
+// A link from a scenario names it, so that the new honeypot joins it.
+const scenario = typeof route.query.scenario === 'string' ? route.query.scenario : '';
 const busy = ref(false);
 const error = ref<string | undefined>();
 const createdId = ref<string | undefined>();
@@ -69,7 +72,7 @@ onBeforeUnmount(discard);
         <RouterLink class="button button-primary" :to="{ name: 'honeypot', params: { id: createdId } }">{{ t('honeypots.title') }}</RouterLink>
       </p>
     </template>
-    <HoneypotForm v-else :busy="busy" :submit-label="t('honeypots.create.submit')" @create="create" />
+    <HoneypotForm v-else :scenario="scenario" :busy="busy" :submit-label="t('honeypots.create.submit')" @create="create" />
   </section>
 </template>
 

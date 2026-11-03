@@ -267,6 +267,8 @@ export const en = {
   'scenarios.delete.artifacts': 'Artifacts',
   'scenarios.delete.confirm': 'Delete scenario',
 
+  'scenarioSelect.label': 'Scenario',
+  'scenarioSelect.none': 'None, standalone',
   'scenarioAssign.none': 'Standalone',
   'scenarioAssign.choose': 'Choose a scenario',
   'scenarioAssign.assign': 'Add to scenario',

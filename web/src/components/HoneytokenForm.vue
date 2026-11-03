@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, ref } from 'vue';
 import type { Honeytoken, OperationTypes } from '../api/generated';
 import { t } from '../i18n';
+import ScenarioSelect from './ScenarioSelect.vue';
 import { parseTechniques } from '../techniques';
 
 type Create = OperationTypes['createHoneytoken']['body'];
@@ -15,6 +16,8 @@ type Update = OperationTypes['updateHoneytoken']['body'];
 const props = defineProps<{
   /** The honeytoken to change; without one, the form creates a new honeytoken. */
   existing?: Honeytoken;
+  /** The scenario that a new honeytoken joins unless the person chooses another; only at creation. */
+  scenario?: string;
   busy: boolean;
   submitLabel: string;
 }>();
@@ -32,6 +35,7 @@ const redirect = ref(props.existing?.redirect_url ?? '');
 const techniques = ref(props.existing?.techniques.join(', ') ?? '');
 // An empty choice at creation means the default of the type.
 const severity = ref<Honeytoken['severity'] | ''>(props.existing?.severity ?? '');
+const scenarioId = ref(props.existing === undefined ? (props.scenario ?? '') : '');
 
 const parsed = computed(() => parseTechniques(techniques.value));
 const problem = computed(() =>
@@ -57,6 +61,9 @@ function send(): void {
     }
     if (severity.value !== '') {
       body.severity = severity.value;
+    }
+    if (scenarioId.value !== '') {
+      body.scenario_id = scenarioId.value;
     }
     emit('create', body);
     return;
@@ -144,6 +151,8 @@ function send(): void {
       <span id="techniques-hint" class="hint">{{ t('honeytokens.techniquesHint') }}</span>
       <span v-if="problem" class="hint problem" role="alert">{{ problem }}</span>
     </div>
+
+    <ScenarioSelect v-if="existing === undefined" v-model="scenarioId" />
 
     <div class="field">
       <label class="check" for="enabled"><input id="enabled" v-model="enabled" type="checkbox" />{{ t('field.enabled') }}</label>

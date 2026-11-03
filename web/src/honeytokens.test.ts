@@ -4,7 +4,7 @@
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { arrive, boot, submit, type } from './testing/boot';
-import { failure, fakeServer, honeytoken, json, noContent, sessionBody } from './testing/fakeServer';
+import { failure, fakeServer, honeytoken, json, noContent, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -217,6 +217,88 @@ describe('creating a honeytoken', () => {
     await submit(wrapper);
     expect(wrapper.get('[role=alert]').text()).toBe('The input is not valid.');
     expect((wrapper.get('#name').element as HTMLInputElement).value).toBe('Keep me');
+  });
+});
+
+describe('creating a honeytoken into a scenario', () => {
+  const created = () => json(201, honeytoken({ scenario_id: scenarioId }));
+  const withScenarios = (extra: Record<string, () => Response> = {}) =>
+    server('admin', {
+      'GET /api/v1/scenarios': () => json(200, { scenarios: [scenario()] }),
+      'POST /api/v1/honeytokens': created,
+      'GET /api/v1/honeytokens/c0ffee00-1111-4222-8333-944444444444': () => json(200, honeytoken({ scenario_id: scenarioId })),
+      ...extra,
+    });
+  const bodyOf = (s: ReturnType<typeof server>) => s.requests.find((r) => r.method === 'POST')?.body as Record<string, unknown>;
+
+  test('sends the scenario that was chosen', async () => {
+    const s = withScenarios();
+    const { wrapper } = await boot(s, '/honeytokens/new');
+    expect(wrapper.get<HTMLSelectElement>('#scenario').element.value).toBe('');
+    await type(wrapper, '#name', 'Linked');
+    await wrapper.get('#scenario').setValue(scenarioId);
+    await submit(wrapper);
+    expect(bodyOf(s)).toMatchObject({ name: 'Linked', scenario_id: scenarioId });
+  });
+
+  test('sends no scenario when none was chosen', async () => {
+    const s = withScenarios();
+    const { wrapper } = await boot(s, '/honeytokens/new');
+    await type(wrapper, '#name', 'Alone');
+    await submit(wrapper);
+    expect(bodyOf(s)).not.toHaveProperty('scenario_id');
+  });
+
+  test('takes the scenario that a link names', async () => {
+    const s = withScenarios();
+    const { wrapper } = await boot(s, `/honeytokens/new?scenario=${scenarioId}`);
+    expect(wrapper.get<HTMLSelectElement>('#scenario').element.value).toBe(scenarioId);
+    await type(wrapper, '#name', 'From a scenario');
+    await submit(wrapper);
+    expect(bodyOf(s)).toMatchObject({ scenario_id: scenarioId });
+  });
+
+  test('drops a scenario of the link that the list does not hold', async () => {
+    const s = withScenarios();
+    const { wrapper } = await boot(s, '/honeytokens/new?scenario=00000000-0000-4000-8000-000000000000');
+    expect(wrapper.get<HTMLSelectElement>('#scenario').element.value).toBe('');
+    await type(wrapper, '#name', 'Unknown');
+    await submit(wrapper);
+    expect(bodyOf(s)).not.toHaveProperty('scenario_id');
+  });
+
+  test('offers no choice, and sends none, where there is no scenario yet', async () => {
+    const s = server('admin', { 'POST /api/v1/honeytokens': () => json(201, honeytoken()) });
+    const { wrapper } = await boot(s, `/honeytokens/new?scenario=${scenarioId}`);
+    expect(wrapper.find('#scenario').exists()).toBe(false);
+    await type(wrapper, '#name', 'No scenarios');
+    await submit(wrapper);
+    expect(bodyOf(s)).not.toHaveProperty('scenario_id');
+  });
+
+  test('says so when the scenarios cannot be listed, and sends none', async () => {
+    const s = withScenarios({ 'GET /api/v1/scenarios': () => failure(503, 'unavailable') });
+    const { wrapper } = await boot(s, `/honeytokens/new?scenario=${scenarioId}`);
+    expect(wrapper.find('#scenario').exists()).toBe(false);
+    expect(wrapper.find('[role=alert]').exists()).toBe(true);
+    await type(wrapper, '#name', 'No list');
+    await submit(wrapper);
+    expect(bodyOf(s)).not.toHaveProperty('scenario_id');
+  });
+
+  test('says so when the scenario is gone, and creates nothing', async () => {
+    const s = withScenarios({ 'POST /api/v1/honeytokens': () => failure(422, 'scenario_not_found') });
+    const { wrapper } = await boot(s, '/honeytokens/new');
+    await type(wrapper, '#name', 'Too late');
+    await wrapper.get('#scenario').setValue(scenarioId);
+    await submit(wrapper);
+    expect(wrapper.get('[role=alert]').text()).toBe('The request cannot be carried out.');
+    expect(wrapper.find('#name').exists()).toBe(true);
+  });
+
+  test('is not offered when a honeytoken is changed', async () => {
+    const { wrapper } = await boot(withScenarios({ 'GET /api/v1/honeytokens/c0ffee00-1111-4222-8333-944444444444': () => json(200, honeytoken()) }), '/honeytokens/c0ffee00-1111-4222-8333-944444444444');
+    expect(wrapper.find('#scenario').exists()).toBe(false);
   });
 });
 

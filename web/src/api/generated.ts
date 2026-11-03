@@ -400,6 +400,7 @@ export interface CreateHoneypotRequest {
   enabled?: boolean;
   techniques?: string[];
   severity?: 'low' | 'medium' | 'high' | 'critical';
+  scenario_id?: string;
 }
 
 export interface UpdateHoneypotRequest {
@@ -515,6 +516,7 @@ export interface CreateHoneytokenRequest {
   redirect_url?: string;
   techniques?: string[];
   severity?: 'low' | 'medium' | 'high' | 'critical';
+  scenario_id?: string;
 }
 
 export interface UpdateHoneytokenRequest {

@@ -219,11 +219,14 @@ func TestCreate_RejectsInvalidRequests(t *testing.T) {
 		`{"service": "ssh", "name": "a", "secret": "chosen-by-the-client"}`,
 		`{"service": "ssh", "name": "a", "port": 22}`,
 		`{"service": "ssh", "name": "a", "last_seen_at": "2026-10-19T12:00:00Z"}`,
-		`{"service": "ssh", "name": "a", "scenario_id": "00000000-0000-4000-8000-000000000000"}`,
 		`{"service": "ssh", "name": "a", "enabled": null}`,
 		`{"service": "ssh", "name": "a", "notes": null}`,
 		`{"service": "ssh", "name": "a", "techniques": null}`,
 		`{"service": "ssh", "name": "a", "severity": null}`,
+		`{"service": "ssh", "name": "a", "scenario_id": null}`,
+		`{"service": "ssh", "name": "a", "scenario_id": ""}`,
+		`{"service": "ssh", "name": "a", "scenario_id": "not-a-uuid"}`,
+		`{"service": "ssh", "name": "a", "scenario_id": 7}`,
 	} {
 		rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeypots", "", body)
 		if rec.Code != http.StatusBadRequest || errorCode(t, rec) != "invalid_request" {
@@ -548,5 +551,33 @@ func TestScenario_RejectsInvalidRequests(t *testing.T) {
 		if rec := f.serve(t, f.h.DetachScenario, http.MethodDelete, "/", id, ""); rec.Code != http.StatusNotFound {
 			t.Errorf("DELETE %s = %d, want 404", id, rec.Code)
 		}
+	}
+}
+
+// A honeypot can join a scenario when it is created; one that names a
+// scenario that does not exist is not created, and the response still shows
+// the secret once.
+func TestCreate_JoinsAScenario(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	sc := f.createScenario(t)
+
+	got := f.create(t, `{"service": "ssh", "name": "a", "scenario_id": "`+sc+`"}`)
+	if got.ScenarioID == nil || *got.ScenarioID != sc || got.Secret == "" || got.SensorConfig == "" {
+		t.Errorf("POST = %+v, want it in the scenario %s with its secret", got, sc)
+	}
+	page := decode[listResponse](t, f.serve(t, f.h.List, http.MethodGet, "/api/v1/honeypots?scenario_id="+sc, "", ""))
+	if len(page.Honeypots) != 1 || page.Honeypots[0].ID != got.ID {
+		t.Errorf("GET ?scenario_id = %+v, want the new honeypot", page.Honeypots)
+	}
+
+	const missing = "00000000-0000-4000-8000-000000000000"
+	rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeypots", "", `{"service": "ssh", "name": "b", "scenario_id": "`+missing+`"}`)
+	if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != codeScenarioNotFound {
+		t.Errorf("POST unknown scenario = %d %s, want 422 %s", rec.Code, rec.Body, codeScenarioNotFound)
+	}
+	var n int
+	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM honeypots`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("honeypots = %d, %v; want only the first", n, err)
 	}
 }
