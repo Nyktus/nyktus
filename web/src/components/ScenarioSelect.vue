@@ -11,9 +11,12 @@ import { errorText } from '../api/messages';
 import { t } from '../i18n';
 import { loadScenarioChoices } from '../scenarioChoices';
 
-// The scenario that a new resource joins when it is created; empty for none. The scenario that
-// the page asked for is kept only if the list holds it, so that nothing is sent that the person
-// cannot see.
+const props = defineProps<{
+  /** The scenario that a link names. It is chosen only once the list holds it, so that nothing is sent that the person cannot see. */
+  preselected?: string;
+}>();
+
+// The scenario that a new resource joins when it is created; empty for none.
 const chosen = defineModel<string>({ required: true });
 
 const choices = ref<Scenario[]>([]);
@@ -27,11 +30,11 @@ onMounted(async () => {
     choices.value = result.scenarios;
     truncated.value = result.truncated;
     loaded.value = true;
-    if (!result.scenarios.some((s) => s.id === chosen.value)) {
-      chosen.value = '';
+    // The list is not shown before it is loaded, so the person has chosen nothing yet.
+    if (result.scenarios.some((s) => s.id === props.preselected)) {
+      chosen.value = props.preselected ?? '';
     }
   } catch (failure) {
-    chosen.value = '';
     error.value = errorText(failure instanceof ApiError ? failure : new ApiError('server', 0));
   }
 });

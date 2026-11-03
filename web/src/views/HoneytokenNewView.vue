@@ -4,7 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
@@ -15,7 +15,7 @@ import { t } from '../i18n';
 const route = useRoute();
 const router = useRouter();
 // A link from a scenario names it, so that the new honeytoken joins it.
-const scenario = typeof route.query.scenario === 'string' ? route.query.scenario : '';
+const scenario = computed(() => (typeof route.query.scenario === 'string' ? route.query.scenario : ''));
 const busy = ref(false);
 const error = ref<string | undefined>();
 
@@ -38,7 +38,7 @@ async function create(body: Parameters<typeof api.call<'createHoneytoken'>>[1]['
     <p><RouterLink :to="{ name: 'honeytokens' }">{{ t('honeytokens.back') }}</RouterLink></p>
     <div class="page-head"><h1>{{ t('honeytokens.create.title') }}</h1></div>
     <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
-    <HoneytokenForm :scenario="scenario" :busy="busy" :submit-label="t('honeytokens.create.submit')" @create="create" />
+    <HoneytokenForm :key="scenario" :scenario="scenario" :busy="busy" :submit-label="t('honeytokens.create.submit')" @create="create" />
   </section>
 </template>
 

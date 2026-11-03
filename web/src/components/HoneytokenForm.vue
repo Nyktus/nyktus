@@ -35,7 +35,7 @@ const redirect = ref(props.existing?.redirect_url ?? '');
 const techniques = ref(props.existing?.techniques.join(', ') ?? '');
 // An empty choice at creation means the default of the type.
 const severity = ref<Honeytoken['severity'] | ''>(props.existing?.severity ?? '');
-const scenarioId = ref(props.existing === undefined ? (props.scenario ?? '') : '');
+const scenarioId = ref('');
 
 const parsed = computed(() => parseTechniques(techniques.value));
 const problem = computed(() =>
@@ -152,7 +152,7 @@ function send(): void {
       <span v-if="problem" class="hint problem" role="alert">{{ problem }}</span>
     </div>
 
-    <ScenarioSelect v-if="existing === undefined" v-model="scenarioId" />
+    <ScenarioSelect v-if="existing === undefined" v-model="scenarioId" :preselected="scenario" />
 
     <div class="field">
       <label class="check" for="enabled"><input id="enabled" v-model="enabled" type="checkbox" />{{ t('field.enabled') }}</label>

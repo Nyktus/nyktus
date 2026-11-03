@@ -17,6 +17,8 @@ const (
 	// reject a row in its place.
 	CheckViolation  = "23514"
 	UniqueViolation = "23505"
+	// ForeignKeyViolation is raised when a row refers to a row that does not exist.
+	ForeignKeyViolation = "23503"
 )
 
 // invalidTextRepresentation is raised for an identifier that is not a UUID.

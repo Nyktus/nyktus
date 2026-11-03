@@ -255,6 +255,8 @@ export const en = {
   'scenarios.notesHint': 'Description of the scenario, for example its purpose and where the decoys are placed.',
   'scenarios.members.honeytokens': 'Honeytokens',
   'scenarios.members.honeypots': 'Honeypots',
+  'scenarios.members.addHoneytoken': 'Create honeytoken',
+  'scenarios.members.addHoneypot': 'Create honeypot',
   'scenarios.members.none': 'No honeytokens or honeypots have been added yet.',
   'scenarios.members.loadFailed': 'Linked honeytokens and honeypots could not be loaded.',
   'scenarios.remove': 'Remove from scenario',

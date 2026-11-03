@@ -258,6 +258,16 @@ describe('creating a honeytoken into a scenario', () => {
     expect(bodyOf(s)).toMatchObject({ scenario_id: scenarioId });
   });
 
+  test('follows the scenario of the link when only the link changes', async () => {
+    const other = scenario({ id: 'aaaaaaaa-1111-4222-8333-944444444444', name: 'Other story' });
+    const s = withScenarios({ 'GET /api/v1/scenarios': () => json(200, { scenarios: [scenario(), other] }) });
+    const { wrapper, router } = await boot(s, `/honeytokens/new?scenario=${scenarioId}`);
+    expect(wrapper.get<HTMLSelectElement>('#scenario').element.value).toBe(scenarioId);
+    await router.push({ name: 'honeytoken-new', query: { scenario: other.id } });
+    await flushPromises();
+    expect(wrapper.get<HTMLSelectElement>('#scenario').element.value).toBe(other.id);
+  });
+
   test('drops a scenario of the link that the list does not hold', async () => {
     const s = withScenarios();
     const { wrapper } = await boot(s, '/honeytokens/new?scenario=00000000-0000-4000-8000-000000000000');

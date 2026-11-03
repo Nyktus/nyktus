@@ -257,6 +257,8 @@ export const de: Record<MessageKey, string> = {
   'scenarios.notesHint': 'Beschreibung des Szenarios, z.B. wozu es dient, wo die Köder ausgelegt sind, etc.',
   'scenarios.members.honeytokens': 'Honeytokens',
   'scenarios.members.honeypots': 'Honeypots',
+  'scenarios.members.addHoneytoken': 'Honeytoken anlegen',
+  'scenarios.members.addHoneypot': 'Honeypot anlegen',
   'scenarios.members.none': 'Es wurden noch keine Honeytokens oder Honeypots hinzugefügt.',
   'scenarios.members.loadFailed': 'Verknüpfte Honeytokens und Honeypots konnten nicht geladen werden.',
   'scenarios.remove': 'Aus dem Szenario entfernen',

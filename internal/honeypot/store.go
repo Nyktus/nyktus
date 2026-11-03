@@ -47,6 +47,11 @@ func mapWriteError(err error) error {
 	if mapped, ok := constraintErrors[db.Violation(err, db.CheckViolation)]; ok {
 		return mapped
 	}
+	// A scenario that is deleted between the lock and the insert, which a
+	// store on a connection pool, without the lock, can meet.
+	if db.Violation(err, db.ForeignKeyViolation) == "honeypots_scenario_id_fkey" {
+		return ErrScenarioNotFound
+	}
 	return err
 }
 
