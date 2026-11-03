@@ -776,3 +776,122 @@ func TestStore_List_FiltersByScenario(t *testing.T) {
 		t.Errorf("List(scenario, disabled) = %+v, %v; want the two disabled honeytokens", page, err)
 	}
 }
+
+// createIn creates a honeytoken that joins a scenario, in a transaction, as the
+// package function does.
+func createIn(ctx context.Context, d testDB, spec honeytoken.Spec) (honeytoken.Honeytoken, error) {
+	var h honeytoken.Honeytoken
+	err := pgx.BeginFunc(ctx, d.console, func(tx pgx.Tx) error {
+		var err error
+		h, err = honeytoken.NewStore(tx).Create(ctx, spec)
+		return err
+	})
+	return h, err
+}
+
+func countHoneytokens(t *testing.T, d testDB) int {
+	t.Helper()
+	var n int
+	if err := d.owner.QueryRow(t.Context(), `SELECT count(*) FROM honeytokens`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// A honeytoken created with a scenario belongs to it from the start; one that
+// names a scenario that does not exist, or whose identifier is not one, is not
+// created.
+func TestStore_Create_JoinsAScenario(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	sc := createScenario(t, d)
+
+	h, err := createIn(t.Context(), d, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "a", ScenarioID: sc})
+	if err != nil || h.ScenarioID == nil || *h.ScenarioID != sc {
+		t.Fatalf("Create() = %+v, %v; want it in the scenario", h, err)
+	}
+	if got, err := honeytoken.NewStore(d.console).Get(t.Context(), h.ID); err != nil || got.ScenarioID == nil || *got.ScenarioID != sc {
+		t.Errorf("Get() = %+v, %v; want it in the scenario", got, err)
+	}
+
+	for _, id := range []string{"00000000-0000-4000-8000-000000000000", "not-a-uuid"} {
+		if _, err := createIn(t.Context(), d, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "b", ScenarioID: id}); !errors.Is(err, honeytoken.ErrScenarioNotFound) {
+			t.Errorf("Create(scenario %q) error = %v, want ErrScenarioNotFound", id, err)
+		}
+	}
+	if n := countHoneytokens(t, d); n != 1 {
+		t.Errorf("honeytokens = %d, want only the first", n)
+	}
+}
+
+// A creation that waits for a scenario that is deleted meanwhile finds no
+// scenario, instead of failing on the foreign key or joining one that is gone.
+func TestStore_Create_ToAScenarioDeletedMeanwhile(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	sc := createScenario(t, d)
+
+	deleter, err := d.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = deleter.Rollback(context.WithoutCancel(t.Context())) }()
+	if _, err := deleter.Exec(t.Context(), `SELECT FROM scenarios WHERE id = $1 FOR UPDATE`, sc); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := createIn(t.Context(), d, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "a", ScenarioID: sc})
+		done <- err
+	}()
+	waitForLockWait(t, d)
+	if _, err := deleter.Exec(t.Context(), `DELETE FROM scenarios WHERE id = $1`, sc); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleter.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, honeytoken.ErrScenarioNotFound) {
+		t.Errorf("Create() error = %v, want ErrScenarioNotFound", err)
+	}
+	if n := countHoneytokens(t, d); n != 0 {
+		t.Errorf("honeytokens = %d, want none", n)
+	}
+}
+
+// The creation names the field scenario_id only when the honeytoken joins a
+// scenario, and a failed entry leaves no honeytoken behind.
+func TestCreate_WithAScenarioRecordsTheField(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	actor := createUser(t, d)
+	sc := createScenario(t, d)
+	ctx := t.Context()
+
+	ghost := audit.Actor{Kind: audit.ActorUser, Method: audit.AuthSession, UserID: "00000000-0000-4000-8000-000000000000"}
+	if _, err := honeytoken.Create(ctx, d.console, ghost, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "a", ScenarioID: sc}); err == nil {
+		t.Error("Create() without audit entry succeeded")
+	}
+	if n := countHoneytokens(t, d); n != 0 {
+		t.Errorf("honeytokens = %d after the failed creation, want none", n)
+	}
+
+	in, err := honeytoken.Create(ctx, d.console, actor, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "a", ScenarioID: sc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alone, err := honeytoken.Create(ctx, d.console, actor, honeytoken.Spec{Type: honeytoken.TypeWebURL, Name: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []entry{
+		{"honeytoken.create", "honeytoken", in.ID, []string{"scenario_id"}, actor.UserID},
+		{"honeytoken.create", "honeytoken", alone.ID, []string{}, actor.UserID},
+	}
+	if got := entries(t, d); !slices.EqualFunc(got, want, func(a, b entry) bool {
+		return a.Action == b.Action && a.ResourceType == b.ResourceType && a.ResourceID == b.ResourceID &&
+			slices.Equal(a.ChangedFields, b.ChangedFields) && a.ActorUserID == b.ActorUserID
+	}) {
+		t.Errorf("audit entries = %+v, want %+v", got, want)
+	}
+}

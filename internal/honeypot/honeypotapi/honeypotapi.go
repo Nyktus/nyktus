@@ -22,7 +22,7 @@ import (
 // Error codes of the honeypots.
 const (
 	// codeScenarioNotFound answers the assignment to a scenario that does not
-	// exist.
+	// exist, also when a honeypot is created into it.
 	codeScenarioNotFound = "scenario_not_found"
 	// codeInScenario answers the assignment of a honeypot that belongs to
 	// another scenario.
@@ -193,6 +193,9 @@ type createRequest struct {
 	// Severity is the severity of the honeypot; without it, the default of its
 	// service.
 	Severity httpx.Optional[severity.Level] `json:"severity"`
+	// ScenarioID is the scenario the honeypot joins; without it, it stands
+	// alone.
+	ScenarioID httpx.Optional[string] `json:"scenario_id"`
 }
 
 // Create handles POST /api/v1/honeypots.
@@ -205,6 +208,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
+	if req.ScenarioID.Set && !httpx.ValidID(req.ScenarioID.Value) {
+		invalid(w, r, "scenario_id must be a UUID in lower case")
+		return
+	}
 	spec := honeypot.Spec{
 		Service:    req.Service,
 		Name:       req.Name,
@@ -212,6 +219,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Enabled:    !req.Enabled.Set || req.Enabled.Value,
 		Techniques: req.Techniques.Value,
 		Severity:   req.Severity.Ptr(),
+		ScenarioID: req.ScenarioID.Value,
 	}
 	c, err := honeypot.Create(r.Context(), h.db, p.Actor(), spec)
 	if err != nil {
@@ -330,9 +338,6 @@ func (h *Handler) DetachScenario(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) setScenario(w http.ResponseWriter, r *http.Request, p access.Principal, scenarioID string) {
 	hp, err := honeypot.SetScenario(r.Context(), h.db, p.Actor(), r.PathValue("id"), scenarioID)
 	switch {
-	case errors.Is(err, honeypot.ErrScenarioNotFound):
-		httpx.WriteError(w, r, http.StatusUnprocessableEntity, codeScenarioNotFound, "the scenario does not exist")
-		return
 	case errors.Is(err, honeypot.ErrInOtherScenario):
 		httpx.WriteError(w, r, http.StatusConflict, codeInScenario,
 			"the honeypot belongs to another scenario; remove it from that scenario first")
@@ -378,6 +383,8 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, op string, 
 		invalid(w, r, techniquesRule)
 	case errors.Is(err, honeypot.ErrInvalidSeverity):
 		invalid(w, r, severityRule)
+	case errors.Is(err, honeypot.ErrScenarioNotFound):
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, codeScenarioNotFound, "the scenario does not exist")
 	default:
 		httpx.ServerError(w, r, h.logger, op, err)
 	}

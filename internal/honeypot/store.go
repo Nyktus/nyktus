@@ -47,6 +47,11 @@ func mapWriteError(err error) error {
 	if mapped, ok := constraintErrors[db.Violation(err, db.CheckViolation)]; ok {
 		return mapped
 	}
+	// A scenario that is deleted between the lock and the insert, which a
+	// store on a connection pool, without the lock, can meet.
+	if db.Violation(err, db.ForeignKeyViolation) == "honeypots_scenario_id_fkey" {
+		return ErrScenarioNotFound
+	}
 	return err
 }
 
@@ -93,9 +98,20 @@ func newSecret() (Secret, []byte, error) {
 // although the schema checks the same rules, so that the stored techniques
 // exist in the bundled version of ATT&CK and a failing row never reaches the
 // log of the database.
+//
+// A honeypot that joins a scenario with spec.ScenarioID is created under the
+// same lock as SetScenario takes, so Create must then run in a transaction. It
+// returns ErrScenarioNotFound if there is no such scenario.
 func (s *Store) Create(ctx context.Context, spec Spec) (Created, error) {
 	if err := spec.validate(); err != nil {
 		return Created{}, err
+	}
+	var scenarioID *string
+	if spec.ScenarioID != "" {
+		if err := s.lockScenario(ctx, spec.ScenarioID); err != nil {
+			return Created{}, err
+		}
+		scenarioID = &spec.ScenarioID
 	}
 	techniques := spec.Techniques
 	if techniques == nil {
@@ -110,9 +126,9 @@ func (s *Store) Create(ctx context.Context, spec Spec) (Created, error) {
 		return Created{}, err
 	}
 	h, err := scan(s.db.QueryRow(ctx, `
-INSERT INTO honeypots (service, name, notes, enabled, techniques, severity, secret_hash)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING `+columns, spec.Service, spec.Name, spec.Notes, spec.Enabled, techniques, level, hash))
+INSERT INTO honeypots (service, name, notes, enabled, techniques, severity, secret_hash, scenario_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING `+columns, spec.Service, spec.Name, spec.Notes, spec.Enabled, techniques, level, hash, scenarioID))
 	if err != nil {
 		return Created{}, fmt.Errorf("create honeypot: %w", mapWriteError(err))
 	}
@@ -320,6 +336,21 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// lockScenario keeps the scenario id from being deleted until the end of the
+// transaction, before the honeypot that refers to it is written. It returns
+// ErrScenarioNotFound if there is none.
+func (s *Store) lockScenario(ctx context.Context, id string) error {
+	var found bool
+	err := s.db.QueryRow(ctx, `SELECT true FROM scenarios WHERE id = $1 FOR KEY SHARE`, id).Scan(&found)
+	if db.NotFound(err) {
+		return ErrScenarioNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock scenario %s: %w", id, err)
+	}
+	return nil
+}
+
 // SetScenario assigns the honeypot id to the scenario scenarioID, or detaches
 // it from its scenario if scenarioID is empty. It returns the honeypot after
 // the change and whether it changed: a honeypot that is already where it is to
@@ -339,13 +370,8 @@ func (s *Store) SetScenario(ctx context.Context, id, scenarioID string) (Honeypo
 		return Honeypot{}, false, err
 	}
 	if scenarioID != "" {
-		var found bool
-		err := s.db.QueryRow(ctx, `SELECT true FROM scenarios WHERE id = $1 FOR KEY SHARE`, scenarioID).Scan(&found)
-		if db.NotFound(err) {
-			return Honeypot{}, false, ErrScenarioNotFound
-		}
-		if err != nil {
-			return Honeypot{}, false, fmt.Errorf("lock scenario %s: %w", scenarioID, err)
+		if err := s.lockScenario(ctx, scenarioID); err != nil {
+			return Honeypot{}, false, err
 		}
 	}
 	current, err := scan(s.db.QueryRow(ctx, `SELECT `+columns+` FROM honeypots WHERE id = $1 FOR UPDATE`, id))
@@ -395,7 +421,7 @@ func record(ctx context.Context, q db.Querier, actor audit.Actor, action audit.A
 }
 
 // Create creates a honeypot on behalf of actor and records it in the audit
-// log.
+// log, with the field scenario_id if it joins a scenario.
 func Create(ctx context.Context, d DB, actor audit.Actor, spec Spec) (Created, error) {
 	var c Created
 	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
@@ -403,7 +429,11 @@ func Create(ctx context.Context, d DB, actor audit.Actor, spec Spec) (Created, e
 		if c, err = NewStore(tx).Create(ctx, spec); err != nil {
 			return err
 		}
-		return record(ctx, tx, actor, audit.ActionHoneypotCreate, c.ID, nil)
+		var changed []string
+		if spec.ScenarioID != "" {
+			changed = []string{FieldScenarioID}
+		}
+		return record(ctx, tx, actor, audit.ActionHoneypotCreate, c.ID, changed)
 	})
 	if err != nil {
 		return Created{}, fmt.Errorf("create honeypot: %w", err)

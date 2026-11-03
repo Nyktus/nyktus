@@ -4,7 +4,7 @@
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { arrive, boot, submit, type } from './testing/boot';
-import { failure, fakeServer, honeypot, honeypotConfig, honeypotId, honeypotSecret, json, noContent, sessionBody, withSecret } from './testing/fakeServer';
+import { failure, fakeServer, honeypot, honeypotConfig, honeypotId, honeypotSecret, json, noContent, scenario, scenarioId, sessionBody, withSecret } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -65,6 +65,63 @@ describe('the list of honeypots', () => {
     const s = server('viewer');
     const { router } = await boot(s, '/honeypots/new');
     await arrive(router, 'forbidden');
+  });
+});
+
+describe('creating a honeypot into a scenario', () => {
+  const created = () => json(201, withSecret(honeypot({ scenario_id: scenarioId })), { 'Cache-Control': 'no-store' });
+  const withScenarios = () =>
+    server('admin', { 'GET /api/v1/scenarios': () => json(200, { scenarios: [scenario()] }), 'POST /api/v1/honeypots': created });
+  const bodyOf = (s: ReturnType<typeof server>) => s.requests.find((r) => r.method === 'POST')?.body as Record<string, unknown>;
+
+  test('sends the scenario that was chosen, and none when none was', async () => {
+    const s = withScenarios();
+    const { wrapper } = await boot(s, '/honeypots/new');
+    expect(wrapper.get<HTMLSelectElement>('#scenario').element.value).toBe('');
+    await type(wrapper, '#name', 'Linked');
+    await wrapper.get('#scenario').setValue(scenarioId);
+    await submit(wrapper);
+    expect(bodyOf(s)).toMatchObject({ name: 'Linked', service: 'ssh', scenario_id: scenarioId });
+
+    const alone = withScenarios();
+    const second = await boot(alone, '/honeypots/new');
+    await type(second.wrapper, '#name', 'Alone');
+    await submit(second.wrapper);
+    expect(bodyOf(alone)).not.toHaveProperty('scenario_id');
+  });
+
+  test('takes the scenario that a link names, and drops one that the list does not hold', async () => {
+    const s = withScenarios();
+    const { wrapper } = await boot(s, `/honeypots/new?scenario=${scenarioId}`);
+    expect(wrapper.get<HTMLSelectElement>('#scenario').element.value).toBe(scenarioId);
+    await type(wrapper, '#name', 'From a scenario');
+    await submit(wrapper);
+    expect(bodyOf(s)).toMatchObject({ scenario_id: scenarioId });
+
+    const unknown = withScenarios();
+    const second = await boot(unknown, '/honeypots/new?scenario=00000000-0000-4000-8000-000000000000');
+    expect(second.wrapper.get<HTMLSelectElement>('#scenario').element.value).toBe('');
+    await type(second.wrapper, '#name', 'Unknown');
+    await submit(second.wrapper);
+    expect(bodyOf(unknown)).not.toHaveProperty('scenario_id');
+  });
+
+  test('still shows the secret once, and says so when the scenario is gone', async () => {
+    const s = withScenarios();
+    const { wrapper } = await boot(s, `/honeypots/new?scenario=${scenarioId}`);
+    await type(wrapper, '#name', 'Secret');
+    await submit(wrapper);
+    expect(wrapper.get('[role=region]').text()).toContain(honeypotSecret);
+
+    const gone = server('admin', {
+      'GET /api/v1/scenarios': () => json(200, { scenarios: [scenario()] }),
+      'POST /api/v1/honeypots': () => failure(422, 'scenario_not_found'),
+    });
+    const second = await boot(gone, `/honeypots/new?scenario=${scenarioId}`);
+    await type(second.wrapper, '#name', 'Too late');
+    await submit(second.wrapper);
+    expect(second.wrapper.get('[role=alert]').text()).toBe('The request cannot be carried out.');
+    expect(second.wrapper.find('[role=region]').exists()).toBe(false);
   });
 });
 

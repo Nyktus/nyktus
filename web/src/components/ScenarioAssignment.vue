@@ -10,6 +10,7 @@ import { ApiError } from '../api/errors';
 import type { Scenario } from '../api/generated';
 import { errorText } from '../api/messages';
 import { t } from '../i18n';
+import { loadScenarioChoices } from '../scenarioChoices';
 
 const props = defineProps<{
   kind: 'honeytoken' | 'honeypot';
@@ -28,9 +29,6 @@ const busy = ref(false);
 const error = ref<string | undefined>();
 const choicesLoaded = ref(false);
 const truncated = ref(false);
-
-/** The most pages of scenarios that the picker reads, so that it cannot loop without end. */
-const maxPages = 10;
 
 function show(failure: unknown): string {
   return errorText(failure instanceof ApiError ? failure : new ApiError('server', 0));
@@ -56,19 +54,10 @@ async function loadCurrent(): Promise<void> {
 }
 
 async function loadChoices(): Promise<void> {
-  const all: Scenario[] = [];
-  let cursor: string | undefined;
   try {
-    for (let page = 0; page < maxPages; page++) {
-      const { body } = await api.call('listScenarios', { query: { limit: 200, cursor } });
-      all.push(...body.scenarios);
-      cursor = body.next_cursor;
-      if (cursor === undefined) {
-        break;
-      }
-    }
-    choices.value = all;
-    truncated.value = cursor !== undefined;
+    const result = await loadScenarioChoices();
+    choices.value = result.scenarios;
+    truncated.value = result.truncated;
     choicesLoaded.value = true;
   } catch (failure) {
     error.value = show(failure);

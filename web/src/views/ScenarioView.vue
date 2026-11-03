@@ -240,7 +240,12 @@ onMounted(load);
       </div>
 
       <div class="section panel">
-        <h2>{{ t('scenarios.members.honeytokens') }}</h2>
+        <div class="head">
+          <h2>{{ t('scenarios.members.honeytokens') }}</h2>
+          <RouterLink v-if="canWriteHoneytokens" class="button button-ghost small" :to="{ name: 'honeytoken-new', query: { scenario: id } }">
+            {{ t('scenarios.members.addHoneytoken') }}
+          </RouterLink>
+        </div>
         <p v-if="honeytokens.error.value" class="notice notice-error" role="alert">{{ t('scenarios.members.loadFailed') }}</p>
         <p v-else-if="honeytokens.loaded.value && honeytokens.items.value.length === 0" class="hint">{{ t('scenarios.members.none') }}</p>
         <div v-else-if="honeytokens.items.value.length > 0" class="table-wrap">
@@ -266,7 +271,12 @@ onMounted(load);
       </div>
 
       <div class="section panel">
-        <h2>{{ t('scenarios.members.honeypots') }}</h2>
+        <div class="head">
+          <h2>{{ t('scenarios.members.honeypots') }}</h2>
+          <RouterLink v-if="canWriteHoneypots" class="button button-ghost small" :to="{ name: 'honeypot-new', query: { scenario: id } }">
+            {{ t('scenarios.members.addHoneypot') }}
+          </RouterLink>
+        </div>
         <p v-if="honeypots.error.value" class="notice notice-error" role="alert">{{ t('scenarios.members.loadFailed') }}</p>
         <p v-else-if="honeypots.loaded.value && honeypots.items.value.length === 0" class="hint">{{ t('scenarios.members.none') }}</p>
         <div v-else-if="honeypots.items.value.length > 0" class="table-wrap">

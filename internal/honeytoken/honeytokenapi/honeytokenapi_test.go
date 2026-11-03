@@ -162,6 +162,10 @@ func TestCreate_RejectsInvalidRequests(t *testing.T) {
 		`{"type": "web_url", "name": "a", "redirect_url": null}`,
 		`{"type": "web_url", "name": "a", "techniques": null}`,
 		`{"type": "web_url", "name": "a", "severity": null}`,
+		`{"type": "web_url", "name": "a", "scenario_id": null}`,
+		`{"type": "web_url", "name": "a", "scenario_id": ""}`,
+		`{"type": "web_url", "name": "a", "scenario_id": "not-a-uuid"}`,
+		`{"type": "web_url", "name": "a", "scenario_id": 7}`,
 	} {
 		rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeytokens", "", body)
 		if rec.Code != http.StatusBadRequest || errorCode(t, rec) != "invalid_request" {
@@ -507,5 +511,32 @@ func TestCreate_DNSHoneytokenNeedsZones(t *testing.T) {
 	}
 	if got := f.create(t, `{"type": "web_url", "name": "a"}`); got.TriggerURL == nil {
 		t.Error("a URL was not created without zones")
+	}
+}
+
+// A honeytoken can join a scenario when it is created; one that names a
+// scenario that does not exist is not created.
+func TestCreate_JoinsAScenario(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	sc := f.createScenario(t)
+
+	got := f.create(t, `{"type": "web_url", "name": "a", "scenario_id": "`+sc+`"}`)
+	if got.ScenarioID == nil || *got.ScenarioID != sc {
+		t.Errorf("POST scenario_id = %v, want %s", got.ScenarioID, sc)
+	}
+	page := decode[listResponse](t, f.serve(t, f.h.List, http.MethodGet, "/api/v1/honeytokens?scenario_id="+sc, "", ""))
+	if len(page.Honeytokens) != 1 || page.Honeytokens[0].ID != got.ID {
+		t.Errorf("GET ?scenario_id = %+v, want the new honeytoken", page.Honeytokens)
+	}
+
+	const missing = "00000000-0000-4000-8000-000000000000"
+	rec := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/honeytokens", "", `{"type": "web_url", "name": "b", "scenario_id": "`+missing+`"}`)
+	if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != codeScenarioNotFound {
+		t.Errorf("POST unknown scenario = %d %s, want 422 %s", rec.Code, rec.Body, codeScenarioNotFound)
+	}
+	var n int
+	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM honeytokens`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("honeytokens = %d, %v; want only the first", n, err)
 	}
 }
