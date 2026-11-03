@@ -4,6 +4,7 @@
 package honeypot_test
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,12 +16,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"nyktus.org/nyktus/internal/auth/token"
 	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/metrics"
 	"nyktus.org/nyktus/internal/platform/dbtest"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 	"nyktus.org/nyktus/internal/trigger"
 )
 
@@ -46,7 +49,7 @@ func TestSecret_CreatedByTheConsoleWorksAtTheTrigger(t *testing.T) {
 	ownerURL, consoleURL := schematest.Console(t)
 	_, triggerURL := dbtest.Role(t, ownerURL, "trigger", "IN ROLE "+pgx.Identifier{schematest.TriggerRole}.Sanitize())
 	owner := schematest.Open(t, ownerURL)
-	console := honeypot.NewStore(schematest.Open(t, consoleURL))
+	console := honeypot.NewStore(schematest.Open(t, consoleURL), secretboxtest.Keyring(t))
 	store := trigger.NewStore(schematest.Open(t, triggerURL))
 
 	c, err := console.Create(t.Context(), honeypot.Spec{Service: honeypot.ServiceSSH, Name: "p", Enabled: true})
@@ -157,7 +160,7 @@ func TestStatus_ConsoleAndMetricsShareTheBoundary(t *testing.T) {
 			setLastSeen(t, d, c.ID, *tt.age)
 		}
 		wantCounts[tt.want]++
-		got, err := honeypot.NewStore(d.console).Get(t.Context(), c.ID)
+		got, err := honeypot.NewStore(d.console, nil).Get(t.Context(), c.ID)
 		if err != nil || got.Status != tt.want {
 			t.Errorf("%s: Get() status = %q, %v; want %q", tt.name, got.Status, err, tt.want)
 		}
@@ -206,5 +209,29 @@ func TestStatuses_AreTheLabelsOfTheMetric(t *testing.T) {
 	slices.Sort(want)
 	if !slices.Equal(labels, want) {
 		t.Errorf("labels of nyktus_honeypots = %v, want %v", labels, want)
+	}
+}
+
+// The role of the trigger finds a honeypot by the hash of its secret through
+// its own function and reads no table, so it can read neither the hash nor the
+// sealed secret.
+func TestSealedSecret_IsUnreadableForTheTrigger(t *testing.T) {
+	t.Parallel()
+	ownerURL, _ := schematest.Console(t)
+	_, triggerURL := dbtest.Role(t, ownerURL, "trigger", "IN ROLE "+pgx.Identifier{schematest.TriggerRole}.Sanitize())
+	trigger := schematest.Open(t, triggerURL)
+
+	for _, statement := range []string{
+		"SELECT secret_sealed FROM honeypots",
+		"SELECT secret_hash FROM honeypots",
+		"INSERT INTO honeypots (service, name, severity, secret_hash, secret_sealed) VALUES ('ssh', 'p', 'low', sha256('a'), sha256('a'))",
+		"UPDATE honeypots SET secret_sealed = sha256('a')",
+	} {
+		_, err := trigger.Exec(t.Context(), statement)
+		var pgErr *pgconn.PgError
+		// 42501 is insufficient_privilege.
+		if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+			t.Errorf("%s: error = %v, want insufficient_privilege", statement, err)
+		}
 	}
 }

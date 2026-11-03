@@ -16,6 +16,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/platform/httpx"
+	"nyktus.org/nyktus/internal/platform/secretbox"
 	"nyktus.org/nyktus/internal/severity"
 )
 
@@ -47,14 +48,16 @@ const (
 type Handler struct {
 	logger *slog.Logger
 	db     honeypot.DB
+	keys   *secretbox.Keyring
 }
 
-// NewHandler returns the handlers of the honeypots.
-func NewHandler(logger *slog.Logger, d honeypot.DB) *Handler {
-	if logger == nil || d == nil {
-		panic("honeypotapi: handler needs a logger and a database")
+// NewHandler returns the handlers of the honeypots. The keys seal and open
+// the secrets of the honeypots.
+func NewHandler(logger *slog.Logger, d honeypot.DB, keys *secretbox.Keyring) *Handler {
+	if logger == nil || d == nil || keys == nil {
+		panic("honeypotapi: handler needs a logger, a database and encryption keys")
 	}
-	return &Handler{logger: logger, db: d}
+	return &Handler{logger: logger, db: d, keys: keys}
 }
 
 // Response is the representation of a honeypot. It never holds the secret.
@@ -97,13 +100,13 @@ func NewResponse(h honeypot.Honeypot) Response {
 	}
 }
 
-// createdResponse is the representation of a honeypot with its new secret,
-// which only the creation and the replacement of the secret return.
+// createdResponse is the representation of a honeypot with its secret, which
+// only the creation, the replacement and the read of the secret return.
 type createdResponse struct {
 	Response
 	Secret string `json:"secret"`
 	// SensorConfig is the entry of the honeypot for the configuration file of
-	// the sensor. It holds the secret and is shown once with it.
+	// the sensor. It holds the secret and is shown with it.
 	SensorConfig string `json:"sensor_config"`
 }
 
@@ -157,7 +160,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if q.After != nil {
 		after = &honeypot.Cursor{CreatedAt: q.After.Time, ID: q.After.ID}
 	}
-	list, next, err := honeypot.NewStore(h.db).List(r.Context(), f, q.Limit, after)
+	list, next, err := honeypot.NewStore(h.db, nil).List(r.Context(), f, q.Limit, after)
 	if err != nil {
 		httpx.ServerError(w, r, h.logger, "honeypot: list", err)
 		return
@@ -174,7 +177,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 // Get handles GET /api/v1/honeypots/{id}.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
-	p, err := honeypot.NewStore(h.db).Get(r.Context(), r.PathValue("id"))
+	p, err := honeypot.NewStore(h.db, nil).Get(r.Context(), r.PathValue("id"))
 	if err != nil {
 		h.writeError(w, r, "honeypot: get", err)
 		return
@@ -221,7 +224,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Severity:   req.Severity.Ptr(),
 		ScenarioID: req.ScenarioID.Value,
 	}
-	c, err := honeypot.Create(r.Context(), h.db, p.Actor(), spec)
+	c, err := honeypot.Create(r.Context(), h.db, h.keys, p.Actor(), spec)
 	if err != nil {
 		h.writeError(w, r, "honeypot: create", err)
 		return
@@ -278,12 +281,31 @@ func (h *Handler) ReplaceSecret(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	c, err := honeypot.ReplaceSecret(r.Context(), h.db, p.Actor(), r.PathValue("id"))
+	c, err := honeypot.ReplaceSecret(r.Context(), h.db, h.keys, p.Actor(), r.PathValue("id"))
 	if err != nil {
 		h.writeError(w, r, "honeypot: replace secret", err)
 		return
 	}
 	h.logger.InfoContext(r.Context(), "honeypot: replaced secret", slog.Any("honeypot", c.Honeypot))
+	writeCreated(w, http.StatusOK, c)
+}
+
+// ReadSecret handles GET /api/v1/honeypots/{id}/secret. The secret is
+// stored sealed and shown again to those who may change honeypots, because it
+// stands in plain text in the configuration of the sensor anyway. The read is
+// recorded in the audit log in the transaction that reads it, and a secret
+// that does not open, or does not match its hash, is never sent.
+func (h *Handler) ReadSecret(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.principal(w, r)
+	if !ok {
+		return
+	}
+	c, err := honeypot.ReadSecret(r.Context(), h.db, h.keys, p.Actor(), r.PathValue("id"))
+	if err != nil {
+		h.writeError(w, r, "honeypot: read secret", err)
+		return
+	}
+	h.logger.InfoContext(r.Context(), "honeypot: read secret", slog.Any("honeypot", c.Honeypot))
 	writeCreated(w, http.StatusOK, c)
 }
 

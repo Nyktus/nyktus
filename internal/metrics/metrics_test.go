@@ -43,10 +43,10 @@ func placeState(t *testing.T, owner *pgxpool.Pool) {
 	for _, statement := range []string{
 		"INSERT INTO honeytokens (type, name, severity, trigger_value) VALUES ('web_url', '" + honeytokenName + "', 'medium', repeat('a', 26))",
 		"SELECT * FROM record_honeytoken_request(repeat('a', 26), 'GET', '" + clientIP + "', '" + userAgent + "', '', '', '')",
-		`INSERT INTO honeypots (service, name, severity, secret_hash, created_at, last_seen_at) VALUES
-('ssh', '` + honeypotName + `', 'medium', sha256('a'), now() - interval '2 hours', NULL),
-('ssh', '` + honeypotName + `', 'medium', sha256('b'), now() - interval '2 hours', now() - interval '1 minute'),
-('ldap', '` + honeypotName + `', 'medium', sha256('c'), now() - interval '2 hours', now() - interval '1 hour')`,
+		`INSERT INTO honeypots (service, name, severity, secret_hash, secret_sealed, created_at, last_seen_at) VALUES
+('ssh', '` + honeypotName + `', 'medium', sha256('a'), sha256('a'), now() - interval '2 hours', NULL),
+('ssh', '` + honeypotName + `', 'medium', sha256('b'), sha256('b'), now() - interval '2 hours', now() - interval '1 minute'),
+('ldap', '` + honeypotName + `', 'medium', sha256('c'), sha256('c'), now() - interval '2 hours', now() - interval '1 hour')`,
 		`SELECT * FROM record_honeypot_session(sha256('b'), gen_random_uuid(), interval '0', 10, '` + attackerIP + `', 22, 'login_attempt',
 '` + clientVersion + `', NULL, NULL, NULL, NULL, '[{"username":"` + attackerName + `","password_length":3}]')`,
 		`INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, notes, resource_name)

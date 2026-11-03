@@ -27,6 +27,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/setup"
 	"nyktus.org/nyktus/internal/console"
 	nyktusdns "nyktus.org/nyktus/internal/dns"
+	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/incident"
 	"nyktus.org/nyktus/internal/platform/buildinfo"
 	"nyktus.org/nyktus/internal/platform/config"
@@ -249,6 +250,18 @@ func serveConsole(ctx context.Context, cfg config.Serve, logger *slog.Logger, st
 	}
 	if err := secondfactor.CheckKeys(ctx, pool, cfg.EncryptionKeys); err != nil {
 		return fmt.Errorf("console: %w", err)
+	}
+	if err := honeypot.CheckKeys(ctx, pool, cfg.EncryptionKeys); err != nil {
+		return fmt.Errorf("console: %w", err)
+	}
+	// After a rotation, the first key takes over, so that the old one can go.
+	resealed, err := honeypot.Reseal(ctx, pool, cfg.EncryptionKeys)
+	if err != nil {
+		return fmt.Errorf("console: %w", err)
+	}
+	if resealed.Done > 0 || resealed.Unreadable > 0 {
+		logger.InfoContext(ctx, "console: sealed secrets of honeypots again",
+			slog.Int("done", resealed.Done), slog.Int("unreadable", resealed.Unreadable))
 	}
 
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Console.Addr)

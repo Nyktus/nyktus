@@ -1297,6 +1297,14 @@ CREATE TABLE public.honeypots (
 	-- presents. A fast hash is enough for a value that cannot be guessed. A new
 	-- secret replaces the hash, so that the old one stops working at once.
 	secret_hash    bytea NOT NULL,
+	-- The same secret, sealed with AES-256-GCM, so that the console can show it
+	-- again to those who may change honeypots: it stands in plain text in the
+	-- configuration of the sensor anyway. The trigger role finds a honeypot by
+	-- the hash and has no access to this column. The sealed value is bound to the
+	-- hash, not to the identifier, which the database chooses only on insert, so
+	-- a sealed value moved to another row does not open. Unlike the secrets of
+	-- alert channels, the console reads this one.
+	secret_sealed  bytea NOT NULL,
 	-- The scenario that the honeypot belongs to, or NULL if it stands alone.
 	-- Only a dedicated operation changes it, as for honeytokens, and the key
 	-- does not cascade for the same reason.
@@ -1327,6 +1335,8 @@ CREATE TABLE public.honeypots (
 	CONSTRAINT honeypots_severity_check CHECK (severity IN ('low', 'medium', 'high', 'critical')),
 	CONSTRAINT honeypots_secret_hash_key UNIQUE (secret_hash),
 	CONSTRAINT honeypots_secret_hash_check CHECK (octet_length(secret_hash) = 32),
+	-- A key identifier, a nonce and a tag around a secret of 43 characters.
+	CONSTRAINT honeypots_secret_sealed_check CHECK (octet_length(secret_sealed) BETWEEN 30 AND 200),
 	CONSTRAINT honeypots_last_seen_at_check CHECK (last_seen_at >= created_at),
 	-- The version that a sensor reports, such as 0.1.0 or 0.1.0-rc.1+abc.
 	CONSTRAINT honeypots_sensor_version_check CHECK (sensor_version ~ '^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$'),
@@ -1373,10 +1383,11 @@ REVOKE ALL ON FUNCTION public.honeypots_clear_report() FROM PUBLIC, nyktus_conso
 -- scenarios and replaces their secrets; it cannot change the service of one or
 -- what a sensor reported, and identifiers and creation times come from the
 -- database. It reads the hash of the secret, as it does for
--- API keys: the hash of a random value of 256 bits reveals nothing usable.
+-- API keys: the hash of a random value of 256 bits reveals nothing usable. It
+-- also reads and writes the sealed secret, which it opens to show it again.
 GRANT SELECT, DELETE ON public.honeypots TO nyktus_console;
-GRANT INSERT (service, name, notes, enabled, techniques, severity, secret_hash, scenario_id) ON public.honeypots TO nyktus_console;
-GRANT UPDATE (name, notes, enabled, techniques, severity, secret_hash, scenario_id, updated_at) ON public.honeypots TO nyktus_console;
+GRANT INSERT (service, name, notes, enabled, techniques, severity, secret_hash, secret_sealed, scenario_id) ON public.honeypots TO nyktus_console;
+GRANT UPDATE (name, notes, enabled, techniques, severity, secret_hash, secret_sealed, scenario_id, updated_at) ON public.honeypots TO nyktus_console;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
 -- result is verified instead of assumed, in both directions.
@@ -1386,12 +1397,12 @@ BEGIN
 		OR NOT has_table_privilege('nyktus_console', 'public.honeypots', 'DELETE')
 		OR EXISTS (
 			SELECT FROM unnest(ARRAY['service', 'name', 'notes', 'enabled', 'techniques', 'severity',
-				'secret_hash', 'scenario_id']) AS c (name)
+				'secret_hash', 'secret_sealed', 'scenario_id']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.honeypots', c.name, 'INSERT')
 		)
 		OR EXISTS (
-			SELECT FROM unnest(ARRAY['name', 'notes', 'enabled', 'techniques', 'severity', 'secret_hash', 'scenario_id',
-				'updated_at']) AS c (name)
+			SELECT FROM unnest(ARRAY['name', 'notes', 'enabled', 'techniques', 'severity', 'secret_hash', 'secret_sealed',
+				'scenario_id', 'updated_at']) AS c (name)
 			WHERE NOT has_column_privilege('nyktus_console', 'public.honeypots', c.name, 'UPDATE')
 		) THEN
 		RAISE EXCEPTION 'nyktus_console lacks privileges on public.honeypots; run migrations as the owner of the schema';

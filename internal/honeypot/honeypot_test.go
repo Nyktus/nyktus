@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 	"nyktus.org/nyktus/internal/severity"
 )
 
@@ -145,14 +146,16 @@ func TestChange_ValidatesEachField(t *testing.T) {
 
 // A secret carries 256 bits from crypto/rand in 43 characters of base64url
 // without a prefix, which would mark the host of the sensor, and is stored as
-// its SHA-256 hash.
+// its SHA-256 hash and sealed for the console to show again, bound to the hash.
 func TestNewSecret(t *testing.T) {
 	t.Parallel()
 
+	keys := secretboxtest.Keyring(t)
+	store := &Store{keys: keys}
 	format := regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 	seen := map[Secret]bool{}
 	for range 1000 {
-		s, hash, err := newSecret()
+		s, hash, sealed, err := store.newSecret()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -162,7 +165,26 @@ func TestNewSecret(t *testing.T) {
 		if sum := sha256.Sum256([]byte(s)); !bytes.Equal(hash, sum[:]) {
 			t.Fatalf("hash of %q = %x, want its SHA-256", string(s), hash)
 		}
+		if opened, err := keys.Open(sealed, secretData(hash)); err != nil || string(opened) != string(s) {
+			t.Fatalf("Open(sealed) = %q, %v; want the secret", opened, err)
+		}
+		if _, err := keys.Open(sealed, secretData(make([]byte, len(hash)))); err == nil {
+			t.Fatal("a sealed secret opens with the hash of another secret")
+		}
+		if n := len(sealed); n < 30 || n > 200 {
+			t.Fatalf("len(sealed) = %d, want what the schema accepts", n)
+		}
 		seen[s] = true
+	}
+}
+
+// A store without keys creates no secret, instead of storing one that cannot
+// be shown again.
+func TestNewSecret_NeedsKeys(t *testing.T) {
+	t.Parallel()
+
+	if _, _, _, err := (&Store{}).newSecret(); !errors.Is(err, errNoKeys) {
+		t.Errorf("newSecret() without keys error = %v, want errNoKeys", err)
 	}
 }
 

@@ -32,6 +32,7 @@ var Actions = []Action{
 	ActionHoneypotCreate,
 	ActionHoneypotUpdate,
 	ActionHoneypotDelete,
+	ActionHoneypotSecretRead,
 	ActionScenarioCreate,
 	ActionScenarioUpdate,
 	ActionScenarioDelete,

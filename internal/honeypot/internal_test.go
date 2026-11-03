@@ -15,6 +15,7 @@ import (
 
 	"nyktus.org/nyktus/internal/platform/db"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 )
 
 // The store validates every field before it writes, so the checks of the
@@ -96,5 +97,36 @@ func TestList_CursorIsAnIndexConditionInTheGenericPlan(t *testing.T) {
 		if !strings.Contains(text, tt.index) || !strings.Contains(text, tt.cond) {
 			t.Errorf("generic plan does not seek into %s with %q:\n%s", tt.index, tt.cond, text)
 		}
+	}
+}
+
+// A sealed secret that opens, with the associated data of its own honeypot, to
+// a value other than the one its hash was made from is not handed out: the
+// trigger would not find the honeypot by it.
+func TestStore_Secret_RefusesASecretThatDoesNotMatchItsHash(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, consoleURL := schematest.Console(t)
+	owner, console := schematest.Open(t, ownerURL), schematest.Open(t, consoleURL)
+	keys := secretboxtest.Keyring(t)
+	store := NewStore(console, keys)
+
+	c, err := store.Create(t.Context(), Spec{Service: ServiceSSH, Name: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hash []byte
+	if err := owner.QueryRow(t.Context(), `SELECT secret_hash FROM honeypots WHERE id = $1`, c.ID).Scan(&hash); err != nil {
+		t.Fatal(err)
+	}
+	forged, err := keys.Seal([]byte("another secret that its hash was not made from"), secretData(hash))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(t.Context(), `UPDATE honeypots SET secret_sealed = $2 WHERE id = $1`, c.ID, forged); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := store.Secret(t.Context(), c.ID); !errors.Is(err, ErrSecretUnreadable) || got.Secret != "" {
+		t.Errorf("Secret() = %q, %v; want ErrSecretUnreadable and no secret", string(got.Secret), err)
 	}
 }

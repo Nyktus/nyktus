@@ -5,6 +5,7 @@ package honeypot
 
 import (
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/auth/token"
 	"nyktus.org/nyktus/internal/platform/db"
+	"nyktus.org/nyktus/internal/platform/secretbox"
 )
 
 // Errors of the store.
@@ -28,6 +30,13 @@ var (
 	ErrInOtherScenario = errors.New("honeypot belongs to another scenario")
 	// ErrInvalidPageSize is returned for a page size outside [1, MaxPageSize].
 	ErrInvalidPageSize = errors.New("invalid page size")
+	// ErrSecretUnreadable means that the sealed secret of a honeypot does not
+	// open, or does not match the hash that the trigger finds the honeypot by.
+	// The stored values are inconsistent, and the secret is replaced.
+	ErrSecretUnreadable = errors.New("the secret of the honeypot cannot be read")
+	// errNoKeys means that a store without keys was asked to seal or open a
+	// secret.
+	errNoKeys = errors.New("honeypot: store has no encryption keys")
 )
 
 // MaxPageSize is the largest page that List returns.
@@ -57,44 +66,67 @@ func mapWriteError(err error) error {
 
 // Store persists honeypots in PostgreSQL.
 type Store struct {
-	db db.Querier
+	db   db.Querier
+	keys *secretbox.Keyring
 }
 
 // NewStore returns a Store that runs its queries on q, a connection pool or a
-// transaction.
-func NewStore(q db.Querier) *Store {
+// transaction, and seals and opens secrets with keys. A store that creates no
+// honeypot and reads and replaces no secret, such as one that lists or deletes
+// honeypots, needs no keys.
+func NewStore(q db.Querier, keys *secretbox.Keyring) *Store {
 	if q == nil {
 		panic("honeypot: nil querier")
 	}
-	return &Store{db: q}
+	return &Store{db: q, keys: keys}
 }
 
-// columns are the columns of a honeypot without the hash of its secret, which
-// no caller needs, and with its status, which the database derives from its
+// columns are the columns of a honeypot without the hash of its secret and the
+// sealed secret, which only reading the secret needs, and with its status, which the database derives from its
 // last report with its own clock, so that every console process agrees and
 // tests move the stored time instead of a clock. The metrics use the same
 // function, so that both judge a honeypot alike; it implements OfflineAfter.
 const columns = `id, service, name, notes, enabled, techniques, severity, scenario_id, last_seen_at, sensor_version,
 public.honeypot_status(last_seen_at), created_at, updated_at`
 
-func scan(row pgx.Row) (Honeypot, error) {
+// scan reads a honeypot, and the values after its columns into more.
+func scan(row pgx.Row, more ...any) (Honeypot, error) {
 	var h Honeypot
-	err := row.Scan(&h.ID, &h.Service, &h.Name, &h.Notes, &h.Enabled, &h.Techniques, &h.Severity, &h.ScenarioID,
-		&h.LastSeenAt, &h.SensorVersion, &h.Status, &h.CreatedAt, &h.UpdatedAt)
+	err := row.Scan(append([]any{
+		&h.ID, &h.Service, &h.Name, &h.Notes, &h.Enabled, &h.Techniques, &h.Severity, &h.ScenarioID,
+		&h.LastSeenAt, &h.SensorVersion, &h.Status, &h.CreatedAt, &h.UpdatedAt,
+	}, more...)...)
 	return h, err
 }
 
-// newSecret returns a new secret and the hash under which it is stored.
-func newSecret() (Secret, []byte, error) {
-	s, err := token.New()
-	if err != nil {
-		return "", nil, fmt.Errorf("generate honeypot secret: %w", err)
+// newSecret returns a new secret, the hash under which the trigger finds the
+// honeypot, and the secret sealed for the console to show it again.
+func (s *Store) newSecret() (secret Secret, hash, sealed []byte, err error) {
+	if s.keys == nil {
+		return "", nil, nil, errNoKeys
 	}
-	return Secret(s), token.Hash(s), nil
+	raw, err := token.New()
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("generate honeypot secret: %w", err)
+	}
+	hash = token.Hash(raw)
+	sealed, err = s.keys.Seal([]byte(raw), secretData(hash))
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("seal honeypot secret: %w", err)
+	}
+	return Secret(raw), hash, sealed, nil
+}
+
+// secretData is the associated data of a sealed secret: its purpose and the
+// hash of the secret. The identifier of the honeypot is not known before the
+// row is inserted, but the hash is unique to it, so a sealed secret copied to
+// another row does not open.
+func secretData(hash []byte) []byte {
+	return append([]byte("honeypot secret:"), hash...)
 }
 
 // Create validates spec and stores a new honeypot with a new secret, of which
-// it stores only the hash. The fields are validated before the insert,
+// it stores the hash and the sealed secret. The fields are validated before the insert,
 // although the schema checks the same rules, so that the stored techniques
 // exist in the bundled version of ATT&CK and a failing row never reaches the
 // log of the database.
@@ -121,14 +153,14 @@ func (s *Store) Create(ctx context.Context, spec Spec) (Created, error) {
 	if spec.Severity != nil {
 		level = *spec.Severity
 	}
-	secret, hash, err := newSecret()
+	secret, hash, sealed, err := s.newSecret()
 	if err != nil {
 		return Created{}, err
 	}
 	h, err := scan(s.db.QueryRow(ctx, `
-INSERT INTO honeypots (service, name, notes, enabled, techniques, severity, secret_hash, scenario_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING `+columns, spec.Service, spec.Name, spec.Notes, spec.Enabled, techniques, level, hash, scenarioID))
+INSERT INTO honeypots (service, name, notes, enabled, techniques, severity, secret_hash, secret_sealed, scenario_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING `+columns, spec.Service, spec.Name, spec.Notes, spec.Enabled, techniques, level, hash, sealed, scenarioID))
 	if err != nil {
 		return Created{}, fmt.Errorf("create honeypot: %w", mapWriteError(err))
 	}
@@ -299,19 +331,19 @@ RETURNING `+columns, id, updated.Name, updated.Notes, updated.Enabled, updated.T
 }
 
 // ReplaceSecret gives the honeypot id a new secret and returns it with the
-// honeypot. The old secret stops working at once, because only the hash of the
-// new one is stored. The database clears what the last sensor reported, so
-// that the honeypot shows whether a sensor with the new secret has reported
-// yet. It returns ErrNotFound if there is no such honeypot.
+// honeypot. The old secret stops working at once, because the trigger finds the
+// honeypot by the hash of the new one. The database clears what the last sensor
+// reported, so that the honeypot shows whether a sensor with the new secret has
+// reported yet. It returns ErrNotFound if there is no such honeypot.
 func (s *Store) ReplaceSecret(ctx context.Context, id string) (Created, error) {
-	secret, hash, err := newSecret()
+	secret, hash, sealed, err := s.newSecret()
 	if err != nil {
 		return Created{}, err
 	}
 	h, err := scan(s.db.QueryRow(ctx, `
-UPDATE honeypots SET secret_hash = $2, updated_at = clock_timestamp()
+UPDATE honeypots SET secret_hash = $2, secret_sealed = $3, updated_at = clock_timestamp()
 WHERE id = $1
-RETURNING `+columns, id, hash))
+RETURNING `+columns, id, hash, sealed))
 	if db.NotFound(err) {
 		return Created{}, ErrNotFound
 	}
@@ -319,6 +351,116 @@ RETURNING `+columns, id, hash))
 		return Created{}, fmt.Errorf("replace secret of honeypot %s: %w", id, err)
 	}
 	return Created{Honeypot: h, Secret: secret}, nil
+}
+
+// Secret returns the honeypot id with its secret. It returns ErrNotFound if
+// there is no such honeypot and ErrSecretUnreadable if the sealed secret does
+// not open with the keys, or opens to a value that is not the one the trigger
+// finds the honeypot by: a sealed value that was moved or altered is refused,
+// never handed to a sensor.
+func (s *Store) Secret(ctx context.Context, id string) (Created, error) {
+	if s.keys == nil {
+		return Created{}, errNoKeys
+	}
+	var hash, sealed []byte
+	h, err := scan(s.db.QueryRow(ctx, `SELECT `+columns+`, secret_hash, secret_sealed FROM honeypots WHERE id = $1`, id), &hash, &sealed)
+	if db.NotFound(err) {
+		return Created{}, ErrNotFound
+	}
+	if err != nil {
+		return Created{}, fmt.Errorf("get secret of honeypot %s: %w", id, err)
+	}
+	plain, err := s.keys.Open(sealed, secretData(hash))
+	if err != nil {
+		return Created{}, fmt.Errorf("open secret of honeypot %s: %w: %w", id, ErrSecretUnreadable, err)
+	}
+	if !hmac.Equal(token.Hash(string(plain)), hash) {
+		return Created{}, fmt.Errorf("open secret of honeypot %s: %w: the hash differs", id, ErrSecretUnreadable)
+	}
+	return Created{Honeypot: h, Secret: Secret(plain)}, nil
+}
+
+// CheckKeys returns an error if the secret of a honeypot is sealed with a key
+// that keys lack, naming the ID of the key. The console refuses to start then,
+// because it could show the secret of none of these honeypots.
+func CheckKeys(ctx context.Context, q db.Querier, keys *secretbox.Keyring) error {
+	rows, err := q.Query(ctx, `SELECT DISTINCT get_byte(secret_sealed, 0) FROM public.honeypots`)
+	if err != nil {
+		return fmt.Errorf("list encryption keys in use: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int32])
+	if err != nil {
+		return fmt.Errorf("list encryption keys in use: %w", err)
+	}
+	for _, id := range ids {
+		if id < 1 || id > 255 || !keys.Has(byte(id)) {
+			return fmt.Errorf("stored secrets of honeypots are sealed with the key ID %d, which is not configured; add the key back to NYKTUS_ENCRYPTION_KEYS", id)
+		}
+	}
+	return nil
+}
+
+// Resealed counts what Reseal did.
+type Resealed struct {
+	// Done is the number of secrets that it sealed again with the current key.
+	Done int
+	// Unreadable is the number of secrets sealed with another key that did not
+	// open. They stay as they are: the read of such a secret fails, and
+	// replacing it repairs it.
+	Unreadable int
+}
+
+// Reseal seals the secrets again that another key than the current one of keys
+// sealed, so that the first key of a rotation takes over and the old one can be
+// retired. The console runs it when it starts, after CheckKeys, and it does
+// nothing where every secret is sealed with the current key.
+//
+// It locks the honeypots it changes, so that the replacement of a secret that
+// runs at the same time is not overwritten with the old secret, and it leaves
+// their other columns alone.
+func Reseal(ctx context.Context, d DB, keys *secretbox.Keyring) (Resealed, error) {
+	var done Resealed
+	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
+		done = Resealed{}
+		rows, err := tx.Query(ctx, `
+SELECT id, secret_hash, secret_sealed FROM honeypots
+WHERE get_byte(secret_sealed, 0) <> $1 ORDER BY id FOR UPDATE`, int(keys.CurrentKeyID()))
+		if err != nil {
+			return fmt.Errorf("list secrets to seal again: %w", err)
+		}
+		type old struct {
+			id           string
+			hash, sealed []byte
+		}
+		list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (old, error) {
+			var o old
+			err := row.Scan(&o.id, &o.hash, &o.sealed)
+			return o, err
+		})
+		if err != nil {
+			return fmt.Errorf("list secrets to seal again: %w", err)
+		}
+		for _, o := range list {
+			plain, err := keys.Open(o.sealed, secretData(o.hash))
+			if err != nil {
+				done.Unreadable++
+				continue
+			}
+			fresh, err := keys.Seal(plain, secretData(o.hash))
+			if err != nil {
+				return fmt.Errorf("seal secret of honeypot %s again: %w", o.id, err)
+			}
+			if _, err := tx.Exec(ctx, `UPDATE honeypots SET secret_sealed = $2 WHERE id = $1`, o.id, fresh); err != nil {
+				return fmt.Errorf("store secret of honeypot %s sealed again: %w", o.id, err)
+			}
+			done.Done++
+		}
+		return nil
+	})
+	if err != nil {
+		return Resealed{}, err
+	}
+	return done, nil
 }
 
 // Delete deletes the honeypot id. It returns ErrNotFound if there is none.
@@ -422,11 +564,11 @@ func record(ctx context.Context, q db.Querier, actor audit.Actor, action audit.A
 
 // Create creates a honeypot on behalf of actor and records it in the audit
 // log, with the field scenario_id if it joins a scenario.
-func Create(ctx context.Context, d DB, actor audit.Actor, spec Spec) (Created, error) {
+func Create(ctx context.Context, d DB, keys *secretbox.Keyring, actor audit.Actor, spec Spec) (Created, error) {
 	var c Created
 	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
 		var err error
-		if c, err = NewStore(tx).Create(ctx, spec); err != nil {
+		if c, err = NewStore(tx, keys).Create(ctx, spec); err != nil {
 			return err
 		}
 		var changed []string
@@ -451,7 +593,7 @@ func Update(ctx context.Context, d DB, actor audit.Actor, id string, c Change) (
 			changed []string
 			err     error
 		)
-		if h, changed, err = NewStore(tx).Update(ctx, id, c); err != nil || len(changed) == 0 {
+		if h, changed, err = NewStore(tx, nil).Update(ctx, id, c); err != nil || len(changed) == 0 {
 			return err
 		}
 		return record(ctx, tx, actor, audit.ActionHoneypotUpdate, id, changed)
@@ -466,17 +608,43 @@ func Update(ctx context.Context, d DB, actor audit.Actor, id string, c Change) (
 // Store.ReplaceSecret does, and records the change of the field secret in the
 // audit log. Clearing what the last sensor reported follows from it and is not
 // recorded as a field of its own.
-func ReplaceSecret(ctx context.Context, d DB, actor audit.Actor, id string) (Created, error) {
+func ReplaceSecret(ctx context.Context, d DB, keys *secretbox.Keyring, actor audit.Actor, id string) (Created, error) {
 	var c Created
 	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
 		var err error
-		if c, err = NewStore(tx).ReplaceSecret(ctx, id); err != nil {
+		if c, err = NewStore(tx, keys).ReplaceSecret(ctx, id); err != nil {
 			return err
 		}
 		return record(ctx, tx, actor, audit.ActionHoneypotUpdate, id, []string{FieldSecret})
 	})
 	if err != nil {
 		return Created{}, fmt.Errorf("replace secret of honeypot: %w", err)
+	}
+	return c, nil
+}
+
+// ReadSecret returns the honeypot id with its secret on behalf of actor, as
+// Store.Secret does, and records the read in the audit log in the same
+// transaction, so that the secret never leaves without an entry. Every read is
+// recorded, unlike other reads that a caller can repeat at will: it is rare,
+// and an entry that a throttle left out would be the one that mattered. The
+// entry holds the honeypot, never the secret.
+func ReadSecret(ctx context.Context, d DB, keys *secretbox.Keyring, actor audit.Actor, id string) (Created, error) {
+	var c Created
+	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
+		var err error
+		if c, err = NewStore(tx, keys).Secret(ctx, id); err != nil {
+			return err
+		}
+		return audit.NewStore(tx).Record(ctx, audit.Entry{
+			Action:   audit.ActionHoneypotSecretRead,
+			Outcome:  audit.OutcomeSuccess,
+			Actor:    actor,
+			Resource: audit.Resource{Type: ResourceType, ID: id},
+		}.WithRequest(ctx))
+	})
+	if err != nil {
+		return Created{}, fmt.Errorf("read secret of honeypot: %w", err)
 	}
 	return c, nil
 }
@@ -492,7 +660,7 @@ func SetScenario(ctx context.Context, d DB, actor audit.Actor, id, scenarioID st
 			changed bool
 			err     error
 		)
-		if h, changed, err = NewStore(tx).SetScenario(ctx, id, scenarioID); err != nil || !changed {
+		if h, changed, err = NewStore(tx, nil).SetScenario(ctx, id, scenarioID); err != nil || !changed {
 			return err
 		}
 		return record(ctx, tx, actor, audit.ActionHoneypotUpdate, id, []string{FieldScenarioID})
@@ -507,7 +675,7 @@ func SetScenario(ctx context.Context, d DB, actor audit.Actor, id, scenarioID st
 // audit log. It returns ErrNotFound if there is none.
 func Delete(ctx context.Context, d DB, actor audit.Actor, id string) error {
 	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
-		if err := NewStore(tx).Delete(ctx, id); err != nil {
+		if err := NewStore(tx, nil).Delete(ctx, id); err != nil {
 			return err
 		}
 		return record(ctx, tx, actor, audit.ActionHoneypotDelete, id, nil)

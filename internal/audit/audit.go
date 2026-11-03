@@ -100,6 +100,9 @@ const (
 	ActionHoneypotUpdate Action = "honeypot.update"
 	// ActionHoneypotDelete records the deletion of a honeypot.
 	ActionHoneypotDelete Action = "honeypot.delete"
+	// ActionHoneypotSecretRead records that the secret of a honeypot was shown
+	// again, never the secret itself.
+	ActionHoneypotSecretRead Action = "honeypot.secret_read"
 	// ActionScenarioCreate records the creation of a scenario.
 	ActionScenarioCreate Action = "scenario.create"
 	// ActionScenarioUpdate records a change of a scenario, with the names of

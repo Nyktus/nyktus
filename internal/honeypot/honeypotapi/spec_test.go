@@ -83,7 +83,7 @@ func TestSpecification_MatchesCode(t *testing.T) {
 	}
 
 	schemas := specSchemas(t)
-	for _, s := range []string{"Honeypot", "CreatedHoneypot", "CreateHoneypotRequest"} {
+	for _, s := range []string{"Honeypot", "CreatedHoneypot", "HoneypotSecret", "CreateHoneypotRequest"} {
 		if got := schemas[s].Properties["service"].Enum; !sameSet(got, services) {
 			t.Errorf("%s.service = %v, want %v", s, got, services)
 		}
@@ -92,8 +92,10 @@ func TestSpecification_MatchesCode(t *testing.T) {
 	for _, s := range honeypot.Statuses {
 		statuses = append(statuses, string(s))
 	}
-	if got := schemas["Honeypot"].Properties["status"].Enum; !sameSet(got, statuses) {
-		t.Errorf("Honeypot.status = %v, want %v", got, statuses)
+	for _, s := range []string{"Honeypot", "HoneypotSecret"} {
+		if got := schemas[s].Properties["status"].Enum; !sameSet(got, statuses) {
+			t.Errorf("%s.status = %v, want %v", s, got, statuses)
+		}
 	}
 	if got := schemas["CreatedHoneypot"].Properties["status"].Enum; !sameSet(got, []string{string(honeypot.StatusNever)}) {
 		t.Errorf("CreatedHoneypot.status = %v, want only never", got)
@@ -112,7 +114,7 @@ func TestSpecification_MatchesCode(t *testing.T) {
 	for _, l := range severity.Suggested {
 		levels = append(levels, string(l))
 	}
-	for _, s := range []string{"Honeypot", "CreatedHoneypot", "CreateHoneypotRequest", "UpdateHoneypotRequest"} {
+	for _, s := range []string{"Honeypot", "CreatedHoneypot", "HoneypotSecret", "CreateHoneypotRequest", "UpdateHoneypotRequest"} {
 		if got := schemas[s].Properties["severity"].Enum; !sameSet(got, levels) {
 			t.Errorf("%s.severity = %v, want %v", s, got, levels)
 		}
@@ -126,8 +128,15 @@ func TestSpecification_MatchesCode(t *testing.T) {
 	// The created honeypot is the honeypot with its secret and the entry for the
 	// sensor that holds it.
 	want := append(slices.Clone(schemas["Honeypot"].Required), "secret", "sensor_config")
-	if got := schemas["CreatedHoneypot"].Required; !sameSet(got, want) {
-		t.Errorf("CreatedHoneypot.required = %v, want %v", got, want)
+	for _, s := range []string{"CreatedHoneypot", "HoneypotSecret"} {
+		if got := schemas[s].Required; !sameSet(got, want) {
+			t.Errorf("%s.required = %v, want %v", s, got, want)
+		}
+	}
+	// The read of the secret shows the honeypot as it is, with every property of
+	// it, next to the secret and the entry.
+	if got, want := slices.Sorted(maps.Keys(schemas["HoneypotSecret"].Properties)), slices.Sorted(maps.Keys(schemas["CreatedHoneypot"].Properties)); !slices.Equal(got, want) {
+		t.Errorf("HoneypotSecret properties = %v, want those of CreatedHoneypot %v", got, want)
 	}
 }
 
