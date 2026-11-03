@@ -23,6 +23,7 @@ import (
 	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 	"nyktus.org/nyktus/internal/scenario"
 )
 
@@ -81,7 +82,7 @@ func createHoneytoken(t *testing.T, d testDB, scenarioID string) string {
 // it is empty.
 func createHoneypot(t *testing.T, d testDB, scenarioID string) string {
 	t.Helper()
-	h, err := honeypot.NewStore(d.console).Create(t.Context(), honeypot.Spec{Service: honeypot.ServiceSSH, Name: "p"})
+	h, err := honeypot.NewStore(d.console, secretboxtest.Keyring(t)).Create(t.Context(), honeypot.Spec{Service: honeypot.ServiceSSH, Name: "p"})
 	if err != nil {
 		t.Fatal(err)
 	}

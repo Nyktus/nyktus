@@ -31,6 +31,7 @@ import (
 	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/platform/dbtest"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 	"nyktus.org/nyktus/internal/trigger"
 )
 
@@ -190,7 +191,7 @@ func startEndToEnd(t *testing.T, service honeypot.Service, usualPort string, use
 	bin := buildSensor(t)
 	_, triggerURL := dbtest.Role(t, ownerURL, "trigger", "IN ROLE "+pgx.Identifier{schematest.TriggerRole}.Sanitize())
 	owner := schematest.Open(t, ownerURL)
-	console := honeypot.NewStore(schematest.Open(t, consoleURL))
+	console := honeypot.NewStore(schematest.Open(t, consoleURL), secretboxtest.Keyring(t))
 	store := trigger.NewStore(schematest.Open(t, triggerURL))
 
 	created, err := console.Create(t.Context(), honeypot.Spec{Service: service, Name: "Switch console", Enabled: true})

@@ -86,7 +86,7 @@ Never weaken these without an explicit decision by a maintainer:
 2. An event and its processing job are written in one transaction.
 3. Health checks never record an event, open an incident or raise an alert.
 4. Every route declares its authentication and required permission. Permission is checked before a resource is loaded.
-5. Secrets are shown once, masked afterwards, and never logged.
+5. Secrets are shown once, masked afterwards, and never logged. The one exception is the secret of a honeypot: it is stored encrypted and may be read again by those who may change honeypots, because it stands in plain text in the configuration of the sensor anyway; every read is audited.
 6. Every request to a user-supplied URL goes through the SSRF-guarded client.
 7. SQL is parameterized.
 8. The catalog is validated before the server starts and never contains executable code.

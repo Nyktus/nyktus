@@ -120,15 +120,16 @@ func (h Honeytokens) complete() bool {
 // Honeypots are the handlers of the management of the honeypots.
 type Honeypots struct {
 	List, Get, Create, Update, Delete http.Handler
-	// ReplaceSecret gives a honeypot a new secret.
-	ReplaceSecret http.Handler
+	// ReplaceSecret gives a honeypot a new secret, and ReadSecret shows the
+	// secret again.
+	ReplaceSecret, ReadSecret http.Handler
 	// AssignScenario and DetachScenario change the scenario of a honeypot.
 	AssignScenario, DetachScenario http.Handler
 }
 
 func (h Honeypots) complete() bool {
 	return h.List != nil && h.Get != nil && h.Create != nil && h.Update != nil && h.Delete != nil &&
-		h.ReplaceSecret != nil && h.AssignScenario != nil && h.DetachScenario != nil
+		h.ReplaceSecret != nil && h.ReadSecret != nil && h.AssignScenario != nil && h.DetachScenario != nil
 }
 
 // Scenarios are the handlers of the management of the scenarios.
@@ -282,6 +283,9 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/api/v1/honeypots/{id}", httpx.Require("honeypots:read"), d.Honeypots.Get)
 	rt.Handle(http.MethodPatch, "/api/v1/honeypots/{id}", httpx.Require("honeypots:write"), d.Honeypots.Update)
 	rt.Handle(http.MethodDelete, "/api/v1/honeypots/{id}", httpx.Require("honeypots:write"), d.Honeypots.Delete)
+	// Reading the secret needs the permission to change honeypots: whoever holds
+	// it can stand in for the sensor.
+	rt.Handle(http.MethodGet, "/api/v1/honeypots/{id}/secret", httpx.Require("honeypots:write"), d.Honeypots.ReadSecret)
 	rt.Handle(http.MethodPost, "/api/v1/honeypots/{id}/secret", httpx.Require("honeypots:write"), d.Honeypots.ReplaceSecret)
 	// The scenario of a honeypot is a change of the honeypot, as for
 	// honeytokens.

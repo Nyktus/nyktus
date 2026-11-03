@@ -388,6 +388,24 @@ export interface CreatedHoneypot {
   sensor_config: string;
 }
 
+export interface HoneypotSecret {
+  id: string;
+  service: 'ssh' | 'telnet' | 'postgres' | 'ldap';
+  name: string;
+  notes: string;
+  enabled: boolean;
+  techniques: string[];
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  scenario_id: string | null;
+  status: 'never' | 'online' | 'offline';
+  last_seen_at: string | null;
+  sensor_version: string | null;
+  created_at: string;
+  updated_at: string;
+  secret: string;
+  sensor_config: string;
+}
+
 export interface HoneypotPage {
   honeypots: Honeypot[];
   next_cursor?: string;
@@ -680,6 +698,7 @@ export const operations = {
   getCatalogDeception: { method: 'GET', path: '/api/v1/catalog/deceptions/{id}', access: 'catalog:read', navigation: false, binary: false },
   getEvent: { method: 'GET', path: '/api/v1/events/{id}', access: 'events:read', navigation: false, binary: false },
   getHoneypot: { method: 'GET', path: '/api/v1/honeypots/{id}', access: 'honeypots:read', navigation: false, binary: false },
+  getHoneypotSecret: { method: 'GET', path: '/api/v1/honeypots/{id}/secret', access: 'honeypots:write', navigation: false, binary: false },
   getHoneytoken: { method: 'GET', path: '/api/v1/honeytokens/{id}', access: 'honeytokens:read', navigation: false, binary: false },
   getIncident: { method: 'GET', path: '/api/v1/incidents/{id}', access: 'incidents:read', navigation: false, binary: false },
   getLiveness: { method: 'GET', path: '/livez', access: 'public', navigation: false, binary: false },
@@ -952,6 +971,12 @@ export interface OperationTypes {
     query: Record<string, never>;
     body: undefined;
     responses: { 200: Honeypot };
+  };
+  getHoneypotSecret: {
+    path: { id: string };
+    query: Record<string, never>;
+    body: undefined;
+    responses: { 200: HoneypotSecret };
   };
   getHoneytoken: {
     path: { id: string };

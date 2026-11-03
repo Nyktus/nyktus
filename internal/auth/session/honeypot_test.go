@@ -70,6 +70,8 @@ func TestHoneypots_FollowRolesAndKeyScopes(t *testing.T) {
 		{"viewer reads", viewer, nil, http.MethodGet, "/api/v1/honeypots/" + id, "", http.StatusOK},
 		{"viewer creates", viewer, nil, http.MethodPost, "/api/v1/honeypots", `{"service": "ssh", "name": "v"}`, http.StatusForbidden},
 		{"viewer changes", viewer, nil, http.MethodPatch, "/api/v1/honeypots/" + id, `{"name": "v"}`, http.StatusForbidden},
+		{"viewer reads the secret", viewer, nil, http.MethodGet, "/api/v1/honeypots/" + id + "/secret", "", http.StatusForbidden},
+		{"viewer reads the secret of an unknown one", viewer, nil, http.MethodGet, unknown + "/secret", "", http.StatusForbidden},
 		{"viewer replaces the secret", viewer, nil, http.MethodPost, "/api/v1/honeypots/" + id + "/secret", "", http.StatusForbidden},
 		{"viewer replaces the secret of an unknown one", viewer, nil, http.MethodPost, unknown + "/secret", "", http.StatusForbidden},
 		{"viewer assigns", viewer, nil, http.MethodPut, "/api/v1/honeypots/" + id + "/scenario", assign, http.StatusForbidden},
@@ -78,6 +80,7 @@ func TestHoneypots_FollowRolesAndKeyScopes(t *testing.T) {
 		{"reading key lists", nil, reader, http.MethodGet, "/api/v1/honeypots", "", http.StatusOK},
 		{"reading key creates", nil, reader, http.MethodPost, "/api/v1/honeypots", `{"service": "ssh", "name": "r"}`, http.StatusForbidden},
 		{"reading key changes an unknown one", nil, reader, http.MethodPatch, unknown, `{"name": "r"}`, http.StatusForbidden},
+		{"reading key reads a secret", nil, reader, http.MethodGet, "/api/v1/honeypots/" + id + "/secret", "", http.StatusForbidden},
 		{"reading key replaces a secret", nil, reader, http.MethodPost, "/api/v1/honeypots/" + id + "/secret", "", http.StatusForbidden},
 		{"honeytoken key lists", nil, tokens, http.MethodGet, "/api/v1/honeypots", "", http.StatusForbidden},
 		{"honeytoken key reads an unknown one", nil, tokens, http.MethodGet, unknown, "", http.StatusForbidden},
@@ -86,7 +89,10 @@ func TestHoneypots_FollowRolesAndKeyScopes(t *testing.T) {
 		{"writing key changes", nil, writer, http.MethodPatch, "/api/v1/honeypots/" + id, `{"name": "w"}`, http.StatusOK},
 		{"writing key assigns without scenarios:write", nil, writer, http.MethodPut, "/api/v1/honeypots/" + id + "/scenario", assign, http.StatusOK},
 		{"writing key detaches", nil, writer, http.MethodDelete, "/api/v1/honeypots/" + id + "/scenario", "", http.StatusOK},
+		{"writing key reads the secret", nil, writer, http.MethodGet, "/api/v1/honeypots/" + id + "/secret", "", http.StatusOK},
 		{"writing key replaces the secret", nil, writer, http.MethodPost, "/api/v1/honeypots/" + id + "/secret", "", http.StatusOK},
+		{"user reads the secret", user, nil, http.MethodGet, "/api/v1/honeypots/" + id + "/secret", "", http.StatusOK},
+		{"user reads the secret of an unknown one", user, nil, http.MethodGet, unknown + "/secret", "", http.StatusNotFound},
 		{"user deletes", user, nil, http.MethodDelete, "/api/v1/honeypots/" + id, "", http.StatusNoContent},
 	} {
 		if r := send(t, srv, tt.method, tt.path, tt.body, tt.cookie, tt.header); r.status != tt.status {

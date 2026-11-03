@@ -64,7 +64,7 @@ func deps(db Pinger) Deps {
 		},
 		Honeypots: Honeypots{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
-			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(), ReplaceSecret: http.NotFoundHandler(),
+			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(), ReplaceSecret: http.NotFoundHandler(), ReadSecret: http.NotFoundHandler(),
 			AssignScenario: http.NotFoundHandler(), DetachScenario: http.NotFoundHandler(),
 		},
 		Scenarios: Scenarios{

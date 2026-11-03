@@ -25,12 +25,12 @@ const error = ref<string | undefined>();
 const createdId = ref<string | undefined>();
 // Set when the page of the honeypot did not open, so that the user is not left with a title and nothing else.
 const leaveFailed = ref(false);
-// The secret is shown once. It lives here and nowhere else, and goes when the user
-// is done or leaves the page: it is in no store, no address and no history.
-const once = ref<{ secret: string; config: string } | undefined>();
+// The secret is shown right after the creation. It lives here and nowhere else, and goes when the
+// user is done or leaves the page: it is in no store, no address and no history.
+const revealed = ref<{ secret: string; config: string } | undefined>();
 
 function discard(): void {
-  once.value = undefined;
+  revealed.value = undefined;
 }
 
 // The secret is gone with the click, so the page has nothing left to show: the user lands on the honeypot.
@@ -49,7 +49,7 @@ async function create(body: Body): Promise<void> {
   try {
     const result = (await api.call('createHoneypot', { body })).body;
     createdId.value = result.id;
-    once.value = { secret: result.secret, config: result.sensor_config };
+    revealed.value = { secret: result.secret, config: result.sensor_config };
   } catch (failure) {
     error.value = errorText(failure instanceof ApiError ? failure : new ApiError('server', 0));
   } finally {
@@ -67,7 +67,7 @@ onBeforeUnmount(discard);
     <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
 
     <template v-if="createdId !== undefined">
-      <SecretReveal v-if="once" :secret="once.secret" :config="once.config" @done="finish" />
+      <SecretReveal v-if="revealed" :secret="revealed.secret" :config="revealed.config" @done="finish" />
       <p v-else-if="leaveFailed">
         <RouterLink class="button button-primary" :to="{ name: 'honeypot', params: { id: createdId } }">{{ t('honeypots.title') }}</RouterLink>
       </p>

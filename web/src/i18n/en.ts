@@ -225,10 +225,11 @@ export const en = {
   'honeypotStatus.offline': 'Offline',
 
   'secret.title': 'Secret of the honeypot',
-  'secret.warning': 'The secret is shown only this once.',
+  'secret.warning': 'Treat the secret like a password. It is stored encrypted, and everyone who may change honeypots can show it again.',
   'secret.secret': 'Secret',
   'secret.config': 'Entry for the configuration file of the sensor',
-  'secret.done': 'Confirm',
+  'secret.done': 'Done',
+  'secret.show': 'Show the secret',
   'secret.replace': 'Replace the secret',
   'secret.replace.title': 'Replace the secret?',
   'secret.replace.body':

@@ -2082,11 +2082,12 @@ paths:
       summary: Create a honeypot
       description: |
         Creates a honeypot with a new secret of 256 random bits, which the
-        sensor presents to the trigger. The secret is shown only in this
-        response, together with the entry for the configuration file of the
-        sensor (`sensor_config`); the server keeps only a hash of it. To
-        replace a lost or exposed secret, use
-        `POST /api/v1/honeypots/{id}/secret`.
+        sensor presents to the trigger. The response shows the secret together
+        with the entry for the configuration file of the sensor
+        (`sensor_config`). The server keeps a hash of the secret, by which the
+        trigger finds the honeypot, and the secret sealed, so that
+        `GET /api/v1/honeypots/{id}/secret` shows it again. To replace a lost
+        or exposed secret, use `POST /api/v1/honeypots/{id}/secret`.
 
         The service cannot be changed, because the sensor is configured for
         it: to emulate another service, create a new honeypot.
@@ -2249,15 +2250,58 @@ paths:
         schema:
           type: string
           format: uuid
+    get:
+      operationId: getHoneypotSecret
+      summary: Show the secret of a honeypot again
+      description: |
+        Returns the secret that the sensor of the honeypot presents, with the
+        entry for its configuration file (`sensor_config`). It stands in plain
+        text in that file anyway, so those who may change honeypots can read it
+        again. The server keeps it sealed with AES-256-GCM; the trigger finds a
+        honeypot by a hash of it and cannot read it.
+
+        The permission to change honeypots is required, not only to read them:
+        whoever holds the secret can report sessions in the name of the sensor.
+        A key with `honeypots:write` can read it as well. The response is sent
+        with `Cache-Control: no-store`.
+
+        A secret that cannot be opened with the configured keys, or that does
+        not match its hash, is not sent: the request fails with `500`, and the
+        secret is replaced with `POST /api/v1/honeypots/{id}/secret`.
+
+        The audit log records every read as `honeypot.secret_read` for the
+        honeypot, never the secret.
+      tags: [honeypots]
+      x-access: honeypots:write
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: "The honeypot with its secret. It is sent with `Cache-Control: no-store`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HoneypotSecret"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenWrite"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
     post:
       operationId: replaceHoneypotSecret
       summary: Replace the secret of a honeypot
       description: |
         Gives a honeypot a new secret of 256 random bits. The old secret stops
         working at once, so a sensor that still uses it is shut out until it
-        is configured with the new one. The new secret is shown only in this
-        response, together with the entry for the configuration file of the
-        sensor (`sensor_config`).
+        is configured with the new one. The response shows the new secret
+        together with the entry for the configuration file of the sensor
+        (`sensor_config`); `GET /api/v1/honeypots/{id}/secret` shows it again.
 
         The honeypot forgets what its sensor last reported: its `status` is
         `never` until a sensor reports with the new secret.
@@ -4960,7 +5004,7 @@ components:
         secret:
           type: string
           pattern: "^[A-Za-z0-9_-]{43}$"
-          description: The secret that the sensor presents for this honeypot. It is shown only once.
+          description: The secret that the sensor presents for this honeypot. It is shown again to those who may change honeypots.
         sensor_config:
           type: string
           description: |
@@ -4968,8 +5012,77 @@ components:
             sensor: a list item for `honeypots:`, in YAML, with the identifier,
             the service, the usual port of the service as the address to listen
             on, and the secret. For `ssh` it also names the file of the host
-            key, which the operator creates. It holds the secret and is shown
-            only once. Name and notes are not part of it.
+            key, which the operator creates. It holds the secret. Name and notes
+            are not part of it.
+
+    HoneypotSecret:
+      type: object
+      additionalProperties: false
+      required: [id, service, name, notes, enabled, techniques, severity, scenario_id, status, last_seen_at, sensor_version, created_at, updated_at, secret, sensor_config]
+      properties:
+        id:
+          type: string
+          format: uuid
+        service:
+          type: string
+          enum: [ssh, telnet, postgres, ldap]
+          description: The network service that the sensor emulates. It cannot be changed.
+        name:
+          type: string
+        notes:
+          type: string
+          description: Where and why the honeypot runs. Empty if there are none.
+        enabled:
+          type: boolean
+          description: Whether the honeypot is active.
+        techniques:
+          type: array
+          description: |
+            Identifiers of the MITRE ATT&CK techniques that an event suggests, in addition to those that
+            the kind of event suggests.
+          items:
+            type: string
+            pattern: "^T[0-9]{4}(\\.[0-9]{3})?$"
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          description: The severity that the events of the honeypot receive, whatever the kind of event.
+        scenario_id:
+          type: [string, "null"]
+          format: uuid
+          description: The scenario that the honeypot belongs to, or null if it stands alone.
+        status:
+          type: string
+          enum: [never, online, offline]
+          description: |
+            `never` if no sensor has reported with the current secret, `online` if a sensor reported
+            within the last 15 minutes, and `offline` otherwise.
+        last_seen_at:
+          type: [string, "null"]
+          format: date-time
+          description: When a sensor last reported with the current secret, or null if none has.
+        sensor_version:
+          type: [string, "null"]
+          description: The version that the sensor named when it last reported, or null.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        secret:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{43}$"
+          description: The secret that the sensor presents for this honeypot. It is sealed in the database and shown again to those who may change honeypots.
+        sensor_config:
+          type: string
+          description: |
+            The entry of this honeypot for the configuration file of the
+            sensor: a list item for `honeypots:`, in YAML, with the identifier,
+            the service, the usual port of the service as the address to listen
+            on, and the secret. For `ssh` it also names the file of the host
+            key, which the operator creates. It holds the secret. Name and notes
+            are not part of it.
 
     HoneypotPage:
       type: object

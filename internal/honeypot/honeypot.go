@@ -147,7 +147,8 @@ func (h Honeypot) LogValue() slog.Value {
 }
 
 // Secret is the secret of a honeypot in clear text, which the sensor presents.
-// It is returned once, when it is created, and never logged.
+// It is returned when it is created or replaced and to those who may change
+// honeypots, and never logged.
 type Secret string
 
 // String keeps the value out of formatted output.
@@ -163,8 +164,8 @@ func (Secret) LogValue() slog.Value { return slog.StringValue("[redacted]") }
 // that holds it. The response that shows the secret converts it explicitly.
 func (Secret) MarshalJSON() ([]byte, error) { return []byte(`"[redacted]"`), nil }
 
-// Created is a honeypot with its new secret, as its creation and the
-// replacement of its secret return it.
+// Created is a honeypot with its secret, as its creation, the replacement of
+// its secret and a later read of it return it.
 type Created struct {
 	Honeypot
 	Secret Secret

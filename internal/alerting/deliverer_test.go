@@ -990,8 +990,8 @@ func TestLoadAlert_NamesTheHoneypotOfAnIncident(t *testing.T) {
 
 	var honeypotID, incidentID string
 	if err := f.owner.QueryRow(t.Context(), `
-INSERT INTO honeypots (service, name, notes, severity, secret_hash)
-VALUES ('ssh', 'Jump host', 'rack4', 'high', sha256('x')) RETURNING id`).Scan(&honeypotID); err != nil {
+INSERT INTO honeypots (service, name, notes, severity, secret_hash, secret_sealed)
+VALUES ('ssh', 'Jump host', 'rack4', 'high', sha256('x'), sha256('x')) RETURNING id`).Scan(&honeypotID); err != nil {
 		t.Fatal(err)
 	}
 	err := f.owner.QueryRow(t.Context(), `
