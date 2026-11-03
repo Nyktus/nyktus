@@ -19,17 +19,20 @@ import (
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/platform/secretbox"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 	"nyktus.org/nyktus/internal/severity"
 )
 
 type testDB struct {
 	owner, console *pgxpool.Pool
+	keys           *secretbox.Keyring
 }
 
 func newTestDB(t *testing.T) testDB {
 	t.Helper()
 	ownerURL, consoleURL := schematest.Console(t)
-	return testDB{owner: schematest.Open(t, ownerURL), console: schematest.Open(t, consoleURL)}
+	return testDB{owner: schematest.Open(t, ownerURL), console: schematest.Open(t, consoleURL), keys: secretboxtest.Keyring(t)}
 }
 
 // createUser inserts an active account to act as the actor of audit entries.
@@ -50,7 +53,7 @@ func ptr[T any](v T) *T { return &v }
 
 func create(t *testing.T, d testDB, spec honeypot.Spec) honeypot.Created {
 	t.Helper()
-	c, err := honeypot.NewStore(d.console).Create(t.Context(), spec)
+	c, err := honeypot.NewStore(d.console, d.keys).Create(t.Context(), spec)
 	if err != nil {
 		t.Fatalf("Create(%+v) error = %v", spec, err)
 	}
@@ -86,7 +89,7 @@ func findBySecret(t *testing.T, d testDB, secret honeypot.Secret) string {
 func TestStore_CreateAndGet(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
-	s := honeypot.NewStore(d.console)
+	s := honeypot.NewStore(d.console, d.keys)
 
 	spec := honeypot.Spec{
 		Service: honeypot.ServiceSSH, Name: "Jump host", Notes: "VLAN 20\nowner: IT", Enabled: true,
@@ -154,7 +157,7 @@ func TestStore_Create_StoresOnlyTheHashOfTheSecret(t *testing.T) {
 func TestStore_Create_ValidatesBeforeWriting(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
-	s := honeypot.NewStore(d.console)
+	s := honeypot.NewStore(d.console, d.keys)
 
 	for _, tt := range []struct {
 		spec honeypot.Spec
@@ -217,7 +220,7 @@ WHERE id = $1`, id, age.Seconds())
 func TestStore_DerivesTheStatusFromTheLastReport(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
-	s := honeypot.NewStore(d.console)
+	s := honeypot.NewStore(d.console, d.keys)
 
 	for _, tt := range []struct {
 		name string
@@ -254,7 +257,7 @@ func TestStore_DerivesTheStatusFromTheLastReport(t *testing.T) {
 func TestStore_ReplaceSecret_InvalidatesTheOldSecret(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
-	s := honeypot.NewStore(d.console)
+	s := honeypot.NewStore(d.console, d.keys)
 	c := create(t, d, honeypot.Spec{Service: honeypot.ServicePostgres, Name: "db", Enabled: true})
 	other := create(t, d, honeypot.Spec{Service: honeypot.ServicePostgres, Name: "other"})
 	setLastSeen(t, d, c.ID, time.Minute)
@@ -307,7 +310,7 @@ func TestStore_ReplaceSecret_InvalidatesTheOldSecret(t *testing.T) {
 func TestStore_List_PagesFromTheNewestAndFilters(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
-	s := honeypot.NewStore(d.console)
+	s := honeypot.NewStore(d.console, d.keys)
 
 	var all []string
 	for i, sv := range []honeypot.Service{
@@ -384,7 +387,7 @@ func update(ctx context.Context, d testDB, id string, c honeypot.Change) (honeyp
 	)
 	err := pgx.BeginFunc(ctx, d.console, func(tx pgx.Tx) error {
 		var err error
-		h, changed, err = honeypot.NewStore(tx).Update(ctx, id, c)
+		h, changed, err = honeypot.NewStore(tx, d.keys).Update(ctx, id, c)
 		return err
 	})
 	return h, changed, err
@@ -460,7 +463,7 @@ func TestStore_Update_LocksTheHoneypot(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := honeypot.NewStore(tx).Update(t.Context(), c.ID, ch); err != nil {
+		if _, _, err := honeypot.NewStore(tx, d.keys).Update(t.Context(), c.ID, ch); err != nil {
 			t.Fatalf("%s: Update() error = %v", name, err)
 		}
 		_, err = d.owner.Exec(t.Context(), `SELECT FROM honeypots WHERE id = $1 FOR UPDATE NOWAIT`, c.ID)
@@ -477,7 +480,7 @@ func TestStore_Update_LocksTheHoneypot(t *testing.T) {
 func TestStore_Delete(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
-	s := honeypot.NewStore(d.console)
+	s := honeypot.NewStore(d.console, d.keys)
 	c := create(t, d, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a"})
 
 	if err := s.Delete(t.Context(), c.ID); err != nil {
@@ -535,7 +538,7 @@ func TestCreateUpdateDelete_RecordEveryWrite(t *testing.T) {
 	actor := createUser(t, d)
 	ctx := t.Context()
 
-	c, err := honeypot.Create(ctx, d.console, actor, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", Enabled: true})
+	c, err := honeypot.Create(ctx, d.console, d.keys, actor, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,7 +548,7 @@ func TestCreateUpdateDelete_RecordEveryWrite(t *testing.T) {
 	if _, err := honeypot.Update(ctx, d.console, actor, c.ID, honeypot.Change{Name: ptr("b")}); err != nil {
 		t.Fatal(err)
 	}
-	replaced, err := honeypot.ReplaceSecret(ctx, d.console, actor, c.ID)
+	replaced, err := honeypot.ReplaceSecret(ctx, d.console, d.keys, actor, c.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -583,19 +586,19 @@ func TestCreateUpdateDelete_FailWithoutTheirAuditEntry(t *testing.T) {
 	ghost := audit.Actor{Kind: audit.ActorUser, Method: audit.AuthSession, UserID: "00000000-0000-4000-8000-000000000000"}
 	ctx := t.Context()
 
-	if _, err := honeypot.Create(ctx, d.console, ghost, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "b"}); err == nil {
+	if _, err := honeypot.Create(ctx, d.console, d.keys, ghost, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "b"}); err == nil {
 		t.Error("Create() without audit entry succeeded")
 	}
 	if _, err := honeypot.Update(ctx, d.console, ghost, c.ID, honeypot.Change{Name: ptr("c")}); err == nil {
 		t.Error("Update() without audit entry succeeded")
 	}
-	if _, err := honeypot.ReplaceSecret(ctx, d.console, ghost, c.ID); err == nil {
+	if _, err := honeypot.ReplaceSecret(ctx, d.console, d.keys, ghost, c.ID); err == nil {
 		t.Error("ReplaceSecret() without audit entry succeeded")
 	}
 	if err := honeypot.Delete(ctx, d.console, ghost, c.ID); err == nil {
 		t.Error("Delete() without audit entry succeeded")
 	}
-	got, err := honeypot.NewStore(d.console).Get(ctx, c.ID)
+	got, err := honeypot.NewStore(d.console, d.keys).Get(ctx, c.ID)
 	if err != nil || got.Name != "a" {
 		t.Errorf("Get() = %+v, %v; want the unchanged honeypot", got, err)
 	}
@@ -615,10 +618,10 @@ func TestSchema_ChecksHoneypots(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
 
-	const insert = `INSERT INTO honeypots (service, name, notes, techniques, severity, secret_hash, sensor_version, last_seen_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	const insert = `INSERT INTO honeypots (service, name, notes, techniques, severity, secret_hash, sensor_version, last_seen_at, secret_sealed)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	hash := sha256.Sum256([]byte("a"))
-	valid := []any{"ssh", "a", "", []string{}, "medium", hash[:], nil, nil}
+	valid := []any{"ssh", "a", "", []string{}, "medium", hash[:], nil, nil, hash[:]}
 	with := func(i int, v any) []any {
 		args := slices.Clone(valid)
 		args[i] = v
@@ -652,6 +655,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 		{"sensor version with a space", with(6, "0.1 beta"), "honeypots_sensor_version_check"},
 		{"sensor version with a line break", with(6, "0.1\n"), "honeypots_sensor_version_check"},
 		{"report before creation", with(7, time.Now().Add(-time.Hour)), "honeypots_last_seen_at_check"},
+		{"short sealed secret", with(8, hash[:29]), "honeypots_secret_sealed_check"},
+		{"long sealed secret", with(8, make([]byte, 201)), "honeypots_secret_sealed_check"},
 	} {
 		_, err := d.owner.Exec(t.Context(), insert, tt.args...)
 		var pgErr *pgconn.PgError
@@ -698,7 +703,7 @@ func setScenario(ctx context.Context, d testDB, id, scenarioID string) (honeypot
 	)
 	err := pgx.BeginFunc(ctx, d.console, func(tx pgx.Tx) error {
 		var err error
-		h, changed, err = honeypot.NewStore(tx).SetScenario(ctx, id, scenarioID)
+		h, changed, err = honeypot.NewStore(tx, d.keys).SetScenario(ctx, id, scenarioID)
 		return err
 	})
 	return h, changed, err
@@ -722,7 +727,7 @@ func TestStore_SetScenario(t *testing.T) {
 	if _, _, err := setScenario(t.Context(), d, h.ID, second); !errors.Is(err, honeypot.ErrInOtherScenario) {
 		t.Errorf("SetScenario(second) error = %v, want ErrInOtherScenario", err)
 	}
-	if got, err := honeypot.NewStore(d.console).Get(t.Context(), h.ID); err != nil || got.ScenarioID == nil || *got.ScenarioID != first {
+	if got, err := honeypot.NewStore(d.console, d.keys).Get(t.Context(), h.ID); err != nil || got.ScenarioID == nil || *got.ScenarioID != first {
 		t.Errorf("Get() = %+v, %v; want it still in the first scenario", got, err)
 	}
 
@@ -825,7 +830,7 @@ func TestStore_SetScenario_HoldsTheScenario(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(t.Context())) }()
-	if _, _, err := honeypot.NewStore(tx).SetScenario(t.Context(), h.ID, sc); err != nil {
+	if _, _, err := honeypot.NewStore(tx, d.keys).SetScenario(t.Context(), h.ID, sc); err != nil {
 		t.Fatal(err)
 	}
 	_, err = d.owner.Exec(t.Context(), `SELECT FROM scenarios WHERE id = $1 FOR UPDATE NOWAIT`, sc)
@@ -870,7 +875,7 @@ func TestStore_SetScenario_ToAScenarioDeletedMeanwhile(t *testing.T) {
 	if err := <-done; !errors.Is(err, honeypot.ErrScenarioNotFound) {
 		t.Errorf("SetScenario() error = %v, want ErrScenarioNotFound", err)
 	}
-	if got, err := honeypot.NewStore(d.console).Get(t.Context(), h.ID); err != nil || got.ScenarioID != nil {
+	if got, err := honeypot.NewStore(d.console, d.keys).Get(t.Context(), h.ID); err != nil || got.ScenarioID != nil {
 		t.Errorf("Get() = %+v, %v; want it alone", got, err)
 	}
 }
@@ -889,7 +894,7 @@ func TestSetScenario_RecordsTheChange(t *testing.T) {
 	if _, err := honeypot.SetScenario(ctx, d.console, ghost, h.ID, sc); err == nil {
 		t.Error("SetScenario() without audit entry succeeded")
 	}
-	if got, err := honeypot.NewStore(d.console).Get(ctx, h.ID); err != nil || got.ScenarioID != nil {
+	if got, err := honeypot.NewStore(d.console, d.keys).Get(ctx, h.ID); err != nil || got.ScenarioID != nil {
 		t.Errorf("Get() = %+v, %v; want it alone after the failed assignment", got, err)
 	}
 
@@ -912,7 +917,7 @@ func TestSetScenario_RecordsTheChange(t *testing.T) {
 func TestStore_List_FiltersByScenario(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
-	s := honeypot.NewStore(d.console)
+	s := honeypot.NewStore(d.console, d.keys)
 	sc, other := createScenario(t, d), createScenario(t, d)
 
 	var want []string
@@ -966,7 +971,7 @@ func createIn(ctx context.Context, d testDB, spec honeypot.Spec) (honeypot.Creat
 	var c honeypot.Created
 	err := pgx.BeginFunc(ctx, d.console, func(tx pgx.Tx) error {
 		var err error
-		c, err = honeypot.NewStore(tx).Create(ctx, spec)
+		c, err = honeypot.NewStore(tx, d.keys).Create(ctx, spec)
 		return err
 	})
 	return c, err
@@ -993,7 +998,7 @@ func TestStore_Create_JoinsAScenario(t *testing.T) {
 	if err != nil || c.ScenarioID == nil || *c.ScenarioID != sc {
 		t.Fatalf("Create() = %+v, %v; want it in the scenario", c.Honeypot, err)
 	}
-	if got, err := honeypot.NewStore(d.console).Get(t.Context(), c.ID); err != nil || got.ScenarioID == nil || *got.ScenarioID != sc {
+	if got, err := honeypot.NewStore(d.console, d.keys).Get(t.Context(), c.ID); err != nil || got.ScenarioID == nil || *got.ScenarioID != sc {
 		t.Errorf("Get() = %+v, %v; want it in the scenario", got, err)
 	}
 
@@ -1052,18 +1057,18 @@ func TestCreate_WithAScenarioRecordsTheField(t *testing.T) {
 	ctx := t.Context()
 
 	ghost := audit.Actor{Kind: audit.ActorUser, Method: audit.AuthSession, UserID: "00000000-0000-4000-8000-000000000000"}
-	if _, err := honeypot.Create(ctx, d.console, ghost, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", ScenarioID: sc}); err == nil {
+	if _, err := honeypot.Create(ctx, d.console, d.keys, ghost, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", ScenarioID: sc}); err == nil {
 		t.Error("Create() without audit entry succeeded")
 	}
 	if n := countHoneypots(t, d); n != 0 {
 		t.Errorf("honeypots = %d after the failed creation, want none", n)
 	}
 
-	in, err := honeypot.Create(ctx, d.console, actor, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", ScenarioID: sc})
+	in, err := honeypot.Create(ctx, d.console, d.keys, actor, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", ScenarioID: sc})
 	if err != nil {
 		t.Fatal(err)
 	}
-	alone, err := honeypot.Create(ctx, d.console, actor, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "b"})
+	alone, err := honeypot.Create(ctx, d.console, d.keys, actor, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "b"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1073,5 +1078,304 @@ func TestCreate_WithAScenarioRecordsTheField(t *testing.T) {
 	}
 	if got := entries(t, d); !sameEntries(got, want) {
 		t.Errorf("audit entries = %+v, want %+v", got, want)
+	}
+}
+
+// The secret of a honeypot is shown again exactly as it was created, with the
+// entry for the sensor, until it is replaced, and then the new one is shown.
+func TestStore_Secret_ShowsTheSecretAgain(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	s := honeypot.NewStore(d.console, d.keys)
+
+	c := create(t, d, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", Enabled: true})
+	got, err := s.Secret(t.Context(), c.ID)
+	if err != nil || got.Secret != c.Secret || got.ID != c.ID || got.SensorConfig() != c.SensorConfig() {
+		t.Fatalf("Secret() = %+v, %v; want the secret and the entry of the creation", got.Honeypot, err)
+	}
+
+	replaced, err := s.ReplaceSecret(t.Context(), c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced.Secret == c.Secret {
+		t.Fatal("ReplaceSecret() returned the old secret")
+	}
+	if got, err := s.Secret(t.Context(), c.ID); err != nil || got.Secret != replaced.Secret {
+		t.Errorf("Secret() after the replacement = %+v, %v; want the new secret", got.Honeypot, err)
+	}
+
+	const missing = "00000000-0000-4000-8000-000000000000"
+	for _, id := range []string{missing, "not-a-uuid"} {
+		if _, err := s.Secret(t.Context(), id); !errors.Is(err, honeypot.ErrNotFound) {
+			t.Errorf("Secret(%q) error = %v, want ErrNotFound", id, err)
+		}
+	}
+}
+
+// The sealed secret is bound to the hash of its honeypot, and the hash must
+// match what it opens to: a sealed value that was moved to another row, altered,
+// sealed with a key that is gone, or cut to another length is never handed out.
+func TestStore_Secret_RefusesWhatDoesNotOpen(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	s := honeypot.NewStore(d.console, d.keys)
+	first := create(t, d, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a"})
+	second := create(t, d, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "b"})
+	other, err := secretbox.ParseKeyring(secretboxtest.Entry(t, 2))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		name, statement string
+		args            []any
+		reader          *honeypot.Store
+	}{
+		{"moved to another honeypot", `UPDATE honeypots SET secret_sealed = (SELECT secret_sealed FROM honeypots WHERE id = $2) WHERE id = $1`, []any{first.ID, second.ID}, s},
+		{"altered", `UPDATE honeypots SET secret_sealed = set_byte(secret_sealed, 20, get_byte(secret_sealed, 20) # 1) WHERE id = $1`, []any{first.ID}, s},
+		{"cut short", `UPDATE honeypots SET secret_sealed = substring(secret_sealed FROM 1 FOR 40) WHERE id = $1`, []any{first.ID}, s},
+	} {
+		if _, err := d.owner.Exec(t.Context(), tt.statement, tt.args...); err != nil {
+			t.Fatalf("%s: %v", tt.name, err)
+		}
+		if got, err := tt.reader.Secret(t.Context(), first.ID); !errors.Is(err, honeypot.ErrSecretUnreadable) || got.Secret != "" {
+			t.Errorf("%s: Secret() = %q, %v; want ErrSecretUnreadable and no secret", tt.name, string(got.Secret), err)
+		}
+		// Replacing the secret repairs it.
+		if _, err := tt.reader.ReplaceSecret(t.Context(), first.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tt.reader.Secret(t.Context(), first.ID); err != nil {
+			t.Errorf("%s: Secret() after the replacement error = %v", tt.name, err)
+		}
+	}
+
+	// A store whose keys lack the key of the value cannot open it either.
+	err = func() error {
+		_, err := honeypot.NewStore(d.console, other).Secret(t.Context(), second.ID)
+		return err
+	}()
+	if !errors.Is(err, honeypot.ErrSecretUnreadable) || !errors.Is(err, secretbox.ErrUnknownKey) {
+		t.Errorf("Secret() with other keys error = %v, want ErrSecretUnreadable caused by ErrUnknownKey", err)
+	}
+}
+
+// A store without keys neither creates a honeypot nor shows or replaces a
+// secret, instead of storing one that cannot be shown again.
+func TestStore_WithoutKeys_HandlesNoSecret(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	c := create(t, d, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a"})
+	s := honeypot.NewStore(d.console, nil)
+
+	if _, err := s.Create(t.Context(), honeypot.Spec{Service: honeypot.ServiceSSH, Name: "b"}); err == nil {
+		t.Error("Create() without keys succeeded")
+	}
+	if _, err := s.ReplaceSecret(t.Context(), c.ID); err == nil {
+		t.Error("ReplaceSecret() without keys succeeded")
+	}
+	if got, err := s.Secret(t.Context(), c.ID); err == nil || errors.Is(err, honeypot.ErrNotFound) || got.Secret != "" {
+		t.Errorf("Secret() without keys = %q, %v; want an error and no secret", string(got.Secret), err)
+	}
+	var n int
+	if err := d.owner.QueryRow(t.Context(), `SELECT count(*) FROM honeypots`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("honeypots = %d, %v; want only the first", n, err)
+	}
+	// Whatever does not touch a secret works without keys.
+	if _, err := s.Get(t.Context(), c.ID); err != nil {
+		t.Errorf("Get() without keys error = %v", err)
+	}
+}
+
+// The read of a secret is recorded in the transaction that reads it: every
+// read, never with the secret, and a read that cannot be recorded returns no
+// secret.
+func TestReadSecret_RecordsEveryRead(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	actor := createUser(t, d)
+	first := create(t, d, honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a"})
+	second := create(t, d, honeypot.Spec{Service: honeypot.ServiceTelnet, Name: "b"})
+	ctx := t.Context()
+
+	ghost := audit.Actor{Kind: audit.ActorUser, Method: audit.AuthSession, UserID: "00000000-0000-4000-8000-000000000000"}
+	if got, err := honeypot.ReadSecret(ctx, d.console, d.keys, ghost, first.ID); err == nil || got.Secret != "" {
+		t.Errorf("ReadSecret() without audit entry = %q, %v; want an error and no secret", string(got.Secret), err)
+	}
+	if got := entries(t, d); len(got) != 0 {
+		t.Fatalf("audit entries = %+v after the failed read, want none", got)
+	}
+	if _, err := honeypot.ReadSecret(ctx, d.console, d.keys, actor, "00000000-0000-4000-8000-000000000000"); !errors.Is(err, honeypot.ErrNotFound) {
+		t.Errorf("ReadSecret(unknown) error = %v, want ErrNotFound", err)
+	}
+
+	for _, id := range []string{first.ID, first.ID, second.ID} {
+		got, err := honeypot.ReadSecret(ctx, d.console, d.keys, actor, id)
+		if err != nil || got.Secret == "" || got.ID != id {
+			t.Fatalf("ReadSecret(%s) = %+v, %v", id, got.Honeypot, err)
+		}
+	}
+	want := []entry{
+		{"honeypot.secret_read", "honeypot", first.ID, []string{}, actor.UserID},
+		{"honeypot.secret_read", "honeypot", first.ID, []string{}, actor.UserID},
+		{"honeypot.secret_read", "honeypot", second.ID, []string{}, actor.UserID},
+	}
+	if got := entries(t, d); !sameEntries(got, want) {
+		t.Errorf("audit entries = %+v, want %+v", got, want)
+	}
+}
+
+// The console refuses to start when a secret is sealed with a key that is not
+// configured, naming the key, and accepts any key of the keyring.
+func TestCheckKeys(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	both := func(entries ...string) *secretbox.Keyring {
+		k, err := secretbox.ParseKeyring(strings.Join(entries, ","))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	one, two := secretboxtest.Entry(t, 1), secretboxtest.Entry(t, 2)
+
+	if err := honeypot.CheckKeys(t.Context(), d.console, both(two)); err != nil {
+		t.Errorf("CheckKeys() without honeypots error = %v", err)
+	}
+	if _, err := honeypot.NewStore(d.console, both(one)).Create(t.Context(), honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := honeypot.CheckKeys(t.Context(), d.console, both(one)); err != nil {
+		t.Errorf("CheckKeys() with the key in use error = %v", err)
+	}
+	if err := honeypot.CheckKeys(t.Context(), d.console, both(two, one)); err != nil {
+		t.Errorf("CheckKeys() with the key in use as an old key error = %v", err)
+	}
+	err := honeypot.CheckKeys(t.Context(), d.console, both(two))
+	if err == nil || !strings.Contains(err.Error(), "key ID 1") {
+		t.Errorf("CheckKeys() without the key in use error = %v, want it to name the key ID 1", err)
+	}
+}
+
+func keyring(t *testing.T, entries ...string) *secretbox.Keyring {
+	t.Helper()
+	k, err := secretbox.ParseKeyring(strings.Join(entries, ","))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
+// After a rotation, the first key takes over: the secrets are sealed with it,
+// so that the old key can be retired, and nothing else of a honeypot changes.
+func TestReseal_TakesOverWithTheNewKey(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	one, two := secretboxtest.Entry(t, 1), secretboxtest.Entry(t, 2)
+	oldKeys, rotated, onlyNew := keyring(t, one), keyring(t, two, one), keyring(t, two)
+
+	c, err := honeypot.NewStore(d.console, oldKeys).Create(t.Context(), honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before struct {
+		hash    []byte
+		updated time.Time
+	}
+	if err := d.owner.QueryRow(t.Context(), `SELECT secret_hash, updated_at FROM honeypots WHERE id = $1`, c.ID).Scan(&before.hash, &before.updated); err != nil {
+		t.Fatal(err)
+	}
+	if err := honeypot.CheckKeys(t.Context(), d.console, onlyNew); err == nil {
+		t.Fatal("CheckKeys() accepts a secret sealed with a key that is not configured")
+	}
+
+	if got, err := honeypot.Reseal(t.Context(), d.console, rotated); err != nil || got != (honeypot.Resealed{Done: 1}) {
+		t.Fatalf("Reseal() = %+v, %v; want one secret sealed again", got, err)
+	}
+	if err := honeypot.CheckKeys(t.Context(), d.console, onlyNew); err != nil {
+		t.Errorf("CheckKeys() after Reseal error = %v, want the old key to be retirable", err)
+	}
+	if got, err := honeypot.NewStore(d.console, onlyNew).Secret(t.Context(), c.ID); err != nil || got.Secret != c.Secret {
+		t.Errorf("Secret() with the new key alone = %q, %v; want the secret", string(got.Secret), err)
+	}
+	var after struct {
+		hash    []byte
+		updated time.Time
+	}
+	if err := d.owner.QueryRow(t.Context(), `SELECT secret_hash, updated_at FROM honeypots WHERE id = $1`, c.ID).Scan(&after.hash, &after.updated); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(after.hash, before.hash) || !after.updated.Equal(before.updated) {
+		t.Errorf("hash and updated_at = %x, %v after Reseal; want %x, %v", after.hash, after.updated, before.hash, before.updated)
+	}
+	if got, err := honeypot.Reseal(t.Context(), d.console, rotated); err != nil || got != (honeypot.Resealed{}) {
+		t.Errorf("Reseal() again = %+v, %v; want nothing to do", got, err)
+	}
+}
+
+// A secret that does not open is counted and left as it is, so that one altered
+// row does not keep the console from starting.
+func TestReseal_LeavesWhatDoesNotOpen(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	one, two := secretboxtest.Entry(t, 1), secretboxtest.Entry(t, 2)
+	c, err := honeypot.NewStore(d.console, keyring(t, one)).Create(t.Context(), honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.owner.Exec(t.Context(), `UPDATE honeypots SET secret_sealed = set_byte(secret_sealed, 20, get_byte(secret_sealed, 20) # 1) WHERE id = $1`, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	var sealed []byte
+	if err := d.owner.QueryRow(t.Context(), `SELECT secret_sealed FROM honeypots WHERE id = $1`, c.ID).Scan(&sealed); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, err := honeypot.Reseal(t.Context(), d.console, keyring(t, two, one)); err != nil || got != (honeypot.Resealed{Unreadable: 1}) {
+		t.Fatalf("Reseal() = %+v, %v; want one secret counted as unreadable", got, err)
+	}
+	var now []byte
+	if err := d.owner.QueryRow(t.Context(), `SELECT secret_sealed FROM honeypots WHERE id = $1`, c.ID).Scan(&now); err != nil || !slices.Equal(now, sealed) {
+		t.Errorf("secret_sealed changed by Reseal: %x, %v", now, err)
+	}
+}
+
+// Sealing again waits for the replacement of the same secret that runs at the
+// same time and seals what that left, instead of the old secret that it read
+// before.
+func TestReseal_WaitsForAReplacementOfTheSecret(t *testing.T) {
+	t.Parallel()
+	d := newTestDB(t)
+	one, two := secretboxtest.Entry(t, 1), secretboxtest.Entry(t, 2)
+	oldKeys, rotated := keyring(t, one), keyring(t, two, one)
+	c, err := honeypot.NewStore(d.console, oldKeys).Create(t.Context(), honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	replacer, err := d.console.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = replacer.Rollback(context.WithoutCancel(t.Context())) }()
+	replaced, err := honeypot.NewStore(replacer, oldKeys).ReplaceSecret(t.Context(), c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := honeypot.Reseal(t.Context(), d.console, rotated)
+		done <- err
+	}()
+	waitForLockWait(t, d)
+	if err := replacer.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("Reseal() error = %v", err)
+	}
+	if got, err := honeypot.NewStore(d.console, rotated).Secret(t.Context(), c.ID); err != nil || got.Secret != replaced.Secret {
+		t.Errorf("Secret() = %q, %v; want the replaced secret, readable", string(got.Secret), err)
 	}
 }

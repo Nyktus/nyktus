@@ -33,8 +33,8 @@ const saved = ref(false);
 const busy = ref(false);
 const deleting = ref(false);
 const replacing = ref(false);
-// A new secret is shown once, here and nowhere else.
-const once = ref<{ secret: string; config: string } | undefined>();
+// The secret is held by this page only while it is shown: it is in no store, no address and no history.
+const revealed = ref<{ secret: string; config: string } | undefined>();
 const canWrite = computed(() => session.can('honeypots:write'));
 
 function show(failure: unknown): string {
@@ -42,7 +42,7 @@ function show(failure: unknown): string {
 }
 
 function discard(): void {
-  once.value = undefined;
+  revealed.value = undefined;
 }
 
 async function load(): Promise<void> {
@@ -79,13 +79,26 @@ async function update(body: OperationTypes['updateHoneypot']['body']): Promise<v
   }
 }
 
+async function showSecret(): Promise<void> {
+  busy.value = true;
+  error.value = undefined;
+  try {
+    const { secret, sensor_config: config } = (await api.call('getHoneypotSecret', { path: { id: id.value } })).body;
+    revealed.value = { secret, config };
+  } catch (failure) {
+    error.value = show(failure);
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function replaceSecret(): Promise<void> {
   busy.value = true;
   error.value = undefined;
   try {
     const { secret, sensor_config: config, ...rest } = (await api.call('replaceHoneypotSecret', { path: { id: id.value } })).body;
     honeypot.value = rest;
-    once.value = { secret, config };
+    revealed.value = { secret, config };
   } catch (failure) {
     error.value = show(failure);
   } finally {
@@ -130,13 +143,14 @@ onBeforeUnmount(discard);
           </p>
         </div>
         <div v-if="canWrite" class="actions-row">
+          <button v-if="!revealed" class="button button-ghost" type="button" :disabled="busy" @click="showSecret">{{ t('secret.show') }}</button>
           <button class="button button-ghost" type="button" @click="replacing = true">{{ t('secret.replace') }}</button>
           <button class="button button-ghost" type="button" @click="deleting = true">{{ t('common.delete') }}</button>
         </div>
       </div>
 
       <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
-      <SecretReveal v-if="once" :secret="once.secret" :config="once.config" @done="discard" />
+      <SecretReveal v-if="revealed" :secret="revealed.secret" :config="revealed.config" @done="discard" />
 
       <div class="section panel">
         <dl class="definition">

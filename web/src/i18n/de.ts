@@ -227,10 +227,11 @@ export const de: Record<MessageKey, string> = {
 
   'secret.title': 'Secret des Honeypots',
   'secret.warning':
-    'Das Secret wird nur dieses eine Mal gezeigt.',
+    'Das Secret wie ein Passwort behandeln. Es wird verschlüsselt gespeichert, und wer Honeypots ändern darf, kann es wieder anzeigen.',
   'secret.secret': 'Secret',
   'secret.config': 'Eintrag für die Konfigurationsdatei des Sensors',
-  'secret.done': 'Bestätigen',
+  'secret.done': 'Fertig',
+  'secret.show': 'Secret anzeigen',
   'secret.replace': 'Secret ersetzen',
   'secret.replace.title': 'Secret ersetzen?',
   'secret.replace.body':

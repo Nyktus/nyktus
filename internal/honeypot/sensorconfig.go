@@ -20,7 +20,7 @@ var sensorPorts = map[Service]string{
 
 // SensorConfig returns the entry of this honeypot for the configuration file
 // of the sensor: a list item of "honeypots". It holds the secret, so it is
-// shown once, like the secret.
+// shown only to those who may read the secret.
 //
 // Every value is quoted, so that none of them can end its line or start
 // another entry. It holds neither the name nor the notes of the honeypot,

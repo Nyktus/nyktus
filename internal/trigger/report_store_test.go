@@ -67,8 +67,8 @@ func (f fixture) honeypot(t *testing.T, row honeypotRow) (id, secret string) {
 	}
 	secret = randomSecret(t)
 	err := f.owner.QueryRow(t.Context(), `
-INSERT INTO honeypots (service, name, enabled, techniques, severity, scenario_id, secret_hash)
-VALUES ($1, 'h', $2, $3, $4, $5, $6)
+INSERT INTO honeypots (service, name, enabled, techniques, severity, scenario_id, secret_hash, secret_sealed)
+VALUES ($1, 'h', $2, $3, $4, $5, $6, $6)
 RETURNING id`, row.service, row.enabled, row.techniques, row.severity, row.scenarioID, SecretHash(secret)).Scan(&id)
 	if err != nil {
 		t.Fatalf("create honeypot: %v", err)

@@ -157,11 +157,11 @@ describe('the secret of a new honeypot', () => {
     expect(s.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
   });
 
-  test('is shown once, with the entry for the configuration of the sensor', async () => {
+  test('is shown after the creation, with the entry for the configuration of the sensor', async () => {
     const { wrapper } = await make();
     expect(wrapper.get('[role=region]').text()).toContain(honeypotSecret);
     expect(wrapper.get('pre').text()).toBe(honeypotConfig.trimEnd());
-    expect(wrapper.text()).toContain('The secret is shown only this once.');
+    expect(wrapper.text()).toContain('Treat the secret like a password.');
   });
 
   test('is gone once the user says that they copied it, and the page of the honeypot opens', async () => {
@@ -185,10 +185,10 @@ describe('the secret of a new honeypot', () => {
   // The state of the page is what scripts of the console can read, so the secret is out of it, not only out of the picture.
   test('is gone from the state of the page once the user says that they copied it', async () => {
     const { wrapper } = await make();
-    const state = wrapper.findComponent({ name: 'HoneypotNewView' }).vm as unknown as { once: unknown; createdId: unknown };
-    expect(JSON.stringify(state.once)).toContain(honeypotSecret);
+    const state = wrapper.findComponent({ name: 'HoneypotNewView' }).vm as unknown as { revealed: unknown; createdId: unknown };
+    expect(JSON.stringify(state.revealed)).toContain(honeypotSecret);
     await wrapper.get('[role=region] button.button-primary').trigger('click');
-    expect(state.once).toBeUndefined();
+    expect(state.revealed).toBeUndefined();
     expect(JSON.stringify(state)).not.toContain(honeypotSecret);
   });
 
@@ -227,7 +227,7 @@ describe('the secret of a new honeypot', () => {
 });
 
 describe('a honeypot', () => {
-  const one = (h = honeypot(), extra: Record<string, () => Response> = {}) => server('admin', { [`GET ${detail}`]: () => json(200, h), ...extra });
+  const one = (h = honeypot(), extra: Record<string, () => Response> = {}, role: Role = 'admin') => server(role, { [`GET ${detail}`]: () => json(200, h), ...extra });
   const path = `/honeypots/${honeypotId}`;
 
   test('shows its status and what the sensor last reported', async () => {
@@ -238,10 +238,66 @@ describe('a honeypot', () => {
     expect(wrapper.get('.notes').text()).toBe('VLAN 20, rack 4');
   });
 
-  test('has no secret and offers none to read', async () => {
+  test('shows no secret until the user asks for it', async () => {
     const { wrapper } = await boot(one(), path);
     expect(wrapper.find('[role=region]').exists()).toBe(false);
     expect(wrapper.html()).not.toContain('secret:');
+    expect(wrapper.html()).not.toContain(honeypotSecret);
+  });
+
+  describe('with its secret read again', () => {
+    const shown = () => json(200, { ...honeypot(), secret: honeypotSecret, sensor_config: honeypotConfig }, { 'Cache-Control': 'no-store' });
+    const showButton = (wrapper: Awaited<ReturnType<typeof boot>>['wrapper']) => wrapper.findAll('button').find((b) => b.text() === 'Show the secret');
+
+    test('is offered to whoever may change honeypots, and not to a viewer', async () => {
+      for (const [role, offered] of [['admin', true], ['user', true], ['viewer', false]] as const) {
+        const { wrapper } = await boot(one(honeypot(), {}, role), path);
+        expect(showButton(wrapper) !== undefined, role).toBe(offered);
+      }
+    });
+
+    test('shows the secret and the entry for the sensor, as the server holds them', async () => {
+      const s = one(honeypot(), { [`GET ${detail}/secret`]: shown });
+      const { wrapper } = await boot(s, path);
+      await showButton(wrapper)!.trigger('click');
+      await flushPromises();
+      expect(s.requests.filter((r) => r.url === `${detail}/secret`).map((r) => r.method)).toEqual(['GET']);
+      expect(wrapper.get('[role=region]').text()).toContain(honeypotSecret);
+      expect(wrapper.get('pre').text()).toBe(honeypotConfig.trimEnd());
+      expect(wrapper.get('.badges').text()).toContain('Online');
+      expect(showButton(wrapper)).toBeUndefined();
+    });
+
+    test('is hidden again when the user is done, and is in no state of the page then', async () => {
+      const { wrapper } = await boot(one(honeypot(), { [`GET ${detail}/secret`]: shown }), path);
+      await showButton(wrapper)!.trigger('click');
+      await flushPromises();
+      const state = () => wrapper.findComponent({ name: 'HoneypotView' }).vm as unknown as { honeypot: unknown; revealed: unknown };
+      expect(JSON.stringify(state().honeypot)).not.toContain(honeypotSecret);
+      await wrapper.get('[role=region] button.button-primary').trigger('click');
+      expect(wrapper.html()).not.toContain(honeypotSecret);
+      expect(state().revealed).toBeUndefined();
+      expect(JSON.stringify(state())).not.toContain(honeypotSecret);
+      expect(showButton(wrapper)).toBeDefined();
+    });
+
+    test('is kept nowhere: not in the address, the history, the storage or a later request', async () => {
+      const s = one(honeypot(), { [`GET ${detail}/secret`]: shown });
+      const { wrapper, router } = await boot(s, path);
+      await showButton(wrapper)!.trigger('click');
+      await flushPromises();
+      expect(
+        JSON.stringify([globalThis.location.href, history.state, router.currentRoute.value, Object.entries(localStorage), Object.entries(sessionStorage), document.cookie, s.requests.map((r) => r.url)]),
+      ).not.toContain(honeypotSecret);
+    });
+
+    test('says so when the server cannot show it, and shows no secret', async () => {
+      const { wrapper } = await boot(one(honeypot(), { [`GET ${detail}/secret`]: () => failure(500, 'internal_error') }), path);
+      await showButton(wrapper)!.trigger('click');
+      await flushPromises();
+      expect(wrapper.get('[role=alert]').text()).toBe('Something went wrong on the server.');
+      expect(wrapper.find('[role=region]').exists()).toBe(false);
+    });
   });
 
   test('shows a name that is markup as text', async () => {
@@ -307,7 +363,7 @@ describe('a honeypot', () => {
       expect(wrapper.html()).not.toContain(honeypotSecret);
     });
 
-    test('shows the new secret once, with the status reset', async () => {
+    test('shows the new secret, with the status reset', async () => {
       const { wrapper } = await ask();
       await wrapper.get('dialog .danger').trigger('click');
       await flushPromises();
@@ -322,12 +378,12 @@ describe('a honeypot', () => {
       const { wrapper } = await ask();
       await wrapper.get('dialog .danger').trigger('click');
       await flushPromises();
-      const state = () => wrapper.findComponent({ name: 'HoneypotView' }).vm as unknown as { honeypot: unknown; once: unknown };
+      const state = () => wrapper.findComponent({ name: 'HoneypotView' }).vm as unknown as { honeypot: unknown; revealed: unknown };
       expect(JSON.stringify(state().honeypot)).not.toContain(honeypotSecret);
       expect(JSON.stringify(state().honeypot)).not.toContain('sensor_config');
-      expect(JSON.stringify(state().once)).toContain(honeypotSecret);
+      expect(JSON.stringify(state().revealed)).toContain(honeypotSecret);
       await wrapper.get('[role=region] button.button-primary').trigger('click');
-      expect(state().once).toBeUndefined();
+      expect(state().revealed).toBeUndefined();
       expect(JSON.stringify(state())).not.toContain(honeypotSecret);
     });
 

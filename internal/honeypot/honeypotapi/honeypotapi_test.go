@@ -25,6 +25,7 @@ import (
 	"nyktus.org/nyktus/internal/auth/access"
 	"nyktus.org/nyktus/internal/platform/apispec"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 	"nyktus.org/nyktus/internal/user"
 )
 
@@ -67,7 +68,7 @@ RETURNING id`).Scan(&id)
 	}
 	log := &syncBuffer{}
 	return fixture{
-		h:         NewHandler(slog.New(slog.NewJSONHandler(log, nil)), schematest.Open(t, consoleURL)),
+		h:         NewHandler(slog.New(slog.NewJSONHandler(log, nil)), schematest.Open(t, consoleURL), secretboxtest.Keyring(t)),
 		owner:     owner,
 		log:       log,
 		principal: access.Principal{UserID: id, Role: user.RoleUser, Method: audit.AuthSession, SessionID: "s1"},
@@ -143,7 +144,7 @@ func (f fixture) owns(t *testing.T, id, secret string) bool {
 	return found == id
 }
 
-func TestCreate_ReturnsTheHoneypotWithItsSecretOnce(t *testing.T) {
+func TestCreate_ReturnsTheHoneypotWithItsSecret(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
@@ -175,7 +176,7 @@ func TestCreate_ReturnsTheHoneypotWithItsSecretOnce(t *testing.T) {
 		t.Errorf("sensor_config = %q, holds the name or the notes", got.SensorConfig)
 	}
 
-	// Nothing else shows the secret again.
+	// Nothing but the read of the secret shows it again.
 	for name, rec := range map[string]*httptest.ResponseRecorder{
 		"GET":   f.serve(t, f.h.Get, http.MethodGet, "/", got.ID, ""),
 		"list":  f.serve(t, f.h.List, http.MethodGet, "/api/v1/honeypots", "", ""),
@@ -467,7 +468,9 @@ WHERE id = $1`, c.ID); err != nil {
 	add("Honeypot", f.serve(t, f.h.Update, http.MethodPatch, "/", c.ID, `{"name": "f"}`))
 	add("HoneypotPage", f.serve(t, f.h.List, http.MethodGet, "/api/v1/honeypots?limit=2", "", ""))
 	add("HoneypotPage", f.serve(t, f.h.List, http.MethodGet, "/api/v1/honeypots?scenario_id="+sc, "", ""))
+	add("HoneypotSecret", f.serve(t, f.h.ReadSecret, http.MethodGet, "/", c.ID, ""))
 	add("CreatedHoneypot", f.serve(t, f.h.ReplaceSecret, http.MethodPost, "/", c.ID, ""))
+	add("HoneypotSecret", f.serve(t, f.h.ReadSecret, http.MethodGet, "/", c.ID, ""))
 	add("Honeypot", f.serve(t, f.h.DetachScenario, http.MethodDelete, "/", c.ID, ""))
 
 	for _, b := range bodies {
@@ -579,5 +582,87 @@ func TestCreate_JoinsAScenario(t *testing.T) {
 	var n int
 	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM honeypots`).Scan(&n); err != nil || n != 1 {
 		t.Errorf("honeypots = %d, %v; want only the first", n, err)
+	}
+}
+
+// The secret is shown again as it was created, with the entry for the sensor,
+// until it is replaced, never to the log, and the read is recorded for the
+// honeypot without the secret.
+func TestReadSecret_ShowsTheSecretAgain(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	c := f.create(t, `{"service": "ssh", "name": "Jump host", "techniques": ["T1021.004"]}`)
+
+	rec := f.serve(t, f.h.ReadSecret, http.MethodGet, "/api/v1/honeypots/"+c.ID+"/secret", c.ID, "")
+	got := decode[created](t, rec)
+	if rec.Code != http.StatusOK || got.ID != c.ID || got.Secret != c.Secret || got.SensorConfig != c.SensorConfig ||
+		got.Name != "Jump host" || got.Status != "never" || !slices.Equal(got.Techniques, []string{"T1021.004"}) {
+		t.Fatalf("GET secret = %d %s, want the secret and the entry of the creation", rec.Code, rec.Body)
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("GET secret Cache-Control = %q, want no-store", rec.Header().Get("Cache-Control"))
+	}
+
+	// A honeypot that a sensor has reported for shows its real status.
+	if _, err := f.owner.Exec(t.Context(), `UPDATE honeypots SET created_at = created_at - interval '1 hour', last_seen_at = clock_timestamp() WHERE id = $1`, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if seen := decode[created](t, f.serve(t, f.h.ReadSecret, http.MethodGet, "/", c.ID, "")); seen.Status != "online" || seen.Secret != c.Secret {
+		t.Errorf("GET secret of a honeypot that reported = %+v, want status online and the secret", seen.Response)
+	}
+
+	replaced := decode[created](t, f.serve(t, f.h.ReplaceSecret, http.MethodPost, "/", c.ID, ""))
+	again := decode[created](t, f.serve(t, f.h.ReadSecret, http.MethodGet, "/", c.ID, ""))
+	if again.Secret != replaced.Secret || again.Secret == c.Secret || !f.owns(t, c.ID, again.Secret) || f.owns(t, c.ID, c.Secret) {
+		t.Errorf("GET secret after the replacement = %q, want the new secret, which finds the honeypot", again.Secret)
+	}
+
+	if strings.Contains(f.log.String(), c.Secret) || strings.Contains(f.log.String(), replaced.Secret) {
+		t.Errorf("log %s holds a secret", f.log.String())
+	}
+	var n int
+	if err := f.owner.QueryRow(t.Context(), `
+SELECT count(*) FROM audit_entries WHERE action = 'honeypot.secret_read' AND resource_type = 'honeypot' AND resource_id = $1`, c.ID).Scan(&n); err != nil || n != 3 {
+		t.Errorf("audit entries of the read = %d, %v; want one for each of the three reads", n, err)
+	}
+}
+
+func TestReadSecret_RejectsUnknownHoneypots(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	for _, id := range []string{"00000000-0000-4000-8000-000000000000", "not-a-uuid"} {
+		rec := f.serve(t, f.h.ReadSecret, http.MethodGet, "/", id, "")
+		if rec.Code != http.StatusNotFound || errorCode(t, rec) != "not_found" {
+			t.Errorf("GET secret of %q = %d %s, want 404 not_found", id, rec.Code, rec.Body)
+		}
+	}
+	var n int
+	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM audit_entries WHERE action = 'honeypot.secret_read'`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("audit entries of reads = %d, %v; want none", n, err)
+	}
+}
+
+// A secret that does not open is answered like any failure of the server, with
+// nothing of the secret and nothing of the reason; the log has the reason, not
+// the secret.
+func TestReadSecret_DoesNotSendASecretThatDoesNotOpen(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	c := f.create(t, `{"service": "ssh", "name": "a"}`)
+	if _, err := f.owner.Exec(t.Context(), `UPDATE honeypots SET secret_sealed = set_byte(secret_sealed, 20, get_byte(secret_sealed, 20) # 1) WHERE id = $1`, c.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := f.serve(t, f.h.ReadSecret, http.MethodGet, "/", c.ID, "")
+	if rec.Code != http.StatusInternalServerError || errorCode(t, rec) != "internal_error" || strings.Contains(rec.Body.String(), c.Secret) ||
+		strings.Contains(rec.Body.String(), "cannot be read") {
+		t.Errorf("GET secret = %d %s, want a generic 500", rec.Code, rec.Body)
+	}
+	if !strings.Contains(f.log.String(), "honeypot: read secret") || strings.Contains(f.log.String(), c.Secret) {
+		t.Errorf("log %s, want the failed read without the secret", f.log.String())
+	}
+	var n int
+	if err := f.owner.QueryRow(t.Context(), `SELECT count(*) FROM audit_entries WHERE action = 'honeypot.secret_read'`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("audit entries of reads = %d, %v; want none for a read that sent nothing", n, err)
 	}
 }

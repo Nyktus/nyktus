@@ -429,7 +429,7 @@ func TestDeleteExpiredIncidentData_RemovesTheAttemptsOfExpiredEvents(t *testing.
 	const retention = 180
 	var honeypotID string
 	if err := owner.QueryRow(t.Context(), `
-INSERT INTO honeypots (service, name, severity, secret_hash) VALUES ('ssh', 'p', 'medium', sha256('x')) RETURNING id`).Scan(&honeypotID); err != nil {
+INSERT INTO honeypots (service, name, severity, secret_hash, secret_sealed) VALUES ('ssh', 'p', 'medium', sha256('x'), sha256('x')) RETURNING id`).Scan(&honeypotID); err != nil {
 		t.Fatal(err)
 	}
 	incident := d.incident(honeypotID, days(retention)+time.Hour, days(retention)+margin)

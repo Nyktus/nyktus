@@ -17,13 +17,18 @@ import (
 func TestApply_VerifiesThePrivilegesOfTheConsoleOnHoneypots(t *testing.T) {
 	t.Parallel()
 
-	const grant = "GRANT INSERT (service, name, notes, enabled, techniques, severity, secret_hash, scenario_id) ON public.honeypots TO nyktus_console;"
+	const grant = "GRANT INSERT (service, name, notes, enabled, techniques, severity, secret_hash, secret_sealed, scenario_id) ON public.honeypots TO nyktus_console;"
 	tests := []struct {
 		name, replacement, want string
 	}{
 		{
 			name:        "missing",
-			replacement: "GRANT INSERT (service, name, notes, enabled, techniques, severity, secret_hash) ON public.honeypots TO nyktus_console;",
+			replacement: "GRANT INSERT (service, name, notes, enabled, techniques, severity, secret_hash, scenario_id) ON public.honeypots TO nyktus_console;",
+			want:        "nyktus_console lacks privileges on public.honeypots",
+		},
+		{
+			name:        "missing without scenario",
+			replacement: "GRANT INSERT (service, name, notes, enabled, techniques, severity, secret_hash, secret_sealed) ON public.honeypots TO nyktus_console;",
 			want:        "nyktus_console lacks privileges on public.honeypots",
 		},
 		{
