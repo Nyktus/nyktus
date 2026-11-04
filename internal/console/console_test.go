@@ -54,8 +54,7 @@ func deps(db Pinger) Deps {
 		},
 		APIKeys: APIKeys{List: http.NotFoundHandler(), Create: http.NotFoundHandler(), Revoke: http.NotFoundHandler()},
 		Catalog: Catalog{
-			List: http.NotFoundHandler(), Get: http.NotFoundHandler(),
-			ListArtifacts: http.NotFoundHandler(), GetArtifact: http.NotFoundHandler(),
+			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), File: http.NotFoundHandler(),
 		},
 		Honeytokens: Honeytokens{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
@@ -70,11 +69,7 @@ func deps(db Pinger) Deps {
 		Scenarios: Scenarios{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),
 			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(), Apply: http.NotFoundHandler(),
-			Guide: http.NotFoundHandler(), AddDeception: http.NotFoundHandler(), AddArtifact: http.NotFoundHandler(),
-		},
-		Artifacts: Artifacts{
-			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Download: http.NotFoundHandler(),
-			Update: http.NotFoundHandler(), Delete: http.NotFoundHandler(),
+			AddDeception: http.NotFoundHandler(), RemoveDeception: http.NotFoundHandler(),
 		},
 		Incidents: Incidents{List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Update: http.NotFoundHandler()},
 		Events:    Events{List: http.NotFoundHandler(), Get: http.NotFoundHandler()},
@@ -267,8 +262,7 @@ func TestCreateAPIKeyRequest_ListsTheScopesKeysMayCarry(t *testing.T) {
 func TestNew_RefusesAnInvalidCatalog(t *testing.T) {
 	t.Parallel()
 
-	// An invalid artifact and an invalid deception, in an otherwise valid
-	// catalog.
+	// An invalid deception in an otherwise valid catalog.
 	embeddedCopy := func(path, content string) fstest.MapFS {
 		fsys := fstest.MapFS{}
 		if err := fs.WalkDir(embedded.FS(), ".", func(name string, e fs.DirEntry, err error) error {
@@ -285,7 +279,6 @@ func TestNew_RefusesAnInvalidCatalog(t *testing.T) {
 		return fsys
 	}
 	for path, want := range map[string]error{
-		"artifacts/ssh-config/artifact.json":      catalog.ErrInvalidArtifact,
 		"deceptions/remote-access/deception.json": catalog.ErrInvalidDeception,
 	} {
 		invalid := embeddedCopy(path, `{"schema_version": 3}`)

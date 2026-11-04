@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "postgres-backup-beacon",
   "category": "data",
   "title": {
@@ -14,51 +14,16 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Database",
-      "type": "dns",
       "label": {"en": "Database host", "de": "Datenbank-Host"},
+      "type": "dns",
       "techniques": ["T1213", "T1005"],
       "severity": "critical"
     }
   ],
-  "persona": [
-    {
-      "key": "FunctionName",
-      "kind": "name",
-      "label": {"en": "Name of the function", "de": "Name der Funktion"},
-      "example": "refresh_catalog_stats"
-    },
-    {
-      "key": "ViewName",
-      "kind": "name",
-      "label": {"en": "Name of the materialized view", "de": "Name der Materialized View"},
-      "example": "catalog_stats"
-    },
-    {
-      "key": "ServerName",
-      "kind": "name",
-      "label": {"en": "Name of the foreign server", "de": "Name des Fremdservers"},
-      "example": "reporting_replica"
-    },
-    {
-      "key": "TableName",
-      "kind": "name",
-      "label": {"en": "Name of the foreign table", "de": "Name der Fremdtabelle"},
-      "example": "customer_payment_tokens"
-    },
-    {
-      "key": "DatabaseName",
-      "kind": "name",
-      "label": {"en": "Name of the remote database", "de": "Name der entfernten Datenbank"},
-      "example": "analytics"
-    },
-    {
-      "key": "Account",
-      "kind": "name",
-      "label": {"en": "Remote account", "de": "Entferntes Konto"},
-      "example": "bi_reader"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "restore-hook.sql", "format": "config", "file": "restore-hook.sql"},
+    {"name": "foreign-table.sql", "format": "config", "file": "foreign-table.sql"}
   ],
-  "artifacts": ["postgres-backup-beacon-restore", "postgres-backup-beacon-foreign"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

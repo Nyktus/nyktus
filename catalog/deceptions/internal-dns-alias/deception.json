@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "internal-dns-alias",
   "category": "network",
   "title": {
@@ -14,26 +14,13 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Target",
-      "type": "dns",
       "label": {"en": "Target of the alias", "de": "Ziel des Alias"},
+      "type": "dns",
       "techniques": ["T1018"],
       "severity": "high"
     }
   ],
-  "persona": [
-    {
-      "key": "Alias",
-      "kind": "name",
-      "label": {"en": "Name of the alias", "de": "Name des Alias"},
-      "example": "vault"
-    },
-    {
-      "key": "Domain",
-      "kind": "host",
-      "label": {"en": "Internal domain", "de": "Interne Domain"},
-      "example": "corp.example.com"
-    }
-  ],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "honeypots": [],
+  "files": [],
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

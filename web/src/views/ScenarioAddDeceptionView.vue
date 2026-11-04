@@ -10,11 +10,8 @@ import { api } from '../api/client';
 import { ApiError } from '../api/errors';
 import type { CatalogDeception, CatalogDeceptionSummary, Scenario } from '../api/generated';
 import { errorText } from '../api/messages';
-import FileChoice from '../components/FileChoice.vue';
-import PersonaFields from '../components/PersonaFields.vue';
 import { locale, t } from '../i18n';
-import { personaProblems, personaToSend } from '../personaRules';
-import { personaProblemTexts } from '../personaText';
+import { session } from '../session';
 
 const route = useRoute();
 const router = useRouter();
@@ -31,9 +28,9 @@ const busy = ref(false);
 const chosen = ref('');
 const deception = ref<CatalogDeception | undefined>();
 const detailError = ref<string | undefined>();
-const persona = ref<Record<string, string>>({});
-const problems = ref<Record<string, string>>({});
-const selected = ref<string[]>([]);
+// Off at first, as when a deception is applied; it needs the permissions to write both resources.
+const createResources = ref(false);
+const canCreate = computed(() => session.can('honeytokens:write') && session.can('honeypots:write'));
 
 const added = computed(() => new Set(scenario.value?.deceptions.map((d) => d.deception_id)));
 const available = computed(() => choices.value.filter((c) => !added.value.has(c.id)));
@@ -69,9 +66,12 @@ async function loadDetail(): Promise<void> {
   const mine = ++asked;
   detailError.value = undefined;
   error.value = undefined;
-  problems.value = {};
-  if (chosen.value === '') {
+  // What the form shows must be what the select names: another choice drops the one before at once, so
+  // that nothing is sent for it while the answer for the new one is on its way.
+  if (chosen.value === '' || deception.value?.id !== chosen.value) {
     deception.value = undefined;
+  }
+  if (chosen.value === '') {
     return;
   }
   try {
@@ -79,13 +79,7 @@ async function loadDetail(): Promise<void> {
     if (mine !== asked) {
       return;
     }
-    // What was typed stays, so that a key that two deceptions ask for is asked once. A new language
-    // keeps the files that were taken away; only another deception starts with all of its files.
-    const sameDeception = deception.value?.id === body.id;
     deception.value = body;
-    if (!sameDeception) {
-      selected.value = body.artifacts.map((a) => a.key);
-    }
   } catch (failure) {
     if (mine === asked) {
       deception.value = undefined;
@@ -94,15 +88,9 @@ async function loadDetail(): Promise<void> {
   }
 }
 
-function check(): Record<string, string> {
-  const fields = deception.value?.persona ?? [];
-  return personaProblemTexts(fields, personaProblems(fields, persona.value, scenario.value?.persona));
-}
-
 async function submit(): Promise<void> {
   error.value = undefined;
-  problems.value = check();
-  if (Object.keys(problems.value).length > 0 || deception.value === undefined || scenario.value === undefined) {
+  if (deception.value === undefined || scenario.value === undefined) {
     return;
   }
   busy.value = true;
@@ -112,9 +100,7 @@ async function submit(): Promise<void> {
       body: {
         deception_id: deception.value.id,
         language: locale.value,
-        // A key that the scenario has is not sent: its value stays, and a different one would be refused.
-        persona: personaToSend(deception.value.persona, persona.value, scenario.value.persona),
-        artifacts: deception.value.artifacts.map((a) => a.key).filter((key) => selected.value.includes(key)),
+        create_resources: canCreate.value && createResources.value,
       },
     });
     await router.replace({ name: 'scenario', params: { id: id.value } });
@@ -188,16 +174,10 @@ watch(locale, () => {
             <p>{{ deception.summary }}</p>
             <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
 
-            <PersonaFields
-              v-model="persona"
-              :fields="deception.persona"
-              :fixed="scenario.persona"
-              :problems="problems"
-              :legend="t('catalog.apply.persona')"
-              :hint="t('scenarios.addDeception.personaHint')"
-            />
-
-            <FileChoice v-model="selected" :artifacts="deception.artifacts" :hint="t('scenarios.addDeception.filesHint')" />
+            <div v-if="canCreate && (deception.honeytokens.length > 0 || deception.honeypots.length > 0)" class="field">
+              <label class="check"><input id="create-resources" v-model="createResources" type="checkbox" />{{ t('scenarios.addDeception.createResources') }}</label>
+              <span class="hint">{{ t('catalog.apply.createResourcesHint') }}</span>
+            </div>
 
             <div class="actions-row">
               <button class="button button-primary" type="submit" :disabled="busy">{{ busy ? t('app.saving') : t('scenarios.addDeception.submit') }}</button>
@@ -219,5 +199,11 @@ watch(locale, () => {
 
 .narrow {
   max-width: 36rem;
+}
+
+.check {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
 }
 </style>

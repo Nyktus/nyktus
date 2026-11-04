@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "portal-access",
   "category": "identity",
   "title": {
@@ -11,54 +11,28 @@
     "de": "Lesezeichen, eine Internetverknüpfung, ein Hinweis zum Zurücksetzen der Single-Sign-on-Anmeldung und ein Passwort-Export, die zu internen Portalen führen. Wer eine Adresse öffnet, löst ein Event aus."
   },
   "techniques": ["T1217", "T1078", "T1083", "T1555.003"],
-  "engage_activities": ["EAC0005"],
+  "engage_activities": ["EAC0005", "EAC0011", "EAC0022"],
   "honeytokens": [
     {
-      "key": "Portal",
-      "type": "web_url",
       "label": {"en": "Portal", "de": "Portal"},
+      "type": "web_url",
       "techniques": ["T1217", "T1078", "T1556", "T1555.003"],
       "severity": "high"
     },
     {
-      "key": "Link",
-      "type": "web_url",
       "label": {"en": "Link", "de": "Link"},
+      "type": "web_url",
       "techniques": ["T1083"]
     }
   ],
-  "persona": [
-    {
-      "key": "Company",
-      "kind": "text",
-      "label": {"en": "Name of the organization", "de": "Name der Organisation"},
-      "example": "Example Ltd"
-    },
-    {
-      "key": "PortalName",
-      "kind": "text",
-      "label": {"en": "Name of the portal", "de": "Name des Portals"},
-      "example": "VPN self-service"
-    },
-    {
-      "key": "Contact",
-      "kind": "text",
-      "label": {"en": "Contact", "de": "Ansprechpartner"},
-      "example": "Service desk"
-    },
-    {
-      "key": "Domain",
-      "kind": "host",
-      "label": {"en": "Internal domain", "de": "Interne Domain"},
-      "example": "corp.example.com"
-    },
-    {
-      "key": "Account",
-      "kind": "name",
-      "label": {"en": "Account", "de": "Konto"},
-      "example": "j.doe"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "bookmarks.html", "format": "html", "file": "bookmarks.html"},
+    {"name": "SSO-reset.html", "format": "html", "file": "SSO-reset.html"},
+    {"name": "Portal.url", "format": "config", "file": "Portal.url"},
+    {"name": "Passwords.csv", "format": "config", "file": "Passwords.csv"},
+    {"name": "Meeting-notes.md", "format": "markdown", "file": "Meeting-notes.md"},
+    {"name": "Favorites.html", "format": "html", "file": "Favorites.html"}
   ],
-  "artifacts": ["browser-bookmarks", "sso-reset-note", "windows-shortcut", "password-export", "meeting-notes", "bookmarks-plain"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

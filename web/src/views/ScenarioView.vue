@@ -8,17 +8,15 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { ApiError } from '../api/errors';
-import type { Artifact, Honeypot, Honeytoken, OperationTypes, Scenario } from '../api/generated';
+import type { CatalogDeception, Honeypot, Honeytoken, OperationTypes, Scenario } from '../api/generated';
 import { errorText } from '../api/messages';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
-import FileSize from '../components/FileSize.vue';
-import MarkdownView from '../components/MarkdownView';
+import DeceptionDetail from '../components/DeceptionDetail.vue';
 import ScenarioForm from '../components/ScenarioForm.vue';
 import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
 import TimeStamp from '../components/TimeStamp.vue';
-import { carriesHoneytoken } from '../artifactRole';
-import { t } from '../i18n';
+import { locale, t } from '../i18n';
 import { session } from '../session';
 import { usePagedList } from '../usePagedList';
 
@@ -38,10 +36,9 @@ const canWriteHoneytokens = computed(() => session.can('honeytokens:write'));
 const canWriteHoneypots = computed(() => session.can('honeypots:write'));
 
 // What happens to the decoys when the scenario is deleted. Keeping them is the safe choice.
-const choice = reactive<{ honeytokens: 'keep' | 'delete'; honeypots: 'keep' | 'delete'; artifacts: 'keep' | 'delete' }>({
+const choice = reactive<{ honeytokens: 'keep' | 'delete'; honeypots: 'keep' | 'delete' }>({
   honeytokens: 'keep',
   honeypots: 'keep',
-  artifacts: 'keep',
 });
 
 // Whatever closes the dialog, the next one starts with keeping: a choice to delete that was
@@ -49,22 +46,25 @@ const choice = reactive<{ honeytokens: 'keep' | 'delete'; honeypots: 'keep' | 'd
 watch(deleting, () => {
   choice.honeytokens = 'keep';
   choice.honeypots = 'keep';
-  choice.artifacts = 'keep';
 });
 
 const detaching = ref(false);
 
-const guides = ref<{ deception_id: string; language: string; content: string }[]>([]);
-const guideFailed = ref(false);
-const guidesLoaded = ref(false);
+// The titles of the deceptions come from the list of the catalog, in the language of the console, in one request.
+// A deception that the list lacks is gone from the catalog. The guide, the slots and the files of a deception are
+// read when its section is opened, and again when the language changes; one that could not be read is asked for
+// again the next time the section is opened.
+const titles = ref<Record<string, string> | undefined>();
+const titlesFailed = ref(false);
+const details = ref<Record<string, CatalogDeception | 'failed'>>({});
+const opened = new Set<string>();
+// What is being asked for, by language and deception, so that a question in another language is not skipped.
+const asking = new Set<string>();
+const removing = ref(false);
 
 const honeytokens = usePagedList<Honeytoken>(async (cursor) => {
   const { body } = await api.call('listHoneytokens', { query: { limit: 50, cursor, scenario_id: id.value } });
   return { items: body.honeytokens, next: body.next_cursor };
-});
-const artifacts = usePagedList<Artifact>(async (cursor) => {
-  const { body } = await api.call('listArtifacts', { query: { limit: 50, cursor, scenario_id: id.value } });
-  return { items: body.artifacts, next: body.next_cursor };
 });
 const honeypots = usePagedList<Honeypot>(async (cursor) => {
   const { body } = await api.call('listHoneypots', { query: { limit: 50, cursor, scenario_id: id.value } });
@@ -82,8 +82,11 @@ async function load(): Promise<void> {
     scenario.value = (await api.call('getScenario', { path: { id: id.value } })).body;
     void honeytokens.reload();
     void honeypots.reload();
-    void artifacts.reload();
-    void loadGuide();
+    void loadTitles();
+    // A single deception is shown open, so its guide is read at once.
+    if (scenario.value.deceptions.length === 1) {
+      openSection(scenario.value.deceptions[0]?.deception_id ?? '');
+    }
   } catch (failure) {
     if (failure instanceof ApiError && failure.kind === 'not_found') {
       missing.value = true;
@@ -95,24 +98,97 @@ async function load(): Promise<void> {
   }
 }
 
-// Only a scenario with a deception has guides; one put together by hand has none.
-async function loadGuide(): Promise<void> {
-  guides.value = [];
-  guideFailed.value = false;
-  guidesLoaded.value = false;
-  if (scenario.value?.deceptions.length === 0) {
+// The answer of the last question is the one that counts, also when the language changes meanwhile.
+let askedTitles = 0;
+
+async function loadTitles(): Promise<void> {
+  const mine = ++askedTitles;
+  titlesFailed.value = false;
+  // Without the scenario there is nothing to name yet, and one without deceptions has no titles to read.
+  if (scenario.value === undefined || scenario.value.deceptions.length === 0) {
     return;
   }
   try {
-    guides.value = (await api.call('getScenarioGuide', { path: { id: id.value } })).body.guides;
-    guidesLoaded.value = true;
+    const list = (await api.call('listCatalogDeceptions', { query: { lang: locale.value } })).body.deceptions;
+    if (mine === askedTitles) {
+      titles.value = Object.fromEntries(list.map((entry) => [entry.id, entry.title]));
+    }
   } catch {
-    guideFailed.value = true;
+    if (mine === askedTitles) {
+      titlesFailed.value = true;
+    }
   }
 }
 
-function guideOf(deceptionId: string): string | undefined {
-  return guides.value.find((g) => g.deception_id === deceptionId)?.content;
+async function loadDetail(deceptionId: string): Promise<void> {
+  const language = locale.value;
+  const question = `${language}/${deceptionId}`;
+  if (asking.has(question)) {
+    return;
+  }
+  asking.add(question);
+  try {
+    const body = (await api.call('getCatalogDeception', { path: { id: deceptionId }, query: { lang: language } })).body;
+    if (language === locale.value) {
+      details.value = { ...details.value, [deceptionId]: body };
+    }
+  } catch {
+    if (language === locale.value) {
+      details.value = { ...details.value, [deceptionId]: 'failed' };
+    }
+  } finally {
+    asking.delete(question);
+  }
+}
+
+function openSection(deceptionId: string): void {
+  opened.add(deceptionId);
+  const found = details.value[deceptionId];
+  if (found === undefined || found === 'failed') {
+    void loadDetail(deceptionId);
+  }
+}
+
+function toggle(deceptionId: string, event: Event): void {
+  if ((event.target as HTMLDetailsElement).open) {
+    openSection(deceptionId);
+  } else {
+    opened.delete(deceptionId);
+  }
+}
+
+function detail(deceptionId: string): CatalogDeception | undefined {
+  const found = details.value[deceptionId];
+  return typeof found === 'object' ? found : undefined;
+}
+
+// The catalog lacks a deception that its list does not name, once the list has been read.
+function gone(deceptionId: string): boolean {
+  return titles.value !== undefined && !(deceptionId in titles.value);
+}
+
+// The language changes what the catalog says, so what was read in the other one is dropped.
+function reloadForLanguage(): void {
+  details.value = {};
+  titles.value = undefined;
+  void loadTitles();
+  for (const deceptionId of opened) {
+    void loadDetail(deceptionId);
+  }
+}
+
+// Removing a deception ends the assignment only; its honeytokens and honeypots stay in the scenario.
+async function removeDeception(deceptionId: string): Promise<void> {
+  removing.value = true;
+  error.value = undefined;
+  try {
+    scenario.value = (await api.call('removeScenarioDeception', { path: { id: id.value, deception_id: deceptionId } })).body;
+    opened.delete(deceptionId);
+  } catch (failure) {
+    error.value = show(failure);
+  } finally {
+    removing.value = false;
+  }
 }
 
 async function update(body: OperationTypes['updateScenario']['body']): Promise<void> {
@@ -162,9 +238,6 @@ async function remove(): Promise<void> {
     if (choice.honeypots === 'delete' && canWriteHoneypots.value) {
       query.honeypots = 'delete';
     }
-    if (choice.artifacts === 'delete') {
-      query.artifacts = 'delete';
-    }
     await api.call('deleteScenario', { path: { id: id.value }, query });
     await router.replace({ name: 'scenarios' });
   } catch (failure) {
@@ -176,6 +249,7 @@ async function remove(): Promise<void> {
 }
 
 onMounted(load);
+watch(locale, reloadForLanguage);
 </script>
 
 <template>
@@ -199,17 +273,6 @@ onMounted(load);
         <dl class="definition">
           <dt>{{ t('field.notes') }}</dt>
           <dd class="notes">{{ scenario.notes === '' ? t('common.none') : scenario.notes }}</dd>
-          <template v-if="Object.keys(scenario.persona).length > 0">
-            <dt>{{ t('scenarios.persona') }}</dt>
-            <dd>
-              <dl class="persona">
-                <template v-for="(value, key) in scenario.persona" :key="key">
-                  <dt class="mono">{{ key }}</dt>
-                  <dd><bdi>{{ value }}</bdi></dd>
-                </template>
-              </dl>
-            </dd>
-          </template>
           <dt>{{ t('scenarios.engage') }}</dt>
           <dd class="mono">{{ scenario.engage_activities.length === 0 ? t('common.none') : scenario.engage_activities.join(', ') }}</dd>
           <dt>{{ t('field.created') }}</dt>
@@ -225,18 +288,29 @@ onMounted(load);
           <RouterLink v-if="canWrite" class="button button-ghost small" :to="{ name: 'scenario-add-deception', params: { id } }">{{ t('scenarios.addDeception.button') }}</RouterLink>
         </div>
         <p v-if="scenario.deceptions.length === 0" class="hint">{{ canWrite ? t('scenarios.stories.empty') : t('scenarios.stories.emptyRead') }}</p>
-        <p v-if="guideFailed" class="notice notice-error" role="alert">{{ t('scenarios.guideFailed') }}</p>
-        <article v-for="story in scenario.deceptions" :key="story.deception_id" class="story">
-          <h3>
-            <RouterLink class="mono" :to="{ name: 'catalog-deception', params: { id: story.deception_id } }">{{ story.deception_id }}</RouterLink>
-          </h3>
-          <p class="hint">{{ t('scenarios.stories.added') }} <TimeStamp :value="story.created_at" /></p>
-          <details :open="scenario.deceptions.length === 1">
+        <p v-if="titlesFailed" class="notice notice-error" role="alert">{{ t('scenarios.stories.loadFailed') }}</p>
+        <article v-for="entry in scenario.deceptions" :key="entry.deception_id" class="story">
+          <div class="head">
+            <h3>
+              <span v-if="gone(entry.deception_id)" class="mono">{{ entry.deception_id }}</span>
+              <RouterLink v-else class="mono" :to="{ name: 'catalog-deception', params: { id: entry.deception_id } }">
+                {{ titles?.[entry.deception_id] ?? entry.deception_id }}
+              </RouterLink>
+            </h3>
+            <button v-if="canWrite" class="button button-ghost small" type="button" :disabled="removing" @click="removeDeception(entry.deception_id)">
+              {{ t('scenarios.stories.remove') }}
+            </button>
+          </div>
+          <p class="hint">{{ t('scenarios.stories.added') }} <TimeStamp :value="entry.created_at" /></p>
+          <p v-if="gone(entry.deception_id)" class="notice" role="status">{{ t('scenarios.stories.gone') }}</p>
+          <details v-else :open="scenario.deceptions.length === 1" @toggle="toggle(entry.deception_id, $event)">
             <summary>{{ t('scenarios.guide') }}</summary>
-            <MarkdownView v-if="guideOf(story.deception_id) !== undefined" :source="guideOf(story.deception_id) ?? ''" />
-            <p v-else-if="!guideFailed && !guidesLoaded" role="status">{{ t('app.loading') }}</p>
+            <DeceptionDetail v-if="detail(entry.deception_id)" :deception="detail(entry.deception_id) as CatalogDeception" :under="3" />
+            <p v-else-if="details[entry.deception_id] === 'failed'" class="notice notice-error" role="alert">{{ t('scenarios.stories.loadFailed') }}</p>
+            <p v-else role="status">{{ t('app.loading') }}</p>
           </details>
         </article>
+        <p v-if="canWrite && scenario.deceptions.length > 0" class="hint">{{ t('scenarios.stories.removeHint') }}</p>
       </div>
 
       <div class="section panel">
@@ -301,34 +375,6 @@ onMounted(load);
         </p>
       </div>
 
-      <div class="section panel">
-        <div class="head">
-          <h2>{{ t('artifacts.ofScenario') }}</h2>
-          <RouterLink v-if="canWrite" class="button button-ghost small" :to="{ name: 'scenario-add-artifact', params: { id } }">{{ t('scenarios.addArtifact.button') }}</RouterLink>
-        </div>
-        <p v-if="artifacts.error.value" class="notice notice-error" role="alert">{{ t('artifacts.loadFailed') }}</p>
-        <p v-else-if="!artifacts.loaded.value && artifacts.items.value.length === 0" role="status">{{ t('app.loading') }}</p>
-        <p v-else-if="artifacts.loaded.value && artifacts.items.value.length === 0" class="hint">{{ canWrite ? t('artifacts.noneHere') : t('artifacts.none') }}</p>
-        <template v-else-if="artifacts.items.value.length > 0">
-          <p class="hint">{{ t('artifacts.roleHint') }}</p>
-          <div class="table-wrap">
-            <table class="table">
-              <tbody>
-                <tr v-for="artifact in artifacts.items.value" :key="artifact.id">
-                  <td><RouterLink class="mono" :to="{ name: 'artifact', params: { id: artifact.id } }"><bdi>{{ artifact.file_name }}</bdi></RouterLink></td>
-                  <td>{{ t(`artifactFormat.${artifact.format}`) }}</td>
-                  <td>{{ carriesHoneytoken(artifact) ? t('artifacts.role.lure') : t('artifacts.role.litter') }}</td>
-                  <td><FileSize :bytes="artifact.size" /></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </template>
-        <p v-if="artifacts.next.value !== undefined">
-          <button class="button button-ghost small" type="button" :disabled="artifacts.loading.value" @click="artifacts.more">{{ t('common.loadMore') }}</button>
-        </p>
-      </div>
-
       <div v-if="canWrite" class="section panel narrow">
         <h2>{{ t('scenarios.change') }}</h2>
         <p v-if="saved" class="notice notice-ok" role="status">{{ t('common.saved') }}</p>
@@ -345,7 +391,7 @@ onMounted(load);
         @cancel="deleting = false"
       >
         <p>{{ t('scenarios.delete.body') }}</p>
-        <fieldset v-for="kind in (['honeytokens', 'honeypots', 'artifacts'] as const)" v-show="kind !== 'honeypots' || canWriteHoneypots" :key="kind" class="choice">
+        <fieldset v-for="kind in (['honeytokens', 'honeypots'] as const)" v-show="kind !== 'honeypots' || canWriteHoneypots" :key="kind" class="choice">
           <legend>{{ t(`scenarios.delete.${kind}`) }}</legend>
           <label><input v-model="choice[kind]" type="radio" :name="`delete-${kind}`" value="keep" />{{ t('scenarios.delete.keep') }}</label>
           <label><input v-model="choice[kind]" type="radio" :name="`delete-${kind}`" value="delete" />{{ t('scenarios.delete.delete') }}</label>
@@ -364,17 +410,6 @@ onMounted(load);
 
 .narrow {
   max-width: 36rem;
-}
-
-.persona {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.2rem 1rem;
-  margin: 0;
-}
-
-.persona dd {
-  margin: 0;
 }
 
 .end {

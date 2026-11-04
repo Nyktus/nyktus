@@ -1,0 +1,6 @@
+cd /srv/billing
+ls -la
+mysql -h Honeytoken-Domain-Database -u svc-ops -pKrnaqEUeIaHCav1S4RWy billing
+sudo systemctl restart nginx
+tail -n 50 /var/log/nginx/error.log
+exit

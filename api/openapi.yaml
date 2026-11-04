@@ -70,8 +70,6 @@ tags:
     description: Honeypots of the team, network services that a sensor emulates in the monitored network.
   - name: scenarios
     description: Scenarios of the team, which group decoys that tell one story.
-  - name: artifacts
-    description: Files that applying a deception rendered, to be placed with its scenario.
   - name: incidents
     description: Incidents, which correlate the events of a scenario or of a honeytoken or honeypot that stands alone, and their triage.
   - name: events
@@ -833,8 +831,7 @@ paths:
         A key acts with its scopes alone, regardless of the administrator who
         created it, and stays valid when that account is changed or deleted.
         The scopes must be distinct permissions that API keys may carry, a
-        scope to write requires the scope to read the same resource, and
-        `scenarios:read` and `artifacts:read` require `honeytokens:read`.
+        scope to write requires the scope to read the same resource.
         `expires_at` is required and at most three
         years away. The team has at most 50 keys that have not expired (`409`,
         code `too_many_api_keys`).
@@ -1481,9 +1478,11 @@ paths:
       operationId: getCatalogDeception
       summary: Get a deception of the catalog
       description: |
-        Returns a deception with the honeytokens that applying it creates, the
-        values of the persona that it asks for, the secrets that its artifacts
-        generate and the artifacts that it recommends and renders.
+        Returns a deception: its guide in Markdown, the honeytokens and
+        honeypots that the guide asks for (the slots) and the example files that
+        it offers. Nothing of it is rendered: the guide and the files are static
+        text of the catalog, and the slots only name what applying the deception
+        can create.
       tags: [catalog]
       x-access: catalog:read
       security:
@@ -1515,46 +1514,7 @@ paths:
           $ref: "#/components/responses/InternalError"
 
 
-  /api/v1/catalog/artifacts:
-    get:
-      operationId: listCatalogArtifacts
-      summary: List the artifacts of the catalog
-      description: |
-        Returns every artifact of the catalog, ordered by identifier. An
-        artifact is a template of a file that a person places, such as an SSH
-        configuration; deceptions recommend artifacts, and an artifact exists
-        without a deception. The catalog ships with Nyktus and is the same in
-        every installation, so the list is complete and not paged, and it holds
-        no inventory.
-      tags: [catalog]
-      x-access: catalog:read
-      security:
-        - sessionCookie: []
-        - bearerKey: []
-      parameters:
-        - name: lang
-          in: query
-          description: The language of the texts. Without it, they are English.
-          schema:
-            type: string
-            enum: [en, de]
-      responses:
-        "200":
-          description: The artifacts of the catalog.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CatalogArtifactList"
-        "400":
-          $ref: "#/components/responses/InvalidRequest"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "500":
-          $ref: "#/components/responses/InternalError"
-
-  /api/v1/catalog/artifacts/{id}:
+  /api/v1/catalog/deceptions/{id}/files/{name}:
     parameters:
       - name: id
         in: path
@@ -1562,32 +1522,57 @@ paths:
         schema:
           type: string
           pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+      - name: name
+        in: path
+        required: true
+        description: The `name` of a file of the deception.
+        schema:
+          type: string
+          maxLength: 100
     get:
-      operationId: getCatalogArtifact
-      summary: Get an artifact of the catalog
+      operationId: downloadCatalogDeceptionFile
+      summary: Download an example file of a deception
       description: |
-        Returns an artifact with the file it renders, the slots for honeytokens,
-        the values of the persona that it asks for and the secrets that it
-        generates.
+        Returns an example file of a deception as it stands in the catalog, as
+        a file to save (`Content-Disposition: attachment` with its name), with
+        the media type of its format, `X-Content-Type-Options: nosniff`,
+        `Content-Security-Policy: default-src 'none'; sandbox` and
+        `Cache-Control: no-store`, so that a browser never renders it in the
+        origin of the console.
+
+        The file is static text. It names the honeytoken only through a
+        placeholder such as `Honeytoken-Domain`, which the administrator
+        replaces by the host name or URL of the honeytoken, and carries names
+        and passwords that exist nowhere. The catalog is the same in every
+        installation and holds no inventory, so the download is not recorded in
+        the audit log.
       tags: [catalog]
       x-access: catalog:read
       security:
         - sessionCookie: []
         - bearerKey: []
-      parameters:
-        - name: lang
-          in: query
-          description: The language of the texts. Without it, they are English.
-          schema:
-            type: string
-            enum: [en, de]
       responses:
         "200":
-          description: The artifact.
-          content:
-            application/json:
+          description: The content of the file.
+          headers:
+            Content-Disposition:
+              description: '`attachment` with the name of the file.'
               schema:
-                $ref: "#/components/schemas/CatalogArtifact"
+                type: string
+          content:
+            text/plain:
+              schema:
+                type: string
+            text/markdown:
+              schema:
+                type: string
+            text/html:
+              schema:
+                type: string
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
@@ -1598,7 +1583,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-
 
   /api/v1/catalog/deceptions/{id}/apply:
     parameters:
@@ -1612,27 +1596,30 @@ paths:
       operationId: applyCatalogDeception
       summary: Apply a deception of the catalog
       description: |
-        Creates a scenario from a deception: its honeytokens, which join the
-        scenario, its artifacts, rendered with the URLs and names of those
-        honeytokens, the values of the persona and new random secrets, and its
-        guide in the chosen language. The artifacts are those that the
-        deception recommends unless `artifacts` names a selection. Everything
-        is created in one transaction: an error leaves nothing behind. The
-        scenario is a snapshot; a later change of the catalog does not change
-        it. Further deceptions and artifacts join the scenario later, see
-        `addScenarioDeception` and `addScenarioArtifact`.
+        Creates a scenario from a deception. Only the identifier of the
+        deception is stored with the scenario; its guide, files and slots are
+        read from the catalog when they are shown, so a later change of the
+        catalog shows in every scenario that holds the deception. The Engage
+        activities of the deception join those of the scenario.
 
-        A DNS honeytoken is named under the first zone of the DNS role in the
-        artifacts. Without zones, a deception with a DNS honeytoken receives
-        `422` with the code `dns_not_configured`. An application whose values
-        would make an artifact name the product or what it is, such as a zone
-        or a value of the persona that contains "canary", receives `422` with
-        the code `artifact_reveals_decoy`.
+        With `create_resources`, the honeytokens and honeypots that the
+        deception asks for are created as well, named after the labels of the
+        slots in the chosen language, and join the scenario. A honeypot comes
+        without its secret, which `getHoneypotSecret` returns. Everything is
+        created in one transaction: an error leaves nothing behind. A DNS
+        honeytoken is named under the first zone of the DNS role; without
+        zones, a deception with a DNS honeytoken receives `422` with the code
+        `dns_not_configured` when its resources are to be created.
 
-        The permission `scenarios:write` covers the honeytokens and artifacts
-        that applying creates. The audit log records each honeytoken as
-        `honeytoken.create`, the scenario as `scenario.create` and each
-        artifact as `artifact.create`.
+        Creating the resources needs the permissions `honeytokens:write` and
+        `honeypots:write` besides `scenarios:write`, whatever the deception
+        asks for; without them, the request receives `403` before anything is
+        loaded. Further deceptions join the scenario later, see
+        `addScenarioDeception`.
+
+        The audit log records the scenario as `scenario.create` and each
+        resource as `honeytoken.create` or `honeypot.create` with the field
+        `scenario_id`.
       tags: [catalog, scenarios]
       x-access: scenarios:write
       security:
@@ -1646,7 +1633,7 @@ paths:
               $ref: "#/components/schemas/ApplyDeceptionRequest"
       responses:
         "201":
-          description: The scenario with its honeytokens and artifacts.
+          description: The scenario, with the honeytokens and honeypots that were created.
           content:
             application/json:
               schema:
@@ -1665,9 +1652,8 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "422":
           description: |
-            The deception has a `dns` honeytoken, but the console knows no zone of the DNS role
-            (`dns_not_configured`), or a value would make an artifact reveal what it is
-            (`artifact_reveals_decoy`).
+            The resources are to be created, the deception has a `dns` honeytoken, and the console
+            knows no zone of the DNS role (`dns_not_configured`).
           content:
             application/json:
               schema:
@@ -1676,6 +1662,7 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/Unavailable"
+
   /api/v1/honeytokens:
     get:
       operationId: listHoneytokens
@@ -2605,19 +2592,17 @@ paths:
       operationId: deleteScenario
       summary: Delete a scenario
       description: |
-        Deletes a scenario. The parameters `honeytokens`, `honeypots` and
-        `artifacts` choose what happens to its honeytokens, honeypots and
-        artifacts: `keep` removes them from the scenario, and they stand
-        alone; `delete` deletes them with it. Events and incidents remain
-        either way. `honeypots=delete` also requires the permission
-        `honeypots:write`, because only that permission puts a honeypot into
-        a scenario; without it, the request receives `403`.
+        Deletes a scenario. The parameters `honeytokens` and `honeypots` choose
+        what happens to its honeytokens and honeypots: `keep` removes them from
+        the scenario, and they stand alone; `delete` deletes them with it.
+        Events and incidents remain either way. `honeypots=delete` also requires
+        the permission `honeypots:write`, because only that permission puts a
+        honeypot into a scenario; without it, the request receives `403`.
 
         The audit log records the deletion as `scenario.delete`, and each
-        honeytoken, honeypot and artifact as `honeytoken.update`,
-        `honeypot.update` or `artifact.update` with the field `scenario_id`,
-        or as `honeytoken.delete`, `honeypot.delete` or `artifact.delete`, all
-        in one transaction.
+        honeytoken and honeypot as `honeytoken.update` or `honeypot.update` with
+        the field `scenario_id`, or as `honeytoken.delete` or `honeypot.delete`,
+        all in one transaction.
       tags: [scenarios]
       x-access: scenarios:write
       security:
@@ -2636,14 +2621,6 @@ paths:
           in: query
           description: |
             What happens to the honeypots of the scenario: `keep` (the
-            default) leaves them alone, `delete` deletes them.
-          schema:
-            type: string
-            enum: [keep, delete]
-        - name: artifacts
-          in: query
-          description: |
-            What happens to the artifacts of the scenario: `keep` (the
             default) leaves them alone, `delete` deletes them.
           schema:
             type: string
@@ -2676,30 +2653,23 @@ paths:
       operationId: addScenarioDeception
       summary: Add a deception to a scenario
       description: |
-        Adds a deception of the catalog to a scenario that exists: its
-        honeytokens, which join the scenario, its artifacts (those that the
-        deception recommends unless `artifacts` names a selection), rendered
-        with the URLs and names of those honeytokens, and its guide in the chosen
-        language. Everything is created in one transaction: an error leaves
-        nothing behind.
+        Adds a deception of the catalog to a scenario that exists, as
+        `applyCatalogDeception` does for a scenario of its own: the deception
+        joins, its Engage activities join those of the scenario (up to 20), and
+        with `create_resources` its honeytokens and honeypots are created in the
+        scenario. Everything happens in one transaction: an error leaves nothing
+        behind.
 
-        A deception joins a scenario at most once; a second application with
-        other values of the persona needs a scenario of its own.
+        A deception joins a scenario at most once (`409`,
+        `deception_already_added`). Creating the resources needs the
+        permissions `honeytokens:write` and `honeypots:write` besides
+        `scenarios:write`; without them, the request receives `403` before
+        anything is loaded.
 
-        The persona belongs to the scenario and only grows. A value that the
-        scenario has stays: the request may repeat it or leave it out, and a
-        different value is refused with `409` and the code `persona_conflict`,
-        which names the key but neither value. A key that the scenario lacks is
-        added. A scenario holds at most 20 deceptions and 200 artifacts (`409`,
-        `scenario_limit`).
-
-        The permission `scenarios:write` covers the honeytokens and artifacts
-        that the request creates, as for applying a deception. The audit log
-        records each honeytoken as `honeytoken.create`, each artifact as
-        `artifact.create` and the scenario as `scenario.update` with the
-        changed fields `deceptions`, and `persona` and `engage_activities` if
-        they changed. The Engage activities of the scenario gain those that
-        follow from what joined, up to 20.
+        The audit log records each resource as `honeytoken.create` or
+        `honeypot.create` with the field `scenario_id`, and the scenario as
+        `scenario.update` with the changed fields `deceptions`, and
+        `engage_activities` if they changed.
       tags: [scenarios]
       x-access: scenarios:write
       security:
@@ -2713,7 +2683,7 @@ paths:
               $ref: "#/components/schemas/AddDeceptionRequest"
       responses:
         "201":
-          description: The scenario after the change, with the honeytokens and artifacts that were created.
+          description: The scenario after the change, with the honeytokens and honeypots that were created.
           content:
             application/json:
               schema:
@@ -2727,10 +2697,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: |
-            A value of the persona differs from the one the scenario has (`persona_conflict`), the deception
-            is part of the scenario already (`deception_already_added`), or the scenario holds the most
-            deceptions or artifacts it may (`scenario_limit`).
+          description: The deception is part of the scenario already (`deception_already_added`).
           content:
             application/json:
               schema:
@@ -2741,9 +2708,8 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "422":
           description: |
-            The deception has a `dns` honeytoken, but the console knows no zone of the DNS role
-            (`dns_not_configured`), or a value would make an artifact reveal what it is
-            (`artifact_reveals_decoy`).
+            The resources are to be created, the deception has a `dns` honeytoken, and the console
+            knows no zone of the DNS role (`dns_not_configured`).
           content:
             application/json:
               schema:
@@ -2753,7 +2719,7 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
-  /api/v1/scenarios/{id}/artifacts:
+  /api/v1/scenarios/{id}/deceptions/{deception_id}:
     parameters:
       - name: id
         in: path
@@ -2761,334 +2727,46 @@ paths:
         schema:
           type: string
           format: uuid
-    post:
-      operationId: addScenarioArtifact
-      summary: Add an artifact of the catalog to a scenario
+      - name: deception_id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+    delete:
+      operationId: removeScenarioDeception
+      summary: Remove a deception from a scenario
       description: |
-        Adds an artifact of the catalog to a scenario that exists, rendered once
-        with the persona of the scenario, new random secrets and the
-        honeytokens that `bindings` names for its slots, and never rendered
-        again. The honeytokens must belong to the scenario and be of a type that
-        the slot takes (`400` otherwise, without saying whether a honeytoken of
-        that identifier exists elsewhere). A slot that is optional and left out
-        makes the file pocket litter; a required slot needs a honeytoken.
+        Ends the assignment of a deception to a scenario and nothing else. The
+        honeytokens and honeypots that were created for it stay in the scenario,
+        and so do its Engage activities, so that a slip costs neither the
+        resources nor the scenario. A deception that the catalog does not know
+        any more can be removed as well.
 
-        The persona grows as for `addScenarioDeception`: a key that the artifact
-        asks for and the scenario lacks is added, a different value for a key
-        that the scenario has is refused with `409` and the code
-        `persona_conflict`. A password that the file names is not the one of the
-        older files of the scenario, because every artifact generates its own
-        secrets.
-
-        The permission `scenarios:write` covers the artifact. The audit log
-        records it as `artifact.create` and, if the persona or the Engage
-        activities of the scenario changed, the scenario as `scenario.update`
-        with the changed fields.
+        The audit log records the change as `scenario.update` with the changed
+        field `deceptions`.
       tags: [scenarios]
       x-access: scenarios:write
       security:
         - sessionCookie: []
         - bearerKey: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AddArtifactRequest"
       responses:
-        "201":
-          description: The artifact and the scenario after the change.
+        "200":
+          description: The scenario after the change.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AddedArtifact"
-        "400":
-          $ref: "#/components/responses/InvalidRequest"
+                $ref: "#/components/schemas/Scenario"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/ForbiddenWrite"
         "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          description: |
-            A value of the persona differs from the one the scenario has (`persona_conflict`), or the scenario
-            holds the most artifacts it may (`scenario_limit`).
+          description: There is no such scenario, or the deception is not part of it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "413":
-          $ref: "#/components/responses/BodyTooLarge"
-        "415":
-          $ref: "#/components/responses/UnsupportedMediaType"
-        "422":
-          description: |
-            A bound honeytoken is a `dns` honeytoken, but the console knows no zone of the DNS role
-            (`dns_not_configured`), or a value would make the file reveal what it is
-            (`artifact_reveals_decoy`).
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "500":
-          $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/Unavailable"
-
-  /api/v1/scenarios/{id}/guide:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: getScenarioGuide
-      summary: Get the guides of a scenario
-      description: |
-        Returns the guide of each deception of the scenario, in the order the
-        deceptions joined, as they were rendered, in Markdown, in the language
-        in which each joined. A guide names the honeytokens and values of the
-        scenario and tells where to place its artifacts and how to test them.
-        A scenario put together by hand holds no deception and has no guides.
-      tags: [scenarios]
-      x-access: scenarios:read
-      security:
-        - sessionCookie: []
-        - bearerKey: []
-      responses:
-        "200":
-          description: The guides.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ScenarioGuides"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/Unavailable"
-
-  /api/v1/artifacts:
-    get:
-      operationId: listArtifacts
-      summary: List artifacts
-      description: |
-        Returns artifacts from the newest to the oldest, a page at a time,
-        without their content. To read the next page, pass the `next_cursor`
-        of a response as `cursor`, with the same filter.
-
-        Artifacts are part of the inventory: their content names the URLs and
-        host names of honeytokens. Give integrations that do not place decoys
-        keys without the scope `artifacts:read`.
-      tags: [artifacts]
-      x-access: artifacts:read
-      security:
-        - sessionCookie: []
-        - bearerKey: []
-      parameters:
-        - name: limit
-          in: query
-          description: Number of artifacts per page.
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
-        - name: cursor
-          in: query
-          description: The `next_cursor` of the previous page.
-          schema:
-            type: string
-        - name: scenario_id
-          in: query
-          description: Only the artifacts of this scenario.
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: A page of artifacts.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ArtifactPage"
-        "400":
-          $ref: "#/components/responses/InvalidRequest"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "500":
-          $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/Unavailable"
-
-  /api/v1/artifacts/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: getArtifact
-      summary: Get an artifact
-      description: Returns an artifact without its content.
-      tags: [artifacts]
-      x-access: artifacts:read
-      security:
-        - sessionCookie: []
-        - bearerKey: []
-      responses:
-        "200":
-          description: The artifact.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Artifact"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/Unavailable"
-    patch:
-      operationId: updateArtifact
-      summary: Change the placement notes of an artifact
-      description: |
-        Sets where the artifact was placed. Nothing else of an artifact can be
-        changed: its content, name and format are what applying the deception
-        rendered, and it leaves its scenario only when the scenario is deleted.
-
-        The audit log records the change as `artifact.update` with the field
-        `placement_notes`, not its value. A request that changes nothing is not
-        recorded.
-      tags: [artifacts]
-      x-access: artifacts:write
-      security:
-        - sessionCookie: []
-        - bearerKey: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateArtifactRequest"
-      responses:
-        "200":
-          description: The artifact after the change.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Artifact"
-        "400":
-          $ref: "#/components/responses/InvalidRequest"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/ForbiddenWrite"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "413":
-          $ref: "#/components/responses/BodyTooLarge"
-        "415":
-          $ref: "#/components/responses/UnsupportedMediaType"
-        "500":
-          $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/Unavailable"
-    delete:
-      operationId: deleteArtifact
-      summary: Delete an artifact
-      description: |
-        Deletes an artifact. Remove the file from where it was placed as well.
-        The audit log records the deletion as `artifact.delete`.
-      tags: [artifacts]
-      x-access: artifacts:write
-      security:
-        - sessionCookie: []
-        - bearerKey: []
-      responses:
-        "204":
-          description: The artifact has been deleted.
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/ForbiddenWrite"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/Unavailable"
-
-  /api/v1/artifacts/{id}/content:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: downloadArtifact
-      summary: Download an artifact
-      description: |
-        Returns the content of an artifact as a file to save
-        (`Content-Disposition: attachment` with its `file_name`), with the
-        media type of its format, `X-Content-Type-Options: nosniff`,
-        `Content-Security-Policy: default-src 'none'; sandbox` and
-        `Cache-Control: no-store`, so that a browser never renders an artifact
-        in the origin of the console.
-
-        The audit log records downloads as `artifacts.read`, at most once per
-        user or API key and minute, without naming the artifact.
-      tags: [artifacts]
-      x-access: artifacts:read
-      security:
-        - sessionCookie: []
-        - bearerKey: []
-      responses:
-        "200":
-          description: The content of the artifact.
-          headers:
-            Content-Disposition:
-              description: '`attachment` with the `file_name` of the artifact.'
-              schema:
-                type: string
-          content:
-            text/plain:
-              schema:
-                type: string
-            text/markdown:
-              schema:
-                type: string
-            text/html:
-              schema:
-                type: string
-            application/octet-stream:
-              schema:
-                type: string
-                format: binary
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
@@ -4224,12 +3902,10 @@ components:
           uniqueItems: true
           description: |
             The permissions of the key. A scope to write requires the scope to read the same resource,
-            because a key that changes a resource receives it in the responses. `scenarios:read` and
-            `artifacts:read` require `honeytokens:read`, because the guide of a scenario and the content of
-            an artifact name the URLs and host names of honeytokens.
+            because a key that changes a resource receives it in the responses.
           items:
             type: string
-            enum: [artifacts:read, artifacts:write, audit:read, catalog:read, events:read, honeypots:read, honeypots:write, honeytokens:read, honeytokens:write, incidents:read, incidents:write, metrics:read, scenarios:read, scenarios:write]
+            enum: [audit:read, catalog:read, events:read, honeypots:read, honeypots:write, honeytokens:read, honeytokens:write, incidents:read, incidents:write, metrics:read, scenarios:read, scenarios:write]
         expires_at:
           type: string
           format: date-time
@@ -4587,18 +4263,17 @@ components:
         engage_activities:
           type: array
           description: |
-            Identifiers of the MITRE Engage activities that the story of the deception carries out.
-            A scenario created from it carries out more, depending on what it holds: lures
-            (`EAC0005`) for an artifact with a bound honeytoken, pocket litter (`EAC0011`) for one
-            without, artifact diversity (`EAC0022`) for files of more than one format, and personas
-            (`EAC0012`) for a persona that is not empty.
+            Identifiers of the MITRE Engage activities that the story of the deception carries out,
+            such as lures (`EAC0005`), pocket litter (`EAC0011`) for example files without a honeytoken
+            and artifact diversity (`EAC0022`) for files of more than one format. A scenario that holds
+            the deception carries them out as well.
           items:
             type: string
             pattern: "^EAC[0-9]{4}$"
     CatalogDeception:
       type: object
       additionalProperties: false
-      required: [id, category, title, summary, techniques, engage_activities, honeytokens, persona, secrets, artifacts]
+      required: [id, category, title, summary, techniques, engage_activities, guide, honeytokens, honeypots, files]
       properties:
         id:
           type: string
@@ -4619,29 +4294,35 @@ components:
         engage_activities:
           type: array
           description: |
-            Identifiers of the MITRE Engage activities that the story of the deception carries out.
-            A scenario created from it carries out more, depending on what it holds: lures
-            (`EAC0005`) for an artifact with a bound honeytoken, pocket litter (`EAC0011`) for one
-            without, artifact diversity (`EAC0022`) for files of more than one format, and personas
-            (`EAC0012`) for a persona that is not empty.
+            Identifiers of the MITRE Engage activities that the story of the deception carries out,
+            such as lures (`EAC0005`), pocket litter (`EAC0011`) for example files without a honeytoken
+            and artifact diversity (`EAC0022`) for files of more than one format. A scenario that holds
+            the deception carries them out as well.
           items:
             type: string
             pattern: "^EAC[0-9]{4}$"
+        guide:
+          type: string
+          description: |
+            The instruction for the administrator in Markdown: the story, what to create and where to
+            place it. Static text of the catalog in the chosen language. Where it shows a file or a
+            command, the host name or URL of a honeytoken stands as a placeholder such as
+            `Honeytoken-Domain`.
         honeytokens:
           type: array
-          description: The honeytokens that applying the deception creates.
+          description: |
+            The honeytokens that the guide asks for. `label` names a honeytoken when applying the deception
+            creates it; the other members are what it receives.
           items:
             type: object
             additionalProperties: false
-            required: [key, type, label, techniques, severity]
+            required: [label, type, techniques, severity]
             properties:
-              key:
+              label:
                 type: string
               type:
                 type: string
                 enum: [web_url, web_image, dns]
-              label:
-                type: string
               techniques:
                 type: array
                 description: Identifiers of the MITRE ATT&CK techniques that the honeytoken receives.
@@ -4652,167 +4333,42 @@ components:
                 type: string
                 enum: [low, medium, high, critical]
                 description: The severity that the honeytoken receives.
-        persona:
+        honeypots:
           type: array
-          description: |
-            The values that the administrator enters when applying the deception, so that the
-            artifacts fit the environment. `example` only illustrates a value; the deception has no
-            default for it, because a value that every installation shares would identify the artifacts.
+          description: The honeypots that the guide asks for. `label` names a honeypot when it is created.
           items:
             type: object
             additionalProperties: false
-            required: [key, kind, label, example]
+            required: [label, service]
             properties:
-              key:
-                type: string
-              kind:
-                type: string
-                enum: [host, name, text]
-                description: |
-                  `host` is a host name of lowercase letters, digits, hyphens and dots, `name` an account
-                  name, and `text` free text on one line, which appears only in files that a person reads.
               label:
                 type: string
-              example:
+              service:
                 type: string
-        secrets:
+                enum: [ssh, telnet, postgres, ldap]
+        files:
           type: array
           description: |
-            The random values of letters and digits that applying the deception generates, such as
-            passwords, listed once by key. Every artifact that names a key generates its own value.
+            The example files of the deception, static text that the administrator adapts and places.
+            `downloadCatalogDeceptionFile` returns one by its name.
           items:
             type: object
             additionalProperties: false
-            required: [key, length]
+            required: [name, format, size]
             properties:
-              key:
+              name:
                 type: string
-              length:
-                type: integer
-                minimum: 8
-                maximum: 64
-        artifacts:
-          type: array
-          description: |
-            The artifacts that the deception recommends and that applying it renders. A deception
-            without artifacts consists of its guide.
-          items:
-            type: object
-            additionalProperties: false
-            required: [key, file_name, format]
-            properties:
-              key:
-                type: string
-                pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
-                description: The identifier of the artifact in the catalog.
-              file_name:
-                type: string
+                description: The name under which the file is downloaded.
               format:
                 type: string
                 enum: [text, markdown, html, config]
-    CatalogArtifactList:
-      type: object
-      additionalProperties: false
-      required: [artifacts]
-      properties:
-        artifacts:
-          type: array
-          items:
-            $ref: "#/components/schemas/CatalogArtifactSummary"
-    CatalogArtifactSummary:
-      type: object
-      additionalProperties: false
-      required: [id, category, title, summary]
-      properties:
-        id:
-          type: string
-          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
-        category:
-          type: string
-          enum: [identity, network, data, endpoint, application, cloud]
-        title:
-          type: string
-        summary:
-          type: string
-    CatalogArtifact:
-      type: object
-      additionalProperties: false
-      required: [id, category, title, summary, file_name, format, slots, persona, secrets]
-      properties:
-        id:
-          type: string
-          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
-        category:
-          type: string
-          enum: [identity, network, data, endpoint, application, cloud]
-        title:
-          type: string
-        summary:
-          type: string
-        file_name:
-          type: string
-          description: The name under which the artifact is downloaded.
-        format:
-          type: string
-          enum: [text, markdown, html, config]
-        slots:
-          type: array
-          description: |
-            The places in the artifact for the trigger of a honeytoken. A slot that is bound to a
-            honeytoken makes the file a lure; an artifact without a bound slot is pocket litter.
-          items:
-            type: object
-            additionalProperties: false
-            required: [key, accepts, optional]
-            properties:
-              key:
-                type: string
-              accepts:
-                type: array
-                description: The types of honeytokens that the slot takes.
-                items:
-                  type: string
-                  enum: [web_url, web_image, dns]
-              optional:
-                type: boolean
-                description: Whether the artifact is valid with the slot empty.
-        persona:
-          type: array
-          description: |
-            The values that the administrator enters, so that the artifact fits the environment.
-            `example` only illustrates a value; the catalog has no default for it, because a value
-            that every installation shares would identify the artifacts.
-          items:
-            type: object
-            additionalProperties: false
-            required: [key, kind, label, example]
-            properties:
-              key:
-                type: string
-              kind:
-                type: string
-                enum: [host, name, text]
                 description: |
-                  `host` is a host name of lowercase letters, digits, hyphens and dots, `name` an account
-                  name, and `text` free text on one line, which appears only in files that a person reads.
-              label:
-                type: string
-              example:
-                type: string
-        secrets:
-          type: array
-          description: The random values of letters and digits that rendering the artifact generates, such as passwords.
-          items:
-            type: object
-            additionalProperties: false
-            required: [key, length]
-            properties:
-              key:
-                type: string
-              length:
+                  `text` and `markdown` are read by a person, `html` is opened in a browser, `config` is
+                  read by a tool, such as an SSH configuration or a Windows shortcut.
+              size:
                 type: integer
-                minimum: 8
-                maximum: 64
+                minimum: 1
+                description: The length of the content in bytes.
     Honeytoken:
       type: object
       additionalProperties: false
@@ -5166,7 +4722,7 @@ components:
     Scenario:
       type: object
       additionalProperties: false
-      required: [id, name, notes, engage_activities, deceptions, persona, created_at, updated_at]
+      required: [id, name, notes, engage_activities, deceptions, created_at, updated_at]
       properties:
         id:
           type: string
@@ -5180,8 +4736,7 @@ components:
           type: array
           description: |
             Identifiers of the engagement activities of MITRE Engage that the scenario carries out.
-            Applying a deception sets them from the story and from what it created, see the
-            activities of a deception; a change replaces them.
+            Applying a deception or adding one adds those of its story; a change replaces them.
           items:
             type: string
             pattern: "^EAC[0-9]{4}$"
@@ -5189,37 +4744,25 @@ components:
           type: array
           description: |
             The deceptions of the catalog that joined the scenario, in the order they joined. Empty for a
-            scenario put together by hand.
+            scenario put together by hand. Only the identifier is kept: the guide, files and slots are read
+            from the catalog (`getCatalogDeception`), which may not know a deception any more.
           items:
             type: object
             additionalProperties: false
-            required: [deception_id, language, created_at]
+            required: [deception_id, created_at]
             properties:
               deception_id:
                 type: string
                 pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
-              language:
-                type: string
-                enum: [en, de]
-                description: The language of its guide and of the names of its honeytokens.
               created_at:
                 type: string
                 format: date-time
-        persona:
-          type: object
-          additionalProperties:
-            type: string
-          description: |
-            The values of the persona that the files of the scenario were rendered with, by key. It only
-            grows: a key is added when a deception or an artifact joins that asks for it, and a value that
-            is there stays.
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
-
     ApplyDeceptionRequest:
       type: object
       additionalProperties: false
@@ -5238,27 +4781,13 @@ components:
         language:
           type: string
           enum: [en, de]
-          description: The language of the guide and of the names of the honeytokens. Without it, English.
-        persona:
-          type: object
-          default: {}
+          description: The language of the names of the resources that are created. Without it, English.
+        create_resources:
+          type: boolean
+          default: false
           description: |
-            A value for every value of the persona of the deception, by key, and nothing else. Each value
-            must not be empty and must match its kind: `host` a host name in lower case, `name` an account
-            name, `text` one line of up to 200 characters.
-          additionalProperties:
-            type: string
-        artifacts:
-          type: array
-          maxItems: 10
-          uniqueItems: true
-          description: |
-            The identifiers of the artifacts of the deception to create, each of one that the deception
-            recommends. Without it, all of them; an empty list creates none.
-          items:
-            type: string
-            pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
-
+            Creates the honeytokens and honeypots that the deception asks for, in the scenario. Needs the
+            permissions `honeytokens:write` and `honeypots:write` besides `scenarios:write`.
     AddDeceptionRequest:
       type: object
       additionalProperties: false
@@ -5271,183 +4800,30 @@ components:
         language:
           type: string
           enum: [en, de]
-          description: The language of the guide and of the names of the honeytokens. Without it, English.
-        persona:
-          type: object
-          default: {}
-          description: |
-            The values of the persona of the deception, by key. A key that the scenario has may be left out
-            or repeat its value; a key that the scenario lacks is required. Each value must not be empty and
-            must match its kind, see `ApplyDeceptionRequest`.
-          additionalProperties:
-            type: string
-        artifacts:
-          type: array
-          maxItems: 10
-          uniqueItems: true
+          description: The language of the names of the resources that are created. Without it, English.
+        create_resources:
+          type: boolean
+          default: false
           description: As for `ApplyDeceptionRequest`.
-          items:
-            type: string
-            pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
-
-    AddArtifactRequest:
-      type: object
-      additionalProperties: false
-      required: [catalog_artifact]
-      properties:
-        catalog_artifact:
-          type: string
-          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
-          description: The artifact of the catalog to add.
-        language:
-          type: string
-          enum: [en, de]
-          description: The language of the text that says where to place the artifact. Without it, English.
-        persona:
-          type: object
-          default: {}
-          description: As for `AddDeceptionRequest`, for the persona of the artifact.
-          additionalProperties:
-            type: string
-        bindings:
-          type: object
-          default: {}
-          description: |
-            The honeytoken of the scenario for each slot of the artifact, by the key of the slot. A required
-            slot needs one; an optional slot that is left out makes the file pocket litter.
-          additionalProperties:
-            type: string
-            format: uuid
-
-    AddedArtifact:
-      type: object
-      additionalProperties: false
-      required: [scenario, artifact]
-      properties:
-        scenario:
-          $ref: "#/components/schemas/Scenario"
-        artifact:
-          $ref: "#/components/schemas/Artifact"
-
     AppliedDeception:
       type: object
       additionalProperties: false
-      required: [scenario, honeytokens, artifacts]
+      required: [scenario, honeytokens, honeypots]
       properties:
         scenario:
           $ref: "#/components/schemas/Scenario"
         honeytokens:
           type: array
+          description: The honeytokens that were created; none unless `create_resources` was set.
           items:
             $ref: "#/components/schemas/Honeytoken"
-        artifacts:
+        honeypots:
           type: array
-          items:
-            $ref: "#/components/schemas/Artifact"
-
-    ScenarioGuides:
-      type: object
-      additionalProperties: false
-      required: [guides]
-      properties:
-        guides:
-          type: array
-          description: The guide of each deception of the scenario, in the order the deceptions joined.
-          items:
-            type: object
-            additionalProperties: false
-            required: [deception_id, language, content]
-            properties:
-              deception_id:
-                type: string
-                pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
-              language:
-                type: string
-                enum: [en, de]
-              content:
-                type: string
-                description: The guide in Markdown.
-
-    Artifact:
-      type: object
-      additionalProperties: false
-      required: [id, scenario_id, catalog_artifact, file_name, format, media_type, size, placing, bindings,
-        placement_notes, created_at, updated_at]
-      properties:
-        id:
-          type: string
-          format: uuid
-        scenario_id:
-          type: [string, "null"]
-          format: uuid
-          description: The scenario that the artifact was created in, or null once it was deleted and the artifact kept.
-        catalog_artifact:
-          type: string
-          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
-          description: The identifier of the artifact in the catalog.
-        file_name:
-          type: string
-          description: The name under which the artifact is downloaded.
-        format:
-          type: string
-          enum: [text, markdown, html, config]
           description: |
-            `text` and `markdown` are read by a person, `html` is opened in a browser, `config` is read by a
-            tool, such as an SSH configuration or a Windows shortcut.
-        media_type:
-          type: string
-          description: The media type of the download.
-        size:
-          type: integer
-          minimum: 0
-          maximum: 1048576
-          description: The length of the content in bytes.
-        placing:
-          type: string
-          description: |
-            Where to place the artifact, as the catalog says it, in Markdown, rendered for the scenario
-            when the artifact was created. Empty if the catalog says nothing.
-        bindings:
-          type: object
-          description: |
-            The honeytokens that fill the slots of the artifact, by the key of the slot. A slot without an
-            entry is empty, which makes the file pocket litter. The honeytoken may have been deleted since.
-          additionalProperties:
-            type: string
-            format: uuid
-        placement_notes:
-          type: string
-          description: Where the artifact was placed. Empty if there are none.
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-
-    ArtifactPage:
-      type: object
-      additionalProperties: false
-      required: [artifacts]
-      properties:
-        artifacts:
-          type: array
+            The honeypots that were created; none unless `create_resources` was set. A honeypot comes
+            without its secret, which `getHoneypotSecret` returns.
           items:
-            $ref: "#/components/schemas/Artifact"
-        next_cursor:
-          type: string
-          description: Cursor of the next page. Absent on the last page.
-
-    UpdateArtifactRequest:
-      type: object
-      additionalProperties: false
-      required: [placement_notes]
-      properties:
-        placement_notes:
-          type: string
-          maxLength: 2000
-          description: Where the artifact was placed. Line breaks and tabs are allowed; an empty string removes the notes.
-
+            $ref: "#/components/schemas/Honeypot"
     ScenarioPage:
       type: object
       additionalProperties: false

@@ -4,7 +4,7 @@ Instructions for coding agents working in this repository. Human contributors st
 
 ## Project
 
-Nyktus is a self-hosted deception platform: honeytokens, honeypots and artifacts, grouped into scenarios, built from a deception catalog mapped to MITRE ATT&CK and MITRE Engage. It is a security product. Correctness and security take priority over speed and feature count.
+Nyktus is a self-hosted deception platform: honeytokens and honeypots, grouped into scenarios, built from a deception catalog mapped to MITRE ATT&CK and MITRE Engage. It is a security product. Correctness and security take priority over speed and feature count.
 
 The project is in early development. Prefer a clean design over compatibility with earlier drafts. There are no released versions and no installations to migrate.
 
@@ -49,7 +49,7 @@ cmd/nyktus/         server binary
 sensor/             honeypot sensor for monitored networks: a Go module of its own
                     (nyktus.org/nyktus/sensor) with the binary in sensor/cmd/nyktus-sensor
 internal/           application packages, organized by domain
-catalog/            the deception and artifact catalog, embedded at build time
+catalog/            the deception catalog, embedded at build time
 migrations/         PostgreSQL migrations
 web/                web console
 deploy/             reference deployment configuration
@@ -68,15 +68,14 @@ Use these terms consistently in code, API and documentation:
 |---|---|
 | Honeytoken | A trigger primitive (URL, image, QR code, DNS name) that raises an event when it is requested or resolved. Write "honeytoken", not "canary token". |
 | Honeypot | A network service emulated by the sensor. |
-| Artifact | A template in the catalog for a file that a person places to make a scenario believable. A slot bound to a honeytoken makes it a lure, without one it is pocket litter. An artifact never raises an event itself. |
-| Scenario | A group of honeytokens, honeypots and artifacts that together tell one believable story. It holds the deceptions that joined it and a persona that its files share and that only grows. A resource belongs to at most one scenario or stands alone. |
-| Deception | A story in the catalog: honeytokens, persona, a guide and the artifacts it recommends. Applying it creates a scenario with its resources. Deceptions are not runtime objects. |
-| Catalog | The versioned collection of deceptions and artifacts, including technique mappings and guides. |
+| Scenario | A group of honeytokens and honeypots that together tell one believable story. It holds the identifiers of the deceptions that joined it. A resource belongs to at most one scenario or stands alone. |
+| Deception | A guide in the catalog: the story and what it detects, the instructions, the slots it asks for (honeytokens by type, honeypots by service) and static example files. Applying it creates a scenario that holds its identifier and, if asked, the honeytokens and honeypots of its slots. Deceptions are not runtime objects; their guide, slots and files are read from the catalog when they are shown. |
+| Catalog | The versioned collection of deceptions, including technique mappings and guides. |
 | Event | A single recorded interaction with a honeytoken or honeypot. |
 | Incident | Correlated events: one open incident per scenario, or per resource that has no scenario. Triage happens on incidents. |
 | Alert | The single notification sent when an incident opens. |
 
-ATT&CK techniques describe attacker behavior and are attached to honeytokens, honeypots, events and incidents. Engage activities describe defender actions and are attached to deceptions and scenarios. A scenario also carries out the lures, pocket litter, artifact diversity and personas that follow from what it holds; an artifact names none, because Engage tells a lure from pocket litter by intent, not by kind of file.
+ATT&CK techniques describe attacker behavior and are attached to honeytokens, honeypots, events and incidents. Engage activities describe defender actions and are attached to deceptions and scenarios. A deception names those that its story and its files carry out, such as lures for a file that holds a honeytoken and pocket litter for one that holds none, because Engage tells them apart by intent, not by kind of file; a scenario gains those of the deceptions that join it.
 
 ## Non-negotiable invariants
 
@@ -90,7 +89,7 @@ Never weaken these without an explicit decision by a maintainer:
 6. Every request to a user-supplied URL goes through the SSRF-guarded client.
 7. SQL is parameterized.
 8. The catalog is validated before the server starts and never contains executable code.
-9. Executable artifact formats receive only server-generated or allowlisted values. Artifacts carry no marker that identifies Nyktus. Decoys only ever cause a passive callback.
+9. Files of the catalog are static text; the server inserts nothing into them and generates no files. The catalog carries no product name and no identifier of Nyktus. A script that creates accounts generates its secrets at run time itself. Decoys only ever cause a passive callback.
 10. Nothing is loaded from external sources at runtime, and nothing phones home.
 
 ## Working rules

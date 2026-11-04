@@ -4,7 +4,6 @@
 package scenarioapi
 
 import (
-	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"nyktus.org/nyktus/api"
-	"nyktus.org/nyktus/internal/artifact"
 	"nyktus.org/nyktus/internal/catalog"
 	"nyktus.org/nyktus/internal/scenario"
 )
@@ -87,7 +85,7 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		removals = append(removals, string(r))
 	}
 	params = spec.Paths["/api/v1/scenarios/{id}"].Delete.Parameters
-	names := []string{paramHoneytokens, paramHoneypots, paramArtifacts}
+	names := []string{paramHoneytokens, paramHoneypots}
 	if len(params) != len(names) {
 		t.Fatalf("parameters of the deletion = %+v, want %v", params, names)
 	}
@@ -121,57 +119,23 @@ func TestSpecification_MatchesCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !slices.Equal(apply.Required, []string{"name"}) ||
-		!slices.Equal(slices.Sorted(maps.Keys(apply.Properties)), []string{"artifacts", "language", "name", "notes", "persona"}) ||
+		!slices.Equal(slices.Sorted(maps.Keys(apply.Properties)), []string{"create_resources", "language", "name", "notes"}) ||
 		apply.Properties["name"].MaxLength != scenario.MaxNameLength || apply.Properties["notes"].MaxLength != scenario.MaxNotesLength ||
 		!slices.Equal(slices.Sorted(slices.Values(apply.Properties["language"].Enum)), slices.Sorted(slices.Values(catalog.Languages))) ||
 		defaultLanguage != "en" {
-		t.Errorf("ApplyDeceptionRequest = %+v, want name, notes, language of %v, English by default, and persona", apply, catalog.Languages)
+		t.Errorf("ApplyDeceptionRequest = %+v, want name, notes, language of %v, English by default, and create_resources", apply, catalog.Languages)
 	}
-	// The languages of the entries of a scenario and of its guides are those of
-	// the catalog.
-	for name, path := range map[string][]string{
-		"Scenario":       {"deceptions", "items"},
-		"ScenarioGuides": {"guides", "items"},
-	} {
-		var schema struct {
-			Properties map[string]struct {
-				Items struct {
-					Properties map[string]struct {
-						Enum []string `yaml:"enum"`
-					} `yaml:"properties"`
-				} `yaml:"items"`
-			} `yaml:"properties"`
-		}
-		node := doc.Components.Schemas[name]
-		if err := node.Decode(&schema); err != nil {
-			t.Fatal(err)
-		}
-		langs := schema.Properties[path[0]].Items.Properties["language"].Enum
-		if !slices.Equal(slices.Sorted(slices.Values(langs)), slices.Sorted(slices.Values(catalog.Languages))) {
-			t.Errorf("%s.%s.language = %v, want %v", name, path[0], langs, catalog.Languages)
-		}
+	// The request that extends a scenario, as the code names it.
+	var schema struct {
+		Required   []string       `yaml:"required"`
+		Properties map[string]any `yaml:"properties"`
 	}
-
-	// The requests that extend a scenario, and the limits that the schema
-	// holds, as the code names them.
-	for name, want := range map[string][]string{
-		"AddDeceptionRequest": {"artifacts", "deception_id", "language", "persona"},
-		"AddArtifactRequest":  {"bindings", "catalog_artifact", "language", "persona"},
-	} {
-		var schema struct {
-			Required   []string       `yaml:"required"`
-			Properties map[string]any `yaml:"properties"`
-		}
-		node := doc.Components.Schemas[name]
-		if err := node.Decode(&schema); err != nil {
-			t.Fatal(err)
-		}
-		if got := slices.Sorted(maps.Keys(schema.Properties)); !slices.Equal(got, want) || len(schema.Required) != 1 {
-			t.Errorf("%s properties = %v, required %v; want %v and one required member", name, got, schema.Required, want)
-		}
+	node = doc.Components.Schemas["AddDeceptionRequest"]
+	if err := node.Decode(&schema); err != nil {
+		t.Fatal(err)
 	}
-	limits := fmt.Sprintf("at most %d deceptions and %d artifacts", scenario.MaxDeceptions, artifact.MaxPerScenario)
-	if got := string(api.OpenAPI()); !strings.Contains(got, limits) {
-		t.Errorf("the specification does not say %q", limits)
+	if got, want := slices.Sorted(maps.Keys(schema.Properties)), []string{"create_resources", "deception_id", "language"}; !slices.Equal(got, want) ||
+		!slices.Equal(schema.Required, []string{"deception_id"}) {
+		t.Errorf("AddDeceptionRequest properties = %v, required %v; want %v and deception_id required", got, schema.Required, want)
 	}
 }

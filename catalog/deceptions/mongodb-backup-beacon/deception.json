@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "mongodb-backup-beacon",
   "category": "data",
   "title": {
@@ -14,39 +14,15 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Database",
-      "type": "dns",
       "label": {"en": "Database host", "de": "Datenbank-Host"},
+      "type": "dns",
       "techniques": ["T1213", "T1552.001"],
       "severity": "critical"
     }
   ],
-  "persona": [
-    {
-      "key": "DatabaseName",
-      "kind": "name",
-      "label": {"en": "Name of the database", "de": "Name der Datenbank"},
-      "example": "integrations"
-    },
-    {
-      "key": "CollectionName",
-      "kind": "name",
-      "label": {"en": "Name of the collection", "de": "Name der Collection"},
-      "example": "endpoints"
-    },
-    {
-      "key": "ServiceName",
-      "kind": "name",
-      "label": {"en": "Name of the service", "de": "Name des Dienstes"},
-      "example": "sync-service"
-    },
-    {
-      "key": "Account",
-      "kind": "name",
-      "label": {"en": "Account", "de": "Konto"},
-      "example": "svc-sync"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "endpoints.js", "format": "config", "file": "endpoints.js"}
   ],
-  "artifacts": ["mongodb-backup-beacon"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

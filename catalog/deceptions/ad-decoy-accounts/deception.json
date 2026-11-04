@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "ad-decoy-accounts",
   "category": "identity",
   "title": {
@@ -14,45 +14,13 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Ingest",
-      "type": "web_url",
       "label": {"en": "Log ingest of a domain controller", "de": "Log-Eingang eines Domänencontrollers"},
+      "type": "web_url",
       "techniques": ["T1558.003", "T1558.004", "T1110.001", "T1110.003", "T1110.004"],
       "severity": "critical"
     }
   ],
-  "persona": [
-    {
-      "key": "Domain",
-      "kind": "host",
-      "label": {"en": "Internal domain", "de": "Interne Domain"},
-      "example": "corp.example.com"
-    },
-    {
-      "key": "ServiceAccount",
-      "kind": "name",
-      "label": {"en": "Service account with an SPN (up to 20 characters)", "de": "Dienstkonto mit SPN (höchstens 20 Zeichen)"},
-      "example": "svc-reporting"
-    },
-    {
-      "key": "ServiceHost",
-      "kind": "host",
-      "label": {"en": "Host name in the SPN (used by no computer)", "de": "Hostname im SPN (von keinem Computer benutzt)"},
-      "example": "sql-reporting01.corp.example.com"
-    },
-    {
-      "key": "LegacyAccount",
-      "kind": "name",
-      "label": {"en": "Account without preauthentication (up to 20 characters)", "de": "Konto ohne Preauthentifizierung (höchstens 20 Zeichen)"},
-      "example": "svc-legacy-scan"
-    },
-    {
-      "key": "AdminAccount",
-      "kind": "name",
-      "label": {"en": "Unused administrator account (up to 20 characters)", "de": "Unbenutztes Administratorkonto (höchstens 20 Zeichen)"},
-      "example": "adm-backup"
-    }
-  ],
-  "artifacts": ["ad-kerberoast-account", "ad-asrep-account", "ad-admin-account"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "honeypots": [],
+  "files": [],
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

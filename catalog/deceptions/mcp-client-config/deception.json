@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "mcp-client-config",
   "category": "application",
   "title": {
@@ -14,21 +14,15 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Mcp",
-      "type": "dns",
       "label": {"en": "MCP server", "de": "MCP-Server"},
+      "type": "dns",
       "techniques": ["T1552.001", "T1213"],
       "severity": "high"
     }
   ],
-  "persona": [
-    {
-      "key": "McpName",
-      "kind": "name",
-      "label": {"en": "Name of the MCP server", "de": "Name des MCP-Servers"},
-      "example": "knowledge-base"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "mcp.json", "format": "config", "file": "mcp.json"}
   ],
-  "artifacts": ["mcp-client-config"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

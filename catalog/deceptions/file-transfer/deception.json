@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "file-transfer",
   "category": "identity",
   "title": {
@@ -14,21 +14,16 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Host",
-      "type": "dns",
       "label": {"en": "Host", "de": "Host"},
+      "type": "dns",
       "techniques": ["T1552.001", "T1078", "T1555"],
       "severity": "high"
     }
   ],
-  "persona": [
-    {
-      "key": "Account",
-      "kind": "name",
-      "label": {"en": "Account", "de": "Konto"},
-      "example": "deploy"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "netrc", "format": "config", "file": "netrc"},
+    {"name": "sitemanager.xml", "format": "config", "file": "sitemanager.xml"}
   ],
-  "artifacts": ["netrc", "filezilla-sites"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "mssql-backup-beacon",
   "category": "data",
   "title": {
@@ -14,27 +14,15 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Share",
-      "type": "dns",
       "label": {"en": "Share host", "de": "Share-Host"},
+      "type": "dns",
       "techniques": ["T1213", "T1005"],
       "severity": "critical"
     }
   ],
-  "persona": [
-    {
-      "key": "ProcedureName",
-      "kind": "name",
-      "label": {"en": "Name of the procedure", "de": "Name der Prozedur"},
-      "example": "usp_ExportCustomerData"
-    },
-    {
-      "key": "ShareName",
-      "kind": "name",
-      "label": {"en": "Name of the share", "de": "Name der Freigabe"},
-      "example": "exports"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "procedure.sql", "format": "config", "file": "procedure.sql"}
   ],
-  "artifacts": ["mssql-backup-beacon"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

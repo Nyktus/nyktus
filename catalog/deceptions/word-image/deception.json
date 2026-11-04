@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "word-image",
   "category": "data",
   "title": {
@@ -14,13 +14,12 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Image",
-      "type": "web_image",
       "label": {"en": "Image", "de": "Bild"},
+      "type": "web_image",
       "techniques": ["T1005", "T1039"]
     }
   ],
-  "persona": [],
-  "artifacts": [],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "honeypots": [],
+  "files": [],
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

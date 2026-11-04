@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "virtualization-and-backup",
   "category": "network",
   "title": {
@@ -11,49 +11,25 @@
     "de": "Ein PowerShell-Profil für vCenter und Notizen zum Sicherungs-Repository, mit Konten und Passwörtern. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1552.001", "T1018", "T1490"],
-  "engage_activities": ["EAC0005"],
+  "engage_activities": ["EAC0005", "EAC0022"],
   "honeytokens": [
     {
-      "key": "VCenter",
-      "type": "dns",
       "label": {"en": "vCenter server", "de": "vCenter-Server"},
+      "type": "dns",
       "techniques": ["T1552.001", "T1018"],
       "severity": "critical"
     },
     {
-      "key": "Repository",
-      "type": "dns",
       "label": {"en": "Repository server", "de": "Repository-Server"},
+      "type": "dns",
       "techniques": ["T1490", "T1552.001"],
       "severity": "critical"
     }
   ],
-  "persona": [
-    {
-      "key": "SsoDomain",
-      "kind": "host",
-      "label": {"en": "Single sign-on domain", "de": "Single-Sign-on-Domain"},
-      "example": "vsphere.local"
-    },
-    {
-      "key": "Account",
-      "kind": "name",
-      "label": {"en": "Service account", "de": "Dienstkonto"},
-      "example": "svc-vmops"
-    },
-    {
-      "key": "Netbios",
-      "kind": "name",
-      "label": {"en": "NetBIOS name of the domain", "de": "NetBIOS-Name der Domain"},
-      "example": "CORP"
-    },
-    {
-      "key": "Contact",
-      "kind": "text",
-      "label": {"en": "Contact", "de": "Ansprechpartner"},
-      "example": "Backup team"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "Connect-VCenter.ps1", "format": "config", "file": "Connect-VCenter.ps1"},
+    {"name": "Backup-repository.txt", "format": "text", "file": "Backup-repository.txt"}
   ],
-  "artifacts": ["vsphere-profile", "veeam-repository"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

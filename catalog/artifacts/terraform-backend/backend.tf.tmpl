@@ -1,9 +1,0 @@
-terraform {
-  backend "http" {
-    address        = "https://{{.Honeytokens.State.Host}}/state/{{.Persona.Project}}"
-    lock_address   = "https://{{.Honeytokens.State.Host}}/state/{{.Persona.Project}}/lock"
-    unlock_address = "https://{{.Honeytokens.State.Host}}/state/{{.Persona.Project}}/lock"
-    username       = "{{.Persona.Account}}"
-    password       = "{{.Secrets.Password}}"
-  }
-}

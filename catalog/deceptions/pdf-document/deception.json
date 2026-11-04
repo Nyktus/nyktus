@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "pdf-document",
   "category": "data",
   "title": {
@@ -14,19 +14,17 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Link",
-      "type": "web_url",
       "label": {"en": "Link", "de": "Link"},
+      "type": "web_url",
       "techniques": ["T1005", "T1039"]
     },
     {
-      "key": "Host",
-      "type": "dns",
       "label": {"en": "Host", "de": "Host"},
+      "type": "dns",
       "techniques": ["T1005", "T1039"]
     }
   ],
-  "persona": [],
-  "artifacts": [],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "honeypots": [],
+  "files": [],
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

@@ -1,4 +1,0 @@
-db.getSiblingDB('{{.Persona.DatabaseName}}').getCollection('{{.Persona.CollectionName}}').insertOne({
-  name: '{{.Persona.ServiceName}}',
-  uri: 'mongodb://{{.Persona.Account}}:{{.Secrets.Password}}@{{.Honeytokens.Database.Host}}:27017/{{.Persona.DatabaseName}}?authSource=admin'
-});

@@ -7,11 +7,11 @@
 
 # Mail ends lines in CRLF; the golden files of messages keep them.
 internal/platform/smtp/testdata/*.golden -text
-# Artifacts that declare CRLF, such as Windows shortcuts, keep it in their
-# golden files.
-internal/catalog/testdata/golden/** -text
-
 go.sum            linguist-generated
 package-lock.json linguist-generated
 internal/attack/techniques.json linguist-generated
 docs/public/deception-catalog.json linguist-generated
+
+# Files of the catalog are shipped as they are, with the line endings that
+# their tools expect, such as CRLF for PowerShell scripts.
+catalog/deceptions/*/files/* -text

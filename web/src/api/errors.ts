@@ -28,9 +28,7 @@ export type ErrorKind =
   | 'alert_channel_enabled'
   | 'test_pending'
   | 'delivery_not_dead'
-  | 'persona_conflict'
   | 'deception_already_added'
-  | 'scenario_limit'
   | 'target_not_allowed'
   | 'header_not_allowed'
   | 'url_not_allowed'
@@ -43,7 +41,6 @@ export type ErrorKind =
   | 'conflict'
   | 'unprocessable'
   | 'dns_not_configured'
-  | 'artifact_reveals_decoy'
   | 'rate_limited'
   | 'unavailable'
   | 'server'
@@ -94,13 +91,10 @@ const codes: Record<number, Partial<Record<string, ErrorKind>>> = {
     alert_channel_enabled: 'alert_channel_enabled',
     test_pending: 'test_pending',
     delivery_not_dead: 'delivery_not_dead',
-    persona_conflict: 'persona_conflict',
     deception_already_added: 'deception_already_added',
-    scenario_limit: 'scenario_limit',
   },
   422: {
     dns_not_configured: 'dns_not_configured',
-    artifact_reveals_decoy: 'artifact_reveals_decoy',
     target_not_allowed: 'target_not_allowed',
     header_not_allowed: 'header_not_allowed',
     url_not_allowed: 'url_not_allowed',

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { AuditEntry, APIKey, CreatedAPIKey, User, AlertChannel, AlertDelivery, Artifact, CatalogArtifact, CatalogArtifactSummary, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
+import type { AuditEntry, APIKey, CreatedAPIKey, User, AlertChannel, AlertDelivery, CatalogDeception, CatalogDeceptionSummary, Event, Honeypot, Honeytoken, Incident, Scenario, Session } from '../api/generated';
 
 export interface Recorded {
   method: string;
@@ -131,8 +131,8 @@ export function withSecret(h: Honeypot) {
 export const scenarioId = 'dec0de00-1111-4222-8333-944444444444';
 
 /** A deception that joined a scenario. */
-export function joined(deceptionId: string, language: 'en' | 'de' = 'en') {
-  return { deception_id: deceptionId, language, created_at: '2026-10-20T08:30:00Z' };
+export function joined(deceptionId: string) {
+  return { deception_id: deceptionId, created_at: '2026-10-20T08:30:00Z' };
 }
 
 export function scenario(overrides: Partial<Scenario> = {}): Scenario {
@@ -142,7 +142,6 @@ export function scenario(overrides: Partial<Scenario> = {}): Scenario {
     notes: 'A backup that someone left on a share.',
     engage_activities: ['EAC0005'],
     deceptions: [],
-    persona: {},
     created_at: '2026-10-20T08:30:00Z',
     updated_at: '2026-10-21T09:00:00Z',
     ...overrides,
@@ -164,59 +163,10 @@ export function catalogSummary(overrides: Partial<CatalogDeceptionSummary> = {})
 export function catalogDeception(overrides: Partial<CatalogDeception> = {}): CatalogDeception {
   return {
     ...catalogSummary(),
-    honeytokens: [{ key: 'portal', type: 'web_url', label: 'Portal link', techniques: ['T1217'], severity: 'high' }],
-    persona: [
-      { key: 'company', kind: 'text', label: 'Company', example: 'Acme Corp' },
-      { key: 'host', kind: 'host', label: 'Portal host', example: 'portal.acme.example' },
-    ],
-    secrets: [{ key: 'password', length: 16 }],
-    artifacts: [{ key: 'bookmarks', file_name: 'bookmarks.html', format: 'html' }],
-    ...overrides,
-  };
-}
-
-export function catalogArtifactSummary(overrides: Partial<CatalogArtifactSummary> = {}): CatalogArtifactSummary {
-  return {
-    id: 'bookmarks',
-    category: 'data',
-    title: 'Bookmarks file',
-    summary: 'An export of bookmarks with a link that leads to a honeytoken.',
-    ...overrides,
-  };
-}
-
-/** A file with one required slot for a web URL and an optional one for a DNS name. */
-export function catalogArtifact(overrides: Partial<CatalogArtifact> = {}): CatalogArtifact {
-  return {
-    ...catalogArtifactSummary(),
-    file_name: 'bookmarks.html',
-    format: 'html',
-    slots: [{ key: 'portal', accepts: ['web_url'], optional: false }],
-    persona: [
-      { key: 'company', kind: 'text', label: 'Company', example: 'Acme Corp' },
-      { key: 'host', kind: 'host', label: 'Portal host', example: 'portal.acme.example' },
-    ],
-    secrets: [],
-    ...overrides,
-  };
-}
-
-export const artifactId = 'a11fac70-1111-4222-8333-944444444444';
-
-export function artifact(overrides: Partial<Artifact> = {}): Artifact {
-  return {
-    id: artifactId,
-    scenario_id: scenarioId,
-    catalog_artifact: 'bookmarks',
-    file_name: 'bookmarks.html',
-    format: 'html',
-    media_type: 'text/html',
-    size: 2048,
-    placing: '',
-    bindings: {},
-    placement_notes: 'On the share \\\\fs01\\it.',
-    created_at: '2026-10-20T08:30:00Z',
-    updated_at: '2026-10-21T09:00:00Z',
+    guide: '# Bookmarks\n\nPlace the file where an intruder looks for links, with Honeytoken-URL as the link.\n',
+    honeytokens: [{ type: 'web_url', label: 'Portal link', techniques: ['T1217'], severity: 'high' }],
+    honeypots: [],
+    files: [{ name: 'bookmarks.html', format: 'html', size: 2048 }],
     ...overrides,
   };
 }

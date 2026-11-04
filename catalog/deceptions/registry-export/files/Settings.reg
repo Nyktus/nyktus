@@ -1,0 +1,7 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\BackupPro\Backup]
+"Server"="Honeytoken-Domain"
+"Port"=dword:000001bd
+"User"="svc-backup"
+"Password"="5F1sZBBAaMZwyR0K2TuH"
