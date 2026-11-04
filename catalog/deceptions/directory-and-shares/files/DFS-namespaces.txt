@@ -1,0 +1,6 @@
+DFS namespaces
+
+Namespace                         Target                                               Owner
+\\corp.example.com\Shared      \\Honeytoken-Domain-FileServer\Shared      Infrastructure team
+\\corp.example.com\Finance     \\Honeytoken-Domain-FileServer\Finance     Infrastructure team
+\\corp.example.com\Archive     \\Honeytoken-Domain-FileServer\Archive     Infrastructure team

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -206,15 +207,9 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM honeytokens",
 		"SELECT public.attack_technique_ids_valid('{T1078}')",
 		"INSERT INTO scenarios (name) VALUES ('d')",
-		"UPDATE scenarios SET persona = persona || '{\"Domain\": \"corp.example.com\"}', engage_activities = '{EAC0005}', updated_at = clock_timestamp() WHERE name = 'd'",
-		"INSERT INTO scenario_deceptions (scenario_id, deception_id, language, guide) SELECT id, 'ssh-config', 'en', 'g' FROM scenarios WHERE name = 'd'",
+		"UPDATE scenarios SET engage_activities = '{EAC0005}', updated_at = clock_timestamp() WHERE name = 'd'",
+		"INSERT INTO scenario_deceptions (scenario_id, deception_id) SELECT id, 'ssh-config' FROM scenarios WHERE name = 'd'",
 		"SELECT count(*) FROM scenario_deceptions",
-		"INSERT INTO artifacts (scenario_id, catalog_artifact, file_name, format, content, placing_text, bindings) SELECT id, 'ssh-config', 'config', 'config', '\\x41', 'p', jsonb_build_object('JumpHost', gen_random_uuid()) FROM scenarios WHERE name = 'd'",
-		"SELECT public.artifact_bindings_valid('{}')",
-		"UPDATE artifacts SET placement_notes = 'n', updated_at = clock_timestamp()",
-		"SELECT count(*) FROM artifacts",
-		"UPDATE artifacts SET scenario_id = NULL",
-		"DELETE FROM artifacts",
 		"INSERT INTO honeypots (service, name, notes, enabled, techniques, severity, secret_hash, secret_sealed) VALUES ('ssh', 'p', '', true, '{T1021.004}', 'medium', sha256('p'), sha256('p'))",
 		"UPDATE honeypots SET name = 'q', notes = 'n', enabled = false, techniques = '{}', severity = 'high', updated_at = clock_timestamp()",
 		"UPDATE honeypots SET secret_hash = sha256('q')",
@@ -336,28 +331,11 @@ func TestConsoleRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"INSERT INTO scenarios (id, name) VALUES (gen_random_uuid(), 's')",
 		"INSERT INTO scenarios (name, created_at) VALUES ('s', now() - interval '1 day')",
 		"INSERT INTO scenarios (name, updated_at) VALUES ('s', now())",
-		"INSERT INTO scenarios (name, persona) VALUES ('s', '{}')",
 		"UPDATE scenarios SET created_at = now()",
-		"SELECT public.scenarios_persona_grows()",
-		"INSERT INTO scenario_deceptions (scenario_id, deception_id, language, guide, created_at) SELECT id, 'x', 'en', 'g', now() FROM scenarios",
-		"UPDATE scenario_deceptions SET guide = 'h'",
-		"UPDATE scenario_deceptions SET language = 'de'",
+		"INSERT INTO scenario_deceptions (scenario_id, deception_id, created_at) SELECT id, 'x', now() FROM scenarios",
+		"UPDATE scenario_deceptions SET deception_id = 'y'",
+		"UPDATE scenario_deceptions SET created_at = now()",
 		"TRUNCATE scenario_deceptions",
-		"SELECT public.scenario_deceptions_limit()",
-		"SELECT public.artifacts_limit()",
-		"INSERT INTO artifacts (id, scenario_id, catalog_artifact, file_name, format, content) VALUES (gen_random_uuid(), NULL, 'a', 'a', 'text', '')",
-		"INSERT INTO artifacts (scenario_id, catalog_artifact, file_name, format, content, placement_notes) VALUES (NULL, 'a', 'a', 'text', '', 'n')",
-		"INSERT INTO artifacts (scenario_id, catalog_artifact, file_name, format, content, created_at) VALUES (NULL, 'a', 'a', 'text', '', now())",
-		"UPDATE artifacts SET content = ''",
-		"UPDATE artifacts SET file_name = 'b'",
-		"UPDATE artifacts SET format = 'text'",
-		"UPDATE artifacts SET catalog_artifact = 'b'",
-		"UPDATE artifacts SET placing_text = 'q'",
-		"UPDATE artifacts SET bindings = '{}'",
-		"UPDATE artifacts SET id = gen_random_uuid()",
-		"UPDATE artifacts SET created_at = now()",
-		"TRUNCATE artifacts",
-		"SELECT public.artifacts_keep_scenario()",
 		"UPDATE scenarios SET id = gen_random_uuid()",
 		"UPDATE scenarios SET created_at = now()",
 		"TRUNCATE scenarios",
@@ -514,26 +492,13 @@ func TestApply_IgnoresDefaultPrivileges(t *testing.T) {
 		"has_column_privilege($1, 'public.scenarios', 'created_at', 'INSERT')",
 		"has_column_privilege($1, 'public.scenarios', 'updated_at', 'INSERT')",
 		"has_column_privilege($1, 'public.scenarios', 'id', 'UPDATE')",
-		"has_column_privilege($1, 'public.scenarios', 'persona', 'INSERT')",
 		"has_column_privilege($1, 'public.scenarios', 'created_at', 'UPDATE')",
 		"has_table_privilege($1, 'public.scenario_deceptions', 'UPDATE')",
 		"has_table_privilege($1, 'public.scenario_deceptions', 'TRUNCATE')",
 		"has_table_privilege($1, 'public.scenario_deceptions', 'REFERENCES')",
 		"has_table_privilege($1, 'public.scenario_deceptions', 'TRIGGER')",
-		"has_column_privilege($1, 'public.scenario_deceptions', 'guide', 'UPDATE')",
+		"has_column_privilege($1, 'public.scenario_deceptions', 'deception_id', 'UPDATE')",
 		"has_column_privilege($1, 'public.scenario_deceptions', 'created_at', 'INSERT')",
-		"has_function_privilege($1, 'public.scenarios_persona_grows()', 'EXECUTE')",
-		"has_function_privilege($1, 'public.scenario_deceptions_limit()', 'EXECUTE')",
-		"has_function_privilege($1, 'public.artifacts_limit()', 'EXECUTE')",
-		"has_column_privilege($1, 'public.artifacts', 'bindings', 'UPDATE')",
-		"has_column_privilege($1, 'public.artifacts', 'placing_text', 'UPDATE')",
-		"has_table_privilege($1, 'public.artifacts', 'TRUNCATE')",
-		"has_table_privilege($1, 'public.artifacts', 'REFERENCES')",
-		"has_table_privilege($1, 'public.artifacts', 'TRIGGER')",
-		"has_column_privilege($1, 'public.artifacts', 'id', 'INSERT')",
-		"has_column_privilege($1, 'public.artifacts', 'content', 'UPDATE')",
-		"has_column_privilege($1, 'public.artifacts', 'file_name', 'UPDATE')",
-		"has_function_privilege($1, 'public.artifacts_keep_scenario()', 'EXECUTE')",
 		"has_table_privilege($1, 'public.events', 'INSERT')",
 		"has_table_privilege($1, 'public.event_jobs', 'INSERT')",
 		"has_function_privilege($1, 'public.record_honeytoken_request(text, text, inet, text, text, text, text)', 'EXECUTE')",
@@ -602,5 +567,53 @@ INSERT INTO sessions (token_hash, user_id) SELECT sha256(i::text::bytea), u.id F
 	}
 	if differing != 0 {
 		t.Errorf("%d new sessions were last seen at another time than they were created", differing)
+	}
+}
+
+// A scenario holds what the console reads and writes and nothing of a
+// deception beyond its identifier: no persona, no guide, no language, and no
+// table of artifacts. The columns are pinned, so that a column that returns is
+// a decision and not an accident.
+func TestSchema_ScenariosHoldNoPersonaNoGuideAndNoArtifacts(t *testing.T) {
+	t.Parallel()
+
+	ownerURL, _ := schematest.Console(t)
+	pool := schematest.Open(t, ownerURL)
+
+	columns := func(table string) []string {
+		rows, err := pool.Query(t.Context(),
+			`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 ORDER BY column_name`, table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cols, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cols
+	}
+	if got, want := columns("scenarios"), []string{"created_at", "engage_activities", "id", "name", "notes", "updated_at"}; !slices.Equal(got, want) {
+		t.Errorf("columns of scenarios = %v, want %v", got, want)
+	}
+	if got, want := columns("scenario_deceptions"), []string{"created_at", "deception_id", "scenario_id"}; !slices.Equal(got, want) {
+		t.Errorf("columns of scenario_deceptions = %v, want %v", got, want)
+	}
+
+	var leftovers []string
+	err := pool.QueryRow(t.Context(), `
+SELECT coalesce(array_agg(name ORDER BY name), '{}') FROM (
+	SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE '%artifact%'
+	UNION ALL
+	SELECT proname FROM pg_proc WHERE pronamespace = 'public'::regnamespace
+		AND (proname LIKE '%artifact%' OR proname IN ('scenarios_persona_grows', 'scenario_deceptions_limit'))
+	UNION ALL
+	SELECT conname FROM pg_constraint WHERE connamespace = 'public'::regnamespace
+		AND conname IN ('scenarios_persona_check', 'scenario_deceptions_language_check', 'scenario_deceptions_guide_check')
+) AS leftover`).Scan(&leftovers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leftovers) != 0 {
+		t.Errorf("the schema still holds %v", leftovers)
 	}
 }

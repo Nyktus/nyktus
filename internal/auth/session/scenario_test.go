@@ -11,8 +11,9 @@ import (
 
 // Through the whole console: every role reads scenarios, viewers cannot
 // change them, and a key holds exactly its scenario scopes. The scenario of a
-// honeytoken changes with honeytokens:write alone. Adding a deception or an
-// artifact needs scenarios:write. A denied write is rejected before the
+// honeytoken changes with honeytokens:write alone. Adding or removing a
+// deception needs scenarios:write, and creating its honeytokens and honeypots
+// as well needs the permissions of both. A denied write is rejected before the
 // scenario or the honeytoken is looked up, so it cannot reveal whether one
 // exists.
 func TestScenarios_FollowRolesAndKeyScopes(t *testing.T) {
@@ -60,8 +61,12 @@ func TestScenarios_FollowRolesAndKeyScopes(t *testing.T) {
 	}
 	unknown := "/api/v1/scenarios/00000000-0000-4000-8000-000000000000"
 	assign := `{"scenario_id": "` + id + `"}`
-	addDeception := `{"deception_id": "adcs-template-catalog", "persona": {"Company": "Example Ltd", "Authority": "Example CA"}}`
-	addArtifact := `{"catalog_artifact": "browser-bookmarks"}`
+	addDeception := `{"deception_id": "adcs-template-catalog"}`
+	addWithResources := `{"deception_id": "adcs-template-catalog", "create_resources": true}`
+	apply := `{"name": "a", "create_resources": true}`
+	noHoneypots := keyWith("scenarios:write", "scenarios:read", "honeytokens:write", "honeytokens:read")
+	noHoneytokens := keyWith("scenarios:write", "scenarios:read", "honeypots:write", "honeypots:read", "honeytokens:read")
+	everything := keyWith("scenarios:write", "scenarios:read", "honeytokens:write", "honeytokens:read", "honeypots:write", "honeypots:read")
 
 	for _, tt := range []struct {
 		name         string
@@ -90,19 +95,35 @@ func TestScenarios_FollowRolesAndKeyScopes(t *testing.T) {
 		{"honeytoken key assigns", nil, tokens, http.MethodPut, "/api/v1/honeytokens/" + h + "/scenario", assign, http.StatusOK},
 		{"honeytoken key detaches", nil, tokens, http.MethodDelete, "/api/v1/honeytokens/" + h + "/scenario", "", http.StatusOK},
 		{"user assigns", user, nil, http.MethodPut, "/api/v1/honeytokens/" + h + "/scenario", assign, http.StatusOK},
-		// Adding a deception or an artifact needs scenarios:write, and is
-		// refused before the scenario is looked up.
+		// Adding a deception needs scenarios:write, and is refused before the
+		// scenario is looked up.
 		{"viewer adds a deception to an unknown scenario", viewer, nil, http.MethodPost, unknown + "/deceptions", addDeception, http.StatusForbidden},
-		{"viewer adds an artifact to an unknown scenario", viewer, nil, http.MethodPost, unknown + "/artifacts", addArtifact, http.StatusForbidden},
+		{"viewer removes a deception from an unknown scenario", viewer, nil, http.MethodDelete, unknown + "/deceptions/adcs-template-catalog", "", http.StatusForbidden},
 		{"viewer adds a deception", viewer, nil, http.MethodPost, "/api/v1/scenarios/" + id + "/deceptions", addDeception, http.StatusForbidden},
 		{"reading key adds a deception to an unknown scenario", nil, reader, http.MethodPost, unknown + "/deceptions", addDeception, http.StatusForbidden},
-		{"reading key adds an artifact", nil, reader, http.MethodPost, "/api/v1/scenarios/" + id + "/artifacts", addArtifact, http.StatusForbidden},
+		{"reading key removes a deception", nil, reader, http.MethodDelete, "/api/v1/scenarios/" + id + "/deceptions/adcs-template-catalog", "", http.StatusForbidden},
 		{"honeytoken key adds a deception", nil, tokens, http.MethodPost, "/api/v1/scenarios/" + id + "/deceptions", addDeception, http.StatusForbidden},
 		{"writing key adds an unknown deception", nil, writer, http.MethodPost, "/api/v1/scenarios/" + id + "/deceptions", `{"deception_id": "nothing"}`, http.StatusBadRequest},
-		{"writing key adds an unknown artifact", nil, writer, http.MethodPost, "/api/v1/scenarios/" + id + "/artifacts", `{"catalog_artifact": "nothing"}`, http.StatusBadRequest},
+		// Creating the resources of a deception needs the permissions of the
+		// resources, whatever the deception asks for, and is refused before
+		// the scenario or the deception is looked up.
+		{"writing key creates the resources in an unknown scenario", nil, writer, http.MethodPost, unknown + "/deceptions", addWithResources, http.StatusForbidden},
+		{"writing key creates the resources of an unknown deception", nil, writer, http.MethodPost, unknown + "/deceptions", `{"deception_id": "nothing", "create_resources": true}`, http.StatusForbidden},
+		{"writing key applies with the resources", nil, writer, http.MethodPost, "/api/v1/catalog/deceptions/adcs-template-catalog/apply", apply, http.StatusForbidden},
+		{"writing key applies without the resources", nil, writer, http.MethodPost, "/api/v1/catalog/deceptions/adcs-template-catalog/apply", `{"name": "w"}`, http.StatusCreated},
+		{"key without honeypots:write creates the resources", nil, noHoneypots, http.MethodPost, "/api/v1/catalog/deceptions/adcs-template-catalog/apply", apply, http.StatusForbidden},
+		{"key without honeytokens:write creates the resources", nil, noHoneytokens, http.MethodPost, "/api/v1/catalog/deceptions/adcs-template-catalog/apply", apply, http.StatusForbidden},
+		{"honeytoken key creates the resources", nil, tokens, http.MethodPost, "/api/v1/catalog/deceptions/adcs-template-catalog/apply", apply, http.StatusForbidden},
+		{"viewer applies with the resources", viewer, nil, http.MethodPost, "/api/v1/catalog/deceptions/adcs-template-catalog/apply", apply, http.StatusForbidden},
+		{"key with every write scope applies with the resources", nil, everything, http.MethodPost, "/api/v1/catalog/deceptions/adcs-template-catalog/apply", apply, http.StatusCreated},
+		{"key with every write scope adds to an unknown scenario", nil, everything, http.MethodPost, unknown + "/deceptions", addWithResources, http.StatusNotFound},
 		{"user adds a deception to an unknown scenario", user, nil, http.MethodPost, unknown + "/deceptions", addDeception, http.StatusNotFound},
 		{"user adds a deception", user, nil, http.MethodPost, "/api/v1/scenarios/" + id + "/deceptions", addDeception, http.StatusCreated},
 		{"user adds it twice", user, nil, http.MethodPost, "/api/v1/scenarios/" + id + "/deceptions", addDeception, http.StatusConflict},
+		{"user removes it", user, nil, http.MethodDelete, "/api/v1/scenarios/" + id + "/deceptions/adcs-template-catalog", "", http.StatusOK},
+		{"user removes it twice", user, nil, http.MethodDelete, "/api/v1/scenarios/" + id + "/deceptions/adcs-template-catalog", "", http.StatusNotFound},
+		{"user removes it from an unknown scenario", user, nil, http.MethodDelete, unknown + "/deceptions/adcs-template-catalog", "", http.StatusNotFound},
+		{"user adds it again", user, nil, http.MethodPost, "/api/v1/scenarios/" + id + "/deceptions", addDeception, http.StatusCreated},
 		{"user deletes", user, nil, http.MethodDelete, "/api/v1/scenarios/" + id + "?honeytokens=delete", "", http.StatusNoContent},
 		{"honeytoken deleted with the scenario", user, nil, http.MethodGet, "/api/v1/honeytokens/" + h, "", http.StatusNotFound},
 	} {
@@ -120,16 +141,21 @@ func TestScenarios_FollowRolesAndKeyScopes(t *testing.T) {
 	if r := send(t, srv, http.MethodPost, "/api/v1/api-keys", writeOnly, admin, nil); r.status != http.StatusBadRequest {
 		t.Errorf("key with scenarios:write alone: %d %v, want 400", r.status, r.body)
 	}
-	// A key cannot read scenarios without reading honeytokens, because the
-	// guide of a scenario names its honeytokens.
+	// A scenario names no honeytoken, so a key reads scenarios without reading
+	// honeytokens.
 	readOnly := mustJSON(t, map[string]any{
 		"name": "r", "scopes": []string{"scenarios:read"}, "password": testPassword,
 		"expires_at": time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 	})
-	if r := send(t, srv, http.MethodPost, "/api/v1/api-keys", readOnly, admin, nil); r.status != http.StatusBadRequest {
-		t.Errorf("key with scenarios:read alone: %d %v, want 400", r.status, r.body)
+	if r := send(t, srv, http.MethodPost, "/api/v1/api-keys", readOnly, admin, nil); r.status != http.StatusCreated {
+		t.Errorf("key with scenarios:read alone: %d %v, want 201", r.status, r.body)
 	}
 	if n := d.count(t, `SELECT count(*) FROM audit_entries WHERE action = 'scenarios.write' AND outcome = 'denied'`); n == 0 {
 		t.Error("no denied write is recorded in the audit log")
+	}
+	// The permissions that creating the resources needs beyond the route are
+	// recorded when they are denied, like those of the route.
+	if n := d.count(t, `SELECT count(*) FROM audit_entries WHERE action = 'honeypots.write' AND outcome = 'denied'`); n == 0 {
+		t.Error("no denied creation of the resources is recorded in the audit log")
 	}
 }

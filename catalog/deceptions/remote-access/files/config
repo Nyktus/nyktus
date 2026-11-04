@@ -1,0 +1,8 @@
+Host jump
+    HostName Honeytoken-Domain-JumpHost
+    User adm.jdoe
+
+Host *.corp.example.com
+    User adm.jdoe
+    ProxyJump jump
+    ServerAliveInterval 60

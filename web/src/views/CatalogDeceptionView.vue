@@ -10,12 +10,8 @@ import { api } from '../api/client';
 import { ApiError } from '../api/errors';
 import type { CatalogDeception } from '../api/generated';
 import { errorText } from '../api/messages';
-import FileChoice from '../components/FileChoice.vue';
-import PersonaFields from '../components/PersonaFields.vue';
-import SeverityBadge from '../components/SeverityBadge.vue';
+import DeceptionDetail from '../components/DeceptionDetail.vue';
 import { locale, t } from '../i18n';
-import { personaProblems, personaToSend } from '../personaRules';
-import { personaProblemTexts } from '../personaText';
 import { session } from '../session';
 
 const route = useRoute();
@@ -30,13 +26,13 @@ const loadError = ref<string | undefined>();
 const nameMissing = ref(false);
 const busy = ref(false);
 const canApply = computed(() => session.can('scenarios:write'));
+// Creating the resources needs the permissions to write both of them, besides the one of the scenario.
+const canCreate = computed(() => session.can('honeytokens:write') && session.can('honeypots:write'));
 
 const name = ref('');
 const notes = ref('');
-const persona = ref<Record<string, string>>({});
-const problems = ref<Record<string, string>>({});
-// The artifacts that the deception recommends are all chosen at first; the user takes away the ones they do not want.
-const selected = ref<string[]>([]);
+// Off at first: the guide says what to create, and creating it for them is the user's choice.
+const createResources = ref(false);
 
 function show(failure: unknown): string {
   return errorText(failure instanceof ApiError ? failure : new ApiError('server', 0));
@@ -58,9 +54,6 @@ async function load(): Promise<void> {
     if (previous === undefined || name.value === previous.title) {
       name.value = body.title;
     }
-    if (previous === undefined) {
-      selected.value = body.artifacts.map((a) => a.key);
-    }
   } catch (failure) {
     if (mine !== asked) {
       return;
@@ -77,30 +70,22 @@ async function load(): Promise<void> {
   }
 }
 
-function check(): Record<string, string> {
-  const fields = deception.value?.persona ?? [];
-  return personaProblemTexts(fields, personaProblems(fields, persona.value));
-}
-
 async function apply(): Promise<void> {
   error.value = undefined;
-  problems.value = check();
   // A name of spaces passes the required field, and the server would refuse it without saying which field.
   nameMissing.value = name.value.trim() === '';
-  if (nameMissing.value || Object.keys(problems.value).length > 0 || deception.value === undefined) {
+  if (nameMissing.value || deception.value === undefined) {
     return;
   }
   busy.value = true;
   try {
-    // The list is sent as it stands, so that the scenario holds the files that the page showed as chosen.
     const { body } = await api.call('applyCatalogDeception', {
       path: { id: id.value },
       body: {
         name: name.value.trim(),
         notes: notes.value,
         language: locale.value,
-        persona: personaToSend(deception.value.persona, persona.value),
-        artifacts: deception.value.artifacts.map((a) => a.key).filter((key) => selected.value.includes(key)),
+        create_resources: canCreate.value && createResources.value,
       },
     });
     await router.replace({ name: 'scenario', params: { id: body.scenario.id } });
@@ -142,39 +127,7 @@ watch(locale, load);
       </div>
 
       <div class="section panel">
-        <h2>{{ t('catalog.creates') }}</h2>
-        <p v-if="deception.honeytokens.length === 0 && deception.artifacts.length === 0" class="hint">{{ t('catalog.guideOnly') }}</p>
-        <template v-if="deception.honeytokens.length > 0">
-          <h3>{{ t('catalog.honeytokens') }}</h3>
-          <div class="table-wrap">
-            <table class="table">
-              <tbody>
-                <tr v-for="honeytoken in deception.honeytokens" :key="honeytoken.key">
-                  <td>{{ honeytoken.label }}</td>
-                  <td>{{ t(`honeytokenType.${honeytoken.type}`) }}</td>
-                  <td><SeverityBadge :severity="honeytoken.severity" /></td>
-                  <td class="mono">{{ honeytoken.techniques.join(', ') }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </template>
-        <template v-if="deception.artifacts.length > 0">
-          <h3>{{ t('catalog.artifacts') }}</h3>
-          <div class="table-wrap">
-            <table class="table">
-              <tbody>
-                <tr v-for="artifact in deception.artifacts" :key="artifact.key">
-                  <td class="mono"><bdi>{{ artifact.file_name }}</bdi></td>
-                  <td>{{ t(`artifactFormat.${artifact.format}`) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </template>
-        <p v-if="deception.secrets.length > 0">
-          <strong>{{ t('catalog.secrets') }}:</strong> {{ t('catalog.secretsValue', { count: deception.secrets.length }) }}
-        </p>
+        <DeceptionDetail :deception="deception" />
       </div>
 
       <div v-if="canApply" class="section panel narrow">
@@ -190,15 +143,10 @@ watch(locale, load);
             <label for="notes">{{ t('field.notes') }}</label>
             <textarea id="notes" v-model="notes" maxlength="2000"></textarea>
           </div>
-          <PersonaFields
-            v-model="persona"
-            :fields="deception.persona"
-            :problems="problems"
-            :legend="t('catalog.apply.persona')"
-            :hint="t('catalog.apply.personaHint')"
-          />
-
-          <FileChoice v-model="selected" :artifacts="deception.artifacts" :hint="t('catalog.apply.filesHint')" />
+          <div v-if="canCreate && (deception.honeytokens.length > 0 || deception.honeypots.length > 0)" class="field">
+            <label class="check"><input id="create-resources" v-model="createResources" type="checkbox" />{{ t('catalog.apply.createResources') }}</label>
+            <span class="hint">{{ t('catalog.apply.createResourcesHint') }}</span>
+          </div>
 
           <div class="actions-row">
             <button class="button button-primary" type="submit" :disabled="busy">{{ busy ? t('app.saving') : t('catalog.apply.submit') }}</button>
@@ -229,7 +177,9 @@ watch(locale, load);
   max-width: 36rem;
 }
 
-h3 {
-  font-size: 0.95rem;
+.check {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
 }
 </style>

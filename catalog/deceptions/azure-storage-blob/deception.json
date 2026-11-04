@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "azure-storage-blob",
   "category": "cloud",
   "title": {
@@ -14,45 +14,13 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Webhook",
-      "type": "web_url",
       "label": {"en": "Webhook of the action group", "de": "Webhook der Aktionsgruppe"},
+      "type": "web_url",
       "techniques": ["T1530", "T1078.004"],
       "severity": "high"
     }
   ],
-  "persona": [
-    {
-      "key": "StorageAccount",
-      "kind": "name",
-      "label": {"en": "Name of an existing storage account", "de": "Name eines vorhandenen Speicherkontos"},
-      "example": "stordersprod01"
-    },
-    {
-      "key": "ContainerName",
-      "kind": "name",
-      "label": {"en": "Name of the container", "de": "Name des Containers"},
-      "example": "db-backups"
-    },
-    {
-      "key": "BlobName",
-      "kind": "name",
-      "label": {"en": "Name of the file in the container", "de": "Name der Datei im Container"},
-      "example": "orders-2026-03.bak"
-    },
-    {
-      "key": "AzureRegion",
-      "kind": "name",
-      "label": {"en": "Azure region of your workloads", "de": "Azure-Region Ihrer Workloads"},
-      "example": "germanywestcentral"
-    },
-    {
-      "key": "AlertName",
-      "kind": "name",
-      "label": {"en": "Prefix of the forwarding resources (up to 40 characters)", "de": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)"},
-      "example": "audit-notify"
-    }
-  ],
-  "artifacts": [],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "honeypots": [],
+  "files": [],
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

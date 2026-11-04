@@ -1,0 +1,4 @@
+Inventory service - list the users
+
+curl -s https://Honeytoken-Domain-Api/v1/users \
+  -H "Authorization: Bearer MA43uc6vByKDkGN6wpI796DC9PvZKIZ4fMR2CIfz"

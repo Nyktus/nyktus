@@ -1,6 +1,0 @@
-cd /srv/billing
-ls -la
-mysql -h databaseq3xwz7a2kfm4ub6tyc5nre.d.example.net -u billing_app -pXy7Xy7Xy7Xy7Xy7Xy7Xy billing
-sudo systemctl restart nginx
-tail -n 50 /var/log/nginx/error.log
-exit

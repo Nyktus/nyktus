@@ -1,0 +1,10 @@
+Local administrator - break glass
+
+Host:      Honeytoken-Domain-Host
+Account:   Administrator
+Password:  pb9UFR4p5M3otuIo5eVX
+
+Use only when the domain is not available. Connect with RDP or WinRM.
+Change the password afterwards and print a new sheet.
+
+Contact: Service desk, extension 4711

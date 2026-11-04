@@ -40,7 +40,9 @@ describe('t', () => {
   });
 
   test('inserts the values as they are', () => {
-    expect(t('persona.required', { label: '<img src=x onerror=alert(1)> {label}' })).toBe('Enter a value for <img src=x onerror=alert(1)> {label}.');
+    expect(t('scenarios.addDeception.already', { title: '<img src=x onerror=alert(1)> {title}' })).toBe(
+      '<img src=x onerror=alert(1)> {title} (already part of this scenario)',
+    );
   });
 
   test('follows the language', () => {

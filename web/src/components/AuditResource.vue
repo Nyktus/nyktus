@@ -15,7 +15,6 @@ const pages: Record<string, string> = {
   honeytoken: 'honeytoken',
   honeypot: 'honeypot',
   scenario: 'scenario',
-  artifact: 'artifact',
   alert_channel: 'alert-channel',
   incident: 'incident',
 };

@@ -13,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"nyktus.org/nyktus/internal/alerting/alertingapi"
-	"nyktus.org/nyktus/internal/artifact/artifactapi"
 	"nyktus.org/nyktus/internal/audit/auditapi"
 	"nyktus.org/nyktus/internal/auth/account"
 	"nyktus.org/nyktus/internal/auth/apikey/apikeyapi"
@@ -63,9 +62,8 @@ type Options struct {
 	DNSZones []string
 	// Outbound checks the targets of alert channels.
 	Outbound *ssrf.Guard
-	// Catalog holds the deceptions and the artifacts of the catalog in the
-	// directories deceptions and artifacts, such as the package
-	// nyktus.org/nyktus/catalog embeds.
+	// Catalog holds the deceptions of the catalog in the directory
+	// deceptions, such as the package nyktus.org/nyktus/catalog embeds.
 	Catalog fs.FS
 	// UI holds the files of the build of the web console, with index.html at
 	// its root. Without an index.html, as in a build that skipped the web
@@ -118,8 +116,7 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 	cat := catalogapi.NewHandler(deceptions)
 	t := honeytokenapi.NewHandler(o.Logger, o.DB, o.TriggerURL, o.DNSZones)
 	hp := honeypotapi.NewHandler(o.Logger, o.DB, o.Keys)
-	sc := scenarioapi.NewHandler(o.Logger, o.DB, deceptions, o.TriggerURL, o.DNSZones)
-	art := artifactapi.NewHandler(o.Logger, o.DB)
+	sc := scenarioapi.NewHandler(o.Logger, o.DB, deceptions, o.TriggerURL, o.DNSZones, o.Keys)
 	i := incidentapi.NewHandler(o.Logger, o.DB)
 	c := alertingapi.NewHandler(o.Logger, o.DB, o.Keys, sessions, o.Outbound)
 	var pages http.Handler
@@ -166,10 +163,9 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			ResetPassword:  http.HandlerFunc(a.ResetPassword),
 		},
 		Catalog: Catalog{
-			List:          http.HandlerFunc(cat.List),
-			Get:           http.HandlerFunc(cat.Get),
-			ListArtifacts: http.HandlerFunc(cat.ListArtifacts),
-			GetArtifact:   http.HandlerFunc(cat.GetArtifact),
+			List: http.HandlerFunc(cat.List),
+			Get:  http.HandlerFunc(cat.Get),
+			File: http.HandlerFunc(cat.File),
 		},
 		Honeytokens: Honeytokens{
 			List:   http.HandlerFunc(t.List),
@@ -200,17 +196,9 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			Update: http.HandlerFunc(sc.Update),
 			Delete: http.HandlerFunc(sc.Delete),
 			Apply:  http.HandlerFunc(sc.Apply),
-			Guide:  http.HandlerFunc(sc.Guide),
 
-			AddDeception: http.HandlerFunc(sc.AddDeception),
-			AddArtifact:  http.HandlerFunc(sc.AddArtifact),
-		},
-		Artifacts: Artifacts{
-			List:     http.HandlerFunc(art.List),
-			Get:      http.HandlerFunc(art.Get),
-			Download: http.HandlerFunc(art.Download),
-			Update:   http.HandlerFunc(art.Update),
-			Delete:   http.HandlerFunc(art.Delete),
+			AddDeception:    http.HandlerFunc(sc.AddDeception),
+			RemoveDeception: http.HandlerFunc(sc.RemoveDeception),
 		},
 		Incidents: Incidents{
 			List:   http.HandlerFunc(i.ListIncidents),

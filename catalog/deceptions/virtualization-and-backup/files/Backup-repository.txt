@@ -1,0 +1,9 @@
+Backup repository
+
+Share:     \\Honeytoken-Domain-Repository\Repository
+Account:   CORP\svc-vmops
+Password:  k9mtA3SuEehxEB7wC4at
+
+The repository holds the full backups of all servers. Do not delete files by hand.
+
+Contact: Backup team

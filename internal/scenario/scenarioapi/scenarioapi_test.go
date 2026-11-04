@@ -6,12 +6,14 @@ package scenarioapi
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -22,6 +24,7 @@ import (
 	"nyktus.org/nyktus/internal/catalog"
 	"nyktus.org/nyktus/internal/platform/apispec"
 	"nyktus.org/nyktus/internal/platform/schematest"
+	"nyktus.org/nyktus/internal/platform/secretbox/secretboxtest"
 	"nyktus.org/nyktus/internal/user"
 )
 
@@ -30,9 +33,47 @@ const (
 	dnsZone    = "d.example.net"
 )
 
+// probe is a deception with a honeytoken of each kind and two honeypots, which
+// the embedded catalog does not have, so that applying it with its resources
+// can be tested through the handler.
+const probe = `{
+  "schema_version": 3,
+  "id": "probe",
+  "category": "network",
+  "title": {"en": "Probe", "de": "Sonde"},
+  "summary": {"en": "Probe.", "de": "Sonde."},
+  "techniques": ["T1021.004"],
+  "engage_activities": ["EAC0005", "EAC0011"],
+  "honeytokens": [
+    {"label": {"en": "Gateway", "de": "Zugang"}, "type": "dns", "techniques": ["T1021.004"], "severity": "high"},
+    {"label": {"en": "Image", "de": "Bild"}, "type": "web_image", "techniques": []}
+  ],
+  "honeypots": [
+    {"label": {"en": "Jump host", "de": "Sprungserver"}, "service": "ssh"},
+    {"label": {"en": "Database", "de": "Datenbank"}, "service": "postgres"}
+  ],
+  "files": [],
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
+}`
+
+// testCatalog returns the embedded catalog and the deception probe.
 func testCatalog(t *testing.T) *catalog.Catalog {
 	t.Helper()
-	c, err := catalog.Load(embedded.FS())
+	fsys := fstest.MapFS{}
+	if err := fs.WalkDir(embedded.FS(), ".", func(name string, e fs.DirEntry, err error) error {
+		if err != nil || e.IsDir() {
+			return err
+		}
+		b, err := fs.ReadFile(embedded.FS(), name)
+		fsys[name] = &fstest.MapFile{Data: b}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fsys["deceptions/probe/deception.json"] = &fstest.MapFile{Data: []byte(probe)}
+	fsys["deceptions/probe/guide.en.md"] = &fstest.MapFile{Data: []byte("Guide.\n")}
+	fsys["deceptions/probe/guide.de.md"] = &fstest.MapFile{Data: []byte("Anleitung.\n")}
+	c, err := catalog.Load(fsys)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,6 +88,13 @@ type fixture struct {
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
+	return newFixtureWith(t, []string{dnsZone, "d.example.org"}, user.RoleUser)
+}
+
+// newFixtureWith returns a fixture whose console knows the zones of the DNS
+// role and whose caller has the role.
+func newFixtureWith(t *testing.T, zones []string, role user.Role) fixture {
+	t.Helper()
 	ownerURL, consoleURL := schematest.Console(t)
 	owner := schematest.Open(t, ownerURL)
 	var id string
@@ -58,15 +106,16 @@ RETURNING id`).Scan(&id)
 		t.Fatal(err)
 	}
 	return fixture{
-		h:         NewHandler(slog.New(slog.DiscardHandler), schematest.Open(t, consoleURL), testCatalog(t), triggerURL, []string{dnsZone, "d.example.org"}),
+		h: NewHandler(slog.New(slog.DiscardHandler), schematest.Open(t, consoleURL), testCatalog(t), triggerURL, zones,
+			secretboxtest.Keyring(t)),
 		owner:     owner,
-		principal: access.Principal{UserID: id, Role: user.RoleUser, Method: audit.AuthSession, SessionID: "s1"},
+		principal: access.Principal{UserID: id, Role: role, Method: audit.AuthSession, SessionID: "s1"},
 	}
 }
 
 // serve calls handler as the router would, with the principal and the path
 // value of the route.
-func (f fixture) serve(t *testing.T, handler http.HandlerFunc, method, target, id, body string) *httptest.ResponseRecorder {
+func (f fixture) serve(t *testing.T, handler http.HandlerFunc, method, target, id, body string, pathValues ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	var r io.Reader
 	if body != "" {
@@ -78,6 +127,9 @@ func (f fixture) serve(t *testing.T, handler http.HandlerFunc, method, target, i
 	}
 	if id != "" {
 		req.SetPathValue("id", id)
+	}
+	for i := 0; i+1 < len(pathValues); i += 2 {
+		req.SetPathValue(pathValues[i], pathValues[i+1])
 	}
 	rec := httptest.NewRecorder()
 	handler(rec, req)
@@ -351,7 +403,7 @@ func TestResponses_MatchTheSpecification(t *testing.T) {
 
 	created := f.serve(t, f.h.Create, http.MethodPost, "/api/v1/scenarios", "", `{"name": "a", "engage_activities": ["EAC0005"]}`)
 	sc := decode[response](t, created)
-	applied := f.apply(t, "remote-access", sshConfig)
+	applied := f.apply(t, "probe", `{"name": "Jump server", "language": "de", "create_resources": true}`)
 	for _, b := range []struct {
 		schema string
 		rec    *httptest.ResponseRecorder

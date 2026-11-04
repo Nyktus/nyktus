@@ -1,0 +1,56 @@
+# Zugang zu Registry, Cluster und Infrastruktur-State
+
+Die Konfiguration eines Arbeitsplatzes oder Build-Servers hält den Zugang zur Container-Registry, zum Kubernetes-Cluster und zum State der Infrastruktur fest. Die folgenden Dateien erzählen diese Geschichte an verschiedenen Orten. Die Dateien teilen sich die Honeytokens der Geschichte, derselbe Host-Name steht also in jeder Datei, die denselben Dienst nennt. Hinter den Namen steht nichts: Konten, Token und Passwörter gibt es nirgends. Sie entscheiden, welche Dateien Sie wo ablegen; eine genügt, und sie müssen nicht beieinander liegen.
+
+## Docker-Konfiguration mit Registry-Zugangsdaten
+
+Die Datei `config.json` ist die Konfiguration des Docker-Clients. Sie enthält das Konto `ci-pull` und ein zufälliges Passwort für die Registry `Honeytoken-Domain-Registry`. Der Name gehört zu einem DNS-Honeytoken: Wer ein Image aus der Registry zieht, dorthin schreibt oder sich anmeldet, löst den Namen auf, was ein Event auslöst. Dahinter steht keine Registry, und Konto und Passwort gibt es nirgends.
+
+### Datei platzieren
+
+1. Legen Sie die Datei als `~/.docker/config.json` im Home-Verzeichnis eines Kontos auf einem Build-Server oder Arbeitsplatz ab, am besten eines Kontos, das nur diesem Zweck dient, oder in einer Sicherung eines solchen Verzeichnisses.
+2. Hat das Konto schon eine `config.json`, ergänzen Sie deren Objekt `auths` um den Eintrag für die Registry, statt die Datei zu ersetzen.
+3. Legen Sie sie nicht dort ab, wo ein laufender Build sie liest. Der Build würde den Namen bei jedem Lauf auflösen und Events auslösen.
+4. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
+
+### Testen
+
+Führen Sie `docker pull Honeytoken-Domain-Registry/app:latest` auf einem Rechner mit Zugang zum Internet aus. Der Befehl scheitert nach der Abfrage. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Kubernetes-Konfiguration mit Token
+
+Die Datei `config` ist die Konfiguration von `kubectl` für den Cluster `prod-eu1`: der API-Server `Honeytoken-Domain-Api`, das Konto `ci-pull` und ein zufälliges Bearer-Token. Der Name des API-Servers gehört zu einem DNS-Honeytoken: Jeder `kubectl`-Aufruf mit dieser Konfiguration löst ihn auf, was ein Event auslöst. Dahinter steht kein Cluster, der Aufruf scheitert also, und das Token gibt es nirgends.
+
+### Datei platzieren
+
+1. Legen Sie die Datei als `~/.kube/config` im Home-Verzeichnis eines Kontos auf einem Arbeitsplatz oder Build-Server ab, am besten eines Kontos, das nur diesem Zweck dient, und beschränken Sie sie auf ihren Besitzer: `chmod 600 ~/.kube/config`.
+2. Hat das Konto schon eine Konfiguration, ergänzen Sie deren Listen um die drei Einträge, statt sie zu ersetzen, damit seine anderen Cluster weiter funktionieren.
+3. Legen Sie sie nicht dort ab, wo ein laufender Job sie liest. Der Job würde den Namen bei jedem Lauf auflösen und Events auslösen.
+4. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
+
+### Testen
+
+Führen Sie `kubectl --kubeconfig ./config get pods` auf einem Rechner mit `kubectl` und Zugang zum Internet aus. Der Befehl scheitert nach der Abfrage. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Terraform-Backend mit Zugangsdaten
+
+Die Datei `backend.tf` konfiguriert ein HTTP-Backend für den State des Projekts `platform-prod` auf `Honeytoken-Domain-State`, mit dem Konto `ci-pull` und einem zufälligen Passwort. Der Host-Name gehört zu einem DNS-Honeytoken: `terraform init`, `plan` und `apply` lösen ihn auf, was ein Event auslöst. Dahinter steht kein Backend, die Befehle scheitern also, und Konto und Passwort gibt es nirgends.
+
+### Datei platzieren
+
+1. Legen Sie die Datei in ein Repository oder Verzeichnis mit Terraform-Code ab, das ein Eindringling lesen würde: ein Repository der Infrastruktur, ein Ordner eines Administrationsservers, eine Sicherung eines solchen Ordners.
+2. Legen Sie sie nicht in ein Verzeichnis, in dem Sie oder eine Pipeline Terraform ausführen. Jeder Lauf würde den Namen auflösen und ein Event auslösen.
+3. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
+
+### Testen
+
+Führen Sie `terraform init` in einem Verzeichnis mit der Datei auf einem Rechner mit Terraform und Zugang zum Internet aus. Der Befehl scheitert nach der Abfrage. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+## Pocket Litter
+
+Die Datei `README.md` enthält keinen Honeytoken und löst kein Event aus, was auch mit ihr geschieht. Sie gibt der Geschichte eine glaubhafte Umgebung: Legen Sie sie am selben Ort ab wie die übrigen Dateien der Geschichte, neben den Dateien, die ein Event auslösen.
+
+## Grenzen
+
+- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.
+- Die Host-Namen sind zufällige Labels unter der Zone Ihrer DNS-Rolle. Ein Eindringling, der die Dateien genau liest, kann sie ungewöhnlich finden.

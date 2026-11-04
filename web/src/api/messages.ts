@@ -59,12 +59,8 @@ export function errorText(error: ApiError): string {
       return t('error.test_pending');
     case 'delivery_not_dead':
       return t('error.delivery_not_dead');
-    case 'persona_conflict':
-      return t('error.persona_conflict');
     case 'deception_already_added':
       return t('error.deception_already_added');
-    case 'scenario_limit':
-      return t('error.scenario_limit');
     case 'target_not_allowed':
       return t('error.target_not_allowed');
     case 'header_not_allowed':
@@ -77,8 +73,6 @@ export function errorText(error: ApiError): string {
       return t('error.unprocessable');
     case 'dns_not_configured':
       return t('error.dns_not_configured');
-    case 'artifact_reveals_decoy':
-      return t('error.artifact_reveals_decoy');
     case 'rate_limited':
       return t('error.rate_limited');
     case 'unavailable':

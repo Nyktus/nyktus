@@ -15,9 +15,8 @@ This makes Nyktus a good fit for teams without a security operations center, and
 
 - **Honeytokens** (often called canary tokens): URLs, images, QR codes and DNS names that fire when they are requested or resolved.
 - **Honeypots**: a lightweight sensor that emulates network services inside your environment and reports every attacker session.
-- **Artifacts**: supporting content that makes a decoy environment believable without firing itself.
-- **Scenarios**: honeytokens, honeypots and artifacts grouped into one coherent story, such as a stolen finance backup.
-- **Deception catalog**: ready-made blueprints for believable scenarios, from credential files and configuration snippets to documents and cloud credentials. The catalog ships with Nyktus. Every blueprint is mapped to MITRE ATT&CK techniques, and the accompanying guides follow the MITRE Engage approach to planning deception.
+- **Scenarios**: honeytokens and honeypots grouped into one coherent story, such as a stolen finance backup.
+- **Deception catalog**: ready-made guides for believable scenarios, from credential files and configuration snippets to documents and cloud credentials, each with the honeytokens and honeypots it asks for and example files to adapt. The catalog ships with Nyktus. Every guide is mapped to MITRE ATT&CK techniques and follows the MITRE Engage approach to planning deception.
 - **Incidents**: every interaction is recorded as an event. Events are grouped into one incident per scenario, or per honeytoken or honeypot that stands alone. You get one alert per incident, not one per request.
 - **Alerting**: delivery by email and webhook, plus integrations for common chat tools.
 

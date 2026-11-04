@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "website-clone",
   "category": "application",
   "title": {
@@ -14,21 +14,15 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Beacon",
-      "type": "web_image",
       "label": {"en": "Image", "de": "Bild"},
+      "type": "web_image",
       "techniques": ["T1566.002", "T1684.001"],
       "severity": "medium"
     }
   ],
-  "persona": [
-    {
-      "key": "Site",
-      "kind": "host",
-      "label": {"en": "Host name of your website", "de": "Host-Name Ihrer Website"},
-      "example": "www.example.com"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "site.js", "format": "config", "file": "site.js"}
   ],
-  "artifacts": ["website-clone"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

@@ -152,7 +152,7 @@ export interface APIKeyList {
 
 export interface CreateAPIKeyRequest {
   name: string;
-  scopes: ('artifacts:read' | 'artifacts:write' | 'audit:read' | 'catalog:read' | 'events:read' | 'honeypots:read' | 'honeypots:write' | 'honeytokens:read' | 'honeytokens:write' | 'incidents:read' | 'incidents:write' | 'metrics:read' | 'scenarios:read' | 'scenarios:write')[];
+  scopes: ('audit:read' | 'catalog:read' | 'events:read' | 'honeypots:read' | 'honeypots:write' | 'honeytokens:read' | 'honeytokens:write' | 'incidents:read' | 'incidents:write' | 'metrics:read' | 'scenarios:read' | 'scenarios:write')[];
   expires_at: string;
   password?: string;
 }
@@ -269,62 +269,21 @@ export interface CatalogDeception {
   summary: string;
   techniques: string[];
   engage_activities: string[];
+  guide: string;
   honeytokens: {
-    key: string;
-    type: 'web_url' | 'web_image' | 'dns';
     label: string;
+    type: 'web_url' | 'web_image' | 'dns';
     techniques: string[];
     severity: 'low' | 'medium' | 'high' | 'critical';
   }[];
-  persona: {
-    key: string;
-    kind: 'host' | 'name' | 'text';
+  honeypots: {
     label: string;
-    example: string;
+    service: 'ssh' | 'telnet' | 'postgres' | 'ldap';
   }[];
-  secrets: {
-    key: string;
-    length: number;
-  }[];
-  artifacts: {
-    key: string;
-    file_name: string;
+  files: {
+    name: string;
     format: 'text' | 'markdown' | 'html' | 'config';
-  }[];
-}
-
-export interface CatalogArtifactList {
-  artifacts: CatalogArtifactSummary[];
-}
-
-export interface CatalogArtifactSummary {
-  id: string;
-  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application' | 'cloud';
-  title: string;
-  summary: string;
-}
-
-export interface CatalogArtifact {
-  id: string;
-  category: 'identity' | 'network' | 'data' | 'endpoint' | 'application' | 'cloud';
-  title: string;
-  summary: string;
-  file_name: string;
-  format: 'text' | 'markdown' | 'html' | 'config';
-  slots: {
-    key: string;
-    accepts: ('web_url' | 'web_image' | 'dns')[];
-    optional: boolean;
-  }[];
-  persona: {
-    key: string;
-    kind: 'host' | 'name' | 'text';
-    label: string;
-    example: string;
-  }[];
-  secrets: {
-    key: string;
-    length: number;
+    size: number;
   }[];
 }
 
@@ -436,10 +395,8 @@ export interface Scenario {
   engage_activities: string[];
   deceptions: {
     deception_id: string;
-    language: 'en' | 'de';
     created_at: string;
   }[];
-  persona: Record<string, string>;
   created_at: string;
   updated_at: string;
 }
@@ -448,65 +405,19 @@ export interface ApplyDeceptionRequest {
   name: string;
   notes?: string;
   language?: 'en' | 'de';
-  persona?: Record<string, string>;
-  artifacts?: string[];
+  create_resources?: boolean;
 }
 
 export interface AddDeceptionRequest {
   deception_id: string;
   language?: 'en' | 'de';
-  persona?: Record<string, string>;
-  artifacts?: string[];
-}
-
-export interface AddArtifactRequest {
-  catalog_artifact: string;
-  language?: 'en' | 'de';
-  persona?: Record<string, string>;
-  bindings?: Record<string, string>;
-}
-
-export interface AddedArtifact {
-  scenario: Scenario;
-  artifact: Artifact;
+  create_resources?: boolean;
 }
 
 export interface AppliedDeception {
   scenario: Scenario;
   honeytokens: Honeytoken[];
-  artifacts: Artifact[];
-}
-
-export interface ScenarioGuides {
-  guides: {
-    deception_id: string;
-    language: 'en' | 'de';
-    content: string;
-  }[];
-}
-
-export interface Artifact {
-  id: string;
-  scenario_id: string | null;
-  catalog_artifact: string;
-  file_name: string;
-  format: 'text' | 'markdown' | 'html' | 'config';
-  media_type: string;
-  size: number;
-  placing: string;
-  bindings: Record<string, string>;
-  placement_notes: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ArtifactPage {
-  artifacts: Artifact[];
-  next_cursor?: string;
-}
-
-export interface UpdateArtifactRequest {
-  placement_notes: string;
+  honeypots: Honeypot[];
 }
 
 export interface ScenarioPage {
@@ -661,7 +572,6 @@ export interface OperationInfo {
 
 export const operations = {
   activateUser: { method: 'POST', path: '/api/v1/activation', access: 'public', navigation: false, binary: false },
-  addScenarioArtifact: { method: 'POST', path: '/api/v1/scenarios/{id}/artifacts', access: 'scenarios:write', navigation: false, binary: false },
   addScenarioDeception: { method: 'POST', path: '/api/v1/scenarios/{id}/deceptions', access: 'scenarios:write', navigation: false, binary: false },
   applyCatalogDeception: { method: 'POST', path: '/api/v1/catalog/deceptions/{id}/apply', access: 'scenarios:write', navigation: false, binary: false },
   assignHoneypotScenario: { method: 'PUT', path: '/api/v1/honeypots/{id}/scenario', access: 'honeypots:write', navigation: false, binary: false },
@@ -683,18 +593,15 @@ export const operations = {
   createScenario: { method: 'POST', path: '/api/v1/scenarios', access: 'scenarios:write', navigation: false, binary: false },
   createUser: { method: 'POST', path: '/api/v1/users', access: 'users:write', navigation: false, binary: false },
   deleteAlertChannel: { method: 'DELETE', path: '/api/v1/alert-channels/{id}', access: 'alert_channels:write', navigation: false, binary: false },
-  deleteArtifact: { method: 'DELETE', path: '/api/v1/artifacts/{id}', access: 'artifacts:write', navigation: false, binary: false },
   deleteHoneypot: { method: 'DELETE', path: '/api/v1/honeypots/{id}', access: 'honeypots:write', navigation: false, binary: false },
   deleteHoneytoken: { method: 'DELETE', path: '/api/v1/honeytokens/{id}', access: 'honeytokens:write', navigation: false, binary: false },
   deleteScenario: { method: 'DELETE', path: '/api/v1/scenarios/{id}', access: 'scenarios:write', navigation: false, binary: false },
   deleteUser: { method: 'DELETE', path: '/api/v1/users/{id}', access: 'users:write', navigation: false, binary: false },
   detachHoneypotScenario: { method: 'DELETE', path: '/api/v1/honeypots/{id}/scenario', access: 'honeypots:write', navigation: false, binary: false },
   detachHoneytokenScenario: { method: 'DELETE', path: '/api/v1/honeytokens/{id}/scenario', access: 'honeytokens:write', navigation: false, binary: false },
-  downloadArtifact: { method: 'GET', path: '/api/v1/artifacts/{id}/content', access: 'artifacts:read', navigation: false, binary: true },
+  downloadCatalogDeceptionFile: { method: 'GET', path: '/api/v1/catalog/deceptions/{id}/files/{name}', access: 'catalog:read', navigation: false, binary: true },
   getAlertChannel: { method: 'GET', path: '/api/v1/alert-channels/{id}', access: 'alert_channels:read', navigation: false, binary: false },
   getAlertDelivery: { method: 'GET', path: '/api/v1/alert-deliveries/{id}', access: 'alert_channels:read', navigation: false, binary: false },
-  getArtifact: { method: 'GET', path: '/api/v1/artifacts/{id}', access: 'artifacts:read', navigation: false, binary: false },
-  getCatalogArtifact: { method: 'GET', path: '/api/v1/catalog/artifacts/{id}', access: 'catalog:read', navigation: false, binary: false },
   getCatalogDeception: { method: 'GET', path: '/api/v1/catalog/deceptions/{id}', access: 'catalog:read', navigation: false, binary: false },
   getEvent: { method: 'GET', path: '/api/v1/events/{id}', access: 'events:read', navigation: false, binary: false },
   getHoneypot: { method: 'GET', path: '/api/v1/honeypots/{id}', access: 'honeypots:read', navigation: false, binary: false },
@@ -705,15 +612,12 @@ export const operations = {
   getMetrics: { method: 'GET', path: '/api/v1/metrics', access: 'metrics:read', navigation: false, binary: true },
   getReadiness: { method: 'GET', path: '/readyz', access: 'public', navigation: false, binary: false },
   getScenario: { method: 'GET', path: '/api/v1/scenarios/{id}', access: 'scenarios:read', navigation: false, binary: false },
-  getScenarioGuide: { method: 'GET', path: '/api/v1/scenarios/{id}/guide', access: 'scenarios:read', navigation: false, binary: false },
   getSession: { method: 'GET', path: '/api/v1/session', access: 'authenticated', navigation: false, binary: false },
   getSignInOptions: { method: 'GET', path: '/api/v1/sign-in-options', access: 'public', navigation: false, binary: false },
   getUser: { method: 'GET', path: '/api/v1/users/{id}', access: 'users:read', navigation: false, binary: false },
   listAPIKeys: { method: 'GET', path: '/api/v1/api-keys', access: 'api_keys:read', navigation: false, binary: false },
   listAlertChannels: { method: 'GET', path: '/api/v1/alert-channels', access: 'alert_channels:read', navigation: false, binary: false },
-  listArtifacts: { method: 'GET', path: '/api/v1/artifacts', access: 'artifacts:read', navigation: false, binary: false },
   listAuditEntries: { method: 'GET', path: '/api/v1/audit-entries', access: 'audit:read', navigation: false, binary: false },
-  listCatalogArtifacts: { method: 'GET', path: '/api/v1/catalog/artifacts', access: 'catalog:read', navigation: false, binary: false },
   listCatalogDeceptions: { method: 'GET', path: '/api/v1/catalog/deceptions', access: 'catalog:read', navigation: false, binary: false },
   listEvents: { method: 'GET', path: '/api/v1/events', access: 'events:read', navigation: false, binary: false },
   listHoneypots: { method: 'GET', path: '/api/v1/honeypots', access: 'honeypots:read', navigation: false, binary: false },
@@ -722,6 +626,7 @@ export const operations = {
   listIncidents: { method: 'GET', path: '/api/v1/incidents', access: 'incidents:read', navigation: false, binary: false },
   listScenarios: { method: 'GET', path: '/api/v1/scenarios', access: 'scenarios:read', navigation: false, binary: false },
   listUsers: { method: 'GET', path: '/api/v1/users', access: 'users:read', navigation: false, binary: false },
+  removeScenarioDeception: { method: 'DELETE', path: '/api/v1/scenarios/{id}/deceptions/{deception_id}', access: 'scenarios:write', navigation: false, binary: false },
   removeTOTP: { method: 'DELETE', path: '/api/v1/session/totp', access: 'authenticated', navigation: false, binary: false },
   replaceHoneypotSecret: { method: 'POST', path: '/api/v1/honeypots/{id}/secret', access: 'honeypots:write', navigation: false, binary: false },
   replaceRecoveryCodes: { method: 'POST', path: '/api/v1/session/totp/recovery-codes', access: 'authenticated', navigation: false, binary: false },
@@ -733,7 +638,6 @@ export const operations = {
   testAlertChannel: { method: 'POST', path: '/api/v1/alert-channels/{id}/test', access: 'alert_channels:write', navigation: false, binary: false },
   triageIncident: { method: 'PATCH', path: '/api/v1/incidents/{id}', access: 'incidents:write', navigation: false, binary: false },
   updateAlertChannel: { method: 'PATCH', path: '/api/v1/alert-channels/{id}', access: 'alert_channels:write', navigation: false, binary: false },
-  updateArtifact: { method: 'PATCH', path: '/api/v1/artifacts/{id}', access: 'artifacts:write', navigation: false, binary: false },
   updateHoneypot: { method: 'PATCH', path: '/api/v1/honeypots/{id}', access: 'honeypots:write', navigation: false, binary: false },
   updateHoneytoken: { method: 'PATCH', path: '/api/v1/honeytokens/{id}', access: 'honeytokens:write', navigation: false, binary: false },
   updateScenario: { method: 'PATCH', path: '/api/v1/scenarios/{id}', access: 'scenarios:write', navigation: false, binary: false },
@@ -749,12 +653,6 @@ export interface OperationTypes {
     query: Record<string, never>;
     body: ActivationRequest;
     responses: { 200: User };
-  };
-  addScenarioArtifact: {
-    path: { id: string };
-    query: Record<string, never>;
-    body: AddArtifactRequest;
-    responses: { 201: AddedArtifact };
   };
   addScenarioDeception: {
     path: { id: string };
@@ -882,12 +780,6 @@ export interface OperationTypes {
     body: undefined;
     responses: { 204: undefined };
   };
-  deleteArtifact: {
-    path: { id: string };
-    query: Record<string, never>;
-    body: undefined;
-    responses: { 204: undefined };
-  };
   deleteHoneypot: {
     path: { id: string };
     query: Record<string, never>;
@@ -902,7 +794,7 @@ export interface OperationTypes {
   };
   deleteScenario: {
     path: { id: string };
-    query: { honeytokens?: 'keep' | 'delete'; honeypots?: 'keep' | 'delete'; artifacts?: 'keep' | 'delete' };
+    query: { honeytokens?: 'keep' | 'delete'; honeypots?: 'keep' | 'delete' };
     body: undefined;
     responses: { 204: undefined };
   };
@@ -924,8 +816,8 @@ export interface OperationTypes {
     body: undefined;
     responses: { 200: Honeytoken };
   };
-  downloadArtifact: {
-    path: { id: string };
+  downloadCatalogDeceptionFile: {
+    path: { id: string; name: string };
     query: Record<string, never>;
     body: undefined;
     responses: { 200: Blob };
@@ -941,18 +833,6 @@ export interface OperationTypes {
     query: Record<string, never>;
     body: undefined;
     responses: { 200: AlertDelivery };
-  };
-  getArtifact: {
-    path: { id: string };
-    query: Record<string, never>;
-    body: undefined;
-    responses: { 200: Artifact };
-  };
-  getCatalogArtifact: {
-    path: { id: string };
-    query: { lang?: 'en' | 'de' };
-    body: undefined;
-    responses: { 200: CatalogArtifact };
   };
   getCatalogDeception: {
     path: { id: string };
@@ -1014,12 +894,6 @@ export interface OperationTypes {
     body: undefined;
     responses: { 200: Scenario };
   };
-  getScenarioGuide: {
-    path: { id: string };
-    query: Record<string, never>;
-    body: undefined;
-    responses: { 200: ScenarioGuides };
-  };
   getSession: {
     path: Record<string, never>;
     query: Record<string, never>;
@@ -1050,23 +924,11 @@ export interface OperationTypes {
     body: undefined;
     responses: { 200: AlertChannelList };
   };
-  listArtifacts: {
-    path: Record<string, never>;
-    query: { limit?: number; cursor?: string; scenario_id?: string };
-    body: undefined;
-    responses: { 200: ArtifactPage };
-  };
   listAuditEntries: {
     path: Record<string, never>;
     query: { limit?: number; cursor?: string };
     body: undefined;
     responses: { 200: AuditEntryPage };
-  };
-  listCatalogArtifacts: {
-    path: Record<string, never>;
-    query: { lang?: 'en' | 'de' };
-    body: undefined;
-    responses: { 200: CatalogArtifactList };
   };
   listCatalogDeceptions: {
     path: Record<string, never>;
@@ -1115,6 +977,12 @@ export interface OperationTypes {
     query: { limit?: number; cursor?: string };
     body: undefined;
     responses: { 200: UserPage };
+  };
+  removeScenarioDeception: {
+    path: { id: string; deception_id: string };
+    query: Record<string, never>;
+    body: undefined;
+    responses: { 200: Scenario };
   };
   removeTOTP: {
     path: Record<string, never>;
@@ -1182,12 +1050,6 @@ export interface OperationTypes {
     body: UpdateAlertChannelRequest;
     responses: { 200: AlertChannel };
   };
-  updateArtifact: {
-    path: { id: string };
-    query: Record<string, never>;
-    body: UpdateArtifactRequest;
-    responses: { 200: Artifact };
-  };
   updateHoneypot: {
     path: { id: string };
     query: Record<string, never>;
@@ -1216,9 +1078,9 @@ export interface OperationTypes {
 
 /** What each role may do. The server decides; the console only hides what a role cannot use. */
 export const rolePermissions = {
-  admin: ['alert_channels:read', 'alert_channels:write', 'api_keys:read', 'api_keys:write', 'artifacts:read', 'artifacts:write', 'audit:read', 'catalog:read', 'events:read', 'honeypots:read', 'honeypots:write', 'honeytokens:read', 'honeytokens:write', 'incidents:read', 'incidents:write', 'metrics:read', 'scenarios:read', 'scenarios:write', 'users:read', 'users:write'],
-  user: ['artifacts:read', 'artifacts:write', 'catalog:read', 'events:read', 'honeypots:read', 'honeypots:write', 'honeytokens:read', 'honeytokens:write', 'incidents:read', 'incidents:write', 'scenarios:read', 'scenarios:write'],
-  viewer: ['artifacts:read', 'catalog:read', 'events:read', 'honeypots:read', 'honeytokens:read', 'incidents:read', 'scenarios:read'],
+  admin: ['alert_channels:read', 'alert_channels:write', 'api_keys:read', 'api_keys:write', 'audit:read', 'catalog:read', 'events:read', 'honeypots:read', 'honeypots:write', 'honeytokens:read', 'honeytokens:write', 'incidents:read', 'incidents:write', 'metrics:read', 'scenarios:read', 'scenarios:write', 'users:read', 'users:write'],
+  user: ['catalog:read', 'events:read', 'honeypots:read', 'honeypots:write', 'honeytokens:read', 'honeytokens:write', 'incidents:read', 'incidents:write', 'scenarios:read', 'scenarios:write'],
+  viewer: ['catalog:read', 'events:read', 'honeypots:read', 'honeytokens:read', 'incidents:read', 'scenarios:read'],
 } as const;
 
 export type Role = keyof typeof rolePermissions;
@@ -1226,17 +1088,14 @@ export type Role = keyof typeof rolePermissions;
 export type Permission = (typeof rolePermissions)[Role][number];
 
 /** The permissions that an API key may carry as scopes. The server decides; the console offers these. */
-export const keyScopes = ['artifacts:read', 'artifacts:write', 'audit:read', 'catalog:read', 'events:read', 'honeypots:read', 'honeypots:write', 'honeytokens:read', 'honeytokens:write', 'incidents:read', 'incidents:write', 'metrics:read', 'scenarios:read', 'scenarios:write'] as const;
+export const keyScopes = ['audit:read', 'catalog:read', 'events:read', 'honeypots:read', 'honeypots:write', 'honeytokens:read', 'honeytokens:write', 'incidents:read', 'incidents:write', 'metrics:read', 'scenarios:read', 'scenarios:write'] as const;
 
 export type KeyScope = (typeof keyScopes)[number];
 
 /** The scope that a scope requires as well: a key that has the one must have the other. */
 export const keyScopeRequires: Partial<Record<KeyScope, KeyScope>> = {
-  'artifacts:read': 'honeytokens:read',
-  'artifacts:write': 'artifacts:read',
   'honeypots:write': 'honeypots:read',
   'honeytokens:write': 'honeytokens:read',
   'incidents:write': 'incidents:read',
-  'scenarios:read': 'honeytokens:read',
   'scenarios:write': 'scenarios:read',
 };

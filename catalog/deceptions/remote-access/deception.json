@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "remote-access",
   "category": "network",
   "title": {
@@ -11,49 +11,39 @@
     "de": "Verbindungen von Administratoren zu Servern: Remotedesktop, SSH, ein Ansible-Inventar und ein WireGuard-Tunnel. Wer sich verbindet, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1021.001", "T1021.004", "T1018", "T1133"],
-  "engage_activities": ["EAC0005"],
+  "engage_activities": ["EAC0005", "EAC0011", "EAC0022"],
   "honeytokens": [
     {
-      "key": "Server",
-      "type": "dns",
       "label": {"en": "Server", "de": "Server"},
+      "type": "dns",
       "techniques": ["T1021.001"]
     },
     {
-      "key": "JumpHost",
-      "type": "dns",
       "label": {"en": "Jump host", "de": "Jump-Host"},
+      "type": "dns",
       "techniques": ["T1021.004"]
     },
     {
-      "key": "Application",
-      "type": "dns",
       "label": {"en": "Application server", "de": "Anwendungsserver"},
+      "type": "dns",
       "techniques": ["T1021.004", "T1018"],
       "severity": "high"
     },
     {
-      "key": "Gateway",
-      "type": "dns",
       "label": {"en": "VPN gateway", "de": "VPN-Gateway"},
+      "type": "dns",
       "techniques": ["T1133", "T1078"],
       "severity": "high"
     }
   ],
-  "persona": [
-    {
-      "key": "Domain",
-      "kind": "host",
-      "label": {"en": "Domain of the account", "de": "Domain des Kontos"},
-      "example": "corp.example.com"
-    },
-    {
-      "key": "Account",
-      "kind": "name",
-      "label": {"en": "Account", "de": "Konto"},
-      "example": "adm.jdoe"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "Server.rdp", "format": "config", "file": "Server.rdp"},
+    {"name": "config", "format": "config", "file": "config"},
+    {"name": "inventory.ini", "format": "config", "file": "inventory.ini"},
+    {"name": "wg0.conf", "format": "config", "file": "wg0.conf"},
+    {"name": "shell-history.txt", "format": "text", "file": "shell-history.txt"},
+    {"name": "Tickets.csv", "format": "text", "file": "Tickets.csv"}
   ],
-  "artifacts": ["rdp-connection", "ssh-config", "ansible-inventory", "wireguard-config", "shell-history-plain", "ticket-export"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

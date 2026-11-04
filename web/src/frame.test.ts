@@ -23,7 +23,7 @@ describe('the navigation of the frame', () => {
     expect(groups).toHaveLength(3);
     expect(groups.map((g) => g.get('.group-label').text())).toEqual(['Detect', 'Inventory', 'Administration']);
     expect(groups[0]?.findAll('a').map((a) => a.text())).toEqual(['Overview', 'Incidents']);
-    expect(groups[1]?.findAll('a').map((a) => a.text())).toEqual(['Honeytokens', 'Honeypots', 'Scenarios', 'Artifacts', 'Catalog']);
+    expect(groups[1]?.findAll('a').map((a) => a.text())).toEqual(['Honeytokens', 'Honeypots', 'Scenarios', 'Catalog']);
     expect(groups[2]?.findAll('a').map((a) => a.text())).toEqual(['Alert channels', 'Accounts', 'API keys', 'Audit log', 'Metrics']);
   });
 

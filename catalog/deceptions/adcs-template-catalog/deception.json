@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "adcs-template-catalog",
   "category": "identity",
   "title": {
@@ -14,27 +14,16 @@
   "engage_activities": ["EAC0005", "EAC0022"],
   "honeytokens": [
     {
-      "key": "Enrollment",
-      "type": "web_url",
       "label": {"en": "Enrollment page", "de": "Anforderungsseite"},
+      "type": "web_url",
       "techniques": ["T1649"],
       "severity": "high"
     }
   ],
-  "persona": [
-    {
-      "key": "Company",
-      "kind": "text",
-      "label": {"en": "Name of the organization", "de": "Name der Organisation"},
-      "example": "Example Corp"
-    },
-    {
-      "key": "Authority",
-      "kind": "text",
-      "label": {"en": "Name of the certification authority", "de": "Name der Zertifizierungsstelle"},
-      "example": "Example Issuing CA 01"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "Certificate-templates.html", "format": "html", "file": "Certificate-templates.html"},
+    {"name": "Certificate-enrollment.html", "format": "html", "file": "Certificate-enrollment.html"}
   ],
-  "artifacts": ["adcs-template-catalog-catalog", "adcs-template-catalog-bookmark"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

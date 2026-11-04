@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "database-credentials",
   "category": "application",
   "title": {
@@ -14,40 +14,25 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Database",
-      "type": "dns",
       "label": {"en": "Database host", "de": "Datenbank-Host"},
+      "type": "dns",
       "techniques": ["T1552.001", "T1078"],
       "severity": "high"
     },
     {
-      "key": "Directory",
-      "type": "dns",
       "label": {"en": "Directory server", "de": "Verzeichnisserver"},
+      "type": "dns",
       "techniques": ["T1087.002", "T1552.001"],
       "severity": "high"
     }
   ],
-  "persona": [
-    {
-      "key": "DatabaseName",
-      "kind": "name",
-      "label": {"en": "Name of the database", "de": "Name der Datenbank"},
-      "example": "billing"
-    },
-    {
-      "key": "Account",
-      "kind": "name",
-      "label": {"en": "Database account", "de": "Datenbankkonto"},
-      "example": "billing_app"
-    },
-    {
-      "key": "Domain",
-      "kind": "host",
-      "label": {"en": "Internal domain", "de": "Interne Domain"},
-      "example": "corp.example.com"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "config.ini", "format": "config", "file": "config.ini"},
+    {"name": "production.env", "format": "config", "file": "production.env"},
+    {"name": "ldap.ini", "format": "config", "file": "ldap.ini"},
+    {"name": "pgpass", "format": "config", "file": "pgpass"},
+    {"name": "my.cnf", "format": "config", "file": "my.cnf"}
   ],
-  "artifacts": ["config-file", "ci-env-file", "ldap-profile", "pgpass", "my-cnf"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

@@ -1,0 +1,12 @@
+Group Policy backup
+
+Share:     \\Honeytoken-Domain-Share\GPOBackups$
+Account:   CORP\svc-ops
+Password:  fXHu3tbsEzDjfTIXPzv5
+
+Restore
+1. Connect the share with the account above.
+2. In the Group Policy Management console, right-click Group Policy Objects and choose Manage Backups.
+3. Select the share, choose the policy and click Restore.
+
+Contact: Service desk, extension 4711

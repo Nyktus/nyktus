@@ -12,7 +12,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"nyktus.org/nyktus/internal/artifact"
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/honeytoken"
@@ -25,9 +24,9 @@ var (
 	// ErrDeceptionAdded means that the deception is part of the scenario
 	// already.
 	ErrDeceptionAdded = errors.New("deception is part of the scenario already")
-	// ErrTooManyDeceptions means that a scenario holds the most deceptions it
-	// may.
-	ErrTooManyDeceptions = errors.New("scenario holds the most deceptions")
+	// ErrDeceptionNotAdded means that the deception is not part of the
+	// scenario.
+	ErrDeceptionNotAdded = errors.New("deception is not part of the scenario")
 	// ErrInvalidPageSize is returned for a page size outside [1, MaxPageSize].
 	ErrInvalidPageSize = errors.New("invalid page size")
 )
@@ -65,16 +64,16 @@ func NewStore(q db.Querier) *Store {
 }
 
 // columns are the columns of a scenario with its deceptions, which are kept in
-// a table of their own and read in the same statement, so that the persona and
-// the deceptions of a scenario come from one snapshot.
-const columns = `id, name, notes, engage_activities, persona, created_at, updated_at,
-COALESCE((SELECT jsonb_agg(jsonb_build_object('deception_id', d.deception_id, 'language', d.language,
-	'created_at', d.created_at) ORDER BY d.created_at, d.deception_id)
+// a table of their own and read in the same statement, so that a scenario and
+// its deceptions come from one snapshot.
+const columns = `id, name, notes, engage_activities, created_at, updated_at,
+COALESCE((SELECT jsonb_agg(jsonb_build_object('deception_id', d.deception_id, 'created_at', d.created_at)
+	ORDER BY d.created_at, d.deception_id)
 	FROM scenario_deceptions d WHERE d.scenario_id = scenarios.id), '[]')`
 
 func scan(row pgx.Row) (Scenario, error) {
 	var s Scenario
-	err := row.Scan(&s.ID, &s.Name, &s.Notes, &s.EngageActivities, &s.Persona, &s.CreatedAt, &s.UpdatedAt, &s.Deceptions)
+	err := row.Scan(&s.ID, &s.Name, &s.Notes, &s.EngageActivities, &s.CreatedAt, &s.UpdatedAt, &s.Deceptions)
 	return s, err
 }
 
@@ -97,38 +96,6 @@ RETURNING `+columns, spec.Name, spec.Notes, activities))
 		return Scenario{}, fmt.Errorf("create scenario: %w", mapWriteError(err))
 	}
 	return sc, nil
-}
-
-// Guides returns the guides of the deceptions of the scenario id, in the order
-// the deceptions joined. A scenario put together by hand has none. It returns
-// ErrNotFound if there is no such scenario.
-func (s *Store) Guides(ctx context.Context, id string) ([]Guide, error) {
-	var found bool
-	err := s.db.QueryRow(ctx, `SELECT true FROM scenarios WHERE id = $1`, id).Scan(&found)
-	if db.NotFound(err) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get scenario %s: %w", id, err)
-	}
-	rows, err := s.db.Query(ctx, `
-SELECT deception_id, language, guide FROM scenario_deceptions WHERE scenario_id = $1
-ORDER BY created_at, deception_id`, id)
-	if err != nil {
-		return nil, fmt.Errorf("get guides of scenario %s: %w", id, err)
-	}
-	guides, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Guide, error) {
-		var g Guide
-		err := row.Scan(&g.DeceptionID, &g.Language, &g.Content)
-		return g, err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("get guides of scenario %s: %w", id, err)
-	}
-	if guides == nil {
-		guides = []Guide{}
-	}
-	return guides, nil
 }
 
 // Get returns the scenario id. It returns ErrNotFound if there is none.
@@ -253,11 +220,11 @@ RETURNING `+columns, id, updated.Name, updated.Notes, updated.EngageActivities))
 // resources, as the assignment of a honeytoken or a honeypot does, so that a
 // resource that joins the scenario meanwhile either waits and then finds no
 // scenario, or joined before and is removed with the others. Honeytokens are
-// removed before honeypots, and honeypots before artifacts, everywhere. A
-// deception that is being added meanwhile locks the scenario first as well,
-// and either waits and then finds no scenario or is removed with the others.
+// removed before honeypots, everywhere. A deception that is being added
+// meanwhile locks the scenario first as well, and either waits and then finds
+// no scenario or is removed with the others.
 func (s *Store) Delete(ctx context.Context, id string, removals ResourceRemovals) (Removed, error) {
-	if !removals.Honeytokens.Valid() || !removals.Honeypots.Valid() || !removals.Artifacts.Valid() {
+	if !removals.Honeytokens.Valid() || !removals.Honeypots.Valid() {
 		return Removed{}, ErrInvalidRemoval
 	}
 	var found bool
@@ -287,14 +254,6 @@ func (s *Store) Delete(ctx context.Context, id string, removals ResourceRemovals
 	} else {
 		removed.DetachedHoneypots = ids
 	}
-	if ids, err = s.remove(ctx, "artifacts", id, removals.Artifacts); err != nil {
-		return Removed{}, err
-	}
-	if removals.Artifacts == RemovalDelete {
-		removed.DeletedArtifacts = ids
-	} else {
-		removed.DetachedArtifacts = ids
-	}
 
 	// The deceptions of the scenario go with it, after its resources.
 	if _, err := s.db.Exec(ctx, `DELETE FROM scenario_deceptions WHERE scenario_id = $1`, id); err != nil {
@@ -317,12 +276,6 @@ RETURNING id`,
 	"honeypots": {
 		RemovalDelete: `DELETE FROM honeypots WHERE scenario_id = $1 RETURNING id`,
 		RemovalKeep: `UPDATE honeypots SET scenario_id = NULL, updated_at = clock_timestamp()
-WHERE scenario_id = $1
-RETURNING id`,
-	},
-	"artifacts": {
-		RemovalDelete: `DELETE FROM artifacts WHERE scenario_id = $1 RETURNING id`,
-		RemovalKeep: `UPDATE artifacts SET scenario_id = NULL, updated_at = clock_timestamp()
 WHERE scenario_id = $1
 RETURNING id`,
 	},
@@ -402,8 +355,8 @@ func Update(ctx context.Context, d DB, actor audit.Actor, id string, c Change) (
 }
 
 // Delete deletes the scenario id on behalf of actor, as Store.Delete does, and
-// records it in the audit log together with every honeytoken, honeypot and
-// artifact that it deleted or detached, all in one transaction.
+// records it in the audit log together with every honeytoken and honeypot that
+// it deleted or detached, all in one transaction.
 func Delete(ctx context.Context, d DB, actor audit.Actor, id string, removals ResourceRemovals) (Removed, error) {
 	var removed Removed
 	err := pgx.BeginFunc(ctx, d, func(tx pgx.Tx) error {
@@ -421,8 +374,6 @@ func Delete(ctx context.Context, d DB, actor audit.Actor, id string, removals Re
 			{removed.DetachedHoneytokens, honeytoken.ResourceType, audit.ActionHoneytokenUpdate, []string{honeytoken.FieldScenarioID}},
 			{removed.DeletedHoneypots, honeypot.ResourceType, audit.ActionHoneypotDelete, nil},
 			{removed.DetachedHoneypots, honeypot.ResourceType, audit.ActionHoneypotUpdate, []string{honeypot.FieldScenarioID}},
-			{removed.DeletedArtifacts, artifact.ResourceType, audit.ActionArtifactDelete, nil},
-			{removed.DetachedArtifacts, artifact.ResourceType, audit.ActionArtifactUpdate, []string{artifact.FieldScenarioID}},
 		} {
 			for _, rid := range e.ids {
 				if err := record(ctx, tx, actor, e.action, audit.Resource{Type: e.typ, ID: rid}, e.changed); err != nil {
@@ -454,34 +405,50 @@ func (s *Store) Lock(ctx context.Context, id string) (Scenario, error) {
 	return sc, nil
 }
 
-// grow stores the persona and the activities of the scenario id after
-// something joined it. The caller holds its lock and merged the persona, which
-// the schema allows to grow only.
-func (s *Store) grow(ctx context.Context, id string, persona map[string]string, activities []string) error {
+// setActivities stores the activities of the scenario id after a deception
+// joined it. The caller holds its lock.
+func (s *Store) setActivities(ctx context.Context, id string, activities []string) error {
 	_, err := s.db.Exec(ctx, `
-UPDATE scenarios SET persona = $2, engage_activities = $3, updated_at = clock_timestamp()
-WHERE id = $1`, id, persona, activities)
+UPDATE scenarios SET engage_activities = $2, updated_at = clock_timestamp() WHERE id = $1`, id, activities)
 	if err != nil {
 		return fmt.Errorf("extend scenario %s: %w", id, mapWriteError(err))
 	}
 	return nil
 }
 
-// addDeception stores that the deception joined the scenario id, with the guide
-// rendered for it. The caller holds the lock of the scenario. It returns
-// ErrDeceptionAdded if the deception is part of the scenario already, and
-// ErrTooManyDeceptions if the scenario holds the most it may.
-func (s *Store) addDeception(ctx context.Context, id, deceptionID, lang string, guide []byte) error {
-	_, err := s.db.Exec(ctx, `
-INSERT INTO scenario_deceptions (scenario_id, deception_id, language, guide) VALUES ($1, $2, $3, $4)`,
-		id, deceptionID, lang, string(guide))
+// touch moves the time of the last change of the scenario id. The caller holds
+// its lock.
+func (s *Store) touch(ctx context.Context, id string) error {
+	if _, err := s.db.Exec(ctx, `UPDATE scenarios SET updated_at = clock_timestamp() WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("touch scenario %s: %w", id, err)
+	}
+	return nil
+}
+
+// addDeception stores that the deception joined the scenario id. The caller
+// holds the lock of the scenario. It returns ErrDeceptionAdded if the
+// deception is part of the scenario already.
+func (s *Store) addDeception(ctx context.Context, id, deceptionID string) error {
+	_, err := s.db.Exec(ctx, `INSERT INTO scenario_deceptions (scenario_id, deception_id) VALUES ($1, $2)`, id, deceptionID)
 	switch {
 	case db.Violation(err, db.UniqueViolation) == "scenario_deceptions_pkey":
 		return ErrDeceptionAdded
-	case db.Violation(err, db.CheckViolation) == "scenario_deceptions_limit_check":
-		return ErrTooManyDeceptions
 	case err != nil:
 		return fmt.Errorf("add deception %s to scenario %s: %w", deceptionID, id, err)
+	}
+	return nil
+}
+
+// removeDeception ends the assignment of the deception to the scenario id. The
+// caller holds the lock of the scenario. It returns ErrDeceptionNotAdded if the
+// deception is not part of it.
+func (s *Store) removeDeception(ctx context.Context, id, deceptionID string) error {
+	tag, err := s.db.Exec(ctx, `DELETE FROM scenario_deceptions WHERE scenario_id = $1 AND deception_id = $2`, id, deceptionID)
+	if err != nil {
+		return fmt.Errorf("remove deception %s of scenario %s: %w", deceptionID, id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrDeceptionNotAdded
 	}
 	return nil
 }

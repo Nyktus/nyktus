@@ -1,2 +1,0 @@
-Import-Module ActiveDirectory
-New-ADComputer -Name '{{.Persona.ComputerName}}' -SamAccountName '{{.Persona.ComputerName}}$' -DNSHostName '{{.Honeytokens.Computer.Host}}' -Enabled $true

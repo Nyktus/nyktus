@@ -52,7 +52,6 @@ describe('the audit log', () => {
     ['user', '/users/'],
     ['honeypot', '/honeypots/'],
     ['scenario', '/scenarios/'],
-    ['artifact', '/artifacts/'],
     ['alert_channel', '/alert-channels/'],
     ['incident', '/incidents/'],
   ])('links a resource of the type %s to %s', async (type, prefix) => {
@@ -66,7 +65,6 @@ describe('the audit log', () => {
     ['honeytoken.delete', 'honeytoken'],
     ['scenario.delete', 'scenario'],
     ['user.delete', 'user'],
-    ['artifact.delete', 'artifact'],
   ])('shows the resource of %s by its identifier only, without a link', async (action, type) => {
     const entry = auditEntry({ action, resource: { type, id: '11111111-1111-4222-8333-944444444444' } });
     const { wrapper } = await boot(server('admin', { 'GET /api/v1/audit-entries': () => json(200, { entries: [entry] }) }), '/audit');

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "developer-access",
   "category": "application",
   "title": {
@@ -11,50 +11,35 @@
     "de": "Eine Notiz mit einem API-Aufruf, die Zugangsdaten eines Git-Servers und die Konfiguration der Paketmanager npm und pip, mit Host-Namen und Token. Wer sie benutzt, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1552.001", "T1213.003", "T1195.001"],
-  "engage_activities": ["EAC0005"],
+  "engage_activities": ["EAC0005", "EAC0011", "EAC0022"],
   "honeytokens": [
     {
-      "key": "Api",
-      "type": "dns",
       "label": {"en": "API host", "de": "API-Host"},
+      "type": "dns",
       "techniques": ["T1552.001", "T1078"],
       "severity": "high"
     },
     {
-      "key": "Git",
-      "type": "dns",
       "label": {"en": "Git server", "de": "Git-Server"},
+      "type": "dns",
       "techniques": ["T1552.001", "T1213.003"],
       "severity": "high"
     },
     {
-      "key": "Registry",
-      "type": "dns",
       "label": {"en": "Package registry", "de": "Paket-Registry"},
+      "type": "dns",
       "techniques": ["T1552.001", "T1195.001"],
       "severity": "high"
     }
   ],
-  "persona": [
-    {
-      "key": "Product",
-      "kind": "text",
-      "label": {"en": "Name of the internal service", "de": "Name des internen Dienstes"},
-      "example": "Inventory service"
-    },
-    {
-      "key": "Account",
-      "kind": "name",
-      "label": {"en": "Account", "de": "Konto"},
-      "example": "ci-pull"
-    },
-    {
-      "key": "Project",
-      "kind": "name",
-      "label": {"en": "Name of the project", "de": "Name des Projekts"},
-      "example": "platform-prod"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "api-call.txt", "format": "text", "file": "api-call.txt"},
+    {"name": "git-credentials", "format": "config", "file": "git-credentials"},
+    {"name": "config", "format": "config", "file": "config"},
+    {"name": "npmrc", "format": "config", "file": "npmrc"},
+    {"name": "pip.conf", "format": "config", "file": "pip.conf"},
+    {"name": "README.md", "format": "markdown", "file": "README.md"}
   ],
-  "artifacts": ["api-key-snippet", "git-credentials", "git-config", "npmrc", "pip-conf", "project-readme"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "aws-iam-user-key",
   "category": "cloud",
   "title": {
@@ -14,33 +14,13 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Webhook",
-      "type": "web_url",
       "label": {"en": "Webhook of the EventBridge rule", "de": "Webhook der EventBridge-Regel"},
+      "type": "web_url",
       "techniques": ["T1078.004", "T1552.001"],
       "severity": "high"
     }
   ],
-  "persona": [
-    {
-      "key": "IamUser",
-      "kind": "name",
-      "label": {"en": "Name of the IAM user", "de": "Name des IAM-Benutzers"},
-      "example": "svc-reporting-sync"
-    },
-    {
-      "key": "AwsRegion",
-      "kind": "name",
-      "label": {"en": "AWS region of your workloads", "de": "AWS-Region Ihrer Workloads"},
-      "example": "eu-central-1"
-    },
-    {
-      "key": "AlertName",
-      "kind": "name",
-      "label": {"en": "Prefix of the forwarding resources (up to 40 characters)", "de": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)"},
-      "example": "audit-notify"
-    }
-  ],
-  "artifacts": [],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "honeypots": [],
+  "files": [],
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

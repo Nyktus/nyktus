@@ -1,8 +1,0 @@
-(function () {
-  var host = location.hostname.toLowerCase();
-  if (host === '{{.Persona.Site}}' || host === 'localhost') {
-    return;
-  }
-  var image = new Image();
-  image.src = '{{.Honeytokens.Beacon.URL}}';
-})();

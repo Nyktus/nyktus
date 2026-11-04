@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "azure-key-vault-secret",
   "category": "cloud",
   "title": {
@@ -14,39 +14,13 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Webhook",
-      "type": "web_url",
       "label": {"en": "Webhook of the action group", "de": "Webhook der Aktionsgruppe"},
+      "type": "web_url",
       "techniques": ["T1555.006", "T1078.004"],
       "severity": "high"
     }
   ],
-  "persona": [
-    {
-      "key": "VaultName",
-      "kind": "name",
-      "label": {"en": "Name of an existing key vault", "de": "Name eines vorhandenen Key Vaults"},
-      "example": "kv-orders-prod"
-    },
-    {
-      "key": "VaultSecretName",
-      "kind": "name",
-      "label": {"en": "Name of the secret in the vault", "de": "Name des Secrets im Vault"},
-      "example": "orders-db-password"
-    },
-    {
-      "key": "AzureRegion",
-      "kind": "name",
-      "label": {"en": "Azure region of your workloads", "de": "Azure-Region Ihrer Workloads"},
-      "example": "germanywestcentral"
-    },
-    {
-      "key": "AlertName",
-      "kind": "name",
-      "label": {"en": "Prefix of the forwarding resources (up to 40 characters)", "de": "Präfix der Weiterleitungsressourcen (bis 40 Zeichen)"},
-      "example": "audit-notify"
-    }
-  ],
-  "artifacts": [],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "honeypots": [],
+  "files": [],
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

@@ -22,15 +22,15 @@ function inline(parts: Inline[]): (VNode | string)[] {
   });
 }
 
-function block(b: Block): VNode {
+function block(b: Block, top: number): VNode {
   switch (b.kind) {
     case 'heading':
-      // The page has its own h1, so the headings of a guide start below it.
-      return h(`h${Math.min(6, b.level + 1)}`, inline(b.children));
+      // The page has headings of its own, so those of a guide start below the one that it stands under.
+      return h(`h${Math.min(6, b.level + top)}`, inline(b.children));
     case 'paragraph':
       return h('p', inline(b.children));
     case 'list':
-      return h(b.ordered ? 'ol' : 'ul', b.items.map((item) => h('li', [...inline(item.children), ...item.blocks.map(block)])));
+      return h(b.ordered ? 'ol' : 'ul', b.items.map((item) => h('li', [...inline(item.children), ...item.blocks.map((x) => block(x, top))])));
     case 'code':
       return h('pre', { class: 'mono' }, h('code', b.text));
     case 'quote':
@@ -44,9 +44,13 @@ function block(b: Block): VNode {
  */
 export default defineComponent({
   name: 'MarkdownView',
-  props: { source: { type: String as PropType<string>, required: true } },
+  props: {
+    source: { type: String as PropType<string>, required: true },
+    /** The level of the heading that the guide stands under; the first heading of the guide is one below. */
+    under: { type: Number as PropType<number>, default: 1 },
+  },
   setup(props) {
     const blocks = computed(() => parseMarkdown(props.source));
-    return () => h('div', { class: 'markdown' }, blocks.value.map(block));
+    return () => h('div', { class: 'markdown' }, blocks.value.map((b) => block(b, props.under)));
   },
 });

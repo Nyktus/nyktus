@@ -106,8 +106,6 @@ test.each([
   ['scenario', 'getScenario'],
   ['catalog', 'listCatalogDeceptions'],
   ['catalog-deception', 'getCatalogDeception'],
-  ['artifacts', 'listArtifacts'],
-  ['artifact', 'getArtifact'],
   ['alert-channels', 'listAlertChannels'],
   ['alert-channel-new', 'createAlertChannel'],
   ['alert-channel', 'getAlertChannel'],

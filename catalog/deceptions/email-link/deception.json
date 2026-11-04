@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "email-link",
   "category": "data",
   "title": {
@@ -14,44 +14,19 @@
   "engage_activities": ["EAC0005", "EAC0009"],
   "honeytokens": [
     {
-      "key": "Link",
-      "type": "web_url",
       "label": {"en": "Link", "de": "Link"},
+      "type": "web_url",
       "techniques": ["T1114", "T1204.001"]
     },
     {
-      "key": "Pixel",
-      "type": "web_image",
       "label": {"en": "Image", "de": "Bild"},
+      "type": "web_image",
       "techniques": ["T1114"]
     }
   ],
-  "persona": [
-    {
-      "key": "Subject",
-      "kind": "text",
-      "label": {"en": "Subject", "de": "Betreff"},
-      "example": "Mailbox storage almost full"
-    },
-    {
-      "key": "Message",
-      "kind": "text",
-      "label": {"en": "Message", "de": "Nachricht"},
-      "example": "Your mailbox has reached 95% of its quota. Please review the overview and archive old messages."
-    },
-    {
-      "key": "LinkText",
-      "kind": "text",
-      "label": {"en": "Text of the link", "de": "Text des Links"},
-      "example": "Open mailbox overview"
-    },
-    {
-      "key": "Sender",
-      "kind": "text",
-      "label": {"en": "Sender", "de": "Absender"},
-      "example": "IT Service Desk"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "message.html", "format": "html", "file": "message.html"}
   ],
-  "artifacts": ["email-link"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

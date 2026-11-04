@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Config
+clusters:
+- name: "prod-eu1"
+  cluster:
+    server: "https://Honeytoken-Domain-Api:6443"
+    insecure-skip-tls-verify: true
+contexts:
+- name: "prod-eu1"
+  context:
+    cluster: "prod-eu1"
+    user: "ci-pull"
+current-context: "prod-eu1"
+users:
+- name: "ci-pull"
+  user:
+    token: "ZuAt511GFjEtdgSkAkQLMzlg2UADXj6HX72qGY3P"
