@@ -1,4 +1,0 @@
-Inventory service - list the users
-
-curl -s https://apiq3xwz7a2kfm4ub6tyc5nre.d.example.net/v1/users \
-  -H "Authorization: Bearer Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7Xy7X"

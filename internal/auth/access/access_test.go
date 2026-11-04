@@ -259,8 +259,8 @@ func TestHoneypots_ReadByEveryRoleWrittenByAdminsAndUsers(t *testing.T) {
 	if got, ok := KeyScopeRequires("honeypots:read"); ok {
 		t.Errorf("KeyScopeRequires(honeypots:read) = %s, want none", got)
 	}
-	if got, _ := KeyScopeRequires("scenarios:read"); got == "honeypots:read" {
-		t.Error("scenarios:read requires honeypots:read, but no scenario names a honeypot")
+	if got, ok := KeyScopeRequires("scenarios:read"); ok {
+		t.Errorf("KeyScopeRequires(scenarios:read) = %s, want none: a scenario names no honeytoken and no honeypot", got)
 	}
 }
 

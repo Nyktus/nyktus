@@ -212,10 +212,10 @@ describe('a new API key', () => {
       }
     });
 
-    test('select what a scope requires, also through another scope', async () => {
+    test('select what a scope requires', async () => {
       const { wrapper } = await boot(creating(), create);
       await box(wrapper, 'scenarios:write').setValue(true);
-      expect(checked(wrapper)).toEqual(['honeytokens:read', 'scenarios:read', 'scenarios:write']);
+      expect(checked(wrapper)).toEqual(['scenarios:read', 'scenarios:write']);
     });
 
     test('cannot be taken away while a selected scope needs them, and say which', async () => {
@@ -232,7 +232,7 @@ describe('a new API key', () => {
 
     test('say what a scope needs before it is chosen', async () => {
       const { wrapper } = await boot(creating(), create);
-      expect(wrapper.text()).toContain('Needs honeytokens:read, scenarios:read.');
+      expect(wrapper.text()).toContain('Needs scenarios:read.');
     });
   });
 

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "knowledge-base": {
+      "type": "http",
+      "url": "https://Honeytoken-Domain/mcp",
+      "headers": {
+        "Authorization": "Bearer gnwSQGY6IeraDqXds1tZVJAdCFPNmemuCMbo8ea8"
+      }
+    }
+  }
+}

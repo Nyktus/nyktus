@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "qr-labels",
   "category": "data",
   "title": {
@@ -14,25 +14,22 @@
   "engage_activities": ["EAC0005", "EAC0022"],
   "honeytokens": [
     {
-      "key": "Rack",
-      "type": "web_url",
       "label": {"en": "Rack label", "de": "Rack-Etikett"},
+      "type": "web_url",
       "techniques": ["T1592.001"]
     },
     {
-      "key": "Device",
-      "type": "web_url",
       "label": {"en": "Device label", "de": "Geräte-Etikett"},
+      "type": "web_url",
       "techniques": ["T1592.001"]
     },
     {
-      "key": "PatchPanel",
-      "type": "web_url",
       "label": {"en": "Patch panel label", "de": "Patchfeld-Etikett"},
+      "type": "web_url",
       "techniques": ["T1592.001"]
     }
   ],
-  "persona": [],
-  "artifacts": [],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "honeypots": [],
+  "files": [],
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

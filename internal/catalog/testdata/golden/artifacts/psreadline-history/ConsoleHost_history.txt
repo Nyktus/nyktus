@@ -1,6 +1,0 @@
-cd C:\Scripts
-Get-Service | Where-Object Status -eq 'Running'
-$cred = Get-Credential CORP\svc-ops
-Enter-PSSession -ComputerName serverq3xwz7a2kfm4ub6tyc5nre.d.example.net -Credential $cred
-Get-EventLog -LogName System -Newest 20
-exit

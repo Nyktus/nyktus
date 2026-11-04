@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "windows-administration",
   "category": "endpoint",
   "title": {
@@ -11,43 +11,26 @@
     "de": "Ein Skript, das eine Freigabe verbindet, ein Notfallblatt für den lokalen Administrator und Notizen zur Sicherung der Gruppenrichtlinien, mit Servernamen und Passwörtern. Wer sie benutzt, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1059.001", "T1552.001", "T1021.001", "T1135", "T1615"],
-  "engage_activities": ["EAC0005"],
+  "engage_activities": ["EAC0005", "EAC0022"],
   "honeytokens": [
     {
-      "key": "Share",
-      "type": "dns",
       "label": {"en": "File server", "de": "Dateiserver"},
+      "type": "dns",
       "techniques": ["T1552.001", "T1135", "T1615"],
       "severity": "high"
     },
     {
-      "key": "Host",
-      "type": "dns",
       "label": {"en": "Server", "de": "Server"},
+      "type": "dns",
       "techniques": ["T1552.001", "T1021.001"],
       "severity": "high"
     }
   ],
-  "persona": [
-    {
-      "key": "Netbios",
-      "kind": "name",
-      "label": {"en": "NetBIOS name of the domain", "de": "NetBIOS-Name der Domain"},
-      "example": "CORP"
-    },
-    {
-      "key": "Account",
-      "kind": "name",
-      "label": {"en": "Account", "de": "Konto"},
-      "example": "svc-ops"
-    },
-    {
-      "key": "Contact",
-      "kind": "text",
-      "label": {"en": "Contact", "de": "Ansprechpartner"},
-      "example": "Service desk, extension 4711"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "Map-Share.ps1", "format": "config", "file": "Map-Share.ps1"},
+    {"name": "Recovery.txt", "format": "text", "file": "Recovery.txt"},
+    {"name": "GPO-Backup.txt", "format": "text", "file": "GPO-Backup.txt"}
   ],
-  "artifacts": ["powershell-script", "laps-recovery-sheet", "gpo-backup-notes"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

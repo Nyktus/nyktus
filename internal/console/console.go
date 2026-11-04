@@ -50,7 +50,7 @@ type Deps struct {
 	Metrics http.Handler
 	// Accounts manages accounts and activates them.
 	Accounts Accounts
-	// Catalog lists the deceptions and artifacts of the catalog.
+	// Catalog serves the deceptions of the catalog.
 	Catalog Catalog
 	// Honeytokens manages the honeytokens of the team.
 	Honeytokens Honeytokens
@@ -58,8 +58,6 @@ type Deps struct {
 	Honeypots Honeypots
 	// Scenarios manages the scenarios of the team.
 	Scenarios Scenarios
-	// Artifacts serves the artifacts of the scenarios.
-	Artifacts Artifacts
 	// Incidents lists and triages the incidents of the team.
 	Incidents Incidents
 	// Events lists the events of the honeytokens.
@@ -97,12 +95,12 @@ type APIKeys struct {
 // Catalog are the handlers of the catalog.
 type Catalog struct {
 	List, Get http.Handler
-	// ListArtifacts and GetArtifact serve the artifacts of the catalog.
-	ListArtifacts, GetArtifact http.Handler
+	// File serves an example file of a deception.
+	File http.Handler
 }
 
 func (c Catalog) complete() bool {
-	return c.List != nil && c.Get != nil && c.ListArtifacts != nil && c.GetArtifact != nil
+	return c.List != nil && c.Get != nil && c.File != nil
 }
 
 // Honeytokens are the handlers of the management of the honeytokens.
@@ -135,27 +133,16 @@ func (h Honeypots) complete() bool {
 // Scenarios are the handlers of the management of the scenarios.
 type Scenarios struct {
 	List, Get, Create, Update, Delete http.Handler
-	// Apply creates a scenario from a deception of the catalog, and Guide
-	// reads the guides that applying deceptions rendered.
-	Apply, Guide http.Handler
-	// AddDeception and AddArtifact extend a scenario with a deception or an
-	// artifact of the catalog.
-	AddDeception, AddArtifact http.Handler
+	// Apply creates a scenario from a deception of the catalog.
+	Apply http.Handler
+	// AddDeception extends a scenario with a deception of the catalog, and
+	// RemoveDeception ends the assignment of one.
+	AddDeception, RemoveDeception http.Handler
 }
 
 func (h Scenarios) complete() bool {
 	return h.List != nil && h.Get != nil && h.Create != nil && h.Update != nil && h.Delete != nil &&
-		h.Apply != nil && h.Guide != nil && h.AddDeception != nil && h.AddArtifact != nil
-}
-
-// Artifacts are the handlers of the artifacts: their metadata, the download
-// of their content, their placement notes and their deletion.
-type Artifacts struct {
-	List, Get, Download, Update, Delete http.Handler
-}
-
-func (h Artifacts) complete() bool {
-	return h.List != nil && h.Get != nil && h.Download != nil && h.Update != nil && h.Delete != nil
+		h.Apply != nil && h.AddDeception != nil && h.RemoveDeception != nil
 }
 
 // Incidents are the handlers of the incidents and their triage.
@@ -217,8 +204,8 @@ func (a Accounts) complete() bool {
 // so that a wiring mistake stops the process at startup.
 func NewRouter(d Deps) *httpx.Router {
 	if d.Logger == nil || d.DB == nil || d.Setup == nil || d.Authorizer == nil ||
-		d.SignIn == nil || d.SignInOptions == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Honeypots.complete() || !d.Scenarios.complete() || !d.Artifacts.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
-		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, catalog, honeytoken, honeypot, scenario, artifact, incident, event and alert channel handlers")
+		d.SignIn == nil || d.SignInOptions == nil || d.Session == nil || d.SignOut == nil || d.ChangePassword == nil || !d.SecondFactor.complete() || !d.APIKeys.complete() || !d.OIDC.complete() || d.AuditEntries == nil || d.Metrics == nil || !d.Accounts.complete() || !d.Catalog.complete() || !d.Honeytokens.complete() || !d.Honeypots.complete() || !d.Scenarios.complete() || !d.Incidents.complete() || !d.Events.complete() || !d.AlertChannels.complete() {
+		panic("console: router needs a logger, a database, an authorizer and the setup, session, OIDC, API key, audit, metrics, account, catalog, honeytoken, honeypot, scenario, incident, event and alert channel handlers")
 	}
 	rt := httpx.NewRouter(d.Logger, d.Authorizer)
 	// The session itself and how the account signs in are managed only with a
@@ -262,10 +249,10 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodPost, "/api/v1/password-reset", httpx.Public, httpx.Deadline(hashDeadline)(d.Accounts.ResetPassword))
 	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions", httpx.Require("catalog:read"), d.Catalog.List)
 	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions/{id}", httpx.Require("catalog:read"), d.Catalog.Get)
-	rt.Handle(http.MethodGet, "/api/v1/catalog/artifacts", httpx.Require("catalog:read"), d.Catalog.ListArtifacts)
-	rt.Handle(http.MethodGet, "/api/v1/catalog/artifacts/{id}", httpx.Require("catalog:read"), d.Catalog.GetArtifact)
-	// Applying a deception creates a scenario with its honeytokens and
-	// artifacts; the catalog stays as it is.
+	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions/{id}/files/{name}", httpx.Require("catalog:read"), d.Catalog.File)
+	// Applying a deception creates a scenario with it, and on request its
+	// honeytokens and honeypots, which also needs the permissions to write
+	// those; the catalog stays as it is.
 	rt.Handle(http.MethodPost, "/api/v1/catalog/deceptions/{id}/apply", httpx.Require("scenarios:write"), d.Scenarios.Apply)
 	rt.Handle(http.MethodGet, "/api/v1/honeytokens", httpx.Require("honeytokens:read"), d.Honeytokens.List)
 	rt.Handle(http.MethodPost, "/api/v1/honeytokens", httpx.Require("honeytokens:write"), d.Honeytokens.Create)
@@ -296,19 +283,14 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/api/v1/scenarios", httpx.Require("scenarios:read"), d.Scenarios.List)
 	rt.Handle(http.MethodPost, "/api/v1/scenarios", httpx.Require("scenarios:write"), d.Scenarios.Create)
 	rt.Handle(http.MethodGet, "/api/v1/scenarios/{id}", httpx.Require("scenarios:read"), d.Scenarios.Get)
-	rt.Handle(http.MethodGet, "/api/v1/scenarios/{id}/guide", httpx.Require("scenarios:read"), d.Scenarios.Guide)
 	rt.Handle(http.MethodPatch, "/api/v1/scenarios/{id}", httpx.Require("scenarios:write"), d.Scenarios.Update)
-	// A deception or an artifact of the catalog joins a scenario with the
-	// honeytokens and artifacts it creates, as applying a deception does, so
-	// it needs scenarios:write only. The persona of the scenario grows.
+	// A deception of the catalog joins a scenario, and on request creates its
+	// honeytokens and honeypots, as applying a deception does. It leaves the
+	// scenario by ending the assignment only; the resources stay.
 	rt.Handle(http.MethodPost, "/api/v1/scenarios/{id}/deceptions", httpx.Require("scenarios:write"), d.Scenarios.AddDeception)
-	rt.Handle(http.MethodPost, "/api/v1/scenarios/{id}/artifacts", httpx.Require("scenarios:write"), d.Scenarios.AddArtifact)
+	rt.Handle(http.MethodDelete, "/api/v1/scenarios/{id}/deceptions/{deception_id}", httpx.Require("scenarios:write"),
+		d.Scenarios.RemoveDeception)
 	rt.Handle(http.MethodDelete, "/api/v1/scenarios/{id}", httpx.Require("scenarios:write"), d.Scenarios.Delete)
-	rt.Handle(http.MethodGet, "/api/v1/artifacts", httpx.Require("artifacts:read"), d.Artifacts.List)
-	rt.Handle(http.MethodGet, "/api/v1/artifacts/{id}", httpx.Require("artifacts:read"), d.Artifacts.Get)
-	rt.Handle(http.MethodGet, "/api/v1/artifacts/{id}/content", httpx.Require("artifacts:read"), d.Artifacts.Download)
-	rt.Handle(http.MethodPatch, "/api/v1/artifacts/{id}", httpx.Require("artifacts:write"), d.Artifacts.Update)
-	rt.Handle(http.MethodDelete, "/api/v1/artifacts/{id}", httpx.Require("artifacts:write"), d.Artifacts.Delete)
 	rt.Handle(http.MethodGet, "/api/v1/incidents", httpx.Require("incidents:read"), d.Incidents.List)
 	rt.Handle(http.MethodGet, "/api/v1/incidents/{id}", httpx.Require("incidents:read"), d.Incidents.Get)
 	rt.Handle(http.MethodPatch, "/api/v1/incidents/{id}", httpx.Require("incidents:write"), d.Incidents.Update)

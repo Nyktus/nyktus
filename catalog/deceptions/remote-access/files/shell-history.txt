@@ -1,0 +1,8 @@
+cd /var/log
+tail -n 100 syslog
+df -h
+sudo systemctl status nginx
+ssh adm.jdoe@jump.corp.example.com
+sudo apt update
+sudo apt upgrade
+exit

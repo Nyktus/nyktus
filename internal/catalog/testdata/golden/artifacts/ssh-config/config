@@ -1,8 +1,0 @@
-Host jump
-    HostName jumphostq3xwz7a2kfm4ub6tyc5nre.d.example.net
-    User j.doe
-
-Host *.corp.example.com
-    User j.doe
-    ProxyJump jump
-    ServerAliveInterval 60

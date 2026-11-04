@@ -37,15 +37,15 @@ Each of these properties needs its own test, named after the property:
 - Login and password reset return identical status codes and bodies for existing and unknown accounts, and for accounts rejected by the local login policy.
 - Health checks never record an event, open an incident or raise an alert.
 - The setup endpoint accepts only the current setup token and returns `404` once an administrator exists, including after a restart.
-- Generated artifacts contain no product name, attribution or metadata that identifies Nyktus, for every deception, artifact and language, also when applied with values from outside the catalog.
-- Applying a deception creates its scenario, honeytokens, artifacts and audit entries together or not at all: a failure while rendering, storing a resource or writing an audit entry leaves nothing behind. The same holds for adding a deception or an artifact to a scenario, which leaves the scenario as it was, its persona included.
-- The persona of a scenario only grows, in the code and in the schema: a key is added, a value that is there stays, and two deceptions that join at once with different values for a new key leave exactly one of them in.
-- A scenario holds at most 20 deceptions and 200 artifacts, in the code and in the schema, also when two are added at once.
+- The files of the catalog contain no product name, attribution, identifier of their deception or other marker, for every deception, and a name or a text that breaks the rule keeps the catalog from loading. The placeholders are the one exception.
+- Applying a deception creates its scenario and, if asked for, its honeytokens, honeypots and audit entries together or not at all: a failure while storing a resource or writing an audit entry leaves nothing behind. The same holds for adding a deception to a scenario, which leaves the scenario as it was. The scenario stores nothing of the deception but its identifier.
+- Creating the resources of a deception needs the permissions of honeytokens and honeypots besides the one of the scenario, whatever the deception asks for, and is refused before the scenario or the deception is looked up. Removing a deception ends the assignment only.
+- A deception joins a scenario once, also when several requests add it at once, and only the winner creates resources.
 - Every registered route declares its authentication and permission. The test enumerates the router, so a new route without a declaration fails the build.
 - Denied requests are rejected before the resource is loaded.
 - The console can add and read audit entries but never change or delete them.
 - Read-only roles and API keys without a write scope cannot write. A demoted user's keys lose the corresponding permissions.
-- An invalid catalog entry, such as an unknown technique, an unknown field or a template that does not render, keeps the server from starting. Templates cannot use constructs outside the allowed set.
+- An invalid catalog entry, such as an unknown technique, an unknown field, a file that is missing or a name that reveals what a file is, keeps the server from starting.
 - The SSRF guard blocks every reserved address range.
 - The console can write the secrets of alert channels but never read them, and the secrets are stored encrypted and bound to their channel.
 - The secret of a honeypot is stored sealed and bound to its hash, and shown again only to those who may change honeypots, with an audit entry for the honeypot and never with the secret. A sealed value that was moved, altered, sealed with a key that is gone or does not match its hash is never sent, the trigger role cannot read the column, and the console refuses to start without a key in use, and after a rotation the secrets are sealed with the first key without overwriting a replacement that runs at the same time.

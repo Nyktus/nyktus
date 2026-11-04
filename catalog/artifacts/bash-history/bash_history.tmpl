@@ -1,6 +1,0 @@
-cd /srv/{{.Persona.DatabaseName}}
-ls -la
-mysql -h {{.Honeytokens.Database.Host}} -u {{.Persona.Account}} -p{{.Secrets.Password}} {{.Persona.DatabaseName}}
-sudo systemctl restart nginx
-tail -n 50 /var/log/nginx/error.log
-exit

@@ -5,7 +5,7 @@ import { flushPromises } from '@vue/test-utils';
 import { afterEach, expect, test, vi } from 'vitest';
 import { navigation } from './navigation';
 import { boot } from './testing/boot';
-import { auditEntry, metricsText, plain, apiKey, userId, userRecord, alertChannel, alertDelivery, artifact, artifactId, catalogDeception, catalogSummary, event, eventId, fakeServer, honeypot, honeypotId, honeytoken, incident, incidentId, joined, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { auditEntry, metricsText, plain, apiKey, userId, userRecord, alertChannel, alertDelivery, catalogDeception, catalogSummary, event, eventId, fakeServer, honeypot, honeypotId, honeytoken, incident, incidentId, joined, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -26,8 +26,6 @@ function server() {
     [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario({ deceptions: [joined('browser-bookmarks')] })),
     [`GET /api/v1/scenarios/${scenarioId}/guide`]: () => json(200, { guides: [{ deception_id: 'browser-bookmarks', language: 'en', content: '# Guide' }] }),
     'GET /api/v1/catalog/deceptions': () => json(200, { deceptions: [catalogSummary()] }),
-    'GET /api/v1/artifacts': () => json(200, { artifacts: [artifact()] }),
-    [`GET /api/v1/artifacts/${artifactId}`]: () => json(200, artifact()),
     'GET /api/v1/catalog/deceptions/browser-bookmarks': () => json(200, catalogDeception()),
     'GET /api/v1/alert-channels': () => json(200, { alert_channels: [alertChannel()] }),
     [`GET /api/v1/alert-channels/${alertChannel().id}`]: () => json(200, alertChannel()),
@@ -70,8 +68,6 @@ test.each([
   '/users',
   '/users/new',
   `/users/${userId}`,
-  '/artifacts',
-  `/artifacts/${artifactId}`,
   '/catalog',
   '/catalog/browser-bookmarks',
   '/account',
@@ -113,7 +109,7 @@ test.each(['/sign-in', '/setup', '/activate', '/reset-password'])('%s has no id 
 
 // Every page of the navigation points to the documentation instead of explaining itself, and the
 // link opens a new tab, so that the console stays where it is.
-const menuPages = ['/', '/incidents', '/honeytokens', '/honeypots', '/scenarios', '/artifacts', '/catalog', '/alert-channels', '/users', '/api-keys', '/audit', '/metrics'];
+const menuPages = ['/', '/incidents', '/honeytokens', '/honeypots', '/scenarios', '/catalog', '/alert-channels', '/users', '/api-keys', '/audit', '/metrics'];
 
 test('the list of pages with a link to the documentation is the navigation', () => {
   expect(menuPages).toHaveLength(navigation.length);

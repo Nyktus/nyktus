@@ -32,11 +32,11 @@ var update = flag.Bool("update", false, "rewrite the published catalog from the 
 const publishedPath = "../../../docs/public/deception-catalog.json"
 
 // publishedVersion is the version of the format of the published catalog.
-const publishedVersion = 2
+const publishedVersion = 3
 
-// published is the published catalog. Its deceptions and artifacts are, in
-// every language, what GET /api/v1/catalog/deceptions/{id} and
-// GET /api/v1/catalog/artifacts/{id} return.
+// published is the published catalog. Its deceptions are, in every language,
+// what GET /api/v1/catalog/deceptions/{id} returns, with the content of their
+// files, so that the assistant of a customer can adapt them.
 type published struct {
 	SchemaVersion int      `json:"schema_version"`
 	License       string   `json:"license"`
@@ -48,7 +48,21 @@ type published struct {
 	Techniques       map[string]reference         `json:"techniques"`
 	EngageActivities map[string]reference         `json:"engage_activities"`
 	Deceptions       map[string][]json.RawMessage `json:"deceptions"`
-	Artifacts        map[string][]json.RawMessage `json:"artifacts"`
+}
+
+// publishedDeception is a deception of the published catalog: what the API
+// returns, and the content of each file besides its name, format and size.
+type publishedDeception struct {
+	summary
+	Guide       string               `json:"guide"`
+	Honeytokens []honeytokenResponse `json:"honeytokens"`
+	Honeypots   []honeypotResponse   `json:"honeypots"`
+	Files       []publishedFile      `json:"files"`
+}
+
+type publishedFile struct {
+	fileResponse
+	Content string `json:"content"`
 }
 
 type reference struct {
@@ -62,17 +76,18 @@ const (
 )
 
 // notice travels with the file, which is passed on alone, such as into a
-// chat. Unlike an artifact, it is not placed as a decoy, so it credits its
-// sources.
+// chat. Unlike the files of a deception, it is not placed as a decoy, so it
+// credits its sources. The additional permission of the license for the files
+// that Nyktus serves does not cover it.
 var notice = []string{
-	"The deceptions and artifacts of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License: https://creativecommons.org/licenses/by-sa/4.0/",
+	"The deceptions of the Nyktus catalog. Copyright The Nyktus Authors. Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License: https://creativecommons.org/licenses/by-sa/4.0/",
 	"Identifiers and names of techniques from MITRE ATT&CK(R) Enterprise: " + attackNotice,
 	"Identifiers and names of activities from MITRE Engage(TM): " + engageNotice,
 }
 
 // publish returns the published catalog of c. It asks the handler that
-// serves the API for every deception and artifact, so that the file holds what
-// the server returns. Nothing in it changes between two runs, such as a time, so that
+// serves the API for every deception, so that the file holds what the server
+// returns. Nothing in it changes between two runs, such as a time, so that
 // readers can compare versions of the file.
 func publish(t *testing.T, c *catalog.Catalog) []byte {
 	t.Helper()
@@ -81,11 +96,11 @@ func publish(t *testing.T, c *catalog.Catalog) []byte {
 		SchemaVersion: publishedVersion, License: "CC-BY-SA-4.0", Notice: notice,
 		AttackVersion: attack.Version(), EngageVersion: engage.Version(),
 		Techniques: map[string]reference{}, EngageActivities: map[string]reference{},
-		Deceptions: map[string][]json.RawMessage{}, Artifacts: map[string][]json.RawMessage{},
+		Deceptions: map[string][]json.RawMessage{},
 	}
 	for _, d := range c.Deceptions() {
 		for _, lang := range catalog.Languages {
-			rec := serve(t, h.Get, "/api/v1/catalog/deceptions/"+d.ID+"?lang="+lang, d.ID)
+			rec := serve(t, h.Get, "/api/v1/catalog/deceptions/"+d.ID+"?lang="+lang, "id", d.ID)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("%s?lang=%s: status %d, body %s", d.ID, lang, rec.Code, rec.Body)
 			}
@@ -95,7 +110,18 @@ func publish(t *testing.T, c *catalog.Catalog) []byte {
 			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 				t.Fatal(err)
 			}
-			p.Deceptions[lang] = append(p.Deceptions[lang], encode(t, resp, ""))
+			entry := publishedDeception{
+				summary: resp.summary, Guide: resp.Guide, Honeytokens: resp.Honeytokens, Honeypots: resp.Honeypots,
+				Files: make([]publishedFile, 0, len(resp.Files)),
+			}
+			for _, f := range resp.Files {
+				file, ok := d.File(f.Name)
+				if !ok {
+					t.Fatalf("%s: the API lists the file %s, which the deception lacks", d.ID, f.Name)
+				}
+				entry.Files = append(entry.Files, publishedFile{fileResponse: f, Content: string(file.Content)})
+			}
+			p.Deceptions[lang] = append(p.Deceptions[lang], encode(t, entry, ""))
 		}
 		techniques := slices.Clone(d.Techniques)
 		for _, ht := range d.Honeytokens {
@@ -116,19 +142,6 @@ func publish(t *testing.T, c *catalog.Catalog) []byte {
 			p.EngageActivities[id] = reference{Name: activity.Name}
 		}
 	}
-	for _, a := range c.Artifacts() {
-		for _, lang := range catalog.Languages {
-			rec := serve(t, h.GetArtifact, "/api/v1/catalog/artifacts/"+a.ID+"?lang="+lang, a.ID)
-			if rec.Code != http.StatusOK {
-				t.Fatalf("%s?lang=%s: status %d, body %s", a.ID, lang, rec.Code, rec.Body)
-			}
-			var resp artifactDetail
-			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-				t.Fatal(err)
-			}
-			p.Artifacts[lang] = append(p.Artifacts[lang], encode(t, resp, ""))
-		}
-	}
 	return encode(t, p, "  ")
 }
 
@@ -146,8 +159,9 @@ func encode(t *testing.T, v any, indent string) []byte {
 	return b.Bytes()
 }
 
-// The published catalog is what the server returns for every deception and
-// artifact of the embedded catalog, so that it cannot differ from the API. A changed,
+// The published catalog is what the server returns for every deception of the
+// embedded catalog, with the content of its files, so that it cannot differ
+// from the API. A changed,
 // added or removed entry changes it. Regenerate it with
 // go test ./internal/catalog/... -update and review the diff.
 //
@@ -181,7 +195,8 @@ func TestPublishedCatalog_MatchesTheEmbeddedCatalog(t *testing.T) {
 }
 
 // The file holds the members of its format and nothing else, and every
-// deception and artifact in it matches the schema of the API.
+// deception in it matches the schema of the API, apart from the content of its
+// files.
 func TestPublishedCatalog_MatchesTheSpecification(t *testing.T) {
 	t.Parallel()
 	schemas, err := apispec.ParseSchemas(api.OpenAPI())
@@ -210,30 +225,24 @@ func TestPublishedCatalog_MatchesTheSpecification(t *testing.T) {
 	if p.SchemaVersion != publishedVersion {
 		t.Errorf("schema_version = %d, want %d", p.SchemaVersion, publishedVersion)
 	}
-	for name, entries := range map[string]map[string][]json.RawMessage{"deceptions": p.Deceptions, "artifacts": p.Artifacts} {
-		if langs := slices.Sorted(maps.Keys(entries)); !slices.Equal(langs, slices.Sorted(slices.Values(catalog.Languages))) {
-			t.Errorf("%s: languages %v, want %v", name, langs, catalog.Languages)
-		}
+	if langs := slices.Sorted(maps.Keys(p.Deceptions)); !slices.Equal(langs, slices.Sorted(slices.Values(catalog.Languages))) {
+		t.Errorf("languages %v, want %v", langs, catalog.Languages)
 	}
 
 	techniques, activities := map[string]bool{}, map[string]bool{}
-	for lang, artifacts := range p.Artifacts {
-		if len(artifacts) == 0 {
-			t.Errorf("%s: no artifacts", lang)
-		}
-		for i, raw := range artifacts {
-			for _, problem := range schemas.Check("CatalogArtifact", raw) {
-				t.Errorf("artifacts %s[%d]: %s", lang, i, problem)
-			}
-		}
-	}
 	for lang, deceptions := range p.Deceptions {
 		if len(deceptions) == 0 {
 			t.Errorf("%s: no deceptions", lang)
 		}
 		for i, raw := range deceptions {
-			for _, problem := range schemas.Check("CatalogDeception", raw) {
+			api, sizes := withoutContent(t, raw)
+			for _, problem := range schemas.Check("CatalogDeception", api) {
 				t.Errorf("%s[%d]: %s", lang, i, problem)
+			}
+			for name, ok := range sizes {
+				if !ok {
+					t.Errorf("%s[%d]: the content of %s is empty or does not have the size that the entry states", lang, i, name)
+				}
 			}
 			var d struct {
 				Techniques       []string `json:"techniques"`
@@ -298,4 +307,30 @@ func TestPublishedCatalog_NoticeMatchesNOTICE(t *testing.T) {
 			t.Errorf("NOTICE does not contain %q", want)
 		}
 	}
+}
+
+// withoutContent returns the entry of a deception as the API returns it, which
+// has no content of its files, and tells for each file whether its content has
+// the size that the entry states.
+func withoutContent(t *testing.T, raw json.RawMessage) ([]byte, map[string]bool) {
+	t.Helper()
+	var entry map[string]any
+	if err := json.Unmarshal(raw, &entry); err != nil {
+		t.Fatal(err)
+	}
+	sizes := map[string]bool{}
+	files, _ := entry["files"].([]any)
+	for _, f := range files {
+		file, _ := f.(map[string]any)
+		content, _ := file["content"].(string)
+		size, _ := file["size"].(float64)
+		name, _ := file["name"].(string)
+		sizes[name] = content != "" && int(size) == len(content)
+		delete(file, "content")
+	}
+	out, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out, sizes
 }

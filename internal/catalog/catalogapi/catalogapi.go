@@ -1,17 +1,20 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package catalogapi serves the deceptions and the artifacts of the catalog.
-// The routes must
-// require the permission catalog:read. The catalog is the same in every
-// installation and holds no inventory, so every role reads it.
+// Package catalogapi serves the deceptions of the catalog: their guides, the
+// slots they ask for and their example files. The routes must require the
+// permission catalog:read. The catalog is the same in every installation and
+// holds no inventory, so every role reads it.
 package catalogapi
 
 import (
+	"mime"
 	"net/http"
 	"slices"
+	"strconv"
 
 	"nyktus.org/nyktus/internal/catalog"
+	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/httpx"
 	"nyktus.org/nyktus/internal/severity"
@@ -23,7 +26,7 @@ const paramLang = "lang"
 // defaultLang is the language of the texts if the request names none.
 const defaultLang = "en"
 
-// Handler serves the deceptions and the artifacts of the catalog.
+// Handler serves the deceptions of the catalog.
 type Handler struct {
 	catalog *catalog.Catalog
 }
@@ -46,35 +49,32 @@ type summary struct {
 	EngageActivities []string         `json:"engage_activities"`
 }
 
-// detail is a deception with what applying it creates and asks for.
+// detail is a deception with its guide, the slots it asks for and its files.
 type detail struct {
 	summary
+	Guide       string               `json:"guide"`
 	Honeytokens []honeytokenResponse `json:"honeytokens"`
-	Persona     []personaResponse    `json:"persona"`
-	Secrets     []secretResponse     `json:"secrets"`
-	Artifacts   []artifactResponse   `json:"artifacts"`
+	Honeypots   []honeypotResponse   `json:"honeypots"`
+	Files       []fileResponse       `json:"files"`
 }
 
 type (
 	honeytokenResponse struct {
-		Key        string          `json:"key"`
-		Type       honeytoken.Type `json:"type"`
 		Label      string          `json:"label"`
+		Type       honeytoken.Type `json:"type"`
 		Techniques []string        `json:"techniques"`
 		Severity   severity.Level  `json:"severity"`
 	}
-	personaResponse struct {
-		Key     string       `json:"key"`
-		Kind    catalog.Kind `json:"kind"`
-		Label   string       `json:"label"`
-		Example string       `json:"example"`
+	honeypotResponse struct {
+		Label   string           `json:"label"`
+		Service honeypot.Service `json:"service"`
 	}
-	// artifactResponse is an artifact that a deception recommends; its key
-	// is the identifier of the artifact in the catalog.
-	artifactResponse struct {
-		Key      string         `json:"key"`
-		FileName string         `json:"file_name"`
-		Format   catalog.Format `json:"format"`
+	// fileResponse is an example file; its content is downloaded through its
+	// own route.
+	fileResponse struct {
+		Name   string         `json:"name"`
+		Format catalog.Format `json:"format"`
+		Size   int            `json:"size"`
 	}
 )
 
@@ -88,85 +88,21 @@ func toSummary(d catalog.Deception, lang string) summary {
 func toDetail(d catalog.Deception, lang string) detail {
 	resp := detail{
 		summary:     toSummary(d, lang),
+		Guide:       d.Guide[lang],
 		Honeytokens: make([]honeytokenResponse, 0, len(d.Honeytokens)),
-		Persona:     make([]personaResponse, 0, len(d.Persona)),
-		Secrets:     []secretResponse{},
-		Artifacts:   make([]artifactResponse, 0, len(d.Artifacts)),
+		Honeypots:   make([]honeypotResponse, 0, len(d.Honeypots)),
+		Files:       make([]fileResponse, 0, len(d.Files)),
 	}
 	for _, h := range d.Honeytokens {
 		resp.Honeytokens = append(resp.Honeytokens, honeytokenResponse{
-			Key: h.Key, Type: h.Type, Label: h.Label[lang], Techniques: nonNil(h.Techniques), Severity: h.Severity,
+			Label: h.Label[lang], Type: h.Type, Techniques: nonNil(h.Techniques), Severity: h.Severity,
 		})
 	}
-	for _, p := range d.Persona {
-		resp.Persona = append(resp.Persona, personaResponse{Key: p.Key, Kind: p.Kind, Label: p.Label[lang], Example: p.Example})
+	for _, h := range d.Honeypots {
+		resp.Honeypots = append(resp.Honeypots, honeypotResponse{Label: h.Label[lang], Service: h.Service})
 	}
-	for _, a := range d.Artifacts {
-		resp.Artifacts = append(resp.Artifacts, artifactResponse{Key: a.ID, FileName: a.FileName, Format: a.Format})
-		// The deception lists the secrets of its artifacts by key, in order, so
-		// that a key stays unique as it was when the deception held them. Every
-		// artifact that names a key generates its own value.
-		for _, s := range a.Secrets {
-			if !slices.ContainsFunc(resp.Secrets, func(r secretResponse) bool { return r.Key == s.Key }) {
-				resp.Secrets = append(resp.Secrets, secretResponse(s))
-			}
-		}
-	}
-	return resp
-}
-
-// artifactSummary is an artifact as the list shows it.
-type artifactSummary struct {
-	ID       string           `json:"id"`
-	Category catalog.Category `json:"category"`
-	Title    string           `json:"title"`
-	Summary  string           `json:"summary"`
-}
-
-// artifactDetail is an artifact with the file it renders and what it asks for.
-type artifactDetail struct {
-	artifactSummary
-	FileName string            `json:"file_name"`
-	Format   catalog.Format    `json:"format"`
-	Slots    []slotResponse    `json:"slots"`
-	Persona  []personaResponse `json:"persona"`
-	Secrets  []secretResponse  `json:"secrets"`
-}
-
-type (
-	slotResponse struct {
-		Key      string            `json:"key"`
-		Accepts  []honeytoken.Type `json:"accepts"`
-		Optional bool              `json:"optional"`
-	}
-	secretResponse struct {
-		Key    string `json:"key"`
-		Length int    `json:"length"`
-	}
-)
-
-func toArtifactSummary(a catalog.Artifact, lang string) artifactSummary {
-	return artifactSummary{
-		ID: a.ID, Category: a.Category, Title: a.Title[lang], Summary: a.Summary[lang],
-	}
-}
-
-func toArtifactDetail(a catalog.Artifact, lang string) artifactDetail {
-	resp := artifactDetail{
-		artifactSummary: toArtifactSummary(a, lang),
-		FileName:        a.FileName, Format: a.Format,
-		Slots:   make([]slotResponse, 0, len(a.Slots)),
-		Persona: make([]personaResponse, 0, len(a.Persona)),
-		Secrets: make([]secretResponse, 0, len(a.Secrets)),
-	}
-	for _, s := range a.Slots {
-		resp.Slots = append(resp.Slots, slotResponse{Key: s.Key, Accepts: slices.Clone(s.Accepts), Optional: s.Optional})
-	}
-	for _, p := range a.Persona {
-		resp.Persona = append(resp.Persona, personaResponse{Key: p.Key, Kind: p.Kind, Label: p.Label[lang], Example: p.Example})
-	}
-	for _, s := range a.Secrets {
-		resp.Secrets = append(resp.Secrets, secretResponse(s))
+	for _, f := range d.Files {
+		resp.Files = append(resp.Files, fileResponse{Name: f.Name, Format: f.Format, Size: len(f.Content)})
 	}
 	return resp
 }
@@ -210,36 +146,37 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, toDetail(d, lang))
 }
 
-type artifactListResponse struct {
-	Artifacts []artifactSummary `json:"artifacts"`
-}
-
-// ListArtifacts handles GET /api/v1/catalog/artifacts, which is complete and
-// not paged like the list of deceptions.
-func (h *Handler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
-	lang, ok := decodeLang(w, r)
-	if !ok {
+// File handles GET /api/v1/catalog/deceptions/{id}/files/{name}: an example file
+// as it stands in the catalog, as an attachment. The catalog is public to
+// everyone who may read it, so the download is not audited.
+func (h *Handler) File(w http.ResponseWriter, r *http.Request) {
+	if _, ok := httpx.DecodeQuery(w, r); !ok {
 		return
 	}
-	resp := artifactListResponse{Artifacts: []artifactSummary{}}
-	for _, a := range h.catalog.Artifacts() {
-		resp.Artifacts = append(resp.Artifacts, toArtifactSummary(a, lang))
-	}
-	httpx.WriteJSON(w, http.StatusOK, resp)
-}
-
-// GetArtifact handles GET /api/v1/catalog/artifacts/{id}.
-func (h *Handler) GetArtifact(w http.ResponseWriter, r *http.Request) {
-	lang, ok := decodeLang(w, r)
-	if !ok {
-		return
-	}
-	a, found := h.catalog.LookupArtifact(r.PathValue("id"))
+	d, found := h.catalog.Lookup(r.PathValue("id"))
 	if !found {
 		httpx.NotFound(w, r)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toArtifactDetail(a, lang))
+	f, found := d.File(r.PathValue("name"))
+	if !found {
+		httpx.NotFound(w, r)
+		return
+	}
+	hdr := w.Header()
+	hdr.Set("Content-Type", catalog.MediaType(f.Format))
+	// The catalog allows only names of letters, digits, spaces, dots, hyphens
+	// and underscores; FormatMediaType quotes them all the same.
+	hdr.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": f.Name}))
+	hdr.Set("Content-Length", strconv.Itoa(len(f.Content)))
+	hdr.Set("X-Content-Type-Options", "nosniff")
+	// A client that renders the file anyway runs it without scripts, in an
+	// origin of its own, and loads nothing, so that opening it reveals nothing
+	// to a third party either.
+	hdr.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	hdr.Set("Cache-Control", "no-store")
+	// A server answers HEAD without the body that the handler writes.
+	_, _ = w.Write(f.Content)
 }
 
 // decodeLang returns the language that the query selects, the default

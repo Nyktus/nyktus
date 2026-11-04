@@ -23,7 +23,6 @@ function server(role: Role = 'admin', extra: Record<string, () => Response> = {}
     'GET /api/v1/scenarios': () => json(200, { scenarios: [scenario()] }),
     [`GET ${detail}`]: () => json(200, scenario()),
     'GET /api/v1/honeytokens': () => json(200, { honeytokens: [] }),
-    'GET /api/v1/artifacts': () => json(200, { artifacts: [] }),
     'GET /api/v1/honeypots': () => json(200, { honeypots: [] }),
     ...extra,
   });
@@ -31,7 +30,7 @@ function server(role: Role = 'admin', extra: Record<string, () => Response> = {}
 
 describe('the list of scenarios', () => {
   test('shows where each came from', async () => {
-    const fromCatalog = scenario({ id: 'dec0de00-2222-4222-8333-944444444444', name: 'SSH jump host', deceptions: [joined('ssh-jump-host')], persona: { host: 'jump02' } });
+    const fromCatalog = scenario({ id: 'dec0de00-2222-4222-8333-944444444444', name: 'SSH jump host', deceptions: [joined('ssh-jump-host')] });
     const { wrapper } = await boot(server('admin', { 'GET /api/v1/scenarios': () => json(200, { scenarios: [scenario(), fromCatalog] }) }), '/scenarios');
     const rows = wrapper.findAll('tbody tr');
     expect(rows[0]?.text()).toContain('Custom scenario');
@@ -106,13 +105,6 @@ describe('a scenario', () => {
     expect(wrapper.get('h1').text()).toBe('Stolen backup');
     expect(wrapper.get('.notes').text()).toBe('A backup that someone left on a share.');
     expect(wrapper.text()).toContain('EAC0005');
-  });
-
-  test('shows the persona that a deception was applied with, as text', async () => {
-    const s = server('admin', { [`GET ${detail}`]: () => json(200, scenario({ deceptions: [joined('ssh-jump-host', 'de')], persona: { host: '<b>jump02</b>' } })) });
-    const { wrapper } = await boot(s, path);
-    expect(wrapper.get('.persona').text()).toContain('<b>jump02</b>');
-    expect(wrapper.find('.persona b').exists()).toBe(false);
   });
 
   test('lists its honeytokens and honeypots, asking for those of the scenario', async () => {
@@ -215,10 +207,10 @@ describe('a scenario', () => {
     test('deletes the decoys that the user chose, and only those', async () => {
       const { wrapper, s } = await ask();
       await wrapper.get('input[name="delete-honeytokens"][value="delete"]').setValue(true);
-      await wrapper.get('input[name="delete-artifacts"][value="delete"]').setValue(true);
+      await wrapper.get('input[name="delete-honeypots"][value="delete"]').setValue(true);
       await wrapper.get('dialog[open] .danger').trigger('click');
       await flushPromises();
-      expect(s.requests.find((r) => r.method === 'DELETE')?.url).toBe(`${detail}?honeytokens=delete&artifacts=delete`);
+      expect(s.requests.find((r) => r.method === 'DELETE')?.url).toBe(`${detail}?honeytokens=delete&honeypots=delete`);
     });
 
     // A choice to delete that was given up must not come back with the next click on "Delete".
@@ -238,7 +230,7 @@ describe('a scenario', () => {
     test('starts with keeping again after the server refused a choice to delete', async () => {
       const { wrapper, s } = await ask();
       s.on(`DELETE ${detail}`, () => failure(503, 'unavailable'));
-      await wrapper.get('input[name="delete-artifacts"][value="delete"]').setValue(true);
+      await wrapper.get('input[name="delete-honeytokens"][value="delete"]').setValue(true);
       await wrapper.get('dialog[open] .danger').trigger('click');
       await flushPromises();
       s.on(`DELETE ${detail}`, noContent);

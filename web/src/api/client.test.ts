@@ -81,10 +81,10 @@ describe('call', () => {
 
   test('returns a download as the file, and never as text that anything could read as markup', async () => {
     const server = fakeServer({
-      'GET /api/v1/artifacts/abc/content': () =>
+      'GET /api/v1/catalog/deceptions/abc/files/x.html': () =>
         new Response('<script>alert(1)</script>', { status: 200, headers: { 'Content-Type': 'text/html', 'Content-Disposition': 'attachment; filename="x.html"' } }),
     });
-    const { status, body } = await client(server).call('downloadArtifact', { path: { id: 'abc' } });
+    const { status, body } = await client(server).call('downloadCatalogDeceptionFile', { path: { id: 'abc', name: 'x.html' } });
     expect(status).toBe(200);
     expect(body).toBeInstanceOf(Blob);
     expect(await body.text()).toBe('<script>alert(1)</script>');

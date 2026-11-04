@@ -1,5 +1,5 @@
-The deceptions and artifacts in this directory are the content of the Nyktus
-deception catalog. Copyright The Nyktus Authors.
+The deceptions in this directory are the content of the Nyktus deception
+catalog. Copyright The Nyktus Authors.
 
 They are licensed under the Creative Commons Attribution-ShareAlike 4.0
 International License, which follows below, with the additional permission
@@ -10,14 +10,14 @@ of Nyktus and licensed under the GNU Affero General Public License, version
 Additional permission
 
 In addition to the rights that the license grants, the licensors grant
-everyone the permission to use, reproduce, modify and share the files that
-Nyktus renders from the deceptions and artifacts when it applies or places
-them, such as artifacts and guides, for any purpose, without attribution and
-without the conditions of section 3(b) of the license (ShareAlike), because
-an attribution would identify the rendered files as decoys. The permission
-covers the rendered files, not the deceptions and artifacts themselves or
-other works made from them, such as the published catalog
-docs/public/deception-catalog.json, which remain under the license.
+everyone the permission to use, reproduce, modify and share the example
+files of the deceptions, the files under the directories files/, that Nyktus
+serves for download, for any purpose, without attribution and without the
+conditions of section 3(b) of the license (ShareAlike), because an
+attribution would identify the placed files as decoys. The permission covers
+those files, not the deceptions themselves, their guides or other works made
+from them, such as the published catalog docs/public/deception-catalog.json,
+which remain under the license.
 
 -----------------------------------------------------------------------
 

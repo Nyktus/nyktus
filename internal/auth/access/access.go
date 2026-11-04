@@ -22,19 +22,17 @@ import (
 // first route that requires it is added.
 var grants = map[user.Role][]httpx.Permission{
 	user.RoleAdmin: {
-		"alert_channels:read", "alert_channels:write", "api_keys:read", "api_keys:write", "artifacts:read",
-		"artifacts:write", "audit:read", "catalog:read", "events:read", "honeypots:read", "honeypots:write",
-		"honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write", "metrics:read", "scenarios:read",
-		"scenarios:write", "users:read", "users:write",
+		"alert_channels:read", "alert_channels:write", "api_keys:read", "api_keys:write", "audit:read",
+		"catalog:read", "events:read", "honeypots:read", "honeypots:write", "honeytokens:read", "honeytokens:write",
+		"incidents:read", "incidents:write", "metrics:read", "scenarios:read", "scenarios:write", "users:read",
+		"users:write",
 	},
 	user.RoleUser: {
-		"artifacts:read", "artifacts:write", "catalog:read", "events:read", "honeypots:read", "honeypots:write",
-		"honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write", "scenarios:read",
-		"scenarios:write",
+		"catalog:read", "events:read", "honeypots:read", "honeypots:write", "honeytokens:read", "honeytokens:write",
+		"incidents:read", "incidents:write", "scenarios:read", "scenarios:write",
 	},
 	user.RoleViewer: {
-		"artifacts:read", "catalog:read", "events:read", "honeypots:read", "honeytokens:read", "incidents:read",
-		"scenarios:read",
+		"catalog:read", "events:read", "honeypots:read", "honeytokens:read", "incidents:read", "scenarios:read",
 	},
 }
 
@@ -42,7 +40,7 @@ var grants = map[user.Role][]httpx.Permission{
 // not manage accounts or keys, not even by reading them: a leaked key with
 // users:write could take over every account through password reset links, and
 // one with api_keys:write could issue itself a successor. Keys may manage
-// honeytokens, honeypots, scenarios and artifacts, so that they can be rolled
+// honeytokens, honeypots and scenarios, so that they can be rolled
 // out by script; reading them is reading the inventory, so integrations that
 // only need other data get keys without these scopes. Keys may read events and
 // incidents and triage incidents, so that a SIEM or a ticket system can follow
@@ -51,26 +49,21 @@ var grants = map[user.Role][]httpx.Permission{
 // alert channels: a leaked key could redirect the alerts to its holder or stop
 // them.
 var keyScopes = []httpx.Permission{
-	"artifacts:read", "artifacts:write", "audit:read", "catalog:read", "events:read", "honeypots:read",
-	"honeypots:write", "honeytokens:read", "honeytokens:write", "incidents:read", "incidents:write", "metrics:read",
-	"scenarios:read", "scenarios:write",
+	"audit:read", "catalog:read", "events:read", "honeypots:read", "honeypots:write", "honeytokens:read",
+	"honeytokens:write", "incidents:read", "incidents:write", "metrics:read", "scenarios:read", "scenarios:write",
 }
 
 // keyScopeRequires names the scopes that a key may carry only together with
-// another one. A key that changes honeytokens, honeypots, scenarios, artifacts
-// or incidents receives them in every response, also to a change that changes
+// another one. A key that changes honeytokens, honeypots, scenarios or
+// incidents receives them in every response, also to a change that changes
 // nothing, so it reads them anyway; requiring the scope to read them keeps the scopes of a
-// key honest about what it can see. For the same reason, reading scenarios
-// and artifacts requires reading honeytokens: the guide of a scenario, the
-// answer to applying a deception and the content of an artifact name the URLs
-// and host names of honeytokens.
+// key honest about what it can see. A scenario names no honeytoken and no
+// honeypot, only the identifiers of its deceptions, so reading scenarios
+// requires nothing else.
 var keyScopeRequires = map[httpx.Permission]httpx.Permission{
-	"artifacts:read":    "honeytokens:read",
-	"artifacts:write":   "artifacts:read",
 	"honeypots:write":   "honeypots:read",
 	"honeytokens:write": "honeytokens:read",
 	"incidents:write":   "incidents:read",
-	"scenarios:read":    "honeytokens:read",
 	"scenarios:write":   "scenarios:read",
 }
 

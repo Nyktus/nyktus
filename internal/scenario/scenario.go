@@ -4,13 +4,14 @@
 // Package scenario manages scenarios: groups of decoys that tell one story,
 // so that their events are correlated into one incident.
 //
-// A scenario holds the deceptions of the catalog that joined it, each with
-// its guide, and a persona that belongs to the scenario and only grows: a key
-// is added, a value that is there stays, so that the files that were rendered
-// with it keep agreeing with those that follow. A deception joins a scenario
-// at most once. Applying a deception creates a scenario with it; adding a
-// deception or an artifact of the catalog extends an existing one. Every
-// operation that extends a scenario locks it first.
+// A scenario holds the deceptions of the catalog that joined it: nothing of
+// them is stored but their identifiers, because the guide, the files and the
+// slots of a deception are read from the catalog when they are shown. A
+// deception joins a scenario at most once. Applying a deception creates a
+// scenario with it and, if asked, the honeytokens and honeypots that the
+// deception asks for; adding a deception extends an existing one, and removing
+// one only ends the assignment. Every operation that extends a scenario locks
+// it first.
 //
 // A honeytoken joins or leaves a scenario also through its own operation in
 // package honeytoken. Name and notes of a scenario are inventory, like those
@@ -39,19 +40,14 @@ const (
 	MaxEngageActivities = 20
 )
 
-// MaxDeceptions is the most deceptions a scenario holds, as the database
-// enforces it. artifact.MaxPerScenario is the limit of its artifacts.
-const MaxDeceptions = 20
-
 // Names of the fields of a change, as recorded in the audit log.
 const (
 	FieldName             = "name"
 	FieldNotes            = "notes"
 	FieldEngageActivities = "engage_activities"
-	// FieldDeceptions and FieldPersona are the fields that adding a deception
-	// or an artifact changes.
+	// FieldDeceptions is the field that adding or removing a deception
+	// changes.
 	FieldDeceptions = "deceptions"
-	FieldPersona    = "persona"
 )
 
 // Validation errors.
@@ -61,7 +57,6 @@ var (
 	ErrInvalidEngageActivities = errors.New("invalid Engage activities")
 	ErrInvalidRemoval          = errors.New("invalid removal of the resources of a scenario")
 	ErrInvalidLanguage         = errors.New("invalid language")
-	ErrInvalidSelection        = errors.New("invalid selection of artifacts")
 )
 
 // Scenario is a stored scenario.
@@ -73,30 +68,18 @@ type Scenario struct {
 	// that the scenario carries out.
 	EngageActivities []string
 	// Deceptions are the deceptions of the catalog that joined the scenario,
-	// in the order they joined; none for a scenario put together by hand.
+	// in the order they joined; none for a scenario put together by hand. The
+	// catalog may no longer know one of them.
 	Deceptions []AppliedDeception
-	// Persona holds the values that the deceptions and artifacts of the
-	// scenario were rendered with, by key. It is never nil.
-	Persona   map[string]string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // AppliedDeception is a deception that joined a scenario.
 type AppliedDeception struct {
 	// DeceptionID is the identifier of the deception in the catalog.
-	DeceptionID string `json:"deception_id"`
-	// Language is the language of its guide and of the names of its
-	// honeytokens.
-	Language  string    `json:"language"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Guide is the guide of a deception of a scenario, as it was rendered.
-type Guide struct {
-	DeceptionID string
-	Language    string
-	Content     string
+	DeceptionID string    `json:"deception_id"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // LogValue names the scenario by its identifier. Its name and notes are
@@ -123,7 +106,7 @@ func (s Spec) validate() error {
 }
 
 // Change describes changes to a scenario. A nil field stays as it is. Its
-// deceptions and persona change only by adding to the scenario.
+// deceptions change only through their own operations.
 type Change struct {
 	Name  *string
 	Notes *string
@@ -213,7 +196,6 @@ func (r Removal) Valid() bool {
 type ResourceRemovals struct {
 	Honeytokens Removal
 	Honeypots   Removal
-	Artifacts   Removal
 }
 
 // Removed lists the resources of a deleted scenario by what happened to them.
@@ -225,7 +207,4 @@ type Removed struct {
 	// DeletedHoneypots and DetachedHoneypots are those of the honeypots.
 	DeletedHoneypots  []string
 	DetachedHoneypots []string
-	// DeletedArtifacts and DetachedArtifacts are those of the artifacts.
-	DeletedArtifacts  []string
-	DetachedArtifacts []string
 }

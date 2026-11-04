@@ -2,11 +2,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { flushPromises } from '@vue/test-utils';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { arrive, boot, submit, type } from './testing/boot';
-import { catalogArtifact, catalogArtifactSummary, catalogDeception, catalogSummary, failure, fakeServer, joined, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { catalogDeception, catalogSummary, failure, fakeServer, joined, json, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+
+// The console saves a file with a link that it makes, and never opens it.
+const saved: { download: string; href: string }[] = [];
+
+beforeEach(() => {
+  saved.length = 0;
+  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:console/1'), revokeObjectURL: vi.fn() }));
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    saved.push({ download: this.download, href: this.href });
+  });
+});
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.innerHTML = '';
   history.replaceState(null, '', '/');
@@ -20,8 +32,6 @@ function server(role: Role = 'admin', extra: Record<string, () => Response> = {}
   return fakeServer({
     'GET /api/v1/session': () => json(200, sessionBody(role)),
     'GET /api/v1/catalog/deceptions': () => json(200, { deceptions: [catalogSummary(), catalogSummary({ id: 'ssh-jump-host', category: 'network', title: 'SSH jump host' })] }),
-    'GET /api/v1/catalog/artifacts': () => json(200, { artifacts: [catalogArtifactSummary(), catalogArtifactSummary({ id: 'ssh-config', category: 'network', title: 'SSH client configuration' })] }),
-    'GET /api/v1/catalog/artifacts/bookmarks': () => json(200, catalogArtifact()),
     [`GET ${one}`]: () => json(200, catalogDeception()),
     'GET /api/v1/scenarios': () => json(200, { scenarios: [] }),
     ...extra,
@@ -35,6 +45,14 @@ describe('the catalog', () => {
     expect(wrapper.findAll('.card h2').map((h) => h.text())).toEqual(['Browser bookmarks', 'SSH jump host']);
     expect(s.requests.at(-1)?.url).toBe('/api/v1/catalog/deceptions?lang=en');
     expect(wrapper.get('.card a').attributes('href')).toBe('/catalog/browser-bookmarks');
+  });
+
+  test('has no tab for files of its own', async () => {
+    const s = server();
+    const { wrapper } = await boot(s, '/catalog');
+    expect(wrapper.find('nav[aria-label="Parts of the catalog"]').exists()).toBe(false);
+    expect(wrapper.get('nav').text()).not.toContain('Artifacts');
+    expect(s.requests.some((r) => r.url.includes('artifacts'))).toBe(false);
   });
 
   test('asks again when the language changes', async () => {
@@ -73,111 +91,47 @@ describe('the catalog', () => {
   });
 });
 
-describe('the artifacts of the catalog', () => {
-  test('are a tab of the catalog, and the list of deceptions is the other', async () => {
-    const s = server();
-    const { wrapper } = await boot(s, '/catalog/artifacts');
-    expect(wrapper.findAll('.card h2').map((h) => h.text())).toEqual(['Bookmarks file', 'SSH client configuration']);
-    expect(s.requests.at(-1)?.url).toBe('/api/v1/catalog/artifacts?lang=en');
-    expect(wrapper.get('.card a').attributes('href')).toBe('/catalog/artifacts/bookmarks');
-    const tabs = wrapper.get('nav[aria-label="Parts of the catalog"]').findAll('a');
-    expect(tabs.map((a) => [a.text(), a.attributes('href'), a.attributes('aria-current')])).toEqual([
-      ['Deceptions', '/catalog', undefined],
-      ['Artifacts', '/catalog/artifacts', 'page'],
-    ]);
-  });
-
-  test('are read when their tab is opened, not with the deceptions', async () => {
-    const s = server();
-    const { wrapper } = await boot(s, '/catalog');
-    expect(s.requests.some((r) => r.url.startsWith('/api/v1/catalog/artifacts'))).toBe(false);
-    await wrapper.get('nav[aria-label="Parts of the catalog"] a[href="/catalog/artifacts"]').trigger('click');
-    await vi.waitFor(() => expect(wrapper.findAll('.card h2').map((h) => h.text())).toEqual(['Bookmarks file', 'SSH client configuration']));
-    expect(wrapper.get('nav[aria-label="Parts of the catalog"] a[href="/catalog/artifacts"]').attributes('aria-current')).toBe('page');
-  });
-
-  test('narrow by category, and ask again when the language changes', async () => {
-    const s = server();
-    const { wrapper, i18n } = await boot(s, '/catalog/artifacts');
-    await wrapper.get('#filter-category').setValue('network');
-    expect(wrapper.findAll('.card h2').map((h) => h.text())).toEqual(['SSH client configuration']);
-    await wrapper.get('#filter-category').setValue('identity');
-    expect(wrapper.text()).toContain('No artifacts found.');
-    i18n.setLocale('de');
-    await flushPromises();
-    expect(s.requests.at(-1)?.url).toBe('/api/v1/catalog/artifacts?lang=de');
-  });
-
-  test('say when they could not be loaded', async () => {
-    const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/artifacts': () => failure(503, 'unavailable') }), '/catalog/artifacts');
-    expect(wrapper.get('[role=alert]').text()).toContain('The catalog could not be loaded.');
-  });
-
-  describe('one of them', () => {
-    const path = '/catalog/artifacts/bookmarks';
-
-    test('shows its file, its slots and the values it uses, and says it is a lure carrier when a slot is required', async () => {
-      const { wrapper } = await boot(server('viewer'), path);
-      expect(wrapper.get('h1').text()).toBe('Bookmarks file');
-      expect(wrapper.text()).toContain('bookmarks.html');
-      expect(wrapper.text()).toContain('HTML');
-      const slot = wrapper.get('tbody tr');
-      expect(slot.text()).toContain('portal');
-      expect(slot.text()).toContain('Web URL');
-      expect(slot.text()).toContain('Required');
-      expect(wrapper.text()).toContain('A honeytoken must be assigned to this artifact.');
-      expect(wrapper.text()).toContain('Portal host');
-      expect(wrapper.get('a[href="/catalog/artifacts"]').text()).toBe('All artifacts of the catalog');
-    });
-
-    test('says it can be pocket litter when every slot is optional', async () => {
-      const optional = catalogArtifact({ slots: [{ key: 'portal', accepts: ['web_url', 'dns'], optional: true }] });
-      const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/artifacts/bookmarks': () => json(200, optional) }), path);
-      expect(wrapper.text()).toContain('If every slot stays empty, it is pocket litter.');
-      expect(wrapper.get('tbody tr').text()).toContain('Web URL, DNS name');
-      expect(wrapper.get('tbody tr').text()).toContain('Optional');
-    });
-
-    test('says it is always pocket litter when it has no slot', async () => {
-      const none = catalogArtifact({ slots: [] });
-      const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/artifacts/bookmarks': () => json(200, none) }), path);
-      expect(wrapper.text()).toContain('This artifact is pocket litter');
-      expect(wrapper.find('table').exists()).toBe(true); // the persona table
-    });
-
-    test('says when it does not exist', async () => {
-      const { wrapper } = await boot(server('admin', { 'GET /api/v1/catalog/artifacts/bookmarks': () => failure(404, 'not_found') }), path);
-      expect(wrapper.get('[role=status]').text()).toBe('Nothing found here.');
-    });
-
-    test('keeps the tab of the catalog marked in the navigation', async () => {
-      const { wrapper } = await boot(server(), path);
-      expect(wrapper.get('nav a.current').text()).toBe('Catalog');
-    });
-  });
-});
-
 describe('a deception', () => {
   const path = '/catalog/browser-bookmarks';
   const apply = 'POST /api/v1/catalog/deceptions/browser-bookmarks/apply';
+  const file = `GET ${one}/files/bookmarks.html`;
 
-  test('shows what applying it creates', async () => {
+  test('shows its guide as text, the slots it asks for and its files', async () => {
     const { wrapper } = await boot(server(), path);
     expect(wrapper.get('h1').text()).toBe('Browser bookmarks');
+    expect(wrapper.get('.markdown').text()).toContain('with Honeytoken-URL as the link');
     expect(wrapper.text()).toContain('Portal link');
     expect(wrapper.text()).toContain('Web URL');
     expect(wrapper.text()).toContain('bookmarks.html');
     expect(wrapper.text()).toContain('HTML');
-    expect(wrapper.text()).toContain('1 generated when applied');
+    expect(wrapper.text()).toContain('2 KiB');
     expect(wrapper.text()).toContain('T1217');
     expect(wrapper.text()).toContain('EAC0005');
+    expect(wrapper.text()).toContain('Replace the words Honeytoken-Domain and Honeytoken-URL');
   });
 
-  test('says when it consists of its guide', async () => {
-    const guide = server('admin', { [`GET ${one}`]: () => json(200, catalogDeception({ honeytokens: [], artifacts: [], secrets: [], persona: [] })) });
-    const { wrapper } = await boot(guide, path);
-    expect(wrapper.text()).toContain('This deception is a guide only, with no honeytokens, honeypots or artifacts.');
-    expect(wrapper.find('fieldset').exists()).toBe(false);
+  test('shows the honeypots that it asks for by their service', async () => {
+    const withPots = server('viewer', { [`GET ${one}`]: () => json(200, catalogDeception({ honeypots: [{ label: 'Database', service: 'postgres' }] })) });
+    const { wrapper } = await boot(withPots, path);
+    expect(wrapper.text()).toContain('Honeypots');
+    expect(wrapper.text()).toContain('Database');
+    expect(wrapper.text()).toContain('PostgreSQL');
+  });
+
+  test('shows the guide with its markup as text', async () => {
+    const guide = 'Company: <img src=x onerror=alert(1)> [x](javascript:alert(2))';
+    const { wrapper } = await boot(server('viewer', { [`GET ${one}`]: () => json(200, catalogDeception({ guide })) }), path);
+    expect(wrapper.find('.markdown img').exists()).toBe(false);
+    expect(wrapper.find('.markdown a').exists()).toBe(false);
+    expect(wrapper.get('.markdown').text()).toContain('<img src=x onerror=alert(1)>');
+  });
+
+  test('says so when it asks for nothing to create and offers no file', async () => {
+    const bare = server('admin', { [`GET ${one}`]: () => json(200, catalogDeception({ honeytokens: [], honeypots: [], files: [] })) });
+    const { wrapper } = await boot(bare, path);
+    expect(wrapper.text()).toContain('The guide asks for no honeytoken and no honeypot.');
+    expect(wrapper.text()).not.toContain('Example files');
+    expect(wrapper.find('#create-resources').exists()).toBe(false);
   });
 
   test('says when it does not exist', async () => {
@@ -218,177 +172,256 @@ describe('a deception', () => {
     expect(wrapper.get('h1').text()).toBe('Browser bookmarks (en)');
   });
 
+  describe('downloaded file', () => {
+    const content = () =>
+      new Response('<html><script>alert(1)</script></html>', { status: 200, headers: { 'Content-Type': 'text/html', 'Content-Disposition': 'attachment; filename="bookmarks.html"' } });
+
+    test('is saved under its name and never opened or shown', async () => {
+      const s = server('viewer', { [file]: content });
+      const { wrapper } = await boot(s, path);
+      await wrapper.get('table button').trigger('click');
+      await flushPromises();
+      expect(saved).toEqual([{ download: 'bookmarks.html', href: 'blob:console/1' }]);
+      expect(vi.mocked(URL.createObjectURL).mock.calls[0]?.[0]).toBeInstanceOf(Blob);
+      expect(wrapper.text()).not.toContain('alert(1)');
+      expect(document.body.querySelectorAll('a[download]')).toHaveLength(0);
+    });
+
+    test('asks for the name that it has, also when it holds a space', async () => {
+      const spaced = server('viewer', {
+        [`GET ${one}`]: () => json(200, catalogDeception({ files: [{ name: 'Read me.txt', format: 'text', size: 12 }] })),
+        [`GET ${one}/files/Read%20me.txt`]: content,
+      });
+      const { wrapper } = await boot(spaced, path);
+      await wrapper.get('table button').trigger('click');
+      await flushPromises();
+      expect(saved.map((f) => f.download)).toEqual(['Read me.txt']);
+    });
+
+    test('says when it could not be downloaded', async () => {
+      const { wrapper } = await boot(server('viewer', { [file]: () => failure(503, 'unavailable') }), path);
+      await wrapper.get('table button').trigger('click');
+      await flushPromises();
+      expect(wrapper.get('[role=alert]').text()).toContain('The file could not be downloaded.');
+      expect(saved).toEqual([]);
+    });
+  });
+
   describe('applied', () => {
-    const created = () => json(201, { scenario: scenario({ deceptions: [joined('browser-bookmarks')] }), honeytokens: [], artifacts: [] });
+    const created = () => json(201, { scenario: scenario({ deceptions: [joined('browser-bookmarks')] }), honeytokens: [], honeypots: [] });
 
-    async function fill(wrapper: Awaited<ReturnType<typeof boot>>['wrapper'], company = 'Acme Corp', host = 'portal.acme.example') {
-      await type(wrapper, '#persona-company', company);
-      await type(wrapper, '#persona-host', host);
-    }
-
-    test('suggests the name of the deception, and shows an example for each value without filling it in', async () => {
+    test('suggests the name of the deception', async () => {
       const { wrapper } = await boot(server(), path);
       expect((wrapper.get('#name').element as HTMLInputElement).value).toBe('Browser bookmarks');
-      expect((wrapper.get('#persona-company').element as HTMLInputElement).value).toBe('');
-      expect(wrapper.get('#persona-company').attributes('placeholder')).toBe('Acme Corp');
-      expect(wrapper.text()).toContain('For example: portal.acme.example');
     });
 
-    test('chooses the recommended files at first, and offers no other', async () => {
+    test('asks for the name and the notes of the scenario and for nothing of the files', async () => {
       const { wrapper } = await boot(server(), path);
-      const boxes = wrapper.findAll('fieldset input[type=checkbox]');
-      expect(boxes).toHaveLength(1);
-      expect((boxes[0]?.element as HTMLInputElement).checked).toBe(true);
-      expect(wrapper.get('fieldset.files').text()).toContain('bookmarks.html');
-      expect(wrapper.get('fieldset.files').text()).toContain('Files you leave unselected can be added later.');
+      expect(wrapper.find('[id^=persona-]').exists()).toBe(false);
+      expect(wrapper.find('fieldset.files').exists()).toBe(false);
     });
 
-    test('sends the files that stayed chosen, and none when all were taken away', async () => {
-      const two = catalogDeception({ artifacts: [{ key: 'bookmarks', file_name: 'bookmarks.html', format: 'html' }, { key: 'shortcut', file_name: 'portal.url', format: 'config' }] });
-      for (const [taken, want] of [[[], ['bookmarks', 'shortcut']], [['bookmarks'], ['shortcut']], [['bookmarks', 'shortcut'], []]] as const) {
-        const s = server('admin', { [apply]: created, [`GET ${one}`]: () => json(200, two), [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario()) });
-        const { wrapper } = await boot(s, path);
-        for (const key of taken) {
-          await wrapper.get(`input[type=checkbox][value="${key}"]`).setValue(false);
-        }
-        if (want.length === 0) {
-          expect(wrapper.get('fieldset.files').text()).toContain('No file is created.');
-        }
-        await fill(wrapper);
-        await submit(wrapper);
-        expect((s.requests.find((r) => r.method === 'POST')?.body as { artifacts: string[] }).artifacts, taken.join()).toEqual(want);
+    test('creates no resources unless the box is ticked, which is off at first', async () => {
+      const s = server('admin', { [apply]: created, [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario()) });
+      const { wrapper } = await boot(s, path);
+      expect((wrapper.get('#create-resources').element as HTMLInputElement).checked).toBe(false);
+      await submit(wrapper);
+      expect(s.requests.find((r) => r.method === 'POST')?.body).toMatchObject({ create_resources: false });
+    });
+
+    test('asks for the resources when the box is ticked', async () => {
+      const s = server('user', { [apply]: created, [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario()) });
+      const { wrapper } = await boot(s, path);
+      await wrapper.get('#create-resources').setValue(true);
+      await submit(wrapper);
+      expect(s.requests.find((r) => r.method === 'POST')?.body).toMatchObject({ create_resources: true });
+    });
+
+    test('offers the box to whoever may write both honeytokens and honeypots, which a role has together', async () => {
+      for (const role of ['admin', 'user'] as const) {
+        const { wrapper } = await boot(server(role), path);
+        expect(wrapper.find('#create-resources').exists(), role).toBe(true);
         document.body.innerHTML = '';
       }
-    });
-
-    test('keeps the choice of files when the language changes', async () => {
-      const s = server();
-      const { wrapper, i18n } = await boot(s, path);
-      await wrapper.get('input[type=checkbox]').setValue(false);
-      i18n.setLocale('de');
-      await flushPromises();
-      expect((wrapper.get('input[type=checkbox]').element as HTMLInputElement).checked).toBe(false);
-    });
-
-    test('shows no choice of files for a deception that recommends none', async () => {
-      const bare = server('admin', { [`GET ${one}`]: () => json(200, catalogDeception({ artifacts: [] })) });
-      const { wrapper } = await boot(bare, path);
-      expect(wrapper.find('fieldset.files').exists()).toBe(false);
     });
 
     test('asks for a name that is more than spaces, before it asks the server', async () => {
       const s = server('admin', { [apply]: created });
       const { wrapper } = await boot(s, path);
       await type(wrapper, '#name', '   ');
-      await fill(wrapper);
       await submit(wrapper);
       expect(wrapper.get('#name-problem').text()).toBe('Enter a name.');
       expect(s.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
     });
 
-    test('accepts values with spaces around them, which it sends without', async () => {
-      const s = server('admin', { [apply]: created, [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario()) });
-      const { wrapper } = await boot(s, path);
-      await fill(wrapper, ' Acme Corp ', ' portal.acme.example ');
-      await submit(wrapper);
-      expect(s.requests.find((r) => r.method === 'POST')?.body).toMatchObject({ persona: { company: 'Acme Corp', host: 'portal.acme.example' } });
-    });
-
-    test('sends the name, the language of the console and every value, and shows the new scenario', async () => {
-      const s = server('admin', { [apply]: created, [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario({ deceptions: [joined('browser-bookmarks')] })), [`GET /api/v1/scenarios/${scenarioId}/guide`]: () => json(200, { guides: [{ deception_id: 'browser-bookmarks', language: 'en', content: '# Guide' }] }) });
+    test('sends the name, the notes and the language of the console, and shows the new scenario', async () => {
+      const s = server('admin', {
+        [apply]: created,
+        [`GET /api/v1/scenarios/${scenarioId}`]: () => json(200, scenario({ deceptions: [joined('browser-bookmarks')] })),
+        [`GET ${one}`]: () => json(200, catalogDeception()),
+      });
       const { wrapper, router, i18n } = await boot(s, path);
       i18n.setLocale('de');
       await flushPromises();
       await type(wrapper, '#name', '  Bookmarks of IT  ');
       await type(wrapper, '#notes', 'On the file share.');
-      await fill(wrapper, '  Acme Corp ');
       await submit(wrapper);
       expect(s.requests.find((r) => r.method === 'POST')?.body).toEqual({
         name: 'Bookmarks of IT',
         notes: 'On the file share.',
         language: 'de',
-        persona: { company: 'Acme Corp', host: 'portal.acme.example' },
-        artifacts: ['bookmarks'],
+        create_resources: false,
       });
       await arrive(router, 'scenario');
     });
 
-    test('does not send a value that the kind does not allow, and says which', async () => {
-      const s = server('admin', { [apply]: created });
-      const { wrapper } = await boot(s, path);
-      await fill(wrapper, '', 'Portal_Host');
+    test('explains that DNS honeytokens need a zone', async () => {
+      const { wrapper } = await boot(server('admin', { [apply]: () => failure(422, 'dns_not_configured') }), path);
+      await wrapper.get('#create-resources').setValue(true);
       await submit(wrapper);
-      const alerts = wrapper.findAll('.problem').map((a) => a.text());
-      expect(alerts).toEqual(['Enter a value for Company.', 'Portal host must be a host name of lowercase letters, digits, hyphens and dots.']);
-      expect(s.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
-    });
-
-    test('explains that DNS honeytokens need a zone, and that a value may reveal the decoy', async () => {
-      for (const [code, text] of [
-        ['dns_not_configured', 'NYKTUS_DNS_ZONES'],
-        ['artifact_reveals_decoy', 'reveal what it is'],
-      ] as const) {
-        const { wrapper } = await boot(server('admin', { [apply]: () => failure(422, code) }), path);
-        await fill(wrapper);
-        await submit(wrapper);
-        expect(wrapper.get('[role=alert]').text(), code).toContain(text);
-        expect(wrapper.find('form').exists()).toBe(true);
-        document.body.innerHTML = '';
-      }
+      expect(wrapper.get('[role=alert]').text()).toContain('NYKTUS_DNS_ZONES');
+      expect(wrapper.find('form').exists()).toBe(true);
     });
 
     test('keeps what was typed for a failure', async () => {
       const { wrapper } = await boot(server('admin', { [apply]: () => failure(503, 'unavailable') }), path);
-      await fill(wrapper);
+      await type(wrapper, '#notes', 'On the file share.');
       await submit(wrapper);
-      expect((wrapper.get('#persona-company').element as HTMLInputElement).value).toBe('Acme Corp');
+      expect((wrapper.get('#notes').element as HTMLTextAreaElement).value).toBe('On the file share.');
     });
   });
 });
 
-describe('the guide of a scenario', () => {
+describe('the deceptions of a scenario', () => {
   const detail = `/api/v1/scenarios/${scenarioId}`;
-  const fromCatalog = scenario({ deceptions: [joined('browser-bookmarks')], persona: { company: 'Acme Corp' } });
+  const held = scenario({ deceptions: [joined('browser-bookmarks')] });
 
   function sc(extra: Record<string, () => Response> = {}) {
     return server('admin', {
-      [`GET ${detail}`]: () => json(200, fromCatalog),
+      [`GET ${detail}`]: () => json(200, held),
       'GET /api/v1/honeytokens': () => json(200, { honeytokens: [] }),
-      'GET /api/v1/artifacts': () => json(200, { artifacts: [] }),
       'GET /api/v1/honeypots': () => json(200, { honeypots: [] }),
       ...extra,
     });
   }
 
-  test('is shown as text with its structure', async () => {
-    const s = sc({ [`GET ${detail}/guide`]: () => json(200, { guides: [{ deception_id: 'browser-bookmarks', language: 'en', content: '# Bookmarks\n\n## Place it\n\n1. Do this.\n2. Do that.\n\n```\nopen file\n```' }] }) });
-    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+  test('show the guide from the catalog as text with its structure, opened for a single deception, in the language of the console', async () => {
+    const s = sc({ [`GET ${one}`]: () => json(200, catalogDeception({ guide: '# Bookmarks\n\n## Place it\n\n1. Do this.\n2. Do that.\n\n```\nopen file\n```' })) });
+    const { wrapper, i18n } = await boot(s, `/scenarios/${scenarioId}`);
     const guide = wrapper.get('.markdown');
-    expect(guide.get('h2').text()).toBe('Bookmarks');
-    expect(guide.get('h3').text()).toBe('Place it');
+    // The guide stands under the title of its story, a level 3, so its first heading is a level 5.
+    expect(guide.get('h5').text()).toBe('Bookmarks');
+    expect(guide.get('h6').text()).toBe('Place it');
     expect(guide.findAll('ol li')).toHaveLength(2);
     expect(guide.get('pre').text()).toBe('open file');
     expect(wrapper.text()).toContain('Added');
+    expect(wrapper.get('.story h3 a').text()).toBe('Browser bookmarks');
+    expect(wrapper.get('.story details h4').text()).toBe('Guide');
+    expect(s.requests.some((r) => r.url === `${one}?lang=en`)).toBe(true);
+    i18n.setLocale('de');
+    await flushPromises();
+    expect(s.requests.at(-1)?.url).toBe(`${one}?lang=de`);
+    expect(s.requests.some((r) => r.url === '/api/v1/catalog/deceptions?lang=de')).toBe(true);
   });
 
-  // The guide names values that a person typed, and the console shows them as text.
-  test('shows markup in it as text', async () => {
-    const s = sc({ [`GET ${detail}/guide`]: () => json(200, { guides: [{ deception_id: 'browser-bookmarks', language: 'en', content: 'Company: <img src=x onerror=alert(1)> [x](javascript:alert(2))' }] }) });
+  test('read the guide of one of several only when its section is opened, and the list of titles once', async () => {
+    const s = sc({
+      [`GET ${detail}`]: () => json(200, scenario({ deceptions: [joined('browser-bookmarks'), joined('ssh-jump-host')] })),
+      'GET /api/v1/catalog/deceptions/ssh-jump-host': () => json(200, catalogDeception({ id: 'ssh-jump-host', title: 'SSH jump host' })),
+    });
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
-    expect(wrapper.find('.markdown img').exists()).toBe(false);
-    expect(wrapper.find('.markdown a').exists()).toBe(false);
-    expect(wrapper.get('.markdown').text()).toContain('<img src=x onerror=alert(1)>');
+    expect(wrapper.findAll('.story h3').map((h) => h.text())).toEqual(['Browser bookmarks', 'SSH jump host']);
+    expect(s.requests.filter((r) => r.url.startsWith('/api/v1/catalog/deceptions')).map((r) => r.url)).toEqual(['/api/v1/catalog/deceptions?lang=en']);
+    expect(wrapper.find('.markdown').exists()).toBe(false);
+    const section = wrapper.findAll('.story details')[1];
+    (section?.element as HTMLDetailsElement).open = true;
+    await section?.trigger('toggle');
+    await flushPromises();
+    expect(s.requests.at(-1)?.url).toBe('/api/v1/catalog/deceptions/ssh-jump-host?lang=en');
+    expect(wrapper.findAll('.story')[1]?.find('.markdown').exists()).toBe(true);
   });
 
-  test('says when it could not be loaded', async () => {
-    const { wrapper } = await boot(sc({ [`GET ${detail}/guide`]: () => failure(503, 'unavailable') }), `/scenarios/${scenarioId}`);
+  test('do not call a deception gone before the list of the catalog has been read', async () => {
+    const answers: ((response: Response) => void)[] = [];
+    const s = sc({ 'GET /api/v1/catalog/deceptions': () => new Promise<Response>((resolve) => answers.push(resolve)) as never });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+    expect(wrapper.text()).not.toContain('This deception is not in the catalog any more.');
+    expect(wrapper.get('.story h3').text()).toBe('browser-bookmarks');
+    answers[0]?.(json(200, { deceptions: [catalogSummary()] }));
+    await flushPromises();
+    expect(wrapper.get('.story h3').text()).toBe('Browser bookmarks');
+  });
+
+  test('drop what was read in the language before, until it is read in the new one', async () => {
+    const s = sc();
+    const { wrapper, i18n } = await boot(s, `/scenarios/${scenarioId}`);
+    expect(wrapper.get('.markdown').text()).toContain('Place the file');
+    s.on(`GET ${one}`, () => new Promise<Response>(() => undefined) as never);
+    i18n.setLocale('de');
+    await flushPromises();
+    expect(wrapper.find('.markdown').exists()).toBe(false);
+    expect(wrapper.get('.story details').text()).toContain('Wird geladen');
+  });
+
+  test('read a guide again in the new language when the language changes while it is being read', async () => {
+    const answers: Record<string, (response: Response) => void> = {};
+    const s = sc({ [`GET ${one}`]: () => new Promise<Response>(() => undefined) as never });
+    const { wrapper, i18n } = await boot(s, `/scenarios/${scenarioId}`);
+    s.on(`GET ${one}`, (request) => new Promise<Response>((resolve) => (answers[request.url] = resolve)) as never);
+    i18n.setLocale('de');
+    await flushPromises();
+    expect(Object.keys(answers)).toEqual([`${one}?lang=de`]);
+    answers[`${one}?lang=de`]?.(json(200, catalogDeception({ guide: 'Anleitung.' })));
+    await flushPromises();
+    expect(wrapper.get('.markdown').text()).toContain('Anleitung.');
+  });
+
+  test('say that the catalog does not know a deception any more, without asking for it, and let it be removed', async () => {
+    const s = sc({
+      'GET /api/v1/catalog/deceptions': () => json(200, { deceptions: [catalogSummary({ id: 'ssh-jump-host' })] }),
+      [`DELETE ${detail}/deceptions/browser-bookmarks`]: () => json(200, scenario()),
+    });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+    expect(wrapper.text()).toContain('This deception is not in the catalog any more.');
+    expect(wrapper.find('.markdown').exists()).toBe(false);
+    expect(wrapper.find('.story a').exists()).toBe(false);
+    expect(wrapper.get('.story h3').text()).toBe('browser-bookmarks');
+    await wrapper.get('.story .head button').trigger('click');
+    await flushPromises();
+    expect(s.requests.some((r) => r.method === 'DELETE' && r.url === `${detail}/deceptions/browser-bookmarks`)).toBe(true);
+    expect(wrapper.find('.story').exists()).toBe(false);
+  });
+
+  test('say when a guide could not be loaded, and ask again when the section is opened again', async () => {
+    const s = sc({ [`GET ${one}`]: () => failure(503, 'unavailable') });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
     expect(wrapper.text()).toContain('The guide could not be loaded.');
+    s.on(`GET ${one}`, () => json(200, catalogDeception()));
+    const section = wrapper.get('.story details');
+    (section.element as HTMLDetailsElement).open = false;
+    await section.trigger('toggle');
+    (section.element as HTMLDetailsElement).open = true;
+    await section.trigger('toggle');
+    await flushPromises();
+    expect(wrapper.find('.markdown').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain('The guide could not be loaded.');
   });
 
-  test('is not asked for when the scenario was put together by hand', async () => {
+  test('say when the titles could not be loaded, and keep the identifiers', async () => {
+    const { wrapper } = await boot(sc({ 'GET /api/v1/catalog/deceptions': () => failure(503, 'unavailable') }), `/scenarios/${scenarioId}`);
+    expect(wrapper.text()).toContain('The guide could not be loaded.');
+    expect(wrapper.get('.story h3').text()).toBe('browser-bookmarks');
+  });
+
+  test('are not asked for when the scenario was put together by hand', async () => {
     const s = sc({ [`GET ${detail}`]: () => json(200, scenario()) });
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
-    expect(s.requests.some((r) => r.url.endsWith('/guide'))).toBe(false);
+    expect(s.requests.some((r) => r.url.startsWith('/api/v1/catalog/deceptions'))).toBe(false);
     expect(wrapper.find('.markdown').exists()).toBe(false);
+  });
+
+  test('are removed only by someone who may write scenarios', async () => {
+    const { wrapper } = await boot(sc({ 'GET /api/v1/session': () => json(200, sessionBody('viewer')) }), `/scenarios/${scenarioId}`);
+    expect(wrapper.find('.story .head button').exists()).toBe(false);
   });
 });

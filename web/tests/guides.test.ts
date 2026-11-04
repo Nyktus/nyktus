@@ -11,7 +11,7 @@ const deceptions = join(import.meta.dirname, '..', '..', 'catalog', 'deceptions'
 function guides(): [string, string][] {
   const out: [string, string][] = [];
   for (const name of readdirSync(deceptions, { recursive: true, encoding: 'utf8' })) {
-    if (/(^|\/)guide\.[a-z]+\.md\.tmpl$/.test(name)) {
+    if (/(^|\/)guide\.[a-z]+\.md$/.test(name)) {
       out.push([name, readFileSync(join(deceptions, name), 'utf8')]);
     }
   }
@@ -32,7 +32,7 @@ function texts(blocks: Block[]): string[] {
 }
 
 // What the reader does not know turns into text, so a guide that uses it would show the marks of
-// Markdown as they are. Every guide of the catalog is read, with the placeholders of its template.
+// Markdown as they are. Every guide of the catalog is read, with the placeholders of its files.
 test('every guide of the catalog is read, and shows no mark of a code block as text', () => {
   const all = guides();
   expect(all.length).toBeGreaterThan(0);
@@ -42,7 +42,7 @@ test('every guide of the catalog is read, and shows no mark of a code block as t
 });
 
 test('the guide that writes a command below a step of a list keeps it as a code block of that step', () => {
-  const source = readFileSync(join(deceptions, 'word-image', 'guide.en.md.tmpl'), 'utf8');
+  const source = readFileSync(join(deceptions, 'word-image', 'guide.en.md'), 'utf8');
   const list = parseMarkdown(source).find((b) => b.kind === 'list' && b.items.some((item) => item.blocks.some((x) => x.kind === 'code')));
   expect(list).toBeDefined();
   expect(JSON.stringify(list)).toContain('INCLUDEPICTURE');

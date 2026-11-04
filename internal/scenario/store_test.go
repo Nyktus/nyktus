@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	embedded "nyktus.org/nyktus/catalog"
-	"nyktus.org/nyktus/internal/artifact"
 	"nyktus.org/nyktus/internal/audit"
 	"nyktus.org/nyktus/internal/catalog"
 	"nyktus.org/nyktus/internal/honeypot"
@@ -94,20 +93,6 @@ func createHoneypot(t *testing.T, d testDB, scenarioID string) string {
 	return h.ID
 }
 
-// createArtifact stores an artifact in the scenario scenarioID through the
-// console, as applying a deception does, and returns its identifier.
-func createArtifact(t *testing.T, d testDB, scenarioID string) string {
-	t.Helper()
-	a, err := artifact.NewStore(d.console).Create(t.Context(), artifact.Spec{
-		ScenarioID: scenarioID, CatalogArtifact: "config", FileName: "config", Format: catalog.FormatConfig,
-		Content: []byte("Host a\n"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return a.ID
-}
-
 // scenarioOf returns the scenario of the honeytoken id, "" if it stands alone,
 // and whether it exists.
 func scenarioOf(t *testing.T, d testDB, id string) (string, bool) {
@@ -120,13 +105,6 @@ func scenarioOf(t *testing.T, d testDB, id string) (string, bool) {
 func honeypotScenarioOf(t *testing.T, d testDB, id string) (string, bool) {
 	t.Helper()
 	return scenarioIn(t, d, "honeypots", id)
-}
-
-// artifactScenarioOf returns the scenario of the artifact id as scenarioOf
-// does.
-func artifactScenarioOf(t *testing.T, d testDB, id string) (string, bool) {
-	t.Helper()
-	return scenarioIn(t, d, "artifacts", id)
 }
 
 func scenarioIn(t *testing.T, d testDB, table, id string) (string, bool) {
@@ -153,8 +131,8 @@ func TestStore_CreateAndGet(t *testing.T) {
 	spec := scenario.Spec{Name: "Finance file share", Notes: "\\\\fs01\\finance\nowner: IT", EngageActivities: []string{"EAC0005", "EAC0006"}}
 	sc := create(t, d, spec)
 	if sc.ID == "" || sc.Name != spec.Name || sc.Notes != spec.Notes || !slices.Equal(sc.EngageActivities, spec.EngageActivities) ||
-		len(sc.Deceptions) != 0 || len(sc.Persona) != 0 || !sc.CreatedAt.Equal(sc.UpdatedAt) {
-		t.Errorf("Create() = %+v, want the fields of %+v, no deception, no persona and equal times", sc, spec)
+		len(sc.Deceptions) != 0 || !sc.CreatedAt.Equal(sc.UpdatedAt) {
+		t.Errorf("Create() = %+v, want the fields of %+v, no deception and equal times", sc, spec)
 	}
 	got, err := s.Get(t.Context(), sc.ID)
 	if err != nil || got.ID != sc.ID || got.Name != sc.Name || !slices.Equal(got.EngageActivities, sc.EngageActivities) {
@@ -346,7 +324,7 @@ func TestStore_Update_LocksTheScenario(t *testing.T) {
 }
 
 func deleteScenario(ctx context.Context, d testDB, id string, r scenario.Removal) (scenario.Removed, error) {
-	return deleteWith(ctx, d, id, scenario.ResourceRemovals{Honeytokens: r, Honeypots: r, Artifacts: r})
+	return deleteWith(ctx, d, id, scenario.ResourceRemovals{Honeytokens: r, Honeypots: r})
 }
 
 func deleteWith(ctx context.Context, d testDB, id string, r scenario.ResourceRemovals) (scenario.Removed, error) {
@@ -359,57 +337,8 @@ func deleteWith(ctx context.Context, d testDB, id string, r scenario.ResourceRem
 	return removed, err
 }
 
-// Deleting a scenario deletes or detaches its artifacts, as the request
-// chooses for them, independently of its honeytokens, and touches no other
-// artifact. A kept artifact stands alone.
-func TestStore_Delete_RemovesTheArtifactsAsChosen(t *testing.T) {
-	t.Parallel()
-	d := newTestDB(t)
-	other := create(t, d, scenario.Spec{Name: "other"})
-	inOther := createArtifact(t, d, other.ID)
-
-	for _, honeytokens := range scenario.Removals {
-		for _, artifacts := range scenario.Removals {
-			sc := create(t, d, scenario.Spec{Name: "s"})
-			h := createHoneytoken(t, d, sc.ID)
-			ids := []string{createArtifact(t, d, sc.ID), createArtifact(t, d, sc.ID)}
-			removed, err := deleteWith(t.Context(), d, sc.ID, scenario.ResourceRemovals{
-				Honeytokens: honeytokens, Honeypots: scenario.RemovalKeep, Artifacts: artifacts,
-			})
-			if err != nil {
-				t.Fatalf("%s/%s: Delete() error = %v", honeytokens, artifacts, err)
-			}
-			got, want := removed.DetachedArtifacts, removed.DeletedArtifacts
-			if artifacts == scenario.RemovalDelete {
-				got, want = want, got
-			}
-			slices.Sort(got)
-			slices.Sort(ids)
-			if !slices.Equal(got, ids) || len(want) != 0 {
-				t.Errorf("%s/%s: Delete() = %+v, want artifacts %v %s", honeytokens, artifacts, removed, ids, artifacts)
-			}
-			for _, id := range ids {
-				if s, exists := artifactScenarioOf(t, d, id); exists != (artifacts == scenario.RemovalKeep) || s != "" {
-					t.Errorf("%s/%s: artifact exists %v in scenario %q", honeytokens, artifacts, exists, s)
-				}
-			}
-			if _, exists := scenarioOf(t, d, h); exists != (honeytokens == scenario.RemovalKeep) {
-				t.Errorf("%s/%s: honeytoken exists %v", honeytokens, artifacts, exists)
-			}
-		}
-	}
-	if s, ok := artifactScenarioOf(t, d, inOther); !ok || s != other.ID {
-		t.Errorf("an artifact of another scenario is in %q, exists %v", s, ok)
-	}
-	if _, err := deleteWith(t.Context(), d, other.ID, scenario.ResourceRemovals{
-		Honeytokens: scenario.RemovalKeep, Honeypots: scenario.RemovalKeep, Artifacts: "cascade",
-	}); !errors.Is(err, scenario.ErrInvalidRemoval) {
-		t.Errorf("Delete(unknown removal of artifacts) error = %v, want ErrInvalidRemoval", err)
-	}
-}
-
 // Deleting a scenario deletes or detaches its honeypots, as the request
-// chooses for them, independently of its honeytokens and artifacts, and
+// chooses for them, independently of its honeytokens, and
 // touches no other honeypot. A kept honeypot stands alone.
 func TestStore_Delete_RemovesTheHoneypotsAsChosen(t *testing.T) {
 	t.Parallel()
@@ -422,10 +351,9 @@ func TestStore_Delete_RemovesTheHoneypotsAsChosen(t *testing.T) {
 		for _, honeypots := range scenario.Removals {
 			sc := create(t, d, scenario.Spec{Name: "s"})
 			h := createHoneytoken(t, d, sc.ID)
-			a := createArtifact(t, d, sc.ID)
 			ids := []string{createHoneypot(t, d, sc.ID), createHoneypot(t, d, sc.ID)}
 			removed, err := deleteWith(t.Context(), d, sc.ID, scenario.ResourceRemovals{
-				Honeytokens: others, Honeypots: honeypots, Artifacts: others,
+				Honeytokens: others, Honeypots: honeypots,
 			})
 			if err != nil {
 				t.Fatalf("%s/%s: Delete() error = %v", others, honeypots, err)
@@ -447,9 +375,6 @@ func TestStore_Delete_RemovesTheHoneypotsAsChosen(t *testing.T) {
 			if _, exists := scenarioOf(t, d, h); exists != (others == scenario.RemovalKeep) {
 				t.Errorf("%s/%s: honeytoken exists %v", others, honeypots, exists)
 			}
-			if _, exists := artifactScenarioOf(t, d, a); exists != (others == scenario.RemovalKeep) {
-				t.Errorf("%s/%s: artifact exists %v", others, honeypots, exists)
-			}
 		}
 	}
 	if s, ok := honeypotScenarioOf(t, d, inOther); !ok || s != other.ID {
@@ -459,7 +384,7 @@ func TestStore_Delete_RemovesTheHoneypotsAsChosen(t *testing.T) {
 		t.Errorf("a honeypot that stands alone is in %q, exists %v", s, ok)
 	}
 	if _, err := deleteWith(t.Context(), d, other.ID, scenario.ResourceRemovals{
-		Honeytokens: scenario.RemovalKeep, Honeypots: "cascade", Artifacts: scenario.RemovalKeep,
+		Honeytokens: scenario.RemovalKeep, Honeypots: "cascade",
 	}); !errors.Is(err, scenario.ErrInvalidRemoval) {
 		t.Errorf("Delete(unknown removal of honeypots) error = %v, want ErrInvalidRemoval", err)
 	}
@@ -553,78 +478,15 @@ func TestSchema_KeepsAScenarioWithHoneypots(t *testing.T) {
 	}
 }
 
-// The schema keeps a scenario from being deleted while an artifact belongs to
-// it, as for honeytokens.
-func TestSchema_KeepsAScenarioWithArtifacts(t *testing.T) {
-	t.Parallel()
-	d := newTestDB(t)
-	sc := create(t, d, scenario.Spec{Name: "s"})
-	createArtifact(t, d, sc.ID)
-
-	_, err := d.console.Exec(t.Context(), `DELETE FROM scenarios WHERE id = $1`, sc.ID)
-	var pgErr *pgconn.PgError
-	if !errors.As(err, &pgErr) || pgErr.Code != "23503" || pgErr.ConstraintName != "artifacts_scenario_id_fkey" {
-		t.Errorf("DELETE error = %v, want a violation of artifacts_scenario_id_fkey", err)
-	}
-}
-
-// Delete locks the scenario, then its honeytokens, then its honeypots, then
-// its artifacts: a deletion that waits for an artifact already holds the
-// scenario and has removed the honeytokens and the honeypots.
-func TestStore_Delete_LocksTheArtifactsAfterTheScenario(t *testing.T) {
-	t.Parallel()
-	d := newTestDB(t)
-	sc := create(t, d, scenario.Spec{Name: "s"})
-	h := createHoneytoken(t, d, sc.ID)
-	p := createHoneypot(t, d, sc.ID)
-	a := createArtifact(t, d, sc.ID)
-
-	holder, err := d.owner.Begin(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = holder.Rollback(context.WithoutCancel(t.Context())) }()
-	if _, err := holder.Exec(t.Context(), `SELECT FROM artifacts WHERE id = $1 FOR UPDATE`, a); err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() {
-		_, err := deleteScenario(t.Context(), d, sc.ID, scenario.RemovalDelete)
-		done <- err
-	}()
-	waitForLockWait(t, d)
-
-	var pgErr *pgconn.PgError
-	_, err = d.owner.Exec(t.Context(), `SELECT FROM scenarios WHERE id = $1 FOR KEY SHARE NOWAIT`, sc.ID)
-	if !errors.As(err, &pgErr) || pgErr.Code != "55P03" {
-		t.Errorf("probe of the scenario: error = %v, want lock_not_available", err)
-	}
-	_, err = d.owner.Exec(t.Context(), `SELECT FROM honeytokens WHERE id = $1 FOR KEY SHARE NOWAIT`, h)
-	if !errors.As(err, &pgErr) || pgErr.Code != "55P03" {
-		t.Errorf("probe of the honeytoken: error = %v, want lock_not_available", err)
-	}
-	_, err = d.owner.Exec(t.Context(), `SELECT FROM honeypots WHERE id = $1 FOR KEY SHARE NOWAIT`, p)
-	if !errors.As(err, &pgErr) || pgErr.Code != "55P03" {
-		t.Errorf("probe of the honeypot: error = %v, want lock_not_available", err)
-	}
-	if err := holder.Rollback(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-done; err != nil {
-		t.Errorf("Delete() error = %v", err)
-	}
-}
-
-// Delete locks the honeypots after the honeytokens and before the artifacts:
-// a deletion that waits for a honeypot already holds the scenario and has
-// removed the honeytokens, but has not touched the artifacts yet.
+// Delete locks the scenario, then its honeytokens, then its honeypots: a
+// deletion that waits for a honeypot already holds the scenario and has removed
+// the honeytokens.
 func TestStore_Delete_LocksTheHoneypotsAfterTheHoneytokens(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
 	sc := create(t, d, scenario.Spec{Name: "s"})
 	h := createHoneytoken(t, d, sc.ID)
 	p := createHoneypot(t, d, sc.ID)
-	a := createArtifact(t, d, sc.ID)
 
 	holder, err := d.owner.Begin(t.Context())
 	if err != nil {
@@ -649,9 +511,6 @@ func TestStore_Delete_LocksTheHoneypotsAfterTheHoneytokens(t *testing.T) {
 	_, err = d.owner.Exec(t.Context(), `SELECT FROM honeytokens WHERE id = $1 FOR KEY SHARE NOWAIT`, h)
 	if !errors.As(err, &pgErr) || pgErr.Code != "55P03" {
 		t.Errorf("probe of the honeytoken: error = %v, want lock_not_available", err)
-	}
-	if _, err := d.owner.Exec(t.Context(), `SELECT FROM artifacts WHERE id = $1 FOR KEY SHARE NOWAIT`, a); err != nil {
-		t.Errorf("probe of the artifact: error = %v, want no lock before the honeypots are removed", err)
 	}
 	if err := holder.Rollback(t.Context()); err != nil {
 		t.Fatal(err)
@@ -773,10 +632,7 @@ func TestCreateUpdateDelete_RecordEveryWrite(t *testing.T) {
 	}
 	detached := createHoneytoken(t, d, kept.ID)
 	detachedHoneypot := createHoneypot(t, d, kept.ID)
-	detachedArtifact := createArtifact(t, d, kept.ID)
-	keep := scenario.ResourceRemovals{
-		Honeytokens: scenario.RemovalKeep, Honeypots: scenario.RemovalKeep, Artifacts: scenario.RemovalKeep,
-	}
+	keep := scenario.ResourceRemovals{Honeytokens: scenario.RemovalKeep, Honeypots: scenario.RemovalKeep}
 	if _, err := scenario.Delete(ctx, d.console, actor, kept.ID, keep); err != nil {
 		t.Fatal(err)
 	}
@@ -786,10 +642,7 @@ func TestCreateUpdateDelete_RecordEveryWrite(t *testing.T) {
 	}
 	removed := createHoneytoken(t, d, deleted.ID)
 	removedHoneypot := createHoneypot(t, d, deleted.ID)
-	removedArtifact := createArtifact(t, d, deleted.ID)
-	remove := scenario.ResourceRemovals{
-		Honeytokens: scenario.RemovalDelete, Honeypots: scenario.RemovalDelete, Artifacts: scenario.RemovalDelete,
-	}
+	remove := scenario.ResourceRemovals{Honeytokens: scenario.RemovalDelete, Honeypots: scenario.RemovalDelete}
 	if _, err := scenario.Delete(ctx, d.console, actor, deleted.ID, remove); err != nil {
 		t.Fatal(err)
 	}
@@ -799,12 +652,10 @@ func TestCreateUpdateDelete_RecordEveryWrite(t *testing.T) {
 		{"scenario.update", "scenario", kept.ID, []string{"name", "notes"}, actor.UserID},
 		{"honeytoken.update", "honeytoken", detached, []string{"scenario_id"}, actor.UserID},
 		{"honeypot.update", "honeypot", detachedHoneypot, []string{"scenario_id"}, actor.UserID},
-		{"artifact.update", "artifact", detachedArtifact, []string{"scenario_id"}, actor.UserID},
 		{"scenario.delete", "scenario", kept.ID, []string{}, actor.UserID},
 		{"scenario.create", "scenario", deleted.ID, []string{}, actor.UserID},
 		{"honeytoken.delete", "honeytoken", removed, []string{}, actor.UserID},
 		{"honeypot.delete", "honeypot", removedHoneypot, []string{}, actor.UserID},
-		{"artifact.delete", "artifact", removedArtifact, []string{}, actor.UserID},
 		{"scenario.delete", "scenario", deleted.ID, []string{}, actor.UserID},
 	}
 	if got := entries(t, d); !sameEntries(got, want) {
@@ -831,7 +682,7 @@ func TestCreateUpdateDelete_FailWithoutTheirAuditEntry(t *testing.T) {
 		t.Error("Update() without audit entry succeeded")
 	}
 	for _, r := range scenario.Removals {
-		if _, err := scenario.Delete(ctx, d.console, ghost, sc.ID, scenario.ResourceRemovals{Honeytokens: r, Honeypots: r, Artifacts: r}); err == nil {
+		if _, err := scenario.Delete(ctx, d.console, ghost, sc.ID, scenario.ResourceRemovals{Honeytokens: r, Honeypots: r}); err == nil {
 			t.Errorf("Delete(%s) without audit entry succeeded", r)
 		}
 	}
@@ -851,7 +702,7 @@ func TestCreateUpdateDelete_FailWithoutTheirAuditEntry(t *testing.T) {
 	only := create(t, d, scenario.Spec{Name: "o"})
 	op := createHoneypot(t, d, only.ID)
 	for _, r := range scenario.Removals {
-		if _, err := scenario.Delete(ctx, d.console, ghost, only.ID, scenario.ResourceRemovals{Honeytokens: r, Honeypots: r, Artifacts: r}); err == nil {
+		if _, err := scenario.Delete(ctx, d.console, ghost, only.ID, scenario.ResourceRemovals{Honeytokens: r, Honeypots: r}); err == nil {
 			t.Errorf("Delete(%s) of a scenario with a honeypot without audit entry succeeded", r)
 		}
 	}
@@ -866,8 +717,8 @@ func TestSchema_ChecksScenarios(t *testing.T) {
 	t.Parallel()
 	d := newTestDB(t)
 
-	const insert = `INSERT INTO scenarios (name, notes, engage_activities, persona) VALUES ($1, $2, $3, $4)`
-	valid := []any{"a", "", []string{}, `{"Domain": "corp.example.com"}`}
+	const insert = `INSERT INTO scenarios (name, notes, engage_activities) VALUES ($1, $2, $3)`
+	valid := []any{"a", "", []string{}}
 	with := func(i int, v any) []any {
 		args := slices.Clone(valid)
 		args[i] = v
@@ -888,9 +739,6 @@ func TestSchema_ChecksScenarios(t *testing.T) {
 		{"strategic activity", with(2, []string{"SPR0001"}), "scenarios_engage_activities_check"},
 		{"repeated activity", with(2, []string{"EAC0005", "EAC0005"}), "scenarios_engage_activities_check"},
 		{"too many activities", with(2, engageIDs(t)[:21]), "scenarios_engage_activities_check"},
-		{"persona as a list", with(3, `["corp.example.com"]`), "scenarios_persona_check"},
-		{"persona with a number", with(3, `{"Port": 22}`), "scenarios_persona_check"},
-		{"persona too large", with(3, `{"Text": "`+strings.Repeat("a", 16384)+`"}`), "scenarios_persona_check"},
 	} {
 		_, err := d.owner.Exec(t.Context(), insert, tt.args...)
 		var pgErr *pgconn.PgError
@@ -954,20 +802,16 @@ func TestSchema_AcceptsTheIdentifiersOfEngageAndTheCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Every deception of the embedded catalog is a valid identifier of a
+	// scenario of its own, and all of them join one scenario: the number of
+	// deceptions is bounded by the catalog, not by a limit of the schema.
 	var scenarioID string
 	if err := d.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name) VALUES ('a') RETURNING id`).Scan(&scenarioID); err != nil {
 		t.Fatal(err)
 	}
-	// A scenario holds 20 deceptions at most, so each goes into a scenario of its own.
 	for _, dec := range c.Deceptions() {
-		for _, lang := range catalog.Languages {
-			if err := d.owner.QueryRow(t.Context(), `INSERT INTO scenarios (name) VALUES ('a') RETURNING id`).Scan(&scenarioID); err != nil {
-				t.Fatal(err)
-			}
-			_, err := d.owner.Exec(t.Context(), `INSERT INTO scenario_deceptions (scenario_id, deception_id, language, guide) VALUES ($1, $2, $3, 'g')`, scenarioID, dec.ID, lang)
-			if err != nil {
-				t.Errorf("deception %s in %s: %v", dec.ID, lang, err)
-			}
+		if _, err := d.owner.Exec(t.Context(), `INSERT INTO scenario_deceptions (scenario_id, deception_id) VALUES ($1, $2)`, scenarioID, dec.ID); err != nil {
+			t.Errorf("deception %s: %v", dec.ID, err)
 		}
 	}
 }

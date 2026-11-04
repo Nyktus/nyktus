@@ -3,8 +3,8 @@
 
 /**
  * Hands a file to the browser to save. The file is never opened by the console:
- * an artifact can be HTML or a configuration for a tool, and shown in the origin
- * of the console it would run with the rights of the user.
+ * an example file of the catalog can be HTML or a configuration for a tool, and
+ * shown in the origin of the console it would run with the rights of the user.
  */
 export function saveFile(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);

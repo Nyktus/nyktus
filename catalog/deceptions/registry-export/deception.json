@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "registry-export",
   "category": "endpoint",
   "title": {
@@ -14,26 +14,14 @@
   "engage_activities": ["EAC0005"],
   "honeytokens": [
     {
-      "key": "Server",
-      "type": "dns",
       "label": {"en": "Backup server", "de": "Sicherungsserver"},
+      "type": "dns",
       "techniques": ["T1552.002", "T1021.002"]
     }
   ],
-  "persona": [
-    {
-      "key": "Vendor",
-      "kind": "name",
-      "label": {"en": "Name of the backup software", "de": "Name der Sicherungssoftware"},
-      "example": "BackupPro"
-    },
-    {
-      "key": "Account",
-      "kind": "name",
-      "label": {"en": "Account", "de": "Konto"},
-      "example": "svc-backup"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "Settings.reg", "format": "config", "file": "Settings.reg"}
   ],
-  "artifacts": ["registry-export"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }

@@ -1,0 +1,14 @@
+Active Directory replication - check
+
+Domain: corp.example.com
+
+1. Summary of all domain controllers:
+   repadmin /replsummary
+
+2. Details of the controller that reports errors:
+   repadmin /showrepl Honeytoken-Domain-Controller
+
+3. Start a replication by hand:
+   repadmin /syncall Honeytoken-Domain-Controller /AdeP
+
+If the errors remain, call Infrastructure team.

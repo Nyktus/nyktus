@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "directory-and-shares",
   "category": "network",
   "title": {
@@ -11,48 +11,31 @@
     "de": "Eine Übersicht der DFS-Namespaces, ein Runbook zur Prüfung der Replikation und ein Skript, das einen Computer im Verzeichnis anlegt, mit den Namen eines Dateiservers, eines Domänencontrollers und eines Computers. Wer einen Namen auflöst, löst ein Event aus; zwei Notizen daneben tun es nicht."
   },
   "techniques": ["T1135", "T1018", "T1087.002"],
-  "engage_activities": ["EAC0005"],
+  "engage_activities": ["EAC0005", "EAC0011"],
   "honeytokens": [
     {
-      "key": "FileServer",
-      "type": "dns",
       "label": {"en": "File server", "de": "Dateiserver"},
+      "type": "dns",
       "techniques": ["T1135"]
     },
     {
-      "key": "Controller",
-      "type": "dns",
       "label": {"en": "Domain controller", "de": "Domänencontroller"},
+      "type": "dns",
       "techniques": ["T1018"],
       "severity": "high"
     },
     {
-      "key": "Computer",
-      "type": "dns",
       "label": {"en": "Computer in the directory", "de": "Computer im Verzeichnis"},
+      "type": "dns",
       "techniques": ["T1018", "T1087.002"]
     }
   ],
-  "persona": [
-    {
-      "key": "Domain",
-      "kind": "host",
-      "label": {"en": "Internal domain", "de": "Interne Domain"},
-      "example": "corp.example.com"
-    },
-    {
-      "key": "Contact",
-      "kind": "text",
-      "label": {"en": "Contact", "de": "Ansprechpartner"},
-      "example": "Infrastructure team"
-    },
-    {
-      "key": "ComputerName",
-      "kind": "name",
-      "label": {"en": "Name of the computer", "de": "Name des Computers"},
-      "example": "fs-archive01"
-    }
+  "honeypots": [],
+  "files": [
+    {"name": "DFS-namespaces.txt", "format": "text", "file": "DFS-namespaces.txt"},
+    {"name": "Replication-check.txt", "format": "text", "file": "Replication-check.txt"},
+    {"name": "Handover.txt", "format": "text", "file": "Handover.txt"},
+    {"name": "Tickets.csv", "format": "text", "file": "Tickets.csv"}
   ],
-  "artifacts": ["dfs-namespace-map", "replication-runbook", "ad-computer-object", "handover-note", "ticket-export"],
-  "guide": {"en": "guide.en.md.tmpl", "de": "guide.de.md.tmpl"}
+  "guide": {"en": "guide.en.md", "de": "guide.de.md"}
 }
