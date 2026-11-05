@@ -1,38 +1,23 @@
-# Zugang zur Dateiübertragung
+## Geschichte
 
-Administratoren und Entwickler halten die Zugangsdaten für Dateiübertragungen in den Werkzeugen fest, die sie benutzen: in einer `.netrc`-Datei und im Servermanager von FileZilla. Die folgenden Dateien erzählen diese Geschichte an verschiedenen Orten. Die Dateien teilen sich den Honeytoken der Geschichte, derselbe Host-Name steht also in beiden. Hinter dem Namen steht nichts: Konto und Passwort gibt es nirgends. Sie entscheiden, welche Datei Sie wo ablegen; eine genügt.
+Legen Sie die Zugangsdaten für eine Dateiübertragung dort ab, wo ein Angreifer sie sucht. Administratoren und Entwickler halten sie in den Werkzeugen fest, die sie nutzen: in einer `.netrc`-Datei und im Servermanager von FileZilla. Beide Dateien nennen den Host desselben DNS-Honeytokens, derselbe Hostname steht also in beiden. Wer die Zugangsdaten mit einem Werkzeug verwendet, löst den Namen auf, und das löst ein Ereignis aus. Hinter dem Namen steht kein Server, und Konto und Passwort gibt es nirgends. Eine Datei genügt.
 
-## Zugangsdaten in einer .netrc-Datei
+## Umsetzung
 
-Die Datei `netrc` enthält das Konto `deploy` und ein zufälliges Passwort für den Host `Honeytoken-Domain`. Werkzeuge wie curl, Git, ftp und viele Skripte lesen solche Zugangsdaten aus `~/.netrc`. Der Host-Name gehört zu einem DNS-Honeytoken: Wer die Zugangsdaten mit irgendeinem Werkzeug nutzt, löst den Namen auf, was ein Event auslöst. Dahinter steht kein Server, und Konto und Passwort gibt es nirgends.
+1. Legen Sie das DNS-Honeytoken „Host“ an. Ersetzen Sie `Honeytoken-Domain` in den Dateien durch seinen Namen.
+2. Für `netrc`: Speichern Sie die Datei als `~/.netrc` im Home-Verzeichnis eines Kontos auf einem Server oder Arbeitsplatz, am besten eines Kontos, das nur diesem Zweck dient. Beschränken Sie sie mit `chmod 600 ~/.netrc` auf ihren Besitzer, denn manche Werkzeuge ignorieren eine `.netrc`, die andere lesen können. Hat das Konto bereits eine `~/.netrc`, fügen Sie die drei Zeilen dort an, statt sie zu ersetzen, damit die übrigen Zugangsdaten weiter funktionieren.
+3. Für `sitemanager.xml`: Legen Sie die Datei im FileZilla-Verzeichnis eines Kontos auf einem Arbeitsplatz ab, unter Windows `%APPDATA%\FileZilla`. Hat das Konto bereits einen Servermanager, fügen Sie das Element `Server` in dessen `Servers` ein, statt die Datei zu ersetzen.
+4. Notieren Sie im Szenario, wo die Dateien liegen.
 
-### Datei platzieren
+## Testen
 
-1. Speichern Sie die Datei als `~/.netrc` im Home-Verzeichnis eines Kontos auf einem Server oder Arbeitsplatz, am besten eines Kontos, das nur diesem Zweck dient, und beschränken Sie sie auf ihren Besitzer: `chmod 600 ~/.netrc`. Manche Werkzeuge ignorieren eine `.netrc`, die andere lesen können.
-2. Hat das Konto schon eine `~/.netrc`, ergänzen Sie diese um die drei Zeilen, statt sie zu ersetzen, damit seine übrigen Zugangsdaten weiter funktionieren.
-3. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
+Führen Sie auf einem Rechner mit Internetzugang `nslookup Honeytoken-Domain` mit dem Namen des Honeytokens aus. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
-### Testen
-
-Führen Sie `curl --netrc https://Honeytoken-Domain/` auf einem Rechner mit Zugang zum Internet aus. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
-
-## FileZilla-Servermanager
-
-Die Datei `sitemanager.xml` ist der Servermanager von FileZilla mit dem Server `Honeytoken-Domain`, dem Konto `deploy` und einem zufälligen Passwort. Der Host-Name gehört zu einem DNS-Honeytoken: Wer sich mit dem Eintrag verbindet, löst ihn auf, was ein Event auslöst. Dahinter steht kein Server, und Konto und Passwort gibt es nirgends.
-
-### Datei platzieren
-
-1. Legen Sie die Datei als `sitemanager.xml` im FileZilla-Verzeichnis eines Kontos auf einem Arbeitsplatz ab (unter Windows `%APPDATA%\FileZilla`).
-2. Hat das Konto schon einen Servermanager, ergänzen Sie dessen `Servers` um das Element `Server`, statt die Datei zu ersetzen.
-3. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
-
-### Testen
-
-Lösen Sie den Host mit `nslookup Honeytoken-Domain` auf einem Rechner mit Zugang zum Internet auf, oder öffnen Sie die Datei in FileZilla und verbinden Sie sich mit dem Eintrag. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+Um mit dem Werkzeug zu testen, führen Sie `curl --netrc https://Honeytoken-Domain/` aus oder öffnen Sie `sitemanager.xml` in FileZilla und verbinden Sie sich mit dem Eintrag.
 
 ## Grenzen
 
-- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.
-- Der Host-Name ist ein zufälliges Label unter der Zone Ihrer DNS-Rolle. Ein Eindringling, der die Datei genau liest, kann ihn ungewöhnlich finden.
-- `sitemanager.xml`: FileZilla schreibt das Passwort selbst als Base64. Die Datei enthält das Secret als Klartext, was ein Eindringling, der das Format kennt, ungewöhnlich finden kann.
-- `sitemanager.xml`: Das Öffnen der Datei in FileZilla löst kein Event aus; erst die Verbindung mit dem Eintrag tut es.
+- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Ereignis aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert das.
+- Der Hostname ist ein zufälliges Label unter der Zone Ihrer DNS-Rolle. Wer die Dateien genau liest, kann ihn ungewöhnlich finden.
+- Das Lesen einer Datei löst kein Ereignis aus; die Verbindung zum Eintrag oder die Verwendung der Zugangsdaten tut es.
+- `sitemanager.xml`: FileZilla selbst schreibt das Passwort als Base64. Die Datei enthält es als Klartext, was ein Angreifer, der das Format kennt, ungewöhnlich finden kann.

@@ -1,23 +1,25 @@
-# AWS: Secret im Secrets Manager
+## Geschichte
 
-Ein Secret in AWS Secrets Manager, das Benutzername und Passwort für eine Datenbank enthält, die es nicht gibt. Ein Eindringling, der eine Identität Ihres Kontos übernommen hat, listet die Secrets auf, findet eines mit einem Namen wie `prod-orders-db-credentials` und liest es. CloudTrail zeichnet das Lesen auf, und eine EventBridge-Regel leitet den Eintrag per `POST` an die URL eines Honeytokens weiter. Der Alert sagt, dass das Secret gelesen oder beschrieben wurde. Identität und Adresse des Aufrufers stehen im Anfang des Request-Body, den der Honeytoken aufbewahrt, nicht im Alert: Die Adresse des Events selbst ist die des AWS-Dienstes, der den Webhook sendet.
+Ein Secret in AWS Secrets Manager, das Benutzername und Passwort für eine Datenbank enthält, die es nicht gibt. Ein Angreifer, der eine Identität Ihres Kontos übernommen hat, listet die Secrets auf, findet eines mit einem Namen wie `prod-orders-db-credentials` und liest es. CloudTrail zeichnet das Lesen auf, und eine EventBridge-Regel leitet den Eintrag per `POST` an die URL eines Honeytokens weiter. Der Alert sagt, dass das Secret gelesen oder beschrieben wurde.
+
+## Umsetzung
 
 Die Befehle sind für eine Shell wie bash oder zsh gedacht, mit der AWS CLI in Version 2 und einer Identität, die Secrets, IAM-Rollen und EventBridge-Regeln anlegen darf. Sie wurden an der Dokumentation der AWS CLI, von EventBridge und von CloudTrail geprüft, nicht an einem Konto ausgeführt.
 
-## Was der Köder im Konto bewirkt
+### Was der Köder im Konto bewirkt
 
 - Das Secret enthält den Benutzernamen `orders_app` und ein zufälliges Passwort mit 24 Zeichen von AWS. Beides ist erfunden: Ein Konto dieses Namens gibt es nirgends, und niemand behält das Passwort. Das Lesen des Secrets öffnet nichts.
 - Keine andere Ressource wird geändert, und am Secret hängt keine Richtlinie. Das Secret benutzt den Standardschlüssel von Secrets Manager.
 - Secrets Manager berechnet monatlich eine Gebühr je Secret und für seine Nutzung; siehe die Preisseite. Sonst kostet hier nichts mehr als einige Anfragen.
 - Alles in Ihrem Konto, das alle Secrets liest, etwa ein Inventarwerkzeug, ein Sicherheitsscanner oder eine Sicherung, liest auch dieses und löst den Alert aus. Suchen Sie diese zuerst und nehmen Sie ihre Identitäten mit einem `anything-but`-Filter auf `userIdentity.arn` aus dem Muster in Schritt 3 heraus.
 
-## Was dazu nötig ist
+### Was dazu nötig ist
 
 1. **Ein Trail, der Management-Ereignisse aufzeichnet**, auch lesende. CloudTrail schickt Ereignisse nur an EventBridge, solange ein Trail aufzeichnet, und das Lesen eines Secrets ist ein lesendes Ereignis. Prüfen Sie ihn wie in Schritt 1.
 2. **Eine Regel in der Region des Secrets.** Ein Secret gehört zu einer Region, und CloudTrail zeichnet einen Aufruf in der Region des Secrets auf. Eine Regel in dieser Region genügt.
-3. **Die URL des Honeytokens**, `Honeytoken-URL`. Sie steht im API-Ziel in Ihrem Konto. Behandeln Sie sie als Geheimnis: Wer sie kennt, kann gefälschte Events senden, und wer EventBridge-Ressourcen lesen darf, kann sie finden.
+3. **Die URL des URL-Honeytokens „Webhook der EventBridge-Regel“**, `Honeytoken-URL`. Sie steht im API-Ziel in Ihrem Konto. Behandeln Sie sie als Geheimnis: Wer sie kennt, kann gefälschte Ereignisse senden, und wer EventBridge-Ressourcen lesen darf, kann sie finden.
 
-## Schritt 1: Trail prüfen
+### Schritt 1: Trail prüfen
 
 ```bash
 aws cloudtrail describe-trails --query 'trailList[].[Name,IsMultiRegionTrail,HasCustomEventSelectors]' --output table
@@ -26,7 +28,7 @@ aws cloudtrail get-trail-status --name TRAIL_NAME --query IsLogging
 
 Sie brauchen einen Trail mit `IsLogging` wahr, der die Region des Secrets umfasst. Ist `HasCustomEventSelectors` wahr, sehen Sie sie mit `aws cloudtrail get-event-selectors --trail-name TRAIL_NAME` an: `IncludeManagementEvents` muss wahr und `ReadWriteType` muss `All` sein. Einen Trail mit erweiterten Ereignisauswahlen zeigt die Konsole. Haben Sie keinen Trail, legen Sie in der CloudTrail-Konsole einen an (Trails, Create trail) und lassen Sie Management-Ereignisse eingeschaltet, lesend und schreibend. Die Konsole legt auch den Bucket für die Logdateien an. CloudTrail liefert die erste Kopie der Management-Ereignisse ohne Gebühr, der Speicher in S3 kostet aber.
 
-## Schritt 2: Secret anlegen
+### Schritt 2: Secret anlegen
 
 Das Passwort kommt von AWS und läuft durch eine Shell-Variable, damit es nicht ausgegeben wird. In der Befehlszeile von `create-secret` steht es für einen Moment, wo andere Benutzer desselben Rechners es sehen können. Das ist für einen Wert vertretbar, der nichts öffnet:
 
@@ -39,7 +41,7 @@ unset SECRET_JSON
 
 Wählen Sie für das Secret einen Namen, der dazu passt, wie Ihre Teams Secrets benennen, und stellen Sie sicher, dass kein anderes Secret einen Namen hat, der damit beginnt: Die Regel unten erfasst über diesen Namen.
 
-## Schritt 3: Verbindung, API-Ziel, Rolle und Regel
+### Schritt 3: Verbindung, API-Ziel, Rolle und Regel
 
 ```bash
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
@@ -48,7 +50,7 @@ CONN_ARN=$(aws events create-connection --region "$REGION" --name audit-notify-s
 DEST_ARN=$(aws events create-api-destination --region "$REGION" --name audit-notify-secret-dest --connection-arn "$CONN_ARN" --invocation-endpoint 'Honeytoken-URL' --http-method POST --invocation-rate-limit-per-second 5 --query ApiDestinationArn --output text)
 ```
 
-EventBridge verlangt eine Verbindung mit einer Autorisierung, die der Honeytoken ignoriert, und legt den Schlüssel in einem Secret von Secrets Manager ab, das es selbst verwaltet. Die Grenze von fünf Anfragen pro Sekunde verhindert, dass ein Schwall von Aufrufen zu einem Schwall von Anfragen wird; was EventBridge nicht zustellen konnte, versucht es erneut.
+EventBridge verlangt eine Verbindung mit einer Autorisierung, die das Honeytoken ignoriert, und legt den Schlüssel in einem Secret von Secrets Manager ab, das es selbst verwaltet. Die Grenze von fünf Anfragen pro Sekunde verhindert, dass ein Schwall von Aufrufen zu einem Schwall von Anfragen wird; was EventBridge nicht zustellen konnte, versucht es erneut.
 
 Die Rolle darf nichts außer diesem Ziel aufrufen:
 
@@ -66,7 +68,7 @@ EOF
 aws events put-rule --region "$REGION" --name audit-notify-secret-rule --state ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS --event-pattern file://pattern.json
 ```
 
-Das Ziel sendet nur, was Sie brauchen, damit der Request-Body weit unter den 4096 Byte bleibt, die der Honeytoken aufbewahrt. Ein vollständiger CloudTrail-Eintrag passt nicht hinein.
+Das Ziel sendet nur, was Sie brauchen, damit der Request-Body weit unter den 4096 Byte bleibt, die das Honeytoken aufbewahrt. Ein vollständiger CloudTrail-Eintrag passt nicht hinein.
 
 ```bash
 cat > targets.json <<EOF
@@ -78,7 +80,7 @@ rm pattern.json targets.json
 
 `put-targets` meldet `FailedEntryCount`, der 0 sein muss. Heißt es, die Rolle könne nicht übernommen werden, warten Sie nach dem Anlegen der Rolle einige Sekunden und wiederholen Sie den Befehl.
 
-## Den Köder platzieren
+### Den Köder platzieren
 
 Das Secret findet man, indem man die Secrets des Kontos auflistet, es braucht also keine Datei. Damit es früher gefunden wird, nennen Sie seinen Namen dort, wo es die Menschen der Geschichte täten: in der Readme eines Repositorys, in einer Deployment-Konfiguration (`prod-orders-db-credentials` als Name des zu ladenden Secrets) oder in einem Ticket. Vermerken Sie im Szenario, wo Sie das getan haben.
 
@@ -90,7 +92,7 @@ Lesen Sie das Secret mit Ihrer eigenen Identität:
 aws secretsmanager get-secret-value --region "$REGION" --secret-id prod-orders-db-credentials --query Name --output text
 ```
 
-CloudTrail liefert ein Ereignis im Durchschnitt etwa fünf Minuten nach dem Aufruf, garantiert ist das von AWS nicht. Dann zeigt das Szenario einen Incident, und das Event enthält einen Body wie diesen:
+CloudTrail liefert ein Ereignis im Durchschnitt etwa fünf Minuten nach dem Aufruf, garantiert ist das von AWS nicht. Dann zeigt das Szenario einen Incident, und das Ereignis enthält einen Body wie diesen:
 
 ```json
 {"eventName":"GetSecretValue","sourceIPAddress":"203.0.113.10","userAgent":"aws-cli/2.x ...","userArn":"arn:aws:sts::123456789012:assumed-role/NAME/SESSION","userType":"AssumedRole","accountId":"123456789012","region":"eu-central-1","time":"2026-01-01T10:00:00Z"}
@@ -114,9 +116,9 @@ aws secretsmanager delete-secret --region "$REGION" --secret-id prod-orders-db-c
 
 - **Ohne aufzeichnenden Trail kommt nichts an.** Hält jemand den Trail an oder engt seine Auswahl ein, endet der Alert ohne Anzeichen.
 - **Eine Region.** Gemeldet werden nur Aufrufe an die Region des Secrets, also dorthin, wo das Secret liegt.
-- **Was erfasst wird.** Lesen und Beschreiben über Namen oder ARN. `BatchGetSecretValue` nennt die Secrets in einer Liste, die das Muster nicht ansieht; ein Eindringling, der Secrets im Stapel liest, wird also nicht gemeldet. Das Auflisten der Secrets löst nichts aus.
+- **Was erfasst wird.** Lesen und Beschreiben über Namen oder ARN. `BatchGetSecretValue` nennt die Secrets in einer Liste, die das Muster nicht ansieht; ein Angreifer, der Secrets im Stapel liest, wird also nicht gemeldet. Das Auflisten der Secrets löst nichts aus.
 - **Verzögerung.** Minuten, nicht Sekunden.
-- **Wiederholungen.** EventBridge sendet eine Anfrage erneut, wenn es nicht rechtzeitig Erfolg sieht, derselbe Aufruf kann also zweimal gemeldet werden. Der Honeytoken beantwortet jede Anfrage gleich.
-- **Der Alert nennt den Honeytoken, nicht den Aufrufer.** Die Adresse des Events ist die des AWS-Dienstes, der den Webhook sendet. Aufrufer, Adresse und User-Agent stehen nur im Anfang des Body, den die Console als Text eines Angreifers zeigt und der in keinem Alert steht.
+- **Wiederholungen.** EventBridge sendet eine Anfrage erneut, wenn es nicht rechtzeitig Erfolg sieht, derselbe Aufruf kann also zweimal gemeldet werden. Das Honeytoken beantwortet jede Anfrage gleich.
+- **Der Alert nennt das Honeytoken, nicht den Aufrufer.** Die Adresse des Ereignisses ist die des AWS-Dienstes, der den Webhook sendet. Aufrufer, Adresse und User-Agent stehen nur im Anfang des Body, den die Console als Text eines Angreifers zeigt und der in keinem Alert steht.
 - **Ihre eigenen Werkzeuge.** Alles von Ihnen, das das Secret liest, auch Sie selbst, löst den Alert aus.
-- **Sichtbar für jeden, der nachsieht.** Ein Eindringling mit Leserechten in EventBridge sieht das Ziel samt URL.
+- **Sichtbar für jeden, der nachsieht.** Ein Angreifer mit Leserechten in EventBridge sieht das Ziel samt URL.

@@ -1,23 +1,25 @@
-# Azure: secret in a key vault
+## Story
 
-A secret in a key vault of your subscription that holds a random value. An intruder who has taken over an identity that may read the vault lists the secrets, finds one with a name like `orders-db-password` and reads it. The vault writes the read to its audit log, an alert rule finds it there, and an action group forwards the alert to the URL of a honeytoken with a `POST`. The alert says that the secret was read. The address and the client of the caller are in the start of the request body that the honeytoken keeps, not in the alert: the address of the event itself is that of the Azure service that sends the webhook.
+A secret in a key vault of your subscription that holds a random value. An intruder who has taken over an identity that may read the vault lists the secrets, finds one with a name like `orders-db-password` and reads it. The vault writes the read to its audit log, an alert rule finds it there, and an action group forwards the alert to the URL of a honeytoken with a `POST`. The alert says that the secret was read.
+
+## Setup
 
 The commands are for a shell such as bash or zsh, with the Azure CLI, signed in to the subscription of the vault. They were checked against the documentation of the Azure CLI, Azure Monitor and Key Vault, not run against a subscription. The Azure CLI may offer to install an extension when a command needs one.
 
-## What the bait does in the subscription
+### What the bait does in the subscription
 
 - The secret holds a random value of about 30 characters that you generate and keep nowhere. It belongs to nothing: reading it opens nothing.
 - The vault is one that exists. The decoy stands among its real secrets, which is why an existing vault serves better than a new one that nobody uses. The commands change nothing about its access rules.
 - Everything that the vault logs goes to a Log Analytics workspace, not only this secret. That costs ingestion in proportion to the traffic of the vault, and the alert rule costs by how often it is evaluated; see the pricing pages of Azure Monitor. Choose a vault with little traffic, or one that already logs to a workspace.
 - Everything of yours that reads all the secrets of the vault, such as a backup or a scanner, also reads this one and raises the alert.
 
-## What it needs
+### What it needs
 
 1. **An account** that may set secrets in the vault (for example with the role Key Vault Secrets Officer), create resources in the resource group of the vault and create alert rules (for example with the role Monitoring Contributor), or that is owner of the resource group.
-2. **The URL of the honeytoken**, `Honeytoken-URL`. It stands in the action group in your subscription. Treat it as a secret: whoever knows it can send forged events, and whoever may read the action group can find it.
-3. **Names that Azure accepts.** The names of the secret and of the prefix may contain only letters, digits and hyphens, and the prefix must leave room for the longer names built from it (a workspace name has up to 63 characters). The console accepts more than that, and a command fails halfway if it does not fit.
+2. **The URL of the URL honeytoken "Webhook of the action group"**, `Honeytoken-URL`. It stands in the action group in your subscription. Treat it as a secret: whoever knows it can send forged events, and whoever may read the action group can find it.
+3. **Names that Azure accepts.** The name of the secret may contain only letters, digits and hyphens. A command fails halfway if a name does not fit, so keep the names that you change short (a workspace name has up to 63 characters).
 
-## Step 1: variables and the secret
+### Step 1: variables and the secret
 
 ```bash
 LOCATION=germanywestcentral
@@ -30,7 +32,7 @@ az keyvault secret set --vault-name "$VAULT" --name orders-db-password --value "
 
 The `--query` keeps the value out of the output. The value stands on the command line while the command runs, so that other users of the same computer can see it for a moment; for a value that opens nothing, that is acceptable. Choose a name for the secret that fits the way your teams name secrets.
 
-## Step 2: log the vault to a workspace
+### Step 2: log the vault to a workspace
 
 If the vault already sends its audit log (`AuditEvent`) to a Log Analytics workspace, `az monitor diagnostic-settings list --resource "$VAULT_ID"` shows it. Then use that workspace in the next steps: set `WS_ID` to its resource ID and `LOCATION` to its region with `LOCATION=$(az monitor log-analytics workspace show --ids "$WS_ID" --query location --output tsv)`, because the alert rule must be in the region of the workspace. Read the note on tables below. Otherwise create one:
 
@@ -42,7 +44,7 @@ az monitor diagnostic-settings create --name audit-notify-vault-diag --resource 
 
 The query in step 4 reads the table `AzureDiagnostics`, which is where the logs of a vault go by default. If the existing setting writes to the table `AZKVAuditLogs` instead (the dedicated destination), change the query and the dimensions as the table reference of Azure Monitor lists the columns: `AZKVAuditLogs` instead of `AzureDiagnostics` and no condition on `ResourceProvider`, `RequestUri` for `requestUri_s`, `CallerIpAddress` for `CallerIPAddress`, `ResultType` for `ResultSignature`, and no dimension `clientInfo_s`, whose content is in the column `Properties`.
 
-## Step 3: action group
+### Step 3: action group
 
 The action group sends the alert to the honeytoken. The common alert schema is the only format that the alert rule of step 4 supports.
 
@@ -51,7 +53,7 @@ az monitor action-group create --resource-group "$RG" --name audit-notify-vault-
 AG_ID=$(az monitor action-group show --resource-group "$RG" --name audit-notify-vault-ag --query id --output tsv)
 ```
 
-## Step 4: alert rule
+### Step 4: alert rule
 
 The rule looks every five minutes at the last ten for reads of this secret. It splits the alert by the address of the caller, the client and the result, so that these three values appear in the body of the request, in the list `dimensions`. The command `az monitor scheduled-query create` cannot split by dimensions, so the rule goes through the REST API of Azure Monitor with `az rest`. The query is not validated, because the columns of the table `AzureDiagnostics` exist only after the first log has arrived.
 
@@ -63,7 +65,7 @@ az rest --method put --url "https://management.azure.com/subscriptions/$SUB/reso
 rm rule.json
 ```
 
-## Placing the bait
+### Placing the bait
 
 The secret is found by listing the secrets of the vault, so it needs no file. To make it found sooner, mention its name where the people of the story would: in the readme of a repository, in a deployment configuration (`orders-db-password` as the name of the secret to load) or in a ticket. Record where you did it in the scenario.
 
@@ -81,7 +83,7 @@ The audit log reaches the workspace after some minutes, and the rule looks at it
 {"name":"CallerIPAddress","value":"203.0.113.10"},{"name":"clientInfo_s","value":"azsdk-python-keyvault-secrets/4.x ..."},{"name":"ResultSignature","value":"OK"}
 ```
 
-If the body ends before `dimensions`, it was cut at 4096 bytes: the names of the subscription, resource group and rule before it are too long. Use shorter names for the resource group of the forwarding resources and for the prefix, and repeat the test. Close the incident after the test.
+If the body ends before `dimensions`, it was cut at 4096 bytes: the names of the subscription, resource group and rule before it are too long. Use a shorter name for the resource group of the forwarding resources, shorten the names of the forwarding resources in the commands, and repeat the test. Close the incident after the test.
 
 ## Removing
 

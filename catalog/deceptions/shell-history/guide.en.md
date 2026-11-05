@@ -1,38 +1,32 @@
-# Shell history with commands for servers
+## Story
 
-Administrators and developers leave the commands they typed in the history of their shell, passwords and host names included. The files below tell this story for Linux and for Windows. The files do not share a honeytoken: the database and the server have names of their own. Nothing stands behind the names, and the accounts and passwords exist nowhere. You decide which file you place and where; one is enough.
+Place the history of a shell where an intruder looks for commands that administrators typed. Administrators and developers leave their commands in the history of their shell, passwords and host names included. The files tell this story for Linux and for Windows. Nothing stands behind the host names, and the accounts and passwords exist nowhere. One file is enough.
 
-## History of a Linux shell
+- `bash_history` is the history of a Linux shell. It holds the command that logs in to the database `billing` with the account `svc-ops` and a random password.
+- `ConsoleHost_history.txt` is the PSReadLine history of PowerShell. It holds the commands that ask for the credentials of the account `CORP\svc-ops` and open a remote session to a server. It holds no password, because PowerShell does not write command lines with a password, token or secret to its history.
 
-The file `bash_history` is the history of a Linux shell. It holds the command that logs in to the database `billing` on `Honeytoken-Domain-Database` with the account `svc-ops` and a random password. The host name belongs to a DNS honeytoken: whoever runs the command, or anything else that connects to the host, resolves it, which raises an event. No database stands behind it, and the account and password exist nowhere.
+Each host name belongs to a DNS honeytoken. Whoever runs a command, or anything else that connects to the host, looks up the name, which raises an event.
 
-### Placing the file
+## Setup
 
-1. Name the file `.bash_history` and place it in the home directory of an account on an application server that people log in to.
-2. If the account has a history already, append the lines to it instead of replacing it: a history that is new, and has nothing older than the lures, looks made.
-3. Record where you placed it in the notes of the scenario.
+Each placeholder in the files stands for one honeytoken:
 
-### Testing
+- `Honeytoken-Domain-Database`: "Database host", in `bash_history`
+- `Honeytoken-Domain-Server`: "Server", in `ConsoleHost_history.txt`
 
-Resolve the host with `nslookup Honeytoken-Domain-Database` on a computer with access to the internet. Within a minute, the scenario shows an incident. Close the incident after the test.
+1. Create the two DNS honeytokens.
+2. Replace each placeholder with the name of its honeytoken. Adapt the names of accounts and databases to your environment.
+3. For `bash_history`: name the file `.bash_history` and place it in the home directory of an account on an application server that people log in to.
+4. For `ConsoleHost_history.txt`: place it in the directory `%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine` of an account on a server or workstation of administrators.
+5. If the account has a history already, append the lines to it instead of replacing it. A history that is new and has nothing older than the lures looks made.
+6. Record in the notes of the scenario where you placed the files.
 
-## History of PowerShell
+## Testing
 
-The file `ConsoleHost_history.txt` is the PSReadLine history of PowerShell. It holds the commands that ask for the credentials of the account `CORP\svc-ops` and open a remote session to `Honeytoken-Domain-Server`. The host name belongs to a DNS honeytoken: whoever runs the commands, or anything else that connects to the server, resolves it, which raises an event. No server stands behind it, and the account exists nowhere. The file holds no password: PowerShell does not write command lines with passwords to its history.
-
-### Placing the file
-
-1. Place the file as `ConsoleHost_history.txt` in the directory `%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine` of an account on a server or workstation of administrators.
-2. If the account has a history already, append the lines to it instead of replacing it.
-3. Record where you placed it in the notes of the scenario.
-
-### Testing
-
-Resolve the host with `nslookup Honeytoken-Domain-Server` on a computer with access to the internet. Within a minute, the scenario shows an incident. Close the incident after the test.
+On a computer with access to the internet, run `nslookup` with the name of a honeytoken, such as `nslookup Honeytoken-Domain-Database`. The names are in the table "Honeytokens of this scenario". Within a minute, the scenario shows an incident. Close the incident after the test.
 
 ## Limits
 
 - Only a lookup that reaches the DNS role of Nyktus raises an event. A network without name resolution to the internet, or a resolver that answers from its cache, prevents it.
 - The host names are random labels under the zone of your DNS role. An intruder who reads the files carefully can find them unusual.
 - Reading the files raises no event; using the credentials or running the commands does.
-- `ConsoleHost_history.txt`: PSReadLine does not write command lines with a password, token or secret to the history, so a PowerShell history with a password would be unusual. The file therefore holds the account and the server but no password.

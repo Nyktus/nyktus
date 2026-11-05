@@ -1,24 +1,26 @@
-# AWS: secure parameter in Parameter Store
+## Story
 
-A parameter of the type `SecureString` in AWS Systems Manager Parameter Store that holds a random value. An intruder who has taken over an identity of your account looks for parameters with a name like `prod-orders-api-key` and reads it with decryption. CloudTrail records the read, and an EventBridge rule forwards the record to the URL of a honeytoken with a `POST`. The alert says that the parameter was read. The identity and the address of the caller are in the start of the request body that the honeytoken keeps, not in the alert: the address of the event itself is that of the AWS service that sends the webhook.
+A parameter of the type `SecureString` in AWS Systems Manager Parameter Store that holds a random value. An intruder who has taken over an identity of your account looks for parameters with a name like `prod-orders-api-key` and reads it with decryption. CloudTrail records the read, and an EventBridge rule forwards the record to the URL of a honeytoken with a `POST`. The alert says that the parameter was read.
+
+## Setup
 
 The commands are for a shell such as bash or zsh, with the AWS CLI version 2 and an identity that may create parameters, IAM roles and EventBridge rules. They were checked against the documentation of the AWS CLI, EventBridge, CloudTrail and Systems Manager, not run against an account.
 
-## What the bait does in the account
+### What the bait does in the account
 
 - The parameter holds a random value of 24 characters from AWS. It belongs to nothing: reading it opens nothing. It uses the standard tier, for which Systems Manager makes no additional charge, and the default key for `SecureString`.
 - No other resource changes, and no policy is attached to the parameter.
 - The value stands on the command line while you create the parameter, so that it is visible to other users of the same computer for a moment. That is acceptable for a value that opens nothing.
 - Everything in your account that reads all parameters, such as an inventory tool or a scanner, also reads this one and raises the alert. Find those first, and exclude their identities from the pattern in step 3 with an `anything-but` filter on `userIdentity.arn`.
 
-## What it needs
+### What it needs
 
 1. **A trail that logs management events**, including read events. CloudTrail sends events to EventBridge only while a trail is logging, and reading a parameter is a read event. Check it as in step 1.
 2. **A rule in the region of the parameter.** A parameter belongs to a region, and CloudTrail records a call in that region.
-3. **The URL of the honeytoken**, `Honeytoken-URL`. It stands in the API destination in your account. Treat it as a secret: whoever knows it can send forged events, and whoever may read EventBridge resources can find it.
+3. **The URL of the URL honeytoken "Webhook of the EventBridge rule"**, `Honeytoken-URL`. It stands in the API destination in your account. Treat it as a secret: whoever knows it can send forged events, and whoever may read EventBridge resources can find it.
 4. **A name without slashes.** The name of the parameter may contain letters, digits, dots, hyphens and underscores, and must not begin with `aws` or `ssm`. A flat name is valid in Parameter Store.
 
-## Step 1: check the trail
+### Step 1: check the trail
 
 ```bash
 aws cloudtrail describe-trails --query 'trailList[].[Name,IsMultiRegionTrail,HasCustomEventSelectors]' --output table
@@ -27,7 +29,7 @@ aws cloudtrail get-trail-status --name TRAIL_NAME --query IsLogging
 
 You need a trail with `IsLogging` true that covers the region of the parameter. If `HasCustomEventSelectors` is true, look at them with `aws cloudtrail get-event-selectors --trail-name TRAIL_NAME`: `IncludeManagementEvents` must be true and `ReadWriteType` must be `All`. A trail with advanced event selectors is shown in the console. If you have no trail, create one in the CloudTrail console (Trails, Create trail) and keep management events on, read and write. The console also creates the bucket for the log files. CloudTrail delivers the first copy of the management events at no charge, but the storage in S3 costs.
 
-## Step 2: create the parameter
+### Step 2: create the parameter
 
 ```bash
 REGION=eu-central-1
@@ -36,7 +38,7 @@ aws ssm put-parameter --region "$REGION" --name prod-orders-api-key --type Secur
 
 Choose a name that fits the way your teams name parameters.
 
-## Step 3: connection, API destination, role and rule
+### Step 3: connection, API destination, role and rule
 
 ```bash
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
@@ -75,7 +77,7 @@ rm pattern.json targets.json
 
 `put-targets` reports `FailedEntryCount`, which must be 0. If it says that the role cannot be assumed, wait a few seconds after creating the role and repeat the command.
 
-## Placing the bait
+### Placing the bait
 
 The parameter is found by listing the parameters of the account, so it needs no file. To make it found sooner, mention its name where the people of the story would: in the readme of a repository, in a deployment configuration (`prod-orders-api-key` as the name of the parameter to load) or in a ticket. Record where you did it in the scenario.
 

@@ -1,23 +1,25 @@
-# AWS: secret in Secrets Manager
+## Story
 
-A secret in AWS Secrets Manager that holds a user name and a password for a database that does not exist. An intruder who has taken over an identity of your account lists the secrets, finds one with a name like `prod-orders-db-credentials` and reads it. CloudTrail records the read, and an EventBridge rule forwards the record to the URL of a honeytoken with a `POST`. The alert says that the secret was read or described. The identity and the address of the caller are in the start of the request body that the honeytoken keeps, not in the alert: the address of the event itself is that of the AWS service that sends the webhook.
+A secret in AWS Secrets Manager that holds a user name and a password for a database that does not exist. An intruder who has taken over an identity of your account lists the secrets, finds one with a name like `prod-orders-db-credentials` and reads it. CloudTrail records the read, and an EventBridge rule forwards the record to the URL of a honeytoken with a `POST`. The alert says that the secret was read or described.
+
+## Setup
 
 The commands are for a shell such as bash or zsh, with the AWS CLI version 2 and an identity that may create secrets, IAM roles and EventBridge rules. They were checked against the documentation of the AWS CLI, EventBridge and CloudTrail, not run against an account.
 
-## What the bait does in the account
+### What the bait does in the account
 
 - The secret holds the user name `orders_app` and a random password of 24 characters from AWS. Both are invented: no account of that name exists anywhere, and nobody keeps the password. Reading the secret opens nothing.
 - No other resource is changed, and no policy is attached to the secret. The secret uses the default key of Secrets Manager.
 - Secrets Manager charges a monthly fee for each secret and for its use; see the pricing page. Nothing else here costs more than a few requests.
 - Everything in your account that reads all secrets, such as an inventory tool, a security scanner or a backup, also reads this one and raises the alert. Find those first, and exclude their identities from the pattern in step 3 with an `anything-but` filter on `userIdentity.arn`.
 
-## What it needs
+### What it needs
 
 1. **A trail that logs management events**, including read events. CloudTrail sends events to EventBridge only while a trail is logging, and reading a secret is a read event. Check it as in step 1.
 2. **A rule in the region of the secret.** A secret belongs to a region, and CloudTrail records a call in the region of the secret. One rule in that region is enough.
-3. **The URL of the honeytoken**, `Honeytoken-URL`. It stands in the API destination in your account. Treat it as a secret: whoever knows it can send forged events, and whoever may read EventBridge resources can find it.
+3. **The URL of the URL honeytoken "Webhook of the EventBridge rule"**, `Honeytoken-URL`. It stands in the API destination in your account. Treat it as a secret: whoever knows it can send forged events, and whoever may read EventBridge resources can find it.
 
-## Step 1: check the trail
+### Step 1: check the trail
 
 ```bash
 aws cloudtrail describe-trails --query 'trailList[].[Name,IsMultiRegionTrail,HasCustomEventSelectors]' --output table
@@ -26,7 +28,7 @@ aws cloudtrail get-trail-status --name TRAIL_NAME --query IsLogging
 
 You need a trail with `IsLogging` true that covers the region of the secret. If `HasCustomEventSelectors` is true, look at them with `aws cloudtrail get-event-selectors --trail-name TRAIL_NAME`: `IncludeManagementEvents` must be true and `ReadWriteType` must be `All`. A trail with advanced event selectors is shown in the console. If you have no trail, create one in the CloudTrail console (Trails, Create trail) and keep management events on, read and write. The console also creates the bucket for the log files. CloudTrail delivers the first copy of the management events at no charge, but the storage in S3 costs.
 
-## Step 2: create the secret
+### Step 2: create the secret
 
 The password comes from AWS and passes through a shell variable, so that it is not printed. It stands on the command line of `create-secret` for a moment, where other users of the same computer can see it. That is acceptable for a value that opens nothing:
 
@@ -39,7 +41,7 @@ unset SECRET_JSON
 
 Choose a name for the secret that fits the way your teams name secrets, and make sure that no other secret has a name that begins with it: the rule below matches by that name.
 
-## Step 3: connection, API destination, role and rule
+### Step 3: connection, API destination, role and rule
 
 ```bash
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
@@ -78,7 +80,7 @@ rm pattern.json targets.json
 
 `put-targets` reports `FailedEntryCount`, which must be 0. If it says that the role cannot be assumed, wait a few seconds after creating the role and repeat the command.
 
-## Placing the bait
+### Placing the bait
 
 The secret is found by listing the secrets of the account, so it needs no file. To make it found sooner, mention its name where the people of the story would: in the readme of a repository, in a deployment configuration (`prod-orders-db-credentials` as the name of the secret to load) or in a ticket. Record where you did it in the scenario.
 

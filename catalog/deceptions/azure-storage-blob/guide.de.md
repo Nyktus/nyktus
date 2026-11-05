@@ -1,23 +1,25 @@
-# Azure: Blob-Container mit einer Sicherungsdatei
+## Geschichte
 
-Ein privater Container in einem Speicherkonto Ihres Abonnements, mit einer Datei aus Zufallsbytes, die wie eine Sicherung aussieht. Ein Eindringling, der eine Identität oder einen Schlüssel des Speicherkontos übernommen hat, listet die Container auf, findet einen mit einem Namen wie `db-backups` und listet oder lädt die Datei. Der Blob-Dienst schreibt den Zugriff in sein Log, eine Alertregel findet ihn dort, und eine Aktionsgruppe leitet den Alert per `POST` an die URL eines Honeytokens weiter. Der Alert sagt, dass der Container aufgelistet oder gelesen wurde. Adresse und Client des Aufrufers stehen im Anfang des Request-Body, den der Honeytoken aufbewahrt, nicht im Alert: Die Adresse des Events selbst ist die des Azure-Dienstes, der den Webhook sendet.
+Ein privater Container in einem Speicherkonto Ihres Abonnements, mit einer Datei aus Zufallsbytes, die wie eine Sicherung aussieht. Ein Angreifer, der eine Identität oder einen Schlüssel des Speicherkontos übernommen hat, listet die Container auf, findet einen mit einem Namen wie `db-backups` und listet oder lädt die Datei. Der Blob-Dienst schreibt den Zugriff in sein Log, eine Alertregel findet ihn dort, und eine Aktionsgruppe leitet den Alert per `POST` an die URL eines Honeytokens weiter. Der Alert sagt, dass der Container aufgelistet oder gelesen wurde.
+
+## Umsetzung
 
 Die Befehle sind für eine Shell wie bash oder zsh gedacht, mit der Azure CLI, angemeldet im Abonnement des Speicherkontos. Sie wurden an der Dokumentation der Azure CLI, von Azure Monitor und von Azure Storage geprüft, nicht an einem Abonnement ausgeführt. Die Azure CLI bietet gegebenenfalls an, eine Erweiterung zu installieren, wenn ein Befehl sie braucht.
 
-## Was der Köder im Abonnement bewirkt
+### Was der Köder im Abonnement bewirkt
 
 - Die Datei enthält Zufallsbytes, die kein Programm lesen kann. Sie gehört zu nichts: Sie zu öffnen öffnet nichts, und sie enthält keine Daten von Ihnen. Der Container ist privat (`--public-access off`), erreichen können ihn also nur Inhaber eines Schlüssels, eines SAS-Tokens oder einer Rolle am Konto.
 - Das Speicherkonto ist eines, das existiert. Der Köder steht unter seinen echten Containern, deshalb taugt ein vorhandenes Konto besser als ein neues, das niemand benutzt. Die Befehle ändern nichts an seinen Zugriffsregeln.
 - Der Blob-Dienst protokolliert jedes Lesen **jedes** Containers des Kontos in einen Log-Analytics-Workspace, nicht nur dieses. Das kostet Aufnahme im Verhältnis zum Datenverkehr des Kontos, und die Alertregel kostet je nachdem, wie oft sie ausgewertet wird; siehe die Preisseiten von Azure Monitor. Wählen Sie ein Konto mit wenig Lesezugriffen oder eines, das schon in einen Workspace protokolliert.
 - Alles von Ihnen, das alle Container auflistet oder liest, etwa eine Sicherung oder ein Scanner, liest auch diesen und löst den Alert aus.
 
-## Was dazu nötig ist
+### Was dazu nötig ist
 
 1. **Ein Konto**, das Blobs in das Speicherkonto schreiben darf (zum Beispiel mit der Rolle Storage Blob Data Contributor), Ressourcen in dessen Ressourcengruppe anlegen und Alertregeln erstellen darf (zum Beispiel mit der Rolle Monitoring Contributor), oder das Besitzer der Ressourcengruppe ist.
-2. **Die URL des Honeytokens**, `Honeytoken-URL`. Sie steht in der Aktionsgruppe in Ihrem Abonnement. Behandeln Sie sie als Geheimnis: Wer sie kennt, kann gefälschte Events senden, und wer die Aktionsgruppe lesen darf, kann sie finden.
-3. **Namen, die Azure akzeptiert.** Ein Containername hat 3 bis 63 Kleinbuchstaben, Ziffern und Bindestriche, und das Präfix der Weiterleitungsressourcen darf nur Buchstaben, Ziffern und Bindestriche enthalten und muss Platz für die längeren Namen lassen, die daraus gebildet werden (ein Workspace-Name hat höchstens 63 Zeichen). Die Console akzeptiert mehr, und ein Befehl scheitert mittendrin, wenn es nicht passt.
+2. **Die URL des URL-Honeytokens „Webhook der Aktionsgruppe“**, `Honeytoken-URL`. Sie steht in der Aktionsgruppe in Ihrem Abonnement. Behandeln Sie sie als Geheimnis: Wer sie kennt, kann gefälschte Ereignisse senden, und wer die Aktionsgruppe lesen darf, kann sie finden.
+3. **Namen, die Azure akzeptiert.** Ein Containername hat 3 bis 63 Kleinbuchstaben, Ziffern und Bindestriche. Ein Befehl scheitert mittendrin, wenn ein Name nicht passt; halten Sie Namen, die Sie ändern, daher kurz (ein Workspace-Name hat höchstens 63 Zeichen).
 
-## Schritt 1: Variablen, Container und Datei
+### Schritt 1: Variablen, Container und Datei
 
 ```bash
 LOCATION=germanywestcentral
@@ -33,7 +35,7 @@ rm orders-2026-03.bak
 
 Tun Sie das vor der Protokollierung in Schritt 2, damit Ihr eigener Upload nicht im Log steht. Wählen Sie Namen, die zu Ihrem Speicher passen: Container und Datei einer Sicherung, eines Exports oder eines Archivs.
 
-## Schritt 2: den Blob-Dienst in einen Workspace protokollieren
+### Schritt 2: den Blob-Dienst in einen Workspace protokollieren
 
 Sendet der Blob-Dienst sein Lese-Log (`StorageRead`) schon an einen Log-Analytics-Workspace, zeigt es `az monitor diagnostic-settings list --resource "$STORAGE_ID/blobServices/default"`. Nehmen Sie dann diesen Workspace für die nächsten Schritte: Setzen Sie `WS_ID` auf seine Ressourcen-ID und `LOCATION` auf seine Region mit `LOCATION=$(az monitor log-analytics workspace show --ids "$WS_ID" --query location --output tsv)`, weil die Alertregel in der Region des Workspaces liegen muss. Sonst legen Sie einen an:
 
@@ -45,16 +47,16 @@ az monitor diagnostic-settings create --name audit-notify-blob-diag --resource "
 
 Die Logs landen in der Tabelle `StorageBlobLogs`.
 
-## Schritt 3: Aktionsgruppe
+### Schritt 3: Aktionsgruppe
 
-Die Aktionsgruppe sendet den Alert an den Honeytoken. Das Common Alert Schema ist das einzige Format, das die Alertregel aus Schritt 4 unterstützt.
+Die Aktionsgruppe sendet den Alert an das Honeytoken. Das Common Alert Schema ist das einzige Format, das die Alertregel aus Schritt 4 unterstützt.
 
 ```bash
 az monitor action-group create --resource-group "$RG" --name audit-notify-blob-ag --short-name notify --action webhook notify 'Honeytoken-URL' usecommonalertschema
 AG_ID=$(az monitor action-group show --resource-group "$RG" --name audit-notify-blob-ag --query id --output tsv)
 ```
 
-## Schritt 4: Alertregel
+### Schritt 4: Alertregel
 
 Die Regel sucht alle fünf Minuten in den letzten zehn nach Auflisten oder Lesen in diesem Container. Sie teilt den Alert nach Adresse des Aufrufers, Client, Art der Authentifizierung und Ergebnis auf, damit diese vier Werte in der Liste `dimensions` im Body der Anfrage stehen. Der Befehl `az monitor scheduled-query create` kann nicht nach Dimensionen aufteilen, die Regel geht deshalb mit `az rest` über die REST-API von Azure Monitor. Die Abfrage wird nicht geprüft, weil die Spalten der Tabelle erst existieren, wenn das erste Log angekommen ist. Die Adresse in `CallerIpAddress` enthält den Port.
 
@@ -66,7 +68,7 @@ az rest --method put --url "https://management.azure.com/subscriptions/$SUB/reso
 rm rule.json
 ```
 
-## Den Köder platzieren
+### Den Köder platzieren
 
 Den Container findet man, indem man die Container des Kontos auflistet, er braucht also keine Datei. Damit er früher gefunden wird, nennen Sie seinen Namen dort, wo es die Menschen der Geschichte täten: in der Readme eines Repositorys, in einem Sicherungsskript (`db-backups` als Ziel) oder in einem Ticket. Vermerken Sie im Szenario, wo Sie das getan haben.
 
@@ -78,13 +80,13 @@ Listen Sie den Container mit Ihrem eigenen Konto auf:
 az storage blob list --account-name "$ACCOUNT" --container-name db-backups --auth-mode login --query "[].name" --output tsv
 ```
 
-Das Blob-Log erreicht den Workspace nach einigen Minuten, und die Regel sieht alle fünf Minuten nach. Azure Monitor garantiert keine Verzögerung, rechnen Sie also mit einer Viertelstunde, beim ersten Mal vielleicht mit mehr. Dann zeigt das Szenario einen Incident. Sehen Sie sich den Body seines Events an: Nach den Feldern des Alerts enthält er die Liste `dimensions` mit Adresse, Client, Authentifizierung und Ergebnis:
+Das Blob-Log erreicht den Workspace nach einigen Minuten, und die Regel sieht alle fünf Minuten nach. Azure Monitor garantiert keine Verzögerung, rechnen Sie also mit einer Viertelstunde, beim ersten Mal vielleicht mit mehr. Dann zeigt das Szenario einen Incident. Sehen Sie sich den Body seines Ereignisse an: Nach den Feldern des Alerts enthält er die Liste `dimensions` mit Adresse, Client, Authentifizierung und Ergebnis:
 
 ```json
 {"name":"CallerIpAddress","value":"203.0.113.10:51234"},{"name":"UserAgentHeader","value":"AzURLCopy/..."},{"name":"AuthenticationType","value":"OAuth"},{"name":"StatusText","value":"Success"}
 ```
 
-Endet der Body vor `dimensions`, wurde er bei 4096 Byte abgeschnitten: Die Namen von Abonnement, Ressourcengruppe und Regel davor sind zu lang. Nehmen Sie kürzere Namen für die Ressourcengruppe der Weiterleitungsressourcen und für das Präfix und wiederholen Sie den Test. Schließen Sie den Incident nach dem Test.
+Endet der Body vor `dimensions`, wurde er bei 4096 Byte abgeschnitten: Die Namen von Abonnement, Ressourcengruppe und Regel davor sind zu lang. Nehmen Sie einen kürzeren Namen für die Ressourcengruppe der Weiterleitungsressourcen, kürzen Sie die Namen der Weiterleitungsressourcen in den Befehlen und wiederholen Sie den Test. Schließen Sie den Incident nach dem Test.
 
 ## Entfernen
 
@@ -102,9 +104,9 @@ Lassen Sie den dritten und vierten Befehl aus, wenn Sie einen Workspace benutzt 
 
 - **Nur Zugriffe, die der Blob-Dienst protokolliert.** Ein Speicherkonto, dessen Blob-Log nicht an den Workspace geht oder dessen Einstellung jemand entfernt, meldet nichts, und der Alert endet ohne Anzeichen.
 - **Verzögerung.** Minuten. Das Log braucht Zeit, bis es ankommt, und die Regel läuft alle fünf Minuten über ein Fenster von zehn.
-- **Wiederholung.** Azure Monitor behandelt einen Alert als einen, bis seine Bedingung weggefallen ist. Ein zweiter Zugriff von derselben Adresse, mit demselben Client und Ergebnis in kurzer Zeit wird womöglich nicht noch einmal gemeldet, und einer, der in zwei Fenster fällt, womöglich zweimal. Der Honeytoken beantwortet jede Anfrage gleich.
-- **Der Alert nennt den Honeytoken, nicht den Aufrufer.** Die Adresse des Events ist die des Azure-Dienstes, der den Webhook sendet. Aufrufer, Adresse und Client stehen nur im Anfang des Body, den die Console als Text eines Angreifers zeigt und der in keinem Alert steht.
+- **Wiederholung.** Azure Monitor behandelt einen Alert als einen, bis seine Bedingung weggefallen ist. Ein zweiter Zugriff von derselben Adresse, mit demselben Client und Ergebnis in kurzer Zeit wird womöglich nicht noch einmal gemeldet, und einer, der in zwei Fenster fällt, womöglich zweimal. Das Honeytoken beantwortet jede Anfrage gleich.
+- **Der Alert nennt das Honeytoken, nicht den Aufrufer.** Die Adresse des Ereignisses ist die des Azure-Dienstes, der den Webhook sendet. Aufrufer, Adresse und Client stehen nur im Anfang des Body, den die Console als Text eines Angreifers zeigt und der in keinem Alert steht.
 - **Die Identität steht nicht im Body.** Die Liste enthält Adresse, Client, Authentifizierung und Ergebnis. Wer sich angemeldet hat, steht zum Zeitpunkt des Alerts im Blob-Log in Ihrem Workspace, in den Spalten `RequesterObjectId` und `RequesterUpn`.
 - **Was erfasst wird.** Lesen, Lesen der Eigenschaften und Auflisten der Blobs dieses Containers. Das Auflisten der Container des Kontos nennt keinen Container und löst nichts aus.
 - **Ihre eigenen Werkzeuge.** Alles von Ihnen, das den Container liest, auch Sie selbst, löst den Alert aus.
-- **Sichtbar für jeden, der nachsieht.** Ein Eindringling mit Leserechten an der Aktionsgruppe sieht die URL.
+- **Sichtbar für jeden, der nachsieht.** Ein Angreifer mit Leserechten an der Aktionsgruppe sieht die URL.

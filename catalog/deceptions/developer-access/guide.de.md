@@ -1,56 +1,35 @@
-# Zugänge, die Entwickler zurücklassen
+## Geschichte
 
-Entwickler lassen Zugänge zu internen Diensten in ihren Werkzeugen zurück: eine Notiz mit einem API-Aufruf, die Zugangsdaten des Git-Servers und die Konfiguration der Paketmanager. Die folgenden Dateien erzählen diese Geschichte an verschiedenen Orten. Die Dateien teilen sich die Honeytokens der Geschichte, derselbe Host-Name steht also in jeder Datei, die denselben Dienst nennt. Hinter den Namen steht nichts: Konten, Token und Passwörter gibt es nirgends. Sie entscheiden, welche Dateien Sie wo ablegen; eine genügt, und sie müssen nicht beieinander liegen.
+Legen Sie Zugänge, die Entwickler hinterlassen, dort ab, wo ein Angreifer sie sucht. Entwickler hinterlassen den Zugang zu internen Diensten in ihren Werkzeugen: eine Notiz mit einem API-Aufruf, die Zugangsdaten des Git-Servers und die Konfiguration der Paketmanager. Jeder Dienst hat einen Hostnamen, der zu einem DNS-Honeytoken gehört. Wer den Zugang verwendet, löst den Namen auf, und das löst ein Ereignis aus. Hinter den Namen steht nichts, die Aufrufe scheitern also, und Konten, Token und Passwörter gibt es nirgends. Eine Datei genügt, und die Dateien müssen nicht beieinander liegen. Die Datei `README.md` enthält keinen Honeytoken. Sie gibt der Geschichte eine glaubhafte Umgebung.
 
-## curl-Befehl mit API-Schlüssel
+## Umsetzung
 
-Die Datei `api-call.txt` ist eine Notiz mit einem `curl`-Befehl für den internen Dienst `Inventory service`: Er ruft `https://Honeytoken-Domain-Api/v1/users` mit einem zufälligen Bearer-Token auf. Der Host-Name gehört zu einem DNS-Honeytoken: Wer den Befehl ausführt, löst ihn auf, was ein Event auslöst. Dahinter steht kein Dienst, der Befehl scheitert also, und das Token gibt es nirgends.
+Jeder Platzhalter in den Dateien gehört zu einem Honeytoken:
 
-### Datei platzieren
+- `Honeytoken-Domain-Api`: „API-Host“, in `api-call.txt`
+- `Honeytoken-Domain-Git`: „Git-Server“, in `git-credentials` und `config`
+- `Honeytoken-Domain-Registry`: „Paket-Registry“, in `npmrc` und `pip.conf`
 
-1. Legen Sie die Datei dort ab, wo Administratoren Befehle für später liegen lassen: in den Notizen eines Kontos auf einem Server, in einem Ordner mit Skripten oder in einem Wiki-Export.
-2. Ändern Sie `Product` auf einen Dienst, den Ihre Organisation hat, damit die Notiz zu ihrer Umgebung passt.
-3. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
+1. Legen Sie die drei DNS-Honeytokens an.
+2. Ersetzen Sie jeden Platzhalter durch den Namen seines Honeytokens. Ersetzen Sie in `api-call.txt` den Dienst `Inventory service` durch einen Dienst, den Ihre Organisation hat, damit die Notiz zu ihrer Umgebung passt.
+3. Legen Sie die Dateien dort ab, wo ein Angreifer nach Zugängen von Entwicklern sucht, Datei für Datei.
+4. `api-call.txt`: dort, wo Administratoren Befehle für später hinterlassen, etwa in den Notizen eines Kontos auf einem Server, in einem Ordner mit Skripten oder in einem Wiki-Export.
+5. `git-credentials`: als `.git-credentials` im Home-Verzeichnis eines Kontos auf einem Arbeitsplatz oder Build-Server. Git liest sie nur, wenn `credential.helper` auf `store` steht.
+6. `config`: als `.git/config` in einem Verzeichnis mit der Kopie eines Repositorys, etwa einem Checkout auf einem Build-Server oder einer Sicherung davon.
+7. `npmrc`: als `.npmrc` im Home-Verzeichnis eines Kontos auf einem Arbeitsplatz oder Build-Server oder im Hauptverzeichnis eines Projekts.
+8. `pip.conf`: als `~/.config/pip/pip.conf` im Home-Verzeichnis eines Kontos.
+9. `README.md`: neben den anderen Dateien der Geschichte.
+10. Legen Sie `config`, `npmrc` und `pip.conf` nicht dort ab, wo jemand mit Git, npm oder pip arbeitet oder wo ein Build sie ausführt. Jedes `git fetch`, `npm install` oder `pip install` würde den Namen auflösen und ein Ereignis auslösen.
+11. Notieren Sie im Szenario, wo die Dateien liegen.
 
-### Testen
+## Testen
 
-Führen Sie den Befehl auf einem Rechner mit Zugang zum Internet aus. Er scheitert nach der Abfrage. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+Führen Sie auf einem Rechner mit Internetzugang `nslookup` mit dem Namen eines Honeytokens aus, zum Beispiel `nslookup Honeytoken-Domain-Registry`. Die Namen stehen in der Tabelle „Honeytokens dieses Szenarios“. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
-## Git-Zugangsdaten und Repository
-
-Die Datei `git-credentials` enthält das Konto `ci-pull` und ein zufälliges Token für den Git-Server `Honeytoken-Domain-Git`, in der Form, die der Credential-Helper `store` schreibt. Die Datei `config` ist die Konfiguration eines Repositorys mit dem Remote `https://Honeytoken-Domain-Git/platform-prod.git`. Der Host-Name gehört zu einem DNS-Honeytoken: Wer dort klont, abruft oder hochlädt, löst ihn auf, was ein Event auslöst. Dahinter steht kein Git-Server, und das Token gibt es nirgends.
-
-### Datei platzieren
-
-1. Nennen Sie die erste Datei `.git-credentials` und legen Sie sie im Home-Verzeichnis eines Kontos auf einem Arbeitsplatz oder Build-Server ab. Git liest sie nur dort, wo `credential.helper` auf `store` steht.
-2. Legen Sie die zweite Datei als `.git/config` in einem Verzeichnis mit der Kopie eines Repositorys ab, etwa einem Checkout auf einem Build-Server oder einer Sicherung davon.
-3. Legen Sie keine von beiden dort ab, wo jemand mit Git arbeitet: Jedes `git fetch` würde den Namen auflösen und ein Event auslösen.
-4. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
-
-### Testen
-
-Führen Sie `git ls-remote https://Honeytoken-Domain-Git/platform-prod.git` auf einem Rechner mit Git und Zugang zum Internet aus. Der Befehl scheitert nach der Abfrage. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
-
-## Paket-Registries
-
-Die Datei `npmrc` verweist npm auf die Registry `Honeytoken-Domain-Registry` und enthält ein zufälliges Token. Die Datei `pip.conf` verweist pip auf denselben Host, mit dem Konto `ci-pull` und einem zufälligen Passwort. Der Host-Name gehört zu einem DNS-Honeytoken: Jede Verwendung von npm oder pip mit diesen Dateien löst ihn auf, was ein Event auslöst. Dahinter steht keine Registry, und Token und Passwort gibt es nirgends.
-
-### Datei platzieren
-
-1. Nennen Sie die erste Datei `.npmrc` und legen Sie sie im Home-Verzeichnis eines Kontos auf einem Arbeitsplatz oder Build-Server ab, oder im Wurzelverzeichnis eines Projekts.
-2. Legen Sie die zweite Datei als `~/.config/pip/pip.conf` im Home-Verzeichnis eines Kontos ab.
-3. Legen Sie keine von beiden dort ab, wo ein Build npm oder pip ausführt: Jeder Lauf würde den Namen auflösen und ein Event auslösen.
-4. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
-
-### Testen
-
-Lösen Sie den Host mit `nslookup Honeytoken-Domain-Registry` auf einem Rechner mit Zugang zum Internet auf, oder führen Sie `npm install` in einem Verzeichnis mit der Datei aus. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
-
-## Pocket Litter
-
-Die Datei `README.md` enthält keinen Honeytoken und löst kein Event aus, was auch mit ihr geschieht. Sie gibt der Geschichte eine glaubhafte Umgebung: Legen Sie sie am selben Ort ab wie die übrigen Dateien der Geschichte, neben den Dateien, die ein Event auslösen.
+Die Werkzeuge haben dieselbe Wirkung und scheitern nach der Abfrage: `git ls-remote https://Honeytoken-Domain-Git/platform-prod.git` mit Git oder `npm install` in einem Verzeichnis mit `.npmrc`.
 
 ## Grenzen
 
-- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.
-- Die Host-Namen sind zufällige Labels unter der Zone Ihrer DNS-Rolle. Ein Eindringling, der die Dateien genau liest, kann sie ungewöhnlich finden.
+- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Ereignis aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert das.
+- Die Hostnamen sind zufällige Labels unter der Zone Ihrer DNS-Rolle. Wer die Dateien genau liest, kann sie ungewöhnlich finden.
+- Das Lesen einer Datei löst kein Ereignis aus; die Verwendung des Zugangs tut es.

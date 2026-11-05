@@ -171,7 +171,7 @@ export function catalogSummary(overrides: Partial<CatalogDeceptionSummary> = {})
 export function catalogDeception(overrides: Partial<CatalogDeception> = {}): CatalogDeception {
   return {
     ...catalogSummary(),
-    guide: '# Bookmarks\n\nPlace the file where an intruder looks for links, with Honeytoken-URL as the link.\n',
+    guide: '## Story\n\nPlace the file where an intruder looks for links, with Honeytoken-URL as the link.\n',
     honeytokens: [{ type: 'web_url', label: 'Portal link', techniques: ['T1217'], severity: 'high' }],
     honeypots: [],
     files: [{ name: 'bookmarks.html', format: 'html', size: 2048 }],
