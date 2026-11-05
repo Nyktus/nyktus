@@ -40,6 +40,18 @@ describe('the choice of Engage activities', () => {
     }
   });
 
+  test('says that it is loading while the names are on the way', async () => {
+    const answers: ((response: Response) => void)[] = [];
+    const s = server({ 'GET /api/v1/catalog/engage': () => new Promise<Response>((resolve) => answers.push(resolve)) as never });
+    const { wrapper } = await boot(s, '/scenarios/new');
+    expect(wrapper.get('fieldset [role=status]').text()).toContain('Loading');
+    expect(wrapper.findAll('fieldset input')).toHaveLength(0);
+    answers[0]?.(json(200, { activities: [{ id: 'EAC0005', name: 'Lures' }] }));
+    await flushPromises();
+    expect(wrapper.find('fieldset [role=status]').exists()).toBe(false);
+    expect(wrapper.findAll('fieldset input')).toHaveLength(1);
+  });
+
   test('keeps the order of the list, whatever the order of the clicks, and drops a box that is cleared', async () => {
     const s = server();
     const { wrapper } = await boot(s, '/scenarios/new');

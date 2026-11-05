@@ -4,27 +4,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
-import { engageLabel, loadEngageActivities, type EngageActivity } from '../engageNames';
+import { computed } from 'vue';
+import { engageLabel, useEngageActivities } from '../engageNames';
 import { t } from '../i18n';
 
 // The activities of the scenario, in the order of the list. A native group of checkboxes: the browser brings the
 // keyboard, the labels and the announcements, and the list is short enough to need no search.
 const chosen = defineModel<string[]>({ required: true });
 
-const activities = ref<EngageActivity[]>([]);
-const failed = ref(false);
-
-async function load(): Promise<void> {
-  failed.value = false;
-  try {
-    activities.value = await loadEngageActivities();
-  } catch {
-    failed.value = true;
-  }
-}
-
-onMounted(load);
+const { activities, loaded, failed, load } = useEngageActivities();
 
 const names = computed(() => new Map(activities.value.map((a) => [a.id, a.name])));
 
@@ -51,6 +39,7 @@ function toggle(id: string, on: boolean): void {
       {{ t('scenarios.engageLoadFailed') }}
       <button class="button button-ghost small" type="button" @click="load">{{ t('scenarios.stories.retry') }}</button>
     </div>
+    <p v-else-if="!loaded" role="status" class="hint">{{ t('app.loading') }}</p>
     <div class="list">
       <label v-for="id in rows" :key="id" class="check">
         <input type="checkbox" :checked="chosen.includes(id)" @change="toggle(id, ($event.target as HTMLInputElement).checked)" />

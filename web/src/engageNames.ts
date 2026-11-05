@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The Nyktus Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { onMounted, ref, type Ref } from 'vue';
+import { computed, onMounted, ref, type ComputedRef } from 'vue';
 import { api } from './api/client';
 
 export interface EngageActivity {
@@ -33,17 +33,33 @@ export function engageLabel(id: string, names: ReadonlyMap<string, string>): str
 }
 
 /**
+ * The activities in the order of the list, empty until they are read. `failed` says that they could not be, and `load`
+ * asks again.
+ */
+export function useEngageActivities() {
+  const activities = ref<EngageActivity[]>([]);
+  const loaded = ref(false);
+  const failed = ref(false);
+
+  async function load(): Promise<void> {
+    failed.value = false;
+    try {
+      activities.value = await loadEngageActivities();
+      loaded.value = true;
+    } catch {
+      failed.value = true;
+    }
+  }
+
+  onMounted(load);
+  return { activities, loaded, failed, load };
+}
+
+/**
  * The names by identifier, empty until they are read and for good if they cannot be: the names are a courtesy, and the
  * identifier alone says the same.
  */
-export function useEngageNames(): Ref<ReadonlyMap<string, string>> {
-  const names = ref<ReadonlyMap<string, string>>(new Map());
-  onMounted(() => {
-    loadEngageActivities()
-      .then((list) => {
-        names.value = new Map(list.map((a) => [a.id, a.name]));
-      })
-      .catch(() => undefined);
-  });
-  return names;
+export function useEngageNames(): ComputedRef<ReadonlyMap<string, string>> {
+  const { activities } = useEngageActivities();
+  return computed(() => new Map(activities.value.map((a) => [a.id, a.name])));
 }
