@@ -12,9 +12,7 @@ import { t } from '../i18n';
 // keyboard, the labels and the announcements, and the list is short enough to need no search.
 const chosen = defineModel<string[]>({ required: true });
 
-const { activities, loaded, failed, load } = useEngageActivities();
-
-const names = computed(() => new Map(activities.value.map((a) => [a.id, a.name])));
+const { activities, names, loaded, failed, load } = useEngageActivities();
 
 // An identifier that the list lacks, such as one from a newer version of Engage or any while the names are not read,
 // stays in the group under its identifier instead of going without a word when the scenario is saved.

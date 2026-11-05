@@ -220,6 +220,22 @@ describe('the form that a slot opens', () => {
     expect(wrapper.get('[role=status]').text()).toContain('The honeytoken has been created.');
   });
 
+  // The note belongs to the arrival: a reload or a link that is passed on must not say it again.
+  test('says that the honeytoken was created once, and takes the note from the address', async () => {
+    const s = server('admin', {
+      'POST /api/v1/honeytokens': () => json(201, honeytoken({ scenario_id: scenarioId })),
+      [`PATCH ${detail}`]: () => json(200, scenario({ notes: 'Moved' })),
+    });
+    const { wrapper, router } = await boot(s, link(`scenario=${scenarioId}&name=Portal`));
+    await submit(wrapper);
+    await arrive(router, 'scenario');
+    await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({}));
+    expect(wrapper.text()).toContain('The honeytoken has been created.');
+    await type(wrapper, '#notes', 'Moved');
+    await submit(wrapper);
+    expect(wrapper.text()).not.toContain('The honeytoken has been created.');
+  });
+
   test('leads to the honeytoken when it did not join the scenario of the link', async () => {
     const s = server('admin', {
       'POST /api/v1/honeytokens': () => json(201, honeytoken({ scenario_id: null })),

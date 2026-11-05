@@ -30,8 +30,9 @@ const error = ref<string | undefined>();
 const saved = ref(false);
 const busy = ref(false);
 const deleting = ref(false);
-// A honeytoken that a slot created leads back here, so the page says that it was created.
-const created = computed(() => route.query.created === '1');
+// A honeytoken that a slot created leads back here, so the page says that it was created. The note belongs to that
+// arrival only: it goes from the address at once, and with the next change on the page.
+const created = ref(route.query.created === '1');
 const canWrite = computed(() => session.can('scenarios:write'));
 // Deleting the resources with the scenario needs the permissions to write both of them.
 const canDeleteResources = computed(() => session.can('honeytokens:write') && session.can('honeypots:write'));
@@ -139,6 +140,7 @@ async function load(): Promise<void> {
 
 // Removing a deception ends the assignment only; its honeytokens and honeypots stay in the scenario.
 async function removeDeception(): Promise<void> {
+  created.value = false;
   const deceptionId = removeTarget.value;
   if (deceptionId === undefined) {
     return;
@@ -156,6 +158,7 @@ async function removeDeception(): Promise<void> {
 }
 
 async function update(body: OperationTypes['updateScenario']['body']): Promise<void> {
+  created.value = false;
   error.value = undefined;
   saved.value = false;
   if (Object.keys(body).length === 0) {
@@ -197,7 +200,12 @@ const engageText = computed(() => {
   return ids.length === 0 ? t('common.none') : ids.map((activity) => engageLabel(activity, engageNames.value)).join(', ');
 });
 
-onMounted(load);
+onMounted(() => {
+  if (created.value) {
+    void router.replace({ name: 'scenario', params: { id: id.value } });
+  }
+  void load();
+});
 watch(locale, () => {
   void loadCatalog();
 });

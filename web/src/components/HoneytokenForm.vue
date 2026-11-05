@@ -8,7 +8,8 @@ import { computed, ref } from 'vue';
 import type { Honeytoken, OperationTypes } from '../api/generated';
 import { t } from '../i18n';
 import ScenarioSelect from './ScenarioSelect.vue';
-import { honeytokenTypes, severities, type Prefill } from '../slotPrefill';
+import { honeytokenTypes, severities } from '../resourceChoices';
+import type { Prefill } from '../slotPrefill';
 import { parseTechniques } from '../techniques';
 
 type Create = OperationTypes['createHoneytoken']['body'];

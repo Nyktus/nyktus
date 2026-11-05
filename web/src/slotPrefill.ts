@@ -3,15 +3,8 @@
 
 import type { LocationQuery } from 'vue-router';
 import type { CatalogDeception } from './api/generated';
+import { honeypotServices, honeytokenTypes, severities, type HoneypotService, type HoneytokenType, type Severity } from './resourceChoices';
 import { parseTechniques } from './techniques';
-
-export const honeytokenTypes = ['web_url', 'web_image', 'dns'] as const;
-export const honeypotServices = ['ssh', 'telnet', 'postgres', 'ldap'] as const;
-export const severities = ['low', 'medium', 'high', 'critical'] as const;
-
-export type HoneytokenType = (typeof honeytokenTypes)[number];
-export type HoneypotService = (typeof honeypotServices)[number];
-export type Severity = (typeof severities)[number];
 
 /** What the address of a form of creation may fill in beforehand. Everything is a suggestion that the person can change. */
 export interface Prefill {
@@ -25,7 +18,7 @@ export interface Prefill {
 type HoneytokenSlot = CatalogDeception['honeytokens'][number];
 type HoneypotSlot = CatalogDeception['honeypots'][number];
 
-// The longest name that the server accepts, and the most techniques it takes.
+// The longest name and the most techniques that the specification allows (`maxLength` of `name`, `maxItems` of `techniques`).
 const nameLimit = 100;
 const techniqueLimit = 20;
 

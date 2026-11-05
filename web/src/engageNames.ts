@@ -33,7 +33,7 @@ export function engageLabel(id: string, names: ReadonlyMap<string, string>): str
 }
 
 /**
- * The activities in the order of the list, empty until they are read. `failed` says that they could not be, and `load`
+ * The activities in the order of the list and their names by identifier, empty until they are read. `failed` says that they could not be, and `load`
  * asks again.
  */
 export function useEngageActivities() {
@@ -51,8 +51,10 @@ export function useEngageActivities() {
     }
   }
 
+  const names = computed(() => new Map(activities.value.map((a) => [a.id, a.name])));
+
   onMounted(load);
-  return { activities, loaded, failed, load };
+  return { activities, names, loaded, failed, load };
 }
 
 /**
@@ -60,6 +62,5 @@ export function useEngageActivities() {
  * identifier alone says the same.
  */
 export function useEngageNames(): ComputedRef<ReadonlyMap<string, string>> {
-  const { activities } = useEngageActivities();
-  return computed(() => new Map(activities.value.map((a) => [a.id, a.name])));
+  return useEngageActivities().names;
 }
