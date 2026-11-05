@@ -25,7 +25,7 @@ function server(role: Role = 'admin', extra: Record<string, () => Response> = {}
     'GET /api/v1/honeypots': () => json(200, { honeypots: [] }),
     'GET /api/v1/catalog/deceptions': () => json(200, { deceptions: [catalogSummary(), catalogSummary({ id: 'ssh-jump-host', title: 'SSH jump host' })] }),
     'GET /api/v1/catalog/deceptions/browser-bookmarks': () => json(200, catalogDeception()),
-    'GET /api/v1/catalog/deceptions/ssh-jump-host': () => json(200, catalogDeception({ id: 'ssh-jump-host', title: 'SSH jump host', guide: '# One' })),
+    'GET /api/v1/catalog/deceptions/ssh-jump-host': () => json(200, catalogDeception({ id: 'ssh-jump-host', title: 'SSH jump host', guide: '## One' })),
     ...extra,
   });
 }
@@ -34,7 +34,7 @@ describe('the deceptions of a scenario', () => {
   test('are the ones that joined it, each named by its title and with its guide from the catalog', async () => {
     const s = server('admin', {
       [`GET ${detail}`]: () => json(200, scenario({ deceptions: [joined('ssh-jump-host'), joined('browser-bookmarks')] })),
-      'GET /api/v1/catalog/deceptions/browser-bookmarks': () => json(200, catalogDeception({ guide: '# Two' })),
+      'GET /api/v1/catalog/deceptions/browser-bookmarks': () => json(200, catalogDeception({ guide: '## Two' })),
     });
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
     const stories = wrapper.findAll('article.story');

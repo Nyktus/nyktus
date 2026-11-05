@@ -315,7 +315,7 @@ describe('the deceptions of a scenario', () => {
   }
 
   test('show the guide from the catalog as text with its structure, behind a fold, in the language of the console', async () => {
-    const s = sc({ [`GET ${one}`]: () => json(200, catalogDeception({ guide: '# Bookmarks\n\n## Place it\n\n1. Do this.\n2. Do that.\n\n```\nopen file\n```' })) });
+    const s = sc({ [`GET ${one}`]: () => json(200, catalogDeception({ guide: '## Bookmarks\n\n### Place it\n\n1. Do this.\n2. Do that.\n\n```\nopen file\n```' })) });
     const { wrapper, i18n } = await boot(s, `/scenarios/${scenarioId}`);
     const guide = wrapper.get('.story details .markdown');
     // The guide stands under the title of its story, a level 3, so its first heading is a level 4.
