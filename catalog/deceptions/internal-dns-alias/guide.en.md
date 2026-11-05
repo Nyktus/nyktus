@@ -1,17 +1,20 @@
-# Internal name that points to a honeytoken
+## Story
 
-A name in your internal DNS zone, `vault.corp.example.com`, points with a CNAME record to the DNS honeytoken `Honeytoken-Domain`. Whoever looks up the alias, because it stands in a list of names, a scan finds it or they try the name, makes the internal resolver look up the honeytoken, which raises an event. There is no service behind the name, and no file to place.
+Add a name to your internal DNS zone that points to a DNS honeytoken. The name `vault.corp.example.com` is a CNAME record that points to the honeytoken. Whoever looks up the alias makes the internal resolver look up the honeytoken, which raises an event. The lookup happens when the alias stands in a list of names, when a scan finds it or when someone tries the name. There is no service behind the name and no file to place.
 
-## Creating the alias
+## Setup
 
-1. Choose a name that invites a visit, such as `vault`, `backup01` or `adminportal`, and use it in the steps below.
-2. Create a CNAME record in the internal zone `corp.example.com` from `vault` to `Honeytoken-Domain.`, with the final dot. On a Windows DNS server: `Add-DnsServerResourceRecordCName -Name 'vault' -HostNameAlias 'Honeytoken-Domain.' -ZoneName 'corp.example.com'`. In a BIND zone file: `vault IN CNAME Honeytoken-Domain.`
-3. Make sure that the internal resolvers can resolve names on the internet. Otherwise the lookup never reaches the DNS role of Nyktus.
-4. Record the alias in the notes of the scenario.
+1. Create the DNS honeytoken "Target of the alias".
+2. Choose a name that invites a visit, such as `vault`, `backup01` or `adminportal`. The steps below use `vault`.
+3. Create a CNAME record in the internal zone `corp.example.com` from `vault` to `Honeytoken-Domain.`, with the final dot, and replace `Honeytoken-Domain` with the name of the honeytoken. On a Windows DNS server: `Add-DnsServerResourceRecordCName -Name 'vault' -HostNameAlias 'Honeytoken-Domain.' -ZoneName 'corp.example.com'`. In a BIND zone file: `vault IN CNAME Honeytoken-Domain.`
+4. If the internal resolvers cannot resolve names on the internet, make them able to. Otherwise the lookup never reaches the DNS role of Nyktus.
+5. Record the alias in the notes of the scenario.
 
 ## Testing
 
 Run `nslookup vault.corp.example.com` on a computer that uses the internal DNS server. Within a minute, the scenario shows an incident. Close the incident after the test.
+
+If no incident appears, run `nslookup Honeytoken-Domain`, with the name of the honeytoken, to check whether the resolver reaches the DNS role of Nyktus.
 
 ## Limits
 

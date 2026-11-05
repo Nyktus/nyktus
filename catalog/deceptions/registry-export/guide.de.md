@@ -1,20 +1,23 @@
-# Registry-Export mit Sicherungseinstellungen
+## Geschichte
 
-Die Datei `Settings.reg` ist ein Export des Registry-Schlüssels `HKEY_CURRENT_USER\Software\BackupPro\Backup`. Sie nennt den Sicherungsserver `Honeytoken-Domain`, das Konto `svc-backup` und ein zufälliges Passwort. Der Servername gehört zu einem DNS-Honeytoken: Wer mit den Einstellungen den Server erreichen will, löst den Namen auf, was ein Event auslöst. Dahinter steht kein Server, und Konto und Passwort gibt es nirgends.
+Legen Sie einen Export von Sicherungseinstellungen dort ab, wo ein Angreifer nach gespeicherten Zugangsdaten sucht. Die Datei `Settings.reg` nennt einen Sicherungsserver, das Konto `svc-backup` und ein Passwort. Der Servername gehört zu einem DNS-Honeytoken: Wer mit diesen Einstellungen den Server erreichen will, löst den Namen auf, und die Abfrage löst ein Ereignis aus. Hinter dem Namen steht kein Server, und Konto und Passwort gibt es nirgends.
 
-## Datei platzieren
+## Umsetzung
 
-1. Legen Sie die Datei dort ab, wo ein Eindringling nach Einstellungen von Sicherungssoftware sucht: auf einem Server, der gesichert wird, in einem Ordner mit Dokumentation der IT, in einer Sicherung eines Benutzerprofils.
-2. Benennen Sie sie nach der Software, wenn Sie eine andere einsetzen, und ändern Sie `Vendor` beim Anwenden der Deception, damit der Schlüssel passt.
-3. Importieren Sie die Datei nicht auf einem Rechner, den Sie nutzen. Sie schreibt den Schlüssel in die Registry des Kontos, das sie importiert.
-4. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
+1. Legen Sie das DNS-Honeytoken „Sicherungsserver“ an. Ersetzen Sie `Honeytoken-Domain` in der Datei durch seinen Namen.
+2. Passen Sie Kontonamen und Passwort an das Namensschema Ihrer Umgebung an. Wenn Sie eine andere Sicherungssoftware einsetzen, benennen Sie den Schlüssel `BackupPro` und die Datei entsprechend um.
+3. Legen Sie die Datei dort ab, wo ein Angreifer nach Einstellungen von Sicherungssoftware sucht: auf einem gesicherten Server, in einem Ordner mit IT-Dokumentation oder in einer Sicherung eines Benutzerprofils.
+4. Importieren Sie die Datei nicht auf einem Rechner, den Sie nutzen. Der Import schreibt den Schlüssel in die Registry des importierenden Kontos.
+5. Notieren Sie im Szenario, wo die Datei liegt.
 
 ## Testen
 
-Lösen Sie den Namen mit `nslookup Honeytoken-Domain` auf einem Rechner mit Zugang zum Internet auf. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+Führen Sie auf einem Rechner mit Internetzugang `nslookup Honeytoken-Domain` aus, mit dem Namen des Honeytokens statt des Platzhalters. Den Namen finden Sie in der Tabelle „Honeytokens dieses Szenarios“. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+Erscheint kein Incident, prüfen Sie, ob der Rechner Namen über einen Resolver auflöst, der die DNS-Rolle von Nyktus erreicht (siehe „Grenzen“).
 
 ## Grenzen
 
-- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.
-- Der Servername ist ein zufälliges Label unter der Zone Ihrer DNS-Rolle. Ein Eindringling, der die Datei genau liest, kann ihn ungewöhnlich finden.
-- Der Import der Datei legt den Schlüssel an, startet aber nichts; ein Eindringling, der sie nur importiert, löst kein Event aus. Die Abfrage geschieht, wenn etwas sich mit dem Server verbindet.
+- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Ereignis aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert das.
+- Der Servername ist ein zufälliges Label unter der Zone Ihrer DNS-Rolle. Wer die Datei genau liest, kann ihn ungewöhnlich finden.
+- Der Import der Datei legt den Schlüssel an, startet aber nichts. Wer die Datei nur liest oder importiert, löst kein Ereignis aus; die Abfrage entsteht erst, wenn ein Programm sich mit dem Server verbindet.

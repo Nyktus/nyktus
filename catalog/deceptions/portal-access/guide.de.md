@@ -1,76 +1,33 @@
-# Zugang zu internen Portalen
+## Geschichte
 
-Benutzer und Administratoren notieren die Adressen interner Portale in Lesezeichen, Verknüpfungen, Notizen und Exporten. Die folgenden Dateien halten solche Adressen fest. Die Dateien teilen sich die Honeytokens der Geschichte, dieselbe Adresse steht also in jeder Datei, die dasselbe Portal nennt. Hinter den Adressen steht nichts: Konten und Passwörter gibt es nirgends. Sie entscheiden, welche Dateien Sie wo ablegen; eine genügt, und sie müssen nicht beieinander liegen.
+Legen Sie Adressen interner Portale dort ab, wo ein Angreifer sie sucht. Benutzer und Administratoren notieren sie in Lesezeichen, Verknüpfungen, Notizen und Exporten. Die Dateien `bookmarks.html`, `SSO-reset.html`, `Portal.url` und `Passwords.csv` enthalten eine URL, die zu einem URL-Honeytoken gehört. Wer dem Link folgt, löst ein Ereignis aus und wird auf das Weiterleitungsziel des Honeytokens umgeleitet. Hinter den Adressen steht nichts, und Konten und Passwörter gibt es nirgends. Eine Datei genügt, und die Dateien müssen nicht beieinander liegen. Die Dateien `Meeting-notes.md` und `Favorites.html` enthalten keinen Honeytoken. Sie geben der Geschichte eine glaubhafte Umgebung.
 
-## Browser-Lesezeichen
+## Umsetzung
 
-Die Datei `bookmarks.html` ist ein Export von Browser-Lesezeichen in dem Format, das jeder gängige Browser schreibt und importiert. In der Lesezeichenleiste enthält ein Ordner `Example Ltd` den Link `VPN self-service`, der auf `Honeytoken-URL-Portal` führt. Diese URL gehört zu einem URL-Honeytoken: Wer dem Link folgt, löst ein Event aus und wird auf das Weiterleitungsziel des Honeytokens weitergeleitet.
+Jeder Platzhalter in den Dateien gehört zu einem Honeytoken:
 
-### Datei platzieren
+- `Honeytoken-URL-Portal`: „Portal“, in `bookmarks.html`, `SSO-reset.html` und `Passwords.csv`
+- `Honeytoken-URL-Link`: „Link“, in `Portal.url`
 
-1. Geben Sie dem Honeytoken ein Weiterleitungsziel, das zum Namen des Portals passt, etwa die öffentliche Anmeldeseite eines Dienstes, den Sie nutzen.
-2. Legen Sie die Datei entweder als Export ab, zum Beispiel in den Dokumenten eines Kontos, das nur diesem Zweck dient, oder in einer Sicherung eines Benutzerprofils, oder importieren Sie sie in den Browser eines solchen Kontos, damit der Link in dessen Lesezeichen erscheint.
-3. Ergänzen Sie eigene Lesezeichen, etwa die öffentlichen Seiten Ihrer Organisation, damit die Datei nicht nur einen Ordner enthält.
-4. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
+1. Legen Sie die zwei URL-Honeytokens an.
+2. Ersetzen Sie jeden Platzhalter durch die URL seines Honeytokens. Ersetzen Sie `Example Ltd` in den HTML- und Markdown-Dateien durch den Namen Ihrer Organisation.
+3. Geben Sie jedem Honeytoken ein Weiterleitungsziel, das zum Namen des Portals passt, etwa die öffentliche Anmeldeseite eines Dienstes, den Sie nutzen. Wer dem Link folgt, sieht dann eine Seite.
+4. Legen Sie die Dateien dort ab, wo ein Angreifer sich umsieht, Datei für Datei.
+5. `bookmarks.html`: als Export, etwa in den Dokumenten eines Kontos, das nur diesem Zweck dient, oder in einer Sicherung eines Benutzerprofils. Oder importieren Sie sie in den Browser eines solchen Kontos, damit der Link in dessen Lesezeichen erscheint. Fügen Sie eigene Lesezeichen hinzu, damit die Datei nicht nur einen einzigen Ordner enthält.
+6. `SSO-reset.html`: dort, wo ein Angreifer nach Wegen sucht, Konten zu übernehmen: auf einer Dateifreigabe der IT, in einem Ordner mit Notizen für den Service Desk oder in den Dokumenten eines Kontos, das nur diesem Zweck dient.
+7. `Portal.url`: auf dem Desktop oder in den Dokumenten eines solchen Kontos, auf einer Dateifreigabe der IT oder in einem Ordner mit Übergabenotizen. Benennen Sie sie so um, dass der Name etwas Wertvolles verspricht, etwa `VPN access.url`. Die Endung `.url` muss bleiben.
+8. `Passwords.csv`: dort, wo ein Benutzer einen Export liegen lässt, den er hätte löschen sollen, etwa in den Downloads oder Dokumenten eines solchen Kontos oder auf einer Freigabe der IT. Ändern Sie die Einträge, wenn Ihr Namensschema von `wiki`, `build` und `portal` abweicht.
+9. `Meeting-notes.md` und `Favorites.html`: neben den anderen Dateien der Geschichte.
+10. Notieren Sie im Szenario, wo die Dateien liegen.
 
-### Testen
+## Testen
 
-Öffnen Sie die Datei in einem Browser und folgen Sie dem Link, oder importieren Sie sie und öffnen Sie das Lesezeichen. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+Führen Sie auf einem Rechner mit Internetzugang `curl` mit der URL eines Honeytokens aus, zum Beispiel `curl Honeytoken-URL-Portal`. Die URLs stehen in der Tabelle „Honeytokens dieses Szenarios“. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
-## Hinweis zum Zurücksetzen der Single-Sign-on-Anmeldung
-
-Die Datei `SSO-reset.html` ist ein kurzer Hinweis der IT von `Example Ltd` mit einem Link zu einem Portal, in dem die Single-Sign-on-Anmeldung zurückgesetzt wird: `Honeytoken-URL-Portal`. Die URL gehört zu einem URL-Honeytoken: Wer dem Link folgt, löst ein Event aus und wird auf das Weiterleitungsziel des Honeytokens weitergeleitet.
-
-### Datei platzieren
-
-1. Geben Sie dem Honeytoken ein Weiterleitungsziel, das zum Portal passt, etwa die öffentliche Anmeldeseite eines Dienstes, den Sie nutzen.
-2. Legen Sie die Datei dort ab, wo ein Eindringling nach Wegen sucht, Konten zu übernehmen: auf einer Dateifreigabe der IT, in einem Ordner mit Notizen für den Service Desk, in den Dokumenten eines Kontos, das nur diesem Zweck dient.
-3. Ändern Sie `Contact` auf ein Team, das es gibt.
-4. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
-
-### Testen
-
-Öffnen Sie die Datei in einem Browser auf einem Rechner mit Zugang zum Internet und folgen Sie dem Link. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
-
-## Internetverknüpfung
-
-Die Datei `Portal.url` ist eine Windows-Verknüpfung zur URL `Honeytoken-URL-Link`. Diese URL gehört zu einem URL-Honeytoken: Wer die Verknüpfung öffnet, öffnet die URL im Browser, was ein Event auslöst, und der Browser wird auf das Weiterleitungsziel des Honeytokens oder auf das Standardziel des Triggers weitergeleitet.
-
-### Datei platzieren
-
-1. Geben Sie dem Honeytoken ein Weiterleitungsziel, das zum Namen der Verknüpfung passt, etwa die öffentliche Anmeldeseite eines Dienstes, den Sie nutzen. Wer die Verknüpfung öffnet, sieht diese Seite.
-2. Benennen Sie die Datei so um, dass ihr Name etwas Wertvolles verspricht, etwa `VPN-Zugang.url`, `Gehaltsabrechnung.url` oder `Admin-Konsole.url`. Die Endung `.url` muss bleiben.
-3. Legen Sie sie dort ab, wo ein Eindringling sich umsieht, etwa auf dem Desktop oder in den Dokumenten eines Kontos, das nur diesem Zweck dient, auf einer Dateifreigabe der IT oder in einem Ordner mit Übergabenotizen.
-4. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
-
-### Testen
-
-Öffnen Sie die Verknüpfung auf einem Rechner mit Zugang zum Internet. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
-
-## Passwort-Export eines Browsers
-
-Die Datei `Passwords.csv` hat die Spalten, die Chrome, Edge und andere Browser schreiben, wenn der Benutzer gespeicherte Passwörter exportiert. Drei Einträge gehören zum Konto `j.doe`; die Adresse eines davon ist `Honeytoken-URL-Portal`. Diese URL gehört zu einem URL-Honeytoken: Wer die Adresse öffnet, etwa um das Passwort auszuprobieren, löst ein Event aus und wird auf das Weiterleitungsziel des Honeytokens weitergeleitet. Die Passwörter gibt es nirgends.
-
-### Datei platzieren
-
-1. Geben Sie dem Honeytoken ein Weiterleitungsziel, das zum Eintrag passt, etwa die öffentliche Anmeldeseite eines Dienstes, den Sie nutzen.
-2. Legen Sie die Datei dort ab, wo ein Benutzer einen Export liegen lässt, den er hätte löschen sollen: in den Downloads oder Dokumenten eines Kontos, das nur diesem Zweck dient, oder auf einer Freigabe der IT.
-3. Passen Sie die Einträge an, wenn Ihr eigenes Namensschema von `wiki`, `build` und `portal` abweicht.
-4. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
-
-### Testen
-
-Öffnen Sie die URL des dritten Eintrags in einem Browser auf einem Rechner mit Zugang zum Internet. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
-
-## Pocket Litter
-
-Die Dateien `Meeting-notes.md` und `Favorites.html` enthalten keinen Honeytoken und lösen kein Event aus, was auch mit ihnen geschieht. Sie geben der Geschichte eine glaubhafte Umgebung: Legen Sie sie an denselben Orten ab wie die übrigen Dateien der Geschichte, neben den Dateien, die ein Event auslösen.
+Dasselbe bewirkt es, eine Datei im Browser zu öffnen und dem Link zu folgen oder `Portal.url` zu öffnen.
 
 ## Grenzen
 
-- Wer eine der Dateien liest oder die Eigenschaften der Verknüpfung ansieht, sieht die URL. Sie nennt die Adresse Ihres Triggers und einen Zufallswert.
-- `bookmarks.html`: Wer die Datei öffnet, sieht die Lesezeichen; erst wer dem Link folgt, löst ein Event aus.
-- `SSO-reset.html`: Das Öffnen der Datei löst kein Event aus; erst das Folgen des Links tut es.
-- `Portal.url`: Die Verknüpfung löst nur ein Event aus, wenn jemand sie öffnet. Der Windows-Explorer ruft die URL nicht auf, wenn er den Ordner anzeigt.
-- `Passwords.csv`: Nur wer die Adresse öffnet, löst ein Event aus. Das Lesen der Datei löst keines aus.
-- `Passwords.csv`: Die ersten beiden Einträge verweisen auf Namen unter `corp.example.com`, die Sie nicht über Nyktus kontrollieren. Stellen Sie sicher, dass niemand diese Passwörter irgendwo einträgt, oder dass diese Namen in Ihrem Netz nicht existieren.
+- Wer eine der Dateien liest oder sich die Eigenschaften der Verknüpfung ansieht, sieht die URL. Sie nennt die Adresse Ihres Triggers und einen Zufallswert.
+- Nur das Folgen des Links löst ein Ereignis aus. Das Öffnen von `bookmarks.html` oder `SSO-reset.html`, das Lesen von `Passwords.csv` und das Auflisten des Ordners von `Portal.url` im Windows-Explorer lösen keines aus.
+- Die ersten zwei Einträge in `Passwords.csv` zeigen auf Namen unter `corp.example.com`, die Sie nicht über Nyktus steuern. Stellen Sie sicher, dass niemand diese Passwörter irgendwo eingibt, oder dass es diese Namen in Ihrem Netz nicht gibt.
