@@ -4,6 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { CatalogDeception } from '../api/generated';
 import { t } from '../i18n';
 import DeceptionSlots from './DeceptionSlots.vue';
@@ -12,7 +13,7 @@ import TimeStamp from './TimeStamp.vue';
 
 // One deception of a scenario: what it asks for, its files, and its guide behind a fold. The catalog says all of this
 // when it is asked, so what the scenario keeps is the identifier and the time it joined.
-defineProps<{
+const props = defineProps<{
   scenarioId: string;
   deceptionId: string;
   addedAt: string;
@@ -27,6 +28,9 @@ defineProps<{
 }>();
 
 defineEmits<{ remove: []; retry: [] }>();
+
+// The list names a deception first; when it could not be read, the detail does.
+const shownTitle = computed(() => props.title ?? (typeof props.detail === 'object' ? props.detail.title : undefined) ?? props.deceptionId);
 </script>
 
 <template>
@@ -34,7 +38,7 @@ defineEmits<{ remove: []; retry: [] }>();
     <div class="head">
       <h3>
         <span v-if="gone" class="mono">{{ deceptionId }}</span>
-        <RouterLink v-else :to="{ name: 'catalog-deception', params: { id: deceptionId } }">{{ title ?? deceptionId }}</RouterLink>
+        <RouterLink v-else :to="{ name: 'catalog-deception', params: { id: deceptionId } }">{{ shownTitle }}</RouterLink>
       </h3>
       <button v-if="canRemove" class="button button-ghost small" type="button" :disabled="busy" @click="$emit('remove')">
         {{ t('scenarios.stories.remove') }}

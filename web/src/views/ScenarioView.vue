@@ -30,6 +30,8 @@ const error = ref<string | undefined>();
 const saved = ref(false);
 const busy = ref(false);
 const deleting = ref(false);
+// A honeytoken that a slot created leads back here, so the page says that it was created.
+const created = computed(() => route.query.created === '1');
 const canWrite = computed(() => session.can('scenarios:write'));
 // Deleting the resources with the scenario needs the permissions to write both of them.
 const canDeleteResources = computed(() => session.can('honeytokens:write') && session.can('honeypots:write'));
@@ -90,9 +92,12 @@ async function loadCatalog(): Promise<void> {
   try {
     list = (await api.call('listCatalogDeceptions', { query: { lang: language } })).body.deceptions;
   } catch {
-    if (mine === asked) {
-      titlesFailed.value = true;
+    if (mine !== asked) {
+      return;
     }
+    // Without the list nothing is known to be gone, so every deception is asked for itself; its detail names it.
+    titlesFailed.value = true;
+    await Promise.all(entries.map((entry) => loadDetail(entry.deception_id, mine, language)));
     return;
   }
   if (mine !== asked) {
@@ -213,6 +218,7 @@ watch(locale, () => {
         <button v-if="canWrite" class="button button-ghost" type="button" @click="deleting = true">{{ t('common.delete') }}</button>
       </div>
 
+      <p v-if="created" class="notice notice-ok" role="status">{{ t('honeytokens.created') }}</p>
       <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
 
       <div class="section panel">

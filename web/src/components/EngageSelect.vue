@@ -15,18 +15,21 @@ const chosen = defineModel<string[]>({ required: true });
 const activities = ref<EngageActivity[]>([]);
 const failed = ref(false);
 
-onMounted(async () => {
+async function load(): Promise<void> {
+  failed.value = false;
   try {
     activities.value = await loadEngageActivities();
   } catch {
     failed.value = true;
   }
-});
+}
+
+onMounted(load);
 
 const names = computed(() => new Map(activities.value.map((a) => [a.id, a.name])));
 
-// An identifier that the list lacks, such as one from a newer version of Engage, stays in the group instead of
-// going without a word when the scenario is saved.
+// An identifier that the list lacks, such as one from a newer version of Engage or any while the names are not read,
+// stays in the group under its identifier instead of going without a word when the scenario is saved.
 const rows = computed(() => {
   const known = new Set(activities.value.map((a) => a.id));
   const unknown = chosen.value.filter((id) => !known.has(id));
@@ -44,9 +47,11 @@ function toggle(id: string, on: boolean): void {
   <fieldset class="group" aria-describedby="engage-hint">
     <legend>{{ t('scenarios.engage') }}</legend>
     <p id="engage-hint" class="hint">{{ t('scenarios.engageHint') }}</p>
-    <p v-if="failed" class="notice notice-error" role="alert">{{ t('scenarios.engageLoadFailed') }}</p>
-    <p v-if="failed && chosen.length > 0" class="mono">{{ chosen.join(', ') }}</p>
-    <div v-else class="list">
+    <div v-if="failed" class="notice notice-error" role="alert">
+      {{ t('scenarios.engageLoadFailed') }}
+      <button class="button button-ghost small" type="button" @click="load">{{ t('scenarios.stories.retry') }}</button>
+    </div>
+    <div class="list">
       <label v-for="id in rows" :key="id" class="check">
         <input type="checkbox" :checked="chosen.includes(id)" @change="toggle(id, ($event.target as HTMLInputElement).checked)" />
         <bdi>{{ engageLabel(id, names) }}</bdi>

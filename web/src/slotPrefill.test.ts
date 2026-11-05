@@ -42,7 +42,7 @@ describe('what an address may fill in', () => {
     ['a name with an invisible character', { name: 'a\u202Eb' }],
     ['a name beyond the limit', { name: 'x'.repeat(101) }],
     ['a repeated name', { name: ['a', 'b'] }],
-    ['techniques that are none', { techniques: 'javascript:alert(1),<b>,T10,t1078' }],
+    ['techniques that are none', { techniques: 'javascript:alert(1),<b>,T10,T1078.1' }],
   ])('a honeytoken drops %s', (_, query) => {
     expect(readHoneytokenPrefill(query)).toEqual({});
   });
@@ -61,6 +61,10 @@ describe('what an address may fill in', () => {
     expect(readHoneytokenPrefill({ techniques: 'T1078,x,T1078,T1003.001' }).techniques).toEqual(['T1078', 'T1003.001']);
     const many = Array.from({ length: 30 }, (_, i) => `T${String(1000 + i)}`).join(',');
     expect(readHoneypotPrefill({ techniques: many }).techniques).toHaveLength(20);
+  });
+
+  test('techniques are read like typed text, so a lower case identifier counts', () => {
+    expect(readHoneytokenPrefill({ techniques: 't1078' }).techniques).toEqual(['T1078']);
   });
 
   test('a name at the limit is kept', () => {

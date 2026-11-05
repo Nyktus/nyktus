@@ -427,16 +427,27 @@ describe('the deceptions of a scenario', () => {
     expect(wrapper.text()).not.toContain('The guide could not be loaded.');
   });
 
-  test('say when the titles could not be loaded, keep the identifiers, and ask again on request', async () => {
+  test('say when the titles could not be loaded, still show every deception, and ask again on request', async () => {
     const s = sc({ 'GET /api/v1/catalog/deceptions': () => failure(503, 'unavailable') });
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
-    expect(wrapper.text()).toContain('The guide could not be loaded.');
-    expect(wrapper.get('.story h3').text()).toBe('browser-bookmarks');
+    expect(wrapper.get('.section [role=alert]').text()).toContain('The guide could not be loaded.');
+    // Nothing is known to be gone without the list, so each deception is asked for itself and names itself.
+    expect(wrapper.get('.story h3').text()).toBe('Browser bookmarks');
+    expect(wrapper.find('.story .markdown').exists()).toBe(true);
+    expect(wrapper.get('.story').text()).not.toContain('Loading');
     s.on('GET /api/v1/catalog/deceptions', () => json(200, { deceptions: [catalogSummary()] }));
     await wrapper.get('.section [role=alert] button').trigger('click');
     await flushPromises();
+    expect(wrapper.find('.section [role=alert]').exists()).toBe(false);
     expect(wrapper.get('.story h3').text()).toBe('Browser bookmarks');
-    expect(wrapper.find('.markdown').exists()).toBe(true);
+  });
+
+  test('do not stay on loading for a deception whose detail fails after the list failed', async () => {
+    const s = sc({ 'GET /api/v1/catalog/deceptions': () => failure(503, 'unavailable'), [`GET ${one}`]: () => failure(503, 'unavailable') });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+    expect(wrapper.get('.story h3').text()).toBe('browser-bookmarks');
+    expect(wrapper.get('.story [role=alert]').text()).toContain('The guide could not be loaded.');
+    expect(wrapper.get('.story').text()).not.toContain('Loading');
   });
 
   test('are not asked for when the scenario was put together by hand', async () => {

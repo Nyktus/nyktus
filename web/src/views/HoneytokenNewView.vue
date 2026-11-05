@@ -29,7 +29,7 @@ async function create(body: Parameters<typeof api.call<'createHoneytoken'>>[1]['
     const { body: created } = await api.call('createHoneytoken', { body });
     // Whoever came from a scenario goes back to it, where the value to place stands in the table of its honeytokens.
     if (scenario.value !== '' && created.scenario_id === scenario.value) {
-      await router.replace({ name: 'scenario', params: { id: scenario.value } });
+      await router.replace({ name: 'scenario', params: { id: scenario.value }, query: { created: '1' } });
       return;
     }
     await router.replace({ name: 'honeytoken', params: { id: created.id }, query: { created: '1' } });

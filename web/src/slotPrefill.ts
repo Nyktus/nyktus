@@ -3,6 +3,7 @@
 
 import type { LocationQuery } from 'vue-router';
 import type { CatalogDeception } from './api/generated';
+import { parseTechniques } from './techniques';
 
 export const honeytokenTypes = ['web_url', 'web_image', 'dns'] as const;
 export const honeypotServices = ['ssh', 'telnet', 'postgres', 'ldap'] as const;
@@ -24,7 +25,6 @@ export interface Prefill {
 type HoneytokenSlot = CatalogDeception['honeytokens'][number];
 type HoneypotSlot = CatalogDeception['honeypots'][number];
 
-const technique = /^T[0-9]{4}(\.[0-9]{3})?$/;
 // The longest name that the server accepts, and the most techniques it takes.
 const nameLimit = 100;
 const techniqueLimit = 20;
@@ -65,7 +65,8 @@ function techniquesOf(value: string | undefined): string[] | undefined {
   if (value === undefined) {
     return undefined;
   }
-  const ids = [...new Set(value.split(',').filter((id) => technique.test(id)))].slice(0, techniqueLimit);
+  // What is not an identifier is dropped; the form reads typed text the same way.
+  const ids = parseTechniques(value).ids.slice(0, techniqueLimit);
   return ids.length > 0 ? ids : undefined;
 }
 

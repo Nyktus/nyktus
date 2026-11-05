@@ -47,7 +47,8 @@ function send(): void {
   if (notes.value !== existing.notes) {
     body.notes = notes.value;
   }
-  if (engage.value.join(',') !== existing.engage_activities.join(',')) {
+  // The same activities in another order are no change.
+  if ([...engage.value].sort().join(',') !== [...existing.engage_activities].sort().join(',')) {
     body.engage_activities = engage.value;
   }
   emit('update', body);

@@ -4,7 +4,7 @@
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { arrive, boot, submit, type } from './testing/boot';
-import { failure, fakeServer, honeypot, honeypotId, honeytoken, joined, json, noContent, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { engageActivities, failure, fakeServer, honeypot, honeypotId, honeytoken, joined, json, noContent, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -97,15 +97,45 @@ describe('creating a scenario', () => {
     expect(s.requests.find((r) => r.method === 'POST')?.body).toEqual({ name: 'x', notes: '', engage_activities: [] });
   });
 
-  test('says when the names could not be read, and keeps the identifiers of a scenario', async () => {
+  test('says when the names could not be read, keeps the identifiers of a scenario, and asks again on request', async () => {
     const s = server('admin', { 'GET /api/v1/catalog/engage': () => failure(503, 'unavailable'), [`PATCH ${detail}`]: () => json(200, scenario({ notes: 'Moved' })) });
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
-    expect(wrapper.get('fieldset [role=alert]').text()).toBe('The names of the activities could not be loaded.');
-    expect(wrapper.get('fieldset .mono').text()).toBe('EAC0005');
-    expect(wrapper.text()).toContain('EAC0005');
+    expect(wrapper.get('fieldset [role=alert]').text()).toContain('The names of the activities could not be loaded.');
+    // The identifier stands where the name would, and the box can still be cleared.
+    expect(wrapper.findAll('fieldset label').map((l) => l.text())).toEqual(['EAC0005']);
+    expect(wrapper.get('dl').text()).toContain('EAC0005');
     await type(wrapper, '#notes', 'Moved');
     await submit(wrapper);
     expect(s.requests.find((r) => r.method === 'PATCH')?.body).toEqual({ notes: 'Moved' });
+    s.on('GET /api/v1/catalog/engage', () => json(200, { activities: engageActivities }));
+    await wrapper.get('fieldset [role=alert] button').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('fieldset [role=alert]').exists()).toBe(false);
+    expect(wrapper.findAll('fieldset label').map((l) => l.text())).toEqual(['Lures (EAC0005)', 'Application Diversity (EAC0006)', 'Pocket Litter (EAC0011)']);
+  });
+
+  test('offers no activity to choose while the names are missing, but a way to ask again', async () => {
+    const s = server('admin', { 'GET /api/v1/catalog/engage': () => failure(503, 'unavailable'), 'POST /api/v1/scenarios': () => json(201, scenario()) });
+    const { wrapper } = await boot(s, '/scenarios/new');
+    expect(wrapper.findAll('fieldset input')).toHaveLength(0);
+    expect(wrapper.get('fieldset [role=alert] button').text()).toBe('Load again');
+    s.on('GET /api/v1/catalog/engage', () => json(200, { activities: engageActivities }));
+    await wrapper.get('fieldset [role=alert] button').trigger('click');
+    await flushPromises();
+    expect(wrapper.findAll('fieldset input')).toHaveLength(3);
+  });
+
+  test('sends nothing for the same activities in another order', async () => {
+    const s = server('admin', {
+      [`GET ${detail}`]: () => json(200, scenario({ engage_activities: ['EAC0011', 'EAC0005'] })),
+      [`PATCH ${detail}`]: () => json(200, scenario()),
+    });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+    await check(wrapper, 'Application Diversity (EAC0006)');
+    await wrapper.findAll('fieldset input')[1]?.setValue(false);
+    await submit(wrapper);
+    expect(s.requests.filter((r) => r.method === 'PATCH')).toHaveLength(0);
+    expect(wrapper.text()).toContain('Saved.');
   });
 
   test('keeps an activity that the list does not know, until the user clears it', async () => {

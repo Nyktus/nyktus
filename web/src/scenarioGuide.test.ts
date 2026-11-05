@@ -216,6 +216,8 @@ describe('the form that a slot opens', () => {
     await submit(wrapper);
     await arrive(router, 'scenario');
     expect(router.currentRoute.value.params.id).toBe(scenarioId);
+    // The page that it leads to says that the honeytoken was created, as the page of the honeytoken would.
+    expect(wrapper.get('[role=status]').text()).toContain('The honeytoken has been created.');
   });
 
   test('leads to the honeytoken when it did not join the scenario of the link', async () => {
