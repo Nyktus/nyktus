@@ -54,7 +54,7 @@ func deps(db Pinger) Deps {
 		},
 		APIKeys: APIKeys{List: http.NotFoundHandler(), Create: http.NotFoundHandler(), Revoke: http.NotFoundHandler()},
 		Catalog: Catalog{
-			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), File: http.NotFoundHandler(),
+			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), File: http.NotFoundHandler(), Engage: http.NotFoundHandler(),
 		},
 		Honeytokens: Honeytokens{
 			List: http.NotFoundHandler(), Get: http.NotFoundHandler(), Create: http.NotFoundHandler(),

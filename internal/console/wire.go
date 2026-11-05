@@ -163,9 +163,10 @@ func New(ctx context.Context, o Options) (http.Handler, error) {
 			ResetPassword:  http.HandlerFunc(a.ResetPassword),
 		},
 		Catalog: Catalog{
-			List: http.HandlerFunc(cat.List),
-			Get:  http.HandlerFunc(cat.Get),
-			File: http.HandlerFunc(cat.File),
+			List:   http.HandlerFunc(cat.List),
+			Get:    http.HandlerFunc(cat.Get),
+			File:   http.HandlerFunc(cat.File),
+			Engage: http.HandlerFunc(cat.Engage),
 		},
 		Honeytokens: Honeytokens{
 			List:   http.HandlerFunc(t.List),

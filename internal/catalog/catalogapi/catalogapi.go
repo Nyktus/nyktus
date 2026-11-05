@@ -14,6 +14,7 @@ import (
 	"strconv"
 
 	"nyktus.org/nyktus/internal/catalog"
+	"nyktus.org/nyktus/internal/engage"
 	"nyktus.org/nyktus/internal/honeypot"
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/httpx"
@@ -144,6 +145,30 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, toDetail(d, lang))
+}
+
+type engageActivity struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type engageResponse struct {
+	Activities []engageActivity `json:"activities"`
+}
+
+// Engage handles GET /api/v1/catalog/engage: the names of the Engage activities
+// that scenarios and deceptions refer to by identifier, so that the console can
+// show a name beside it. The list is embedded reference data of MITRE, in
+// English only, and takes no query.
+func (h *Handler) Engage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := httpx.DecodeQuery(w, r); !ok {
+		return
+	}
+	resp := engageResponse{Activities: []engageActivity{}}
+	for _, a := range engage.All() {
+		resp.Activities = append(resp.Activities, engageActivity{ID: a.ID, Name: a.Name})
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 // File handles GET /api/v1/catalog/deceptions/{id}/files/{name}: an example file

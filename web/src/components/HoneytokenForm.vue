@@ -8,6 +8,7 @@ import { computed, ref } from 'vue';
 import type { Honeytoken, OperationTypes } from '../api/generated';
 import { t } from '../i18n';
 import ScenarioSelect from './ScenarioSelect.vue';
+import { honeytokenTypes, severities, type Prefill } from '../slotPrefill';
 import { parseTechniques } from '../techniques';
 
 type Create = OperationTypes['createHoneytoken']['body'];
@@ -18,23 +19,24 @@ const props = defineProps<{
   existing?: Honeytoken;
   /** The scenario that a new honeytoken joins unless the person chooses another; only at creation. */
   scenario?: string;
+  /** What a link fills in beforehand, such as the type and the name of a slot; only at creation. */
+  prefill?: Prefill;
   busy: boolean;
   submitLabel: string;
 }>();
 
 const emit = defineEmits<{ create: [body: Create]; update: [body: Update] }>();
 
-const types = ['web_url', 'web_image', 'dns'] as const;
-const severities = ['low', 'medium', 'high', 'critical'] as const;
+const types = honeytokenTypes;
 
-const type = ref<Honeytoken['type']>(props.existing?.type ?? 'web_url');
-const name = ref(props.existing?.name ?? '');
+const type = ref<Honeytoken['type']>(props.existing?.type ?? props.prefill?.type ?? 'web_url');
+const name = ref(props.existing?.name ?? props.prefill?.name ?? '');
 const notes = ref(props.existing?.notes ?? '');
 const enabled = ref(props.existing?.enabled ?? true);
 const redirect = ref(props.existing?.redirect_url ?? '');
-const techniques = ref(props.existing?.techniques.join(', ') ?? '');
+const techniques = ref(props.existing?.techniques.join(', ') ?? props.prefill?.techniques?.join(', ') ?? '');
 // An empty choice at creation means the default of the type.
-const severity = ref<Honeytoken['severity'] | ''>(props.existing?.severity ?? '');
+const severity = ref<Honeytoken['severity'] | ''>(props.existing?.severity ?? props.prefill?.severity ?? '');
 const scenarioId = ref('');
 
 const parsed = computed(() => parseTechniques(techniques.value));

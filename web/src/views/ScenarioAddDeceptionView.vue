@@ -35,6 +35,11 @@ const canCreate = computed(() => session.can('honeytokens:write') && session.can
 const added = computed(() => new Set(scenario.value?.deceptions.map((d) => d.deception_id)));
 const available = computed(() => choices.value.filter((c) => !added.value.has(c.id)));
 
+// The names under which the resources are created: the labels of the slots, as the deception gives them.
+function slotNames(found: CatalogDeception): string {
+  return [...found.honeytokens, ...found.honeypots].map((slot) => slot.label).join(', ');
+}
+
 function show(failure: unknown): string {
   return errorText(failure instanceof ApiError ? failure : new ApiError('server', 0));
 }
@@ -176,7 +181,8 @@ watch(locale, () => {
 
             <div v-if="canCreate && (deception.honeytokens.length > 0 || deception.honeypots.length > 0)" class="field">
               <label class="check"><input id="create-resources" v-model="createResources" type="checkbox" />{{ t('scenarios.addDeception.createResources') }}</label>
-              <span class="hint">{{ t('catalog.apply.createResourcesHint') }}</span>
+              <span class="hint">{{ t('scenarios.addDeception.createResourcesHint', { names: slotNames(deception) }) }}</span>
+              <span class="hint">{{ t('scenarios.addDeception.removedWarning') }}</span>
             </div>
 
             <div class="actions-row">

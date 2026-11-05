@@ -41,21 +41,19 @@ describe('the deceptions of a scenario', () => {
     expect(stories.map((a) => a.get('h3 a').text())).toEqual(['SSH jump host', 'Browser bookmarks']);
     expect(stories[0]?.get('h3 a').attributes('href')).toBe('/catalog/ssh-jump-host');
     expect(stories[0]?.text()).toContain('Added');
-    for (const [i, heading] of [[0, 'One'], [1, 'Two']] as const) {
-      const section = stories[i]?.get('details');
-      (section?.element as HTMLDetailsElement).open = true;
-      await section?.trigger('toggle');
-      await flushPromises();
-      expect(stories[i]?.get('.markdown h5').text()).toBe(heading);
-    }
+    expect(stories.map((a) => a.get('.markdown h4').text())).toEqual(['One', 'Two']);
   });
 
-  test('show the guide of a single deception open, and of several closed', async () => {
-    const { wrapper } = await boot(server(), `/scenarios/${scenarioId}`);
-    expect(wrapper.get('article.story details').attributes('open')).toBeDefined();
-    const two = server('admin', { [`GET ${detail}`]: () => json(200, scenario({ deceptions: [joined('ssh-jump-host'), joined('browser-bookmarks')] })) });
-    const several = await boot(two, `/scenarios/${scenarioId}`);
-    expect(several.wrapper.get('article.story details').attributes('open')).toBeUndefined();
+  test('keep the guide behind a fold, whether there is one or several', async () => {
+    for (const joinedIds of [['ssh-jump-host'], ['ssh-jump-host', 'browser-bookmarks']]) {
+      const s = server('admin', { [`GET ${detail}`]: () => json(200, scenario({ deceptions: joinedIds.map((id) => joined(id)) })) });
+      const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+      for (const details of wrapper.findAll('article.story details')) {
+        expect(details.attributes('open')).toBeUndefined();
+        expect(details.get('summary').text()).toBe('Guide');
+      }
+      document.body.innerHTML = '';
+    }
   });
 
   test('explain what to do next when there are none, to whoever may add one', async () => {
@@ -91,15 +89,34 @@ describe('the deceptions of a scenario', () => {
     expect(wrapper.find('a[href$="/artifacts/new"]').exists()).toBe(false);
   });
 
-  test('are removed with a button that says that the resources stay', async () => {
+  test('are removed after a question that says that the resources stay', async () => {
     const removed = scenario();
     const s = server('admin', { [`DELETE ${detail}/deceptions/ssh-jump-host`]: () => json(200, removed) });
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
-    expect(wrapper.text()).toContain('Removing it only ends the assignment. Its honeytokens and honeypots stay in the scenario.');
+    expect(wrapper.find('dialog[open]').exists()).toBe(false);
     await wrapper.get('article.story .head button').trigger('click');
+    await flushPromises();
+    const question = wrapper.get('dialog[open]');
+    expect(question.text()).toContain('Remove this deception?');
+    expect(question.text()).toContain('Its honeytokens and honeypots stay in the scenario.');
+    expect(s.requests.filter((r) => r.method === 'DELETE')).toHaveLength(0);
+    await question.get('.button-primary').trigger('click');
     await flushPromises();
     expect(s.requests.filter((r) => r.method === 'DELETE').map((r) => r.url)).toEqual([`${detail}/deceptions/ssh-jump-host`]);
     expect(wrapper.find('article.story').exists()).toBe(false);
+    expect(wrapper.find('dialog[open]').exists()).toBe(false);
+  });
+
+  test('stay when the question is answered with no', async () => {
+    const s = server('admin', { [`DELETE ${detail}/deceptions/ssh-jump-host`]: () => json(200, scenario()) });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+    await wrapper.get('article.story .head button').trigger('click');
+    await flushPromises();
+    await wrapper.get('dialog[open] .button-ghost').trigger('click');
+    await flushPromises();
+    expect(s.requests.filter((r) => r.method === 'DELETE')).toHaveLength(0);
+    expect(wrapper.find('article.story').exists()).toBe(true);
+    expect(wrapper.find('dialog[open]').exists()).toBe(false);
   });
 
   test('say why a removal failed, and keep the deception', async () => {
@@ -107,8 +124,11 @@ describe('the deceptions of a scenario', () => {
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
     await wrapper.get('article.story .head button').trigger('click');
     await flushPromises();
+    await wrapper.get('dialog[open] .button-primary').trigger('click');
+    await flushPromises();
     expect(wrapper.get('[role=alert]').text()).toBe('The server is busy. Try again in a moment.');
     expect(wrapper.find('article.story').exists()).toBe(true);
+    expect(wrapper.find('dialog[open]').exists()).toBe(false);
   });
 });
 

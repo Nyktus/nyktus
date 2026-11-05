@@ -1466,6 +1466,36 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/catalog/engage:
+    get:
+      operationId: listCatalogEngageActivities
+      summary: List the names of the Engage activities
+      description: |
+        Returns the engagement activities of MITRE Engage that deceptions and scenarios refer to by
+        identifier (`engage_activities`), ordered by identifier, so that a client can show a name beside
+        it. The list ships with Nyktus, is the same in every installation, and is in English: MITRE
+        publishes no translation. It is complete and not paged, takes no query and holds no inventory.
+      tags: [catalog]
+      x-access: catalog:read
+      security:
+        - sessionCookie: []
+        - bearerKey: []
+      responses:
+        "200":
+          description: The engagement activities.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogEngageList"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/v1/catalog/deceptions/{id}:
     parameters:
       - name: id
@@ -4230,6 +4260,24 @@ components:
           items:
             $ref: "#/components/schemas/AlertDelivery"
 
+    CatalogEngageList:
+      type: object
+      additionalProperties: false
+      required: [activities]
+      properties:
+        activities:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name]
+            properties:
+              id:
+                type: string
+                pattern: "^EAC[0-9]{4}$"
+              name:
+                type: string
+                description: The name as MITRE Engage shows it, such as "Lures".
     CatalogDeceptionList:
       type: object
       additionalProperties: false

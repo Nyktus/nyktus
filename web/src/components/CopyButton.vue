@@ -7,7 +7,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { onBeforeUnmount, ref } from 'vue';
 import { t } from '../i18n';
 
-const props = defineProps<{ value: string }>();
+// describe names what is copied, so that the buttons of a table can be told apart without the row around them.
+const props = defineProps<{ value: string; describe?: string }>();
 
 const copied = ref(false);
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -34,7 +35,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <button v-if="available" class="button button-ghost small" type="button" @click="copy">
+  <button
+    v-if="available"
+    class="button button-ghost small"
+    type="button"
+    :aria-label="describe === undefined ? undefined : `${copied ? t('common.copied') : t('common.copy')}: ${describe}`"
+    @click="copy"
+  >
     {{ copied ? t('common.copied') : t('common.copy') }}
   </button>
 </template>

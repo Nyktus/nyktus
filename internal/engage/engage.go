@@ -42,10 +42,11 @@ type list struct {
 
 // The list is parsed once when the program starts. Tests check the embedded
 // data, so a failure here is a build mistake. version is the version of Engage
-// that the list comes from, such as "1.0".
-var version, activities = mustLoad(data)
+// that the list comes from, such as "1.0". all keeps the order of the list,
+// which the tests hold ascending by identifier.
+var version, activities, all = mustLoad(data)
 
-func mustLoad(b []byte) (string, map[string]Activity) {
+func mustLoad(b []byte) (string, map[string]Activity, []Activity) {
 	var l list
 	if err := json.Unmarshal(b, &l); err != nil {
 		panic(fmt.Sprintf("engage: parse embedded activities: %v", err))
@@ -54,7 +55,7 @@ func mustLoad(b []byte) (string, map[string]Activity) {
 	for _, a := range l.Activities {
 		m[a.ID] = a
 	}
-	return l.Version, m
+	return l.Version, m, l.Activities
 }
 
 // Lookup returns the activity id. It reports false for an identifier that the
@@ -63,6 +64,17 @@ func Lookup(id string) (Activity, bool) {
 	a, ok := activities[id]
 	a.Approaches = slices.Clone(a.Approaches)
 	return a, ok
+}
+
+// All returns the activities ordered by identifier. The caller may change the
+// result.
+func All() []Activity {
+	out := make([]Activity, len(all))
+	for i, a := range all {
+		a.Approaches = slices.Clone(a.Approaches)
+		out[i] = a
+	}
+	return out
 }
 
 // Version returns the version of Engage that the list comes from, such as
