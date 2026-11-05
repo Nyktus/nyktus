@@ -107,7 +107,8 @@ describe('a deception', () => {
     expect(wrapper.text()).toContain('2 KiB');
     expect(wrapper.text()).toContain('T1217');
     expect(wrapper.text()).toContain('EAC0005');
-    expect(wrapper.text()).toContain('Replace the words Honeytoken-Domain and Honeytoken-URL');
+    expect(wrapper.text()).toContain('Replace Honeytoken-Domain or Honeytoken-URL');
+    expect(wrapper.text()).toContain('Lures (EAC0005)');
   });
 
   test('shows the honeypots that it asks for by their service', async () => {
@@ -129,7 +130,7 @@ describe('a deception', () => {
   test('says so when it asks for nothing to create and offers no file', async () => {
     const bare = server('admin', { [`GET ${one}`]: () => json(200, catalogDeception({ honeytokens: [], honeypots: [], files: [] })) });
     const { wrapper } = await boot(bare, path);
-    expect(wrapper.text()).toContain('The guide asks for no honeytoken and no honeypot.');
+    expect(wrapper.text()).toContain('This deception asks for no honeytoken and no honeypot.');
     expect(wrapper.text()).not.toContain('Example files');
     expect(wrapper.find('#create-resources').exists()).toBe(false);
   });
@@ -305,18 +306,27 @@ describe('the deceptions of a scenario', () => {
     });
   }
 
-  test('show the guide from the catalog as text with its structure, opened for a single deception, in the language of the console', async () => {
+  /** Confirms the question that appears when a deception is to be removed. */
+  async function confirmRemoval(wrapper: Awaited<ReturnType<typeof boot>>['wrapper']): Promise<void> {
+    await wrapper.get('.story .head button').trigger('click');
+    await flushPromises();
+    await wrapper.get('dialog[open] .button-primary').trigger('click');
+    await flushPromises();
+  }
+
+  test('show the guide from the catalog as text with its structure, behind a fold, in the language of the console', async () => {
     const s = sc({ [`GET ${one}`]: () => json(200, catalogDeception({ guide: '# Bookmarks\n\n## Place it\n\n1. Do this.\n2. Do that.\n\n```\nopen file\n```' })) });
     const { wrapper, i18n } = await boot(s, `/scenarios/${scenarioId}`);
-    const guide = wrapper.get('.markdown');
-    // The guide stands under the title of its story, a level 3, so its first heading is a level 5.
-    expect(guide.get('h5').text()).toBe('Bookmarks');
-    expect(guide.get('h6').text()).toBe('Place it');
+    const guide = wrapper.get('.story details .markdown');
+    // The guide stands under the title of its story, a level 3, so its first heading is a level 4.
+    expect(guide.get('h4').text()).toBe('Bookmarks');
+    expect(guide.get('h5').text()).toBe('Place it');
     expect(guide.findAll('ol li')).toHaveLength(2);
     expect(guide.get('pre').text()).toBe('open file');
+    expect(wrapper.get('.story details summary').text()).toBe('Guide');
+    expect(wrapper.get('.story details').attributes('open')).toBeUndefined();
     expect(wrapper.text()).toContain('Added');
     expect(wrapper.get('.story h3 a').text()).toBe('Browser bookmarks');
-    expect(wrapper.get('.story details h4').text()).toBe('Guide');
     expect(s.requests.some((r) => r.url === `${one}?lang=en`)).toBe(true);
     i18n.setLocale('de');
     await flushPromises();
@@ -324,21 +334,20 @@ describe('the deceptions of a scenario', () => {
     expect(s.requests.some((r) => r.url === '/api/v1/catalog/deceptions?lang=de')).toBe(true);
   });
 
-  test('read the guide of one of several only when its section is opened, and the list of titles once', async () => {
+  test('read the slots and the guide of every deception at once, and the list of titles once', async () => {
     const s = sc({
       [`GET ${detail}`]: () => json(200, scenario({ deceptions: [joined('browser-bookmarks'), joined('ssh-jump-host')] })),
-      'GET /api/v1/catalog/deceptions/ssh-jump-host': () => json(200, catalogDeception({ id: 'ssh-jump-host', title: 'SSH jump host' })),
+      'GET /api/v1/catalog/deceptions/ssh-jump-host': () => json(200, catalogDeception({ id: 'ssh-jump-host', title: 'SSH jump host', guide: 'Second guide.' })),
     });
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
     expect(wrapper.findAll('.story h3').map((h) => h.text())).toEqual(['Browser bookmarks', 'SSH jump host']);
-    expect(s.requests.filter((r) => r.url.startsWith('/api/v1/catalog/deceptions')).map((r) => r.url)).toEqual(['/api/v1/catalog/deceptions?lang=en']);
-    expect(wrapper.find('.markdown').exists()).toBe(false);
-    const section = wrapper.findAll('.story details')[1];
-    (section?.element as HTMLDetailsElement).open = true;
-    await section?.trigger('toggle');
-    await flushPromises();
-    expect(s.requests.at(-1)?.url).toBe('/api/v1/catalog/deceptions/ssh-jump-host?lang=en');
-    expect(wrapper.findAll('.story')[1]?.find('.markdown').exists()).toBe(true);
+    expect(s.requests.filter((r) => r.url.startsWith('/api/v1/catalog/deceptions')).map((r) => r.url)).toEqual([
+      '/api/v1/catalog/deceptions?lang=en',
+      `${one}?lang=en`,
+      '/api/v1/catalog/deceptions/ssh-jump-host?lang=en',
+    ]);
+    expect(wrapper.findAll('.story .markdown')).toHaveLength(2);
+    expect(wrapper.findAll('.story')[1]?.text()).toContain('Second guide.');
   });
 
   test('do not call a deception gone before the list of the catalog has been read', async () => {
@@ -360,7 +369,8 @@ describe('the deceptions of a scenario', () => {
     i18n.setLocale('de');
     await flushPromises();
     expect(wrapper.find('.markdown').exists()).toBe(false);
-    expect(wrapper.get('.story details').text()).toContain('Wird geladen');
+    expect(wrapper.find('.story table').exists()).toBe(false);
+    expect(wrapper.get('.story').text()).toContain('Wird geladen');
   });
 
   test('read a guide again in the new language when the language changes while it is being read', async () => {
@@ -376,6 +386,20 @@ describe('the deceptions of a scenario', () => {
     expect(wrapper.get('.markdown').text()).toContain('Anleitung.');
   });
 
+  test('show the answer for the language that is set, when the answers come in the other order', async () => {
+    const answers: Record<string, (response: Response) => void> = {};
+    const s = sc();
+    s.on(`GET ${one}`, (request) => new Promise<Response>((resolve) => (answers[request.url] = resolve)) as never);
+    const { wrapper, i18n } = await boot(s, `/scenarios/${scenarioId}`);
+    i18n.setLocale('de');
+    await flushPromises();
+    answers[`${one}?lang=de`]?.(json(200, catalogDeception({ guide: 'Deutsch.' })));
+    await flushPromises();
+    answers[`${one}?lang=en`]?.(json(200, catalogDeception({ guide: 'English.' })));
+    await flushPromises();
+    expect(wrapper.get('.markdown').text()).toBe('Deutsch.');
+  });
+
   test('say that the catalog does not know a deception any more, without asking for it, and let it be removed', async () => {
     const s = sc({
       'GET /api/v1/catalog/deceptions': () => json(200, { deceptions: [catalogSummary({ id: 'ssh-jump-host' })] }),
@@ -386,31 +410,44 @@ describe('the deceptions of a scenario', () => {
     expect(wrapper.find('.markdown').exists()).toBe(false);
     expect(wrapper.find('.story a').exists()).toBe(false);
     expect(wrapper.get('.story h3').text()).toBe('browser-bookmarks');
-    await wrapper.get('.story .head button').trigger('click');
-    await flushPromises();
+    expect(s.requests.some((r) => r.url.startsWith(one))).toBe(false);
+    await confirmRemoval(wrapper);
     expect(s.requests.some((r) => r.method === 'DELETE' && r.url === `${detail}/deceptions/browser-bookmarks`)).toBe(true);
     expect(wrapper.find('.story').exists()).toBe(false);
   });
 
-  test('say when a guide could not be loaded, and ask again when the section is opened again', async () => {
+  test('say when a guide could not be loaded, and ask again on request', async () => {
     const s = sc({ [`GET ${one}`]: () => failure(503, 'unavailable') });
     const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
-    expect(wrapper.text()).toContain('The guide could not be loaded.');
+    expect(wrapper.get('.story [role=alert]').text()).toContain('The guide could not be loaded.');
     s.on(`GET ${one}`, () => json(200, catalogDeception()));
-    const section = wrapper.get('.story details');
-    (section.element as HTMLDetailsElement).open = false;
-    await section.trigger('toggle');
-    (section.element as HTMLDetailsElement).open = true;
-    await section.trigger('toggle');
+    await wrapper.get('.story [role=alert] button').trigger('click');
     await flushPromises();
     expect(wrapper.find('.markdown').exists()).toBe(true);
     expect(wrapper.text()).not.toContain('The guide could not be loaded.');
   });
 
-  test('say when the titles could not be loaded, and keep the identifiers', async () => {
-    const { wrapper } = await boot(sc({ 'GET /api/v1/catalog/deceptions': () => failure(503, 'unavailable') }), `/scenarios/${scenarioId}`);
-    expect(wrapper.text()).toContain('The guide could not be loaded.');
+  test('say when the titles could not be loaded, still show every deception, and ask again on request', async () => {
+    const s = sc({ 'GET /api/v1/catalog/deceptions': () => failure(503, 'unavailable') });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+    expect(wrapper.get('.section [role=alert]').text()).toContain('The guide could not be loaded.');
+    // Nothing is known to be gone without the list, so each deception is asked for itself and names itself.
+    expect(wrapper.get('.story h3').text()).toBe('Browser bookmarks');
+    expect(wrapper.find('.story .markdown').exists()).toBe(true);
+    expect(wrapper.get('.story').text()).not.toContain('Loading');
+    s.on('GET /api/v1/catalog/deceptions', () => json(200, { deceptions: [catalogSummary()] }));
+    await wrapper.get('.section [role=alert] button').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.section [role=alert]').exists()).toBe(false);
+    expect(wrapper.get('.story h3').text()).toBe('Browser bookmarks');
+  });
+
+  test('do not stay on loading for a deception whose detail fails after the list failed', async () => {
+    const s = sc({ 'GET /api/v1/catalog/deceptions': () => failure(503, 'unavailable'), [`GET ${one}`]: () => failure(503, 'unavailable') });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
     expect(wrapper.get('.story h3').text()).toBe('browser-bookmarks');
+    expect(wrapper.get('.story [role=alert]').text()).toContain('The guide could not be loaded.');
+    expect(wrapper.get('.story').text()).not.toContain('Loading');
   });
 
   test('are not asked for when the scenario was put together by hand', async () => {

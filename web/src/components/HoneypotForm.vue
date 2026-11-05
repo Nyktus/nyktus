@@ -8,6 +8,8 @@ import { computed, ref } from 'vue';
 import type { Honeypot, OperationTypes } from '../api/generated';
 import { t } from '../i18n';
 import ScenarioSelect from './ScenarioSelect.vue';
+import { honeypotServices, severities } from '../resourceChoices';
+import type { Prefill } from '../slotPrefill';
 import { parseTechniques } from '../techniques';
 
 type Create = OperationTypes['createHoneypot']['body'];
@@ -18,22 +20,23 @@ const props = defineProps<{
   existing?: Honeypot;
   /** The scenario that a new honeypot joins unless the person chooses another; only at creation. */
   scenario?: string;
+  /** What a link fills in beforehand, such as the service and the name of a slot; only at creation. */
+  prefill?: Prefill;
   busy: boolean;
   submitLabel: string;
 }>();
 
 const emit = defineEmits<{ create: [body: Create]; update: [body: Update] }>();
 
-const services = ['ssh', 'telnet', 'postgres', 'ldap'] as const;
-const severities = ['low', 'medium', 'high', 'critical'] as const;
+const services = honeypotServices;
 
-const service = ref<Honeypot['service']>(props.existing?.service ?? 'ssh');
-const name = ref(props.existing?.name ?? '');
+const service = ref<Honeypot['service']>(props.existing?.service ?? props.prefill?.service ?? 'ssh');
+const name = ref(props.existing?.name ?? props.prefill?.name ?? '');
 const notes = ref(props.existing?.notes ?? '');
 const enabled = ref(props.existing?.enabled ?? true);
-const techniques = ref(props.existing?.techniques.join(', ') ?? '');
+const techniques = ref(props.existing?.techniques.join(', ') ?? props.prefill?.techniques?.join(', ') ?? '');
 // An empty choice at creation means the default of the server.
-const severity = ref<Honeypot['severity'] | ''>(props.existing?.severity ?? '');
+const severity = ref<Honeypot['severity'] | ''>(props.existing?.severity ?? props.prefill?.severity ?? '');
 const scenarioId = ref('');
 
 const parsed = computed(() => parseTechniques(techniques.value));

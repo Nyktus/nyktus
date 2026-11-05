@@ -11,6 +11,7 @@ import { ApiError } from '../api/errors';
 import type { CatalogDeception } from '../api/generated';
 import { errorText } from '../api/messages';
 import DeceptionDetail from '../components/DeceptionDetail.vue';
+import { engageLabel, useEngageNames } from '../engageNames';
 import { locale, t } from '../i18n';
 import { session } from '../session';
 
@@ -28,6 +29,8 @@ const busy = ref(false);
 const canApply = computed(() => session.can('scenarios:write'));
 // Creating the resources needs the permissions to write both of them, besides the one of the scenario.
 const canCreate = computed(() => session.can('honeytokens:write') && session.can('honeypots:write'));
+
+const engageNames = useEngageNames();
 
 const name = ref('');
 const notes = ref('');
@@ -122,7 +125,7 @@ watch(locale, load);
           <dt>{{ t('catalog.techniques') }}</dt>
           <dd class="mono">{{ deception.techniques.join(', ') }}</dd>
           <dt>{{ t('catalog.engage') }}</dt>
-          <dd class="mono">{{ deception.engage_activities.join(', ') }}</dd>
+          <dd><bdi>{{ deception.engage_activities.map((activity) => engageLabel(activity, engageNames)).join(', ') }}</bdi></dd>
         </dl>
       </div>
 
@@ -145,7 +148,7 @@ watch(locale, load);
           </div>
           <div v-if="canCreate && (deception.honeytokens.length > 0 || deception.honeypots.length > 0)" class="field">
             <label class="check"><input id="create-resources" v-model="createResources" type="checkbox" />{{ t('catalog.apply.createResources') }}</label>
-            <span class="hint">{{ t('catalog.apply.createResourcesHint') }}</span>
+            <span class="hint">{{ t('catalog.apply.createResourcesHint', { list: t('catalog.slots') }) }}</span>
           </div>
 
           <div class="actions-row">

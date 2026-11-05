@@ -59,6 +59,7 @@ func TestResponses_MatchTheSpecification(t *testing.T) {
 		{"CatalogDeceptionList", serve(t, h.List, "/api/v1/catalog/deceptions").Body.Bytes()},
 		{"CatalogDeception", serve(t, h.Get, "/api/v1/catalog/deceptions/ssh?lang=de", "id", "ssh").Body.Bytes()},
 		{"CatalogDeception", serve(t, h.Get, "/api/v1/catalog/deceptions/notes", "id", "notes").Body.Bytes()},
+		{"CatalogEngageList", serve(t, h.Engage, "/api/v1/catalog/engage").Body.Bytes()},
 	} {
 		for _, p := range schemas.Check(tt.schema, tt.body) {
 			t.Error(p)

@@ -74,3 +74,26 @@ func TestLookup(t *testing.T) {
 		t.Error("changing a returned activity changed the list")
 	}
 }
+
+func TestAll_ListsEveryActivityByIdentifierAndHandsOutCopies(t *testing.T) {
+	t.Parallel()
+
+	got := All()
+	if len(got) != len(activities) {
+		t.Fatalf("All() has %d activities, want %d", len(got), len(activities))
+	}
+	for i, a := range got {
+		if i > 0 && got[i-1].ID >= a.ID {
+			t.Errorf("%s follows %s; want ascending identifiers", a.ID, got[i-1].ID)
+		}
+		if want, ok := Lookup(a.ID); !ok || want.Name != a.Name {
+			t.Errorf("All() has %+v, Lookup has %+v, %v", a, want, ok)
+		}
+	}
+
+	got[0].Name = "changed"
+	got[0].Approaches[0] = "changed"
+	if again := All(); again[0].Name == "changed" || again[0].Approaches[0] == "changed" {
+		t.Error("changing a returned activity changed the list")
+	}
+}

@@ -97,10 +97,12 @@ type Catalog struct {
 	List, Get http.Handler
 	// File serves an example file of a deception.
 	File http.Handler
+	// Engage lists the names of the Engage activities.
+	Engage http.Handler
 }
 
 func (c Catalog) complete() bool {
-	return c.List != nil && c.Get != nil && c.File != nil
+	return c.List != nil && c.Get != nil && c.File != nil && c.Engage != nil
 }
 
 // Honeytokens are the handlers of the management of the honeytokens.
@@ -250,6 +252,7 @@ func NewRouter(d Deps) *httpx.Router {
 	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions", httpx.Require("catalog:read"), d.Catalog.List)
 	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions/{id}", httpx.Require("catalog:read"), d.Catalog.Get)
 	rt.Handle(http.MethodGet, "/api/v1/catalog/deceptions/{id}/files/{name}", httpx.Require("catalog:read"), d.Catalog.File)
+	rt.Handle(http.MethodGet, "/api/v1/catalog/engage", httpx.Require("catalog:read"), d.Catalog.Engage)
 	// Applying a deception creates a scenario with it, and on request its
 	// honeytokens and honeypots, which also needs the permissions to write
 	// those; the catalog stays as it is.
