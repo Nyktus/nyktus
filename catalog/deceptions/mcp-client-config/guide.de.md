@@ -1,23 +1,22 @@
-# Konfiguration eines MCP-Clients
+## Geschichte
 
-Entwickler verbinden KI-Assistenten über das Model Context Protocol mit internen Servern, und die Konfiguration enthält Adresse und Schlüssel des Servers. Die folgende Datei erzählt diese Geschichte.
+Legen Sie die Konfiguration eines MCP-Clients dort ab, wo Entwickler ihre Werkzeuge halten. Entwickler verbinden KI-Assistenten über das Model Context Protocol mit internen Servern, und die Konfiguration enthält die Adresse und den Schlüssel des Servers. Die Datei `mcp.json` konfiguriert einen Server namens `knowledge-base`, der über HTTP erreicht wird, mit einem Header `Authorization` und einem zufälligen Token. Der Hostname des Servers gehört zu einem DNS-Honeytoken: Ein Client, der sich mit dem Server verbindet, löst den Namen auf, und das löst ein Ereignis aus. Hinter dem Namen steht kein Server, und das Token gibt es nirgends.
 
-## Konfiguration eines MCP-Clients
+## Umsetzung
 
-Die Datei `mcp.json` konfiguriert einen MCP-Server namens `knowledge-base`, der über HTTP erreicht wird: die URL `https://Honeytoken-Domain/mcp` und einen Header `Authorization` mit einem zufälligen Token. Der Host-Name gehört zu einem DNS-Honeytoken: Ein Client, der sich mit dem Server verbindet, löst ihn auf, was ein Event auslöst. Dahinter steht kein Server, und das Token gibt es nirgends.
+1. Legen Sie das DNS-Honeytoken „MCP-Server“ an. Ersetzen Sie `Honeytoken-Domain` in der Datei durch seinen Namen.
+2. Legen Sie die Datei als `.mcp.json` im Hauptverzeichnis eines Projektverzeichnisses ab, das Entwickler nutzen, oder als `mcp.json` im Konfigurationsverzeichnis des KI-Assistenten, den Sie vortäuschen.
+3. Legen Sie sie nicht in einem Projekt ab, das jemand mit einem Assistenten öffnet. Der Client würde um Freigabe des Servers bitten, und eine Freigabe ließe ihn die Verbindung aufbauen.
+4. Notieren Sie im Szenario, wo die Datei liegt.
 
-### Datei platzieren
+## Testen
 
-1. Legen Sie die Datei als `.mcp.json` im Wurzelverzeichnis eines Projekts ab, das Entwickler benutzen, oder als `mcp.json` im Konfigurationsverzeichnis des KI-Assistenten, den Sie vortäuschen.
-2. Legen Sie sie nicht in einem Projekt ab, das jemand mit einem Assistenten öffnet: Der Client würde um Freigabe des Servers bitten, und eine Freigabe ließe ihn sich verbinden.
-3. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
+Führen Sie auf einem Rechner mit Internetzugang `nslookup Honeytoken-Domain` mit dem Namen des Honeytokens aus, oder `curl https://Honeytoken-Domain/mcp`. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
 
-### Testen
-
-Lösen Sie den Host mit `nslookup Honeytoken-Domain` auf einem Rechner mit Zugang zum Internet auf, oder führen Sie `curl https://Honeytoken-Domain/mcp` aus. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+Erscheint kein Incident, prüfen Sie, ob der Rechner Namen über einen Resolver auflöst, der die DNS-Rolle von Nyktus erreicht (siehe „Grenzen“).
 
 ## Grenzen
 
-- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Event aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert es.
-- Clients fragen, bevor sie sich mit einem Server aus der Konfiguration eines Projekts verbinden, und die Datei löst nur ein Event aus, wo jemand den Server freigegeben hat oder die URL benutzt. Das Lesen der Datei löst keines aus.
-- Der Host-Name ist ein zufälliges Label unter der Zone Ihrer DNS-Rolle. Ein Eindringling, der die Datei genau liest, kann ihn ungewöhnlich finden.
+- Nur eine Abfrage, die die DNS-Rolle von Nyktus erreicht, löst ein Ereignis aus. Ein Netz ohne Namensauflösung ins Internet oder ein Resolver, der aus seinem Cache antwortet, verhindert das.
+- Clients fragen nach, bevor sie sich mit einem Server aus der Konfiguration eines Projekts verbinden. Die Datei löst ein Ereignis nur aus, wo jemand den Server freigegeben hat oder die URL verwendet. Das bloße Lesen der Datei löst keines aus.
+- Der Hostname ist ein zufälliges Label unter der Zone Ihrer DNS-Rolle. Wer die Datei genau liest, kann ihn ungewöhnlich finden.

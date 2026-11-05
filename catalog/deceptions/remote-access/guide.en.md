@@ -1,71 +1,33 @@
-# Remote access of administrators
+## Story
 
-Administrators reach servers over Remote Desktop, SSH, an Ansible inventory and a VPN tunnel. The files below hold these connections. The files share the honeytokens of the story, so the same host name appears in every file that names the same service. Nothing stands behind the names: the accounts, tokens and passwords exist nowhere. You decide which files you place and where; one is enough, and they need not lie together.
+Place connections of administrators where an intruder looks for access to further systems. Four files name servers that do not exist: a Remote Desktop connection, an SSH configuration, an Ansible inventory and a WireGuard configuration. Each server name belongs to a DNS honeytoken. Whoever connects with a file looks up the name, and the lookup raises an event; the connection fails because no server stands behind the name. Two more files, `shell-history.txt` and `Tickets.csv`, hold no honeytoken. They give the story a believable surrounding.
 
-## Remote Desktop connection
+## Setup
 
-The file `Server.rdp` is a saved connection of the Remote Desktop client of Windows to the server `Honeytoken-Domain-Server`, with the account `adm.jdoe@corp.example.com`. The server name belongs to a DNS honeytoken: before the client connects, it resolves the name, which raises an event. There is no server behind it, so the connection fails.
+Each placeholder in the files stands for one honeytoken:
 
-### Placing the file
+- `Honeytoken-Domain-Server`: "Server", in `Server.rdp`
+- `Honeytoken-Domain-JumpHost`: "Jump host", in `config`
+- `Honeytoken-Domain-Application`: "Application server", in `inventory.ini`
+- `Honeytoken-Domain-Gateway`: "VPN gateway", in `wg0.conf`
 
-1. Place the file where an intruder looks for access to further systems, such as the desktop or the documents of an administrative account that exists only for this purpose, a jump server, or a file share of the IT department.
-2. Rename it after a server that the intruder would want to reach, such as `Backup server.rdp` or `Domain controller.rdp`. The extension `.rdp` must stay.
-3. Record where you placed it in the notes of the scenario.
+1. Create the four DNS honeytokens.
+2. Replace each placeholder with the name of its honeytoken. Adapt account names, the domain `corp.example.com` and passwords to your environment.
+3. Place the files where an intruder looks for access: on the desktop of an administrator account that exists only for this purpose, on a jump server, in a repository of automation, or on a file share of the IT department. One file is enough, and the files need not lie together. Place `shell-history.txt` and `Tickets.csv` beside the others.
+4. `Server.rdp`: Rename it after a server that an intruder wants to reach, such as `Backup server.rdp`. The extension `.rdp` must stay.
+5. `config`: Use it as `~/.ssh/config` only where nobody works, because every `ssh` to a host under `corp.example.com` raises an event. Restrict it to its owner with `chmod 600 ~/.ssh/config`; SSH refuses configuration files that others can write to.
+6. `inventory.ini`: Do not place it where you run Ansible, because a run against all hosts looks up the name. The hosts of the group `web` are names under `corp.example.com`; make sure they do not exist in your network.
+7. `wg0.conf`: Do not copy it to `/etc/wireguard`, because a system service would bring the tunnel up at every start. The extension `.conf` must stay.
+8. Record in the notes of the scenario where you placed the files.
 
-### Testing
+## Testing
 
-Open the file on a Windows computer with access to the internet and click "Connect". Within a minute, the scenario shows an incident. Close the incident after the test.
+On a computer with access to the internet, run `nslookup` with the name of a honeytoken, such as `nslookup Honeytoken-Domain-Server`. The names are in the table "Honeytokens of this scenario". Within a minute, the scenario shows an incident. Close the incident after the test.
 
-## SSH configuration with a jump host
-
-The file `config` is an SSH client configuration. It sends every connection to a host under `corp.example.com`, and every connection to `jump`, through the jump host `Honeytoken-Domain-JumpHost`. That name belongs to a DNS honeytoken: before SSH connects, it resolves the name, and the lookup raises an event. The connection itself fails, because the name has no SSH server behind it.
-
-### Placing the file
-
-1. Place the file where an intruder looks for access to further hosts, for example as `~/.ssh/config` of an account on a jump server or an administration workstation, or on a file share among scripts and notes of the IT department.
-2. On a system where the file is used as `~/.ssh/config`, restrict it to its owner: `chmod 600 ~/.ssh/config`. SSH refuses configuration files that others can write to.
-3. Do not place it where colleagues use it for their own work. Every legitimate `ssh` to a host under `corp.example.com` would raise an event.
-4. Record where you placed it in the notes of the scenario, so that it can be found again and removed.
-
-### Testing
-
-Run `ssh -F config jump` on a computer that resolves names through the internet. Within a minute, the scenario shows an incident. Close the incident after the test.
-
-## Ansible inventory
-
-The file `inventory.ini` is an Ansible inventory with the groups `web` and `app`. The group `app` holds the host `Honeytoken-Domain-Application`. The name belongs to a DNS honeytoken: a playbook that runs against all hosts, or an SSH connection to that host, resolves it, which raises an event. There is no server behind it. The hosts of the group `web` are names under `corp.example.com` that you do not create; make sure that they do not exist in your network, or change them to hosts that do and are not managed by Ansible.
-
-### Placing the file
-
-1. Place the file where an intruder looks for the servers of an application: in a repository of automation, on an administration server, in a backup of such a repository.
-2. Do not place it where you run Ansible. A run against all hosts would resolve the name and raise an event.
-3. Record where you placed it in the notes of the scenario.
-
-### Testing
-
-Run `ansible -i inventory.ini app -m ping` on a computer with Ansible and access to the internet. The command fails after the lookup. Within a minute, the scenario shows an incident. Close the incident after the test.
-
-## WireGuard configuration for a tunnel
-
-The file `wg0.conf` is the client configuration of a WireGuard tunnel to the gateway `Honeytoken-Domain-Gateway`. The keys are random values in the form of WireGuard keys. The name of the gateway belongs to a DNS honeytoken: whoever brings up the tunnel with `wg-quick up` or imports the file into a WireGuard client resolves the name, which raises an event. There is no gateway behind it, and the keys exist nowhere.
-
-### Placing the file
-
-1. Place the file where an intruder looks for access to the network: in the home directory of an administrator account that exists only for this purpose, in a folder with VPN profiles on a file share of the IT department, or in a backup of a workstation.
-2. Rename it if the place calls for another name, such as `office.conf`. The extension `.conf` must stay.
-3. Do not copy it to `/etc/wireguard`: a system service would bring the tunnel up on every start and raise events.
-4. Record where you placed it in the notes of the scenario.
-
-### Testing
-
-Run `nslookup Honeytoken-Domain-Gateway` on a computer with access to the internet; `sudo wg-quick up ./wg0.conf` on a computer with WireGuard has the same effect. Within a minute, the scenario shows an incident. Close the incident after the test.
-
-## Pocket litter
-
-The files `shell-history.txt` and `Tickets.csv` hold no honeytoken and raise no event, whatever happens to them. They give the story a believable surrounding: place them in the same places as the other files of the story, beside the files that raise an event.
+If no incident appears, check that the computer resolves names through a resolver that reaches the DNS role of Nyktus, see Limits.
 
 ## Limits
 
 - Only a lookup that reaches the DNS role of Nyktus raises an event. A network without name resolution to the internet, or a resolver that answers from its cache, prevents it.
 - The host names are random labels under the zone of your DNS role. An intruder who reads the files carefully can find them unusual.
-- `wg0.conf`: WireGuard resolves the endpoint when the tunnel comes up. An intruder who only reads the file does not raise an event.
+- An intruder who only reads a file raises no event; the lookup happens when a program uses the name. WireGuard looks up the endpoint when the tunnel comes up.

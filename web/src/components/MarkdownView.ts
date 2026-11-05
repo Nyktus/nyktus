@@ -25,8 +25,9 @@ function inline(parts: Inline[]): (VNode | string)[] {
 function block(b: Block, top: number): VNode {
   switch (b.kind) {
     case 'heading':
-      // The page has headings of its own, so those of a guide start below the one that it stands under.
-      return h(`h${Math.min(6, b.level + top)}`, inline(b.children));
+      // The page has headings of its own, so those of a guide start below the one that it stands under. A guide has no
+      // heading of level 1, because the page shows its title, so its sections of level 2 are the first below.
+      return h(`h${Math.min(6, b.level - 1 + top)}`, inline(b.children));
     case 'paragraph':
       return h('p', inline(b.children));
     case 'list':
@@ -46,7 +47,7 @@ export default defineComponent({
   name: 'MarkdownView',
   props: {
     source: { type: String as PropType<string>, required: true },
-    /** The level of the heading that the guide stands under; the first heading of the guide is one below. */
+    /** The level of the heading that the guide stands under; the sections of the guide, of level 2, are one below. */
     under: { type: Number as PropType<number>, default: 1 },
   },
   setup(props) {

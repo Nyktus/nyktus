@@ -1,17 +1,20 @@
-# Script that detects a copy of your website
+## Story
 
-The file `site.js` is a script for the pages of your website `www.example.com`. If a browser loads a page that includes it from any other host, the script requests the invisible image `Honeytoken-URL`, which raises an event. On your own host it does nothing. That is what happens when someone copies your pages, including their scripts, to a server of their own to collect passwords from visitors.
+Place a script in your website that detects a copy of it. The file `site.js` is a script for the pages of your website. If a browser loads a page that includes it from any other host, the script requests an invisible image, which raises an event. On your own host it does nothing. That is what happens when someone copies your pages, including their scripts, to a server of their own to collect passwords from visitors.
 
-## Placing the file
+## Setup
 
-1. Upload the file to your web server, beside the other scripts, and include it in the pages that a copy would be made of, above all the login page: `<script src="/site.js"></script>`.
-2. Rename it if your scripts follow another scheme, for example to `main.js`, and change the include to match.
-3. If your pages are also served from other host names that you control, such as a test system, add those names to the list at the top of the script.
-4. Record where you placed it in the notes of the scenario.
+1. Create the image honeytoken "Image". Replace `Honeytoken-URL` in `site.js` with its URL.
+2. Replace `www.example.com` at the top of the script with the host name of your website. If your pages are also served from other host names that you control, such as a test system, add those names to the same condition.
+3. Upload the file to your web server, beside the other scripts, and include it in the pages that a copy would be made of, above all the login page: `<script src="/site.js"></script>`.
+4. If your scripts follow another naming scheme, rename the file, for example to `main.js`, and change the include to match.
+5. Record in the notes of the scenario where you placed the file.
 
 ## Testing
 
 Copy the login page with its scripts to another host, or open it from a local file, and load it in a browser. Within a minute, the scenario shows an incident. Close the incident after the test.
+
+To check only the honeytoken, run `curl Honeytoken-URL`, with the URL of the honeytoken, on a computer with access to the internet.
 
 ## Limits
 

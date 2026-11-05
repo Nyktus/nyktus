@@ -1,68 +1,31 @@
-# Database credentials in configuration files
+## Story
 
-The configuration of an application holds how it reaches its database and its directory. The files below tell this story in different places. The files share the honeytokens of the story, so the same host name appears in every file that names the same service. Nothing stands behind the names: the accounts, tokens and passwords exist nowhere. You decide which files you place and where; one is enough, and they need not lie together.
+Place the configuration of an application where an intruder looks for credentials. The configuration holds how the application reaches its database and its directory. Each service has a host name that belongs to a DNS honeytoken. A client that connects with these values looks up the name, which raises an event. Nothing stands behind the names, so the connections fail, and the accounts, tokens and passwords exist nowhere. One file is enough, and the files need not lie together.
 
-## Configuration file with database credentials
+## Setup
 
-The file `config.ini` configures the database connection of an application: the host `Honeytoken-Domain-Database`, the database `billing`, the account `billing_app` and a random password. The host name belongs to a DNS honeytoken: a client that connects with these values resolves it, which raises an event. There is no database behind it, so the connection fails, and the account and password exist nowhere.
+Each placeholder in the files stands for one honeytoken:
 
-### Placing the file
+- `Honeytoken-Domain-Database`: "Database host", in `config.ini`, `production.env`, `pgpass` and `my.cnf`
+- `Honeytoken-Domain-Directory`: "Directory server", in `ldap.ini`
 
-1. Place the file where an intruder looks for credentials: beside an application on a server, in a repository of configuration, in a deployment directory or in a backup of one.
-2. Rename it if the place calls for another name, such as `database.ini` or `settings.ini`.
-3. Do not place it where a running application reads it. The application would resolve the name on every start and raise events.
-4. Record where you placed it in the notes of the scenario.
+1. Create the two DNS honeytokens.
+2. Replace each placeholder with the name of its honeytoken. Adapt the database `billing`, the account `billing_app` and the passwords to your environment.
+3. Place the files where an intruder looks for credentials of applications, file by file.
+4. `config.ini`, `ldap.ini`: beside an application on a server, in a repository of configuration, in a deployment directory or in a backup of one. Rename them if the place calls for another name, such as `database.ini`.
+5. `production.env`: in a repository of a service, in a deployment directory on a server or in a backup of one. Rename it to `.env`, or to the name your deployments use. The catalog cannot name a file with a leading dot.
+6. `pgpass`, `my.cnf`: as `.pgpass` and `.my.cnf` in the home directory of an account on an application or administration server. Choose the file that fits the database system you pretend, or place both. Restrict each file that you place to its owner, for example with `chmod 600 ~/.pgpass`, because libpq ignores a `.pgpass` that others can read.
+7. Do not place the files where a running application or service reads them, or in the account of a service that connects to a real database. The application would look up the name at every start and raise events.
+8. Record in the notes of the scenario where you placed the files.
 
-### Testing
+## Testing
 
-Resolve the host on a computer with access to the internet, for example with `nslookup Honeytoken-Domain-Database`. Within a minute, the scenario shows an incident. Close the incident after the test.
+On a computer with access to the internet, run `nslookup` with the name of a honeytoken, such as `nslookup Honeytoken-Domain-Database`. The names are in the table "Honeytokens of this scenario". Within a minute, the scenario shows an incident. Close the incident after the test.
 
-## Environment file with secrets of a service
-
-The file `production.env` is the environment file of a service. It holds a database URL with the host `Honeytoken-Domain-Database`, the database `billing`, the account `billing_app` and a random password, and two more random secrets. The host name belongs to a DNS honeytoken: a client that connects to the database resolves it, which raises an event. There is no database behind it, and the secrets exist nowhere.
-
-### Placing the file
-
-1. Rename the file to `.env`, or to the name your deployments use, at the place where you put it. The catalog cannot name a file with a leading dot.
-2. Place it where an intruder looks for secrets of services: in a repository of a service, in a deployment directory on a server, in a backup of such a directory.
-3. Do not place it where a running service reads it. The service would resolve the name on every start and raise events.
-4. Record where you placed it in the notes of the scenario.
-
-### Testing
-
-Resolve the name with `nslookup Honeytoken-Domain-Database` on a computer with access to the internet, or connect with `psql` to the URL. Within a minute, the scenario shows an incident. Close the incident after the test.
-
-## Connection profile for a directory
-
-The file `ldap.ini` configures how an application connects to its directory: the server `Honeytoken-Domain-Directory`, the bind account `billing_app@corp.example.com` and a random password. The server name belongs to a DNS honeytoken: whoever connects with these values resolves it, which raises an event. There is no directory behind it, so the connection fails, and the account and password exist nowhere.
-
-### Placing the file
-
-1. Place the file where an intruder looks for credentials of applications: beside an application on a server, in a repository of configuration, in a backup of a deployment directory.
-2. Rename it if the place calls for another name, such as `directory.ini`.
-3. Do not place it where a running application reads it. The application would resolve the name on every start and raise events.
-4. Record where you placed it in the notes of the scenario.
-
-### Testing
-
-Resolve the name with `nslookup Honeytoken-Domain-Directory` on a computer with access to the internet. Within a minute, the scenario shows an incident. Close the incident after the test.
-
-## Client files of the database
-
-The files `pgpass` and `my.cnf` hold the connection to the database in the form that the PostgreSQL and MySQL clients read: the host `Honeytoken-Domain-Database`, the database `billing`, the account `billing_app` and a random password. A client that connects with them resolves the host name, which raises an event. No database stands behind it, and the account and password exist nowhere.
-
-### Placing the file
-
-1. Choose the file that fits the database system you pretend, or place both.
-2. Name them `.pgpass` and `.my.cnf` and place them in the home directory of an account on an application or administration server. Restrict them to their owner: `chmod 600 ~/.pgpass ~/.my.cnf`. libpq ignores a `.pgpass` that others can read.
-3. Do not place them in the account of a service that connects to a real database.
-4. Record where you placed it in the notes of the scenario.
-
-### Testing
-
-Resolve the host with `nslookup Honeytoken-Domain-Database` on a computer with access to the internet, or connect with `psql` or `mysql` and the file in place. Within a minute, the scenario shows an incident. Close the incident after the test.
+A client has the same effect and fails after the lookup, for example `psql` or `mysql` with the file in place.
 
 ## Limits
 
 - Only a lookup that reaches the DNS role of Nyktus raises an event. A network without name resolution to the internet, or a resolver that answers from its cache, prevents it.
 - The host names are random labels under the zone of your DNS role. An intruder who reads the files carefully can find them unusual.
+- Reading a file raises no event; connecting with its values does.

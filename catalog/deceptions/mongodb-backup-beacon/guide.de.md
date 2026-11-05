@@ -1,21 +1,24 @@
-# MongoDB-Dokument mit Verbindungszeichenfolge
+## Geschichte
 
-Die Datei `endpoints.js` ist ein Skript für `mongosh`. Es fügt in die Collection `endpoints` der Datenbank `integrations` ein Dokument ein, das den Dienst `sync-service` nennt und eine Verbindungszeichenfolge mit dem Konto `svc-sync`, einem zufälligen Passwort und dem Host `Honeytoken-Domain` enthält. Der Host gehört zu einem DNS-Honeytoken. Jede Sicherung der Datenbank trägt das Dokument. Ein Eindringling, der eine Sicherung stiehlt, die Dokumente liest und sich mit der Zeichenfolge verbindet, löst den Namen auf, was ein Event auslöst. Dahinter steht keine Datenbank, und Konto und Passwort gibt es nirgends.
+Legen Sie in einer MongoDB-Datenbank ein Dokument mit einer Verbindungszeichenfolge an, damit jede Sicherung der Datenbank es enthält. Die Datei `endpoints.js` ist ein Skript für `mongosh`. Es fügt ein Dokument ein, das den Dienst `sync-service` nennt und eine Verbindungszeichenfolge mit dem Konto `svc-sync`, einem zufälligen Passwort und einem Hostnamen enthält. Der Hostname gehört zu einem DNS-Honeytoken. Ein Angreifer, der eine Sicherung stiehlt, die Dokumente liest und sich mit der Zeichenfolge verbindet, löst den Namen auf, und das löst ein Ereignis aus. Hinter dem Namen steht keine Datenbank, und Konto und Passwort gibt es nirgends.
 
-## Datei platzieren
+## Umsetzung
 
-1. Wählen Sie eine Datenbank und eine Collection, die es gibt und die ein Eindringling bei der Suche nach Verbindungsdaten liest. Eine Collection mit Integrationen oder Diensten passt. Ändern Sie `DatabaseName`, `CollectionName` und den Namen des Dienstes passend zu Ihren Daten.
-2. Führen Sie das Skript einmal aus: `mongosh "mongodb://HOST" --file endpoints.js`, mit der Verbindungszeichenfolge Ihres Servers. Das Login braucht das Recht, in die Collection einzufügen.
-3. Verwenden Sie je Datenbank, deren Sicherungen Sie schützen, ein eigenes Skript.
-4. Halten Sie in den Notizen des Szenarios fest, wo Sie es abgelegt haben.
+1. Legen Sie das DNS-Honeytoken „Datenbank-Host“ an. Ersetzen Sie `Honeytoken-Domain` im Skript durch seinen Namen.
+2. Wählen Sie eine Datenbank und eine Collection, die es gibt und die ein Angreifer liest, wenn er nach Verbindungsdaten sucht. Eine Collection für Integrationen oder Dienste passt. Ersetzen Sie die Datenbank `integrations`, die Collection `endpoints` und den Dienstnamen `sync-service` im Skript passend zu Ihren Daten.
+3. Führen Sie das Skript einmal aus: `mongosh "mongodb://HOST" --file endpoints.js`, mit der Verbindungszeichenfolge Ihres Servers statt `HOST`. Die Anmeldung braucht das Recht, in die Collection einzufügen.
+4. Verwenden Sie für jede Datenbank, deren Sicherungen Sie schützen, ein eigenes Skript.
+5. Notieren Sie im Szenario, wo das Dokument liegt.
 
 ## Testen
 
-Lösen Sie den Namen mit `nslookup Honeytoken-Domain` auf einem Rechner mit Zugang zum Internet auf, oder verbinden Sie sich mit `mongosh` mit der Zeichenfolge im Dokument. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+Führen Sie auf einem Rechner mit Internetzugang `nslookup Honeytoken-Domain` mit dem Namen des Honeytokens aus. Innerhalb einer Minute zeigt das Szenario einen Incident. Schließen Sie den Incident nach dem Test.
+
+Um die ganze Kette zu testen, verbinden Sie sich mit `mongosh` über die Zeichenfolge im Dokument.
 
 ## Grenzen
 
-- Die Wiederherstellung einer Sicherung führt nichts aus. Ein Event entsteht nur, wenn jemand die Verbindungszeichenfolge nutzt.
-- Das Passwort steht im Dokument als Klartext, wie in vielen echten Collections mit Verbindungsdaten. Anwendungen, die diese Collection über einen Treiber lesen, würden den Namen ebenfalls auflösen; wählen Sie eine Collection, die keine liest.
-- Eine Wiederherstellung in einem Netz, das keine Namen im Internet auflösen kann, erreicht die DNS-Rolle nicht. Das gilt für jedes Beacon in einer Sicherung: Es erwischt den Eindringling, der Ihre Sicherung auf einem eigenen Rechner wiederherstellt, nicht den, der in einem abgeschotteten Labor arbeitet.
-- Wer den Dump nach Host-Namen durchsucht oder die Objekte der wiederhergestellten Datenbank ansieht, kann den Namen ungewöhnlich finden.
+- Das Wiederherstellen einer Sicherung führt nichts aus. Ein Ereignis entsteht erst, wenn jemand die Verbindungszeichenfolge verwendet.
+- Das Passwort steht im Dokument als Klartext, wie in vielen echten Sammlungen von Verbindungsdaten. Eine Anwendung, die diese Collection über einen Treiber liest, würde den Namen ebenfalls auflösen; wählen Sie eine Collection, die keine Anwendung liest.
+- Eine Wiederherstellung in einem Netz, das keine Namen im Internet auflösen kann, erreicht die DNS-Rolle nicht. Das gilt für jedes Beacon in einer Sicherung: Es fängt den Angreifer, der Ihre Sicherung auf einem eigenen Rechner wiederherstellt, aber nicht den, der in einem abgeschotteten Labor arbeitet.
+- Wer den Dump nach Hostnamen durchsucht oder sich die Objekte der wiederhergestellten Datenbank ansieht, kann den Namen ungewöhnlich finden.

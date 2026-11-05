@@ -1,23 +1,25 @@
-# Azure: blob container with a backup file
+## Story
 
-A private container in a storage account of your subscription, with one file of random bytes that looks like a backup. An intruder who has taken over an identity or a key of the storage account lists the containers, finds one with a name like `db-backups` and lists or downloads the file. The blob service writes the access to its log, an alert rule finds it there, and an action group forwards the alert to the URL of a honeytoken with a `POST`. The alert says that the container was listed or read. The address and the client of the caller are in the start of the request body that the honeytoken keeps, not in the alert: the address of the event itself is that of the Azure service that sends the webhook.
+A private container in a storage account of your subscription, with one file of random bytes that looks like a backup. An intruder who has taken over an identity or a key of the storage account lists the containers, finds one with a name like `db-backups` and lists or downloads the file. The blob service writes the access to its log, an alert rule finds it there, and an action group forwards the alert to the URL of a honeytoken with a `POST`. The alert says that the container was listed or read.
+
+## Setup
 
 The commands are for a shell such as bash or zsh, with the Azure CLI, signed in to the subscription of the storage account. They were checked against the documentation of the Azure CLI, Azure Monitor and Azure Storage, not run against a subscription. The Azure CLI may offer to install an extension when a command needs one.
 
-## What the bait does in the subscription
+### What the bait does in the subscription
 
 - The file holds random bytes that no program can read. It belongs to nothing: opening it opens nothing, and it holds no data of yours. The container is private (`--public-access off`), so only holders of a key, a SAS token or a role on the account reach it.
 - The storage account is one that exists. The decoy stands among its real containers, which is why an existing account serves better than a new one that nobody uses. The commands change nothing about its access rules.
 - The blob service logs every read of **every** container of the account to a Log Analytics workspace, not only this one. That costs ingestion in proportion to the traffic of the account, and the alert rule costs by how often it is evaluated; see the pricing pages of Azure Monitor. Choose an account with little read traffic, or one that already logs to a workspace.
 - Everything of yours that lists or reads all containers, such as a backup or a scanner, also reads this one and raises the alert.
 
-## What it needs
+### What it needs
 
 1. **An account** that may write blobs to the storage account (for example with the role Storage Blob Data Contributor), create resources in its resource group and create alert rules (for example with the role Monitoring Contributor), or that is owner of the resource group.
-2. **The URL of the honeytoken**, `Honeytoken-URL`. It stands in the action group in your subscription. Treat it as a secret: whoever knows it can send forged events, and whoever may read the action group can find it.
-3. **Names that Azure accepts.** A container name has 3 to 63 lowercase letters, digits and hyphens, and the prefix of the forwarding resources may contain only letters, digits and hyphens and must leave room for the longer names built from it (a workspace name has up to 63 characters). The console accepts more than that, and a command fails halfway if it does not fit.
+2. **The URL of the URL honeytoken "Webhook of the action group"**, `Honeytoken-URL`. It stands in the action group in your subscription. Treat it as a secret: whoever knows it can send forged events, and whoever may read the action group can find it.
+3. **Names that Azure accepts.** A container name has 3 to 63 lowercase letters, digits and hyphens. A command fails halfway if a name does not fit, so keep the names that you change short (a workspace name has up to 63 characters).
 
-## Step 1: variables, container and file
+### Step 1: variables, container and file
 
 ```bash
 LOCATION=germanywestcentral
@@ -33,7 +35,7 @@ rm orders-2026-03.bak
 
 Do this before the logging in step 2, so that your own upload is not in the log. Choose names that fit your storage: the container and the file of a backup, an export or an archive.
 
-## Step 2: log the blob service to a workspace
+### Step 2: log the blob service to a workspace
 
 If the blob service already sends its read log (`StorageRead`) to a Log Analytics workspace, `az monitor diagnostic-settings list --resource "$STORAGE_ID/blobServices/default"` shows it. Then use that workspace in the next steps: set `WS_ID` to its resource ID and `LOCATION` to its region with `LOCATION=$(az monitor log-analytics workspace show --ids "$WS_ID" --query location --output tsv)`, because the alert rule must be in the region of the workspace. Otherwise create one:
 
@@ -45,7 +47,7 @@ az monitor diagnostic-settings create --name audit-notify-blob-diag --resource "
 
 The logs land in the table `StorageBlobLogs`.
 
-## Step 3: action group
+### Step 3: action group
 
 The action group sends the alert to the honeytoken. The common alert schema is the only format that the alert rule of step 4 supports.
 
@@ -54,7 +56,7 @@ az monitor action-group create --resource-group "$RG" --name audit-notify-blob-a
 AG_ID=$(az monitor action-group show --resource-group "$RG" --name audit-notify-blob-ag --query id --output tsv)
 ```
 
-## Step 4: alert rule
+### Step 4: alert rule
 
 The rule looks every five minutes at the last ten for listing or reading in this container. It splits the alert by the address of the caller, the client, the kind of authentication and the result, so that these four values appear in the body of the request, in the list `dimensions`. The command `az monitor scheduled-query create` cannot split by dimensions, so the rule goes through the REST API of Azure Monitor with `az rest`. The query is not validated, because the columns of the table exist only after the first log has arrived. The address in `CallerIpAddress` includes the port.
 
@@ -66,7 +68,7 @@ az rest --method put --url "https://management.azure.com/subscriptions/$SUB/reso
 rm rule.json
 ```
 
-## Placing the bait
+### Placing the bait
 
 The container is found by listing the containers of the account, so it needs no file. To make it found sooner, mention its name where the people of the story would: in the readme of a repository, in a backup script (`db-backups` as the destination) or in a ticket. Record where you did it in the scenario.
 
@@ -84,7 +86,7 @@ The blob log reaches the workspace after some minutes, and the rule looks at it 
 {"name":"CallerIpAddress","value":"203.0.113.10:51234"},{"name":"UserAgentHeader","value":"AzURLCopy/..."},{"name":"AuthenticationType","value":"OAuth"},{"name":"StatusText","value":"Success"}
 ```
 
-If the body ends before `dimensions`, it was cut at 4096 bytes: the names of the subscription, resource group and rule before it are too long. Use shorter names for the resource group of the forwarding resources and for the prefix, and repeat the test. Close the incident after the test.
+If the body ends before `dimensions`, it was cut at 4096 bytes: the names of the subscription, resource group and rule before it are too long. Use a shorter name for the resource group of the forwarding resources, shorten the names of the forwarding resources in the commands, and repeat the test. Close the incident after the test.
 
 ## Removing
 

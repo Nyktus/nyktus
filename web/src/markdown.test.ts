@@ -154,7 +154,7 @@ describe('MarkdownView', () => {
   const draw = (source: string) => mount(MarkdownView, { props: { source } });
 
   test('draws elements, with the headings of a guide below the heading of the page', () => {
-    const wrapper = draw('# Title\n\n## Part\n\n- one\n\n1. first\n\n```\ncode\n```');
+    const wrapper = draw('## Title\n\n### Part\n\n- one\n\n1. first\n\n```\ncode\n```');
     expect(wrapper.get('h2').text()).toBe('Title');
     expect(wrapper.get('h3').text()).toBe('Part');
     expect(wrapper.find('h1').exists()).toBe(false);

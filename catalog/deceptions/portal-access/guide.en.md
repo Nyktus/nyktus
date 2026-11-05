@@ -1,76 +1,33 @@
-# Access to internal portals
+## Story
 
-Users and administrators note the addresses of internal portals in bookmarks, shortcuts, notes and exports. The files below hold such addresses. The files share the honeytokens of the story, so the same address appears in every file that names the same portal. Nothing stands behind the addresses: the accounts and passwords exist nowhere. You decide which files you place and where; one is enough, and they need not lie together.
+Place addresses of internal portals where an intruder looks for them. Users and administrators note them in bookmarks, shortcuts, notes and exports. The files `bookmarks.html`, `SSO-reset.html`, `Portal.url` and `Passwords.csv` hold a URL that belongs to a URL honeytoken. Whoever follows the link raises an event and is redirected to the redirect target of the honeytoken. Nothing stands behind the addresses, and the accounts and passwords exist nowhere. One file is enough, and the files need not lie together. The files `Meeting-notes.md` and `Favorites.html` hold no honeytoken. They give the story a believable surrounding.
 
-## Browser bookmarks
+## Setup
 
-The file `bookmarks.html` is an export of browser bookmarks in the format that every common browser writes and imports. In the bookmarks bar, a folder `Example Ltd` holds the link `VPN self-service`, which leads to `Honeytoken-URL-Portal`. That URL belongs to a URL honeytoken: following the link raises an event and redirects the browser to the redirect target of the honeytoken.
+Each placeholder in the files stands for one honeytoken:
 
-### Placing the file
+- `Honeytoken-URL-Portal`: "Portal", in `bookmarks.html`, `SSO-reset.html` and `Passwords.csv`
+- `Honeytoken-URL-Link`: "Link", in `Portal.url`
 
-1. Give the honeytoken a redirect target that fits the name of the portal, such as the public login page of a service that you use.
-2. Either place the file as an export, for example in the documents of an account that exists only for this purpose or in a backup of a user profile, or import it into the browser of such an account, so that the link appears in its bookmarks.
-3. Add bookmarks of your own around it, such as the public sites of your organization, so that the file does not hold a single folder.
-4. Record where you placed it in the notes of the scenario.
+1. Create the two URL honeytokens.
+2. Replace each placeholder with the URL of its honeytoken. Replace `Example Ltd` in the HTML and Markdown files with the name of your organization.
+3. Give each honeytoken a redirect target that fits the name of the portal, such as the public login page of a service that you use. Whoever follows the link then sees a page.
+4. Place the files where an intruder looks around, file by file.
+5. `bookmarks.html`: as an export, for example in the documents of an account that exists only for this purpose or in a backup of a user profile, or import it into the browser of such an account, so that the link appears in its bookmarks. Add bookmarks of your own around it, so that the file does not hold a single folder.
+6. `SSO-reset.html`: where an intruder looks for ways to take over accounts: on a file share of the IT department, in a folder with notes for the service desk or in the documents of an account that exists only for this purpose.
+7. `Portal.url`: on the desktop or in the documents of such an account, on a file share of the IT department or in a folder with handover notes. Rename it so that its name promises something valuable, such as `VPN access.url`. The extension `.url` must stay.
+8. `Passwords.csv`: where a user leaves an export that they should have deleted, such as the downloads or documents of such an account or a share of the IT department. Rename the entries if your naming scheme differs from `wiki`, `build` and `portal`.
+9. `Meeting-notes.md` and `Favorites.html`: beside the other files of the story.
+10. Record in the notes of the scenario where you placed the files.
 
-### Testing
+## Testing
 
-Open the file in a browser and follow the link, or import it and open the bookmark. Within a minute, the scenario shows an incident. Close the incident after the test.
+On a computer with access to the internet, run `curl` with the URL of a honeytoken, such as `curl Honeytoken-URL-Portal`. The URLs are in the table "Honeytokens of this scenario". Within a minute, the scenario shows an incident. Close the incident after the test.
 
-## Note on the reset of single sign-on
-
-The file `SSO-reset.html` is a short note of the IT department of `Example Ltd` with a link to a portal for resetting the single sign-on: `Honeytoken-URL-Portal`. The URL belongs to a URL honeytoken: whoever follows the link raises an event and is redirected to the redirect target of the honeytoken.
-
-### Placing the file
-
-1. Give the honeytoken a redirect target that fits the portal, such as the public login page of a service that you use.
-2. Place the file where an intruder looks for ways to take over accounts: on a file share of the IT department, in a folder with notes for the service desk, in the documents of an account that exists only for this purpose.
-3. Change `Contact` to a team that exists.
-4. Record where you placed it in the notes of the scenario.
-
-### Testing
-
-Open the file in a browser on a computer with access to the internet and follow the link. Within a minute, the scenario shows an incident. Close the incident after the test.
-
-## Internet shortcut
-
-The file `Portal.url` is a Windows shortcut to the URL `Honeytoken-URL-Link`. That URL belongs to a URL honeytoken: opening the shortcut opens it in the browser, which raises an event, and the browser is redirected to the redirect target of the honeytoken, or to the default target of the trigger.
-
-### Placing the file
-
-1. Give the honeytoken a redirect target that fits the name of the shortcut, such as the public login page of a service that you use. Whoever opens the shortcut sees that page.
-2. Rename the file so that its name promises something valuable, such as `VPN access.url`, `Payroll.url` or `Admin console.url`. The extension `.url` must stay.
-3. Place it where an intruder looks around, such as the desktop or the documents of an account that exists only for this purpose, a file share of the IT department or a folder with handover notes.
-4. Record where you placed it in the notes of the scenario.
-
-### Testing
-
-Open the shortcut on a computer with access to the internet. Within a minute, the scenario shows an incident. Close the incident after the test.
-
-## Password export of a browser
-
-The file `Passwords.csv` has the columns that Chrome, Edge and other browsers write when the user exports saved passwords. Three entries belong to the account `j.doe`; the address of one of them is `Honeytoken-URL-Portal`. That URL belongs to a URL honeytoken: whoever opens the address, for example to try the password, raises an event and is redirected to the redirect target of the honeytoken. The passwords exist nowhere.
-
-### Placing the file
-
-1. Give the honeytoken a redirect target that fits the entry, such as the public login page of a service that you use.
-2. Place the file where a user leaves an export that they should have deleted: in the downloads or documents of an account that exists only for this purpose, or on a share of the IT department.
-3. Rename the entries if your own naming scheme differs from `wiki`, `build` and `portal`.
-4. Record where you placed it in the notes of the scenario.
-
-### Testing
-
-Open the URL of the third entry in a browser on a computer with access to the internet. Within a minute, the scenario shows an incident. Close the incident after the test.
-
-## Pocket litter
-
-The files `Meeting-notes.md` and `Favorites.html` hold no honeytoken and raise no event, whatever happens to them. They give the story a believable surrounding: place them in the same places as the other files of the story, beside the files that raise an event.
+Opening a file in a browser and following the link, or opening `Portal.url`, has the same effect.
 
 ## Limits
 
 - Whoever reads one of the files, or looks at the properties of the shortcut, sees the URL. It names the address of your trigger and a random value.
-- `bookmarks.html`: Opening the file shows the bookmarks; only following the link raises an event.
-- `SSO-reset.html`: Opening the file raises no event; only following the link does.
-- `Portal.url`: The shortcut raises an event only when someone opens it. Windows Explorer does not request the URL when it lists the folder.
-- `Passwords.csv`: Only someone who opens the address raises an event. Reading the file does not.
-- `Passwords.csv`: The first two entries point to names under `corp.example.com` that you do not control through Nyktus. Make sure that nobody enters these passwords anywhere, or that those names do not exist in your network.
+- Only following the link raises an event. Opening `bookmarks.html` or `SSO-reset.html`, reading `Passwords.csv` and listing the folder of `Portal.url` in the Windows Explorer raise none.
+- The first two entries of `Passwords.csv` point to names under `corp.example.com` that you do not control through Nyktus. Make sure that nobody enters these passwords anywhere, or that those names do not exist in your network.
