@@ -4,7 +4,7 @@
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { arrive, boot, submit, type } from './testing/boot';
-import { failure, fakeServer, honeypot, honeypotId, honeytoken, joined, json, noContent, scenario, scenarioId, sessionBody } from './testing/fakeServer';
+import { engageActivities, failure, fakeServer, honeypot, honeypotId, honeytoken, joined, json, noContent, scenario, scenarioId, sessionBody } from './testing/fakeServer';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -13,6 +13,15 @@ afterEach(() => {
 });
 
 type Role = 'admin' | 'user' | 'viewer';
+
+/** Ticks the box of an activity by the text of its label. */
+async function check(wrapper: Awaited<ReturnType<typeof boot>>['wrapper'], label: string): Promise<void> {
+  const box = wrapper.findAll('fieldset label').find((l) => l.text() === label);
+  if (box === undefined) {
+    throw new Error(`no box named ${label}`);
+  }
+  await box.get('input').setValue(true);
+}
 
 const detail = `/api/v1/scenarios/${scenarioId}`;
 const htPath = '/api/v1/honeytokens/c0ffee00-1111-4222-8333-944444444444';
@@ -63,7 +72,8 @@ describe('creating a scenario', () => {
     const { wrapper, router } = await boot(s, '/scenarios/new');
     await type(wrapper, '#name', '  Stolen backup  ');
     await type(wrapper, '#notes', 'A backup.');
-    await type(wrapper, '#engage', 'eac0005, EAC0006 EAC0005');
+    await check(wrapper, 'Application Diversity (EAC0006)');
+    await check(wrapper, 'Lures (EAC0005)');
     await submit(wrapper);
     expect(s.requests.find((r) => r.method === 'POST')?.body).toEqual({ name: 'Stolen backup', notes: 'A backup.', engage_activities: ['EAC0005', 'EAC0006'] });
     await arrive(router, 'scenario');
@@ -78,14 +88,67 @@ describe('creating a scenario', () => {
     expect(s.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
   });
 
-  test('does not send Engage identifiers that are none, and says which', async () => {
-    const s = server();
+  test('offers the Engage activities by name, with the identifier behind it, and sends none that was not chosen', async () => {
+    const s = server('admin', { 'POST /api/v1/scenarios': () => json(201, scenario()) });
     const { wrapper } = await boot(s, '/scenarios/new');
+    expect(wrapper.findAll('fieldset label').map((l) => l.text())).toEqual(['Lures (EAC0005)', 'Application Diversity (EAC0006)', 'Pocket Litter (EAC0011)']);
     await type(wrapper, '#name', 'x');
-    await type(wrapper, '#engage', 'EAC0005, T1078');
     await submit(wrapper);
-    expect(wrapper.text()).toContain('Unknown Engage activities: T1078');
-    expect(s.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
+    expect(s.requests.find((r) => r.method === 'POST')?.body).toEqual({ name: 'x', notes: '', engage_activities: [] });
+  });
+
+  test('says when the names could not be read, keeps the identifiers of a scenario, and asks again on request', async () => {
+    const s = server('admin', { 'GET /api/v1/catalog/engage': () => failure(503, 'unavailable'), [`PATCH ${detail}`]: () => json(200, scenario({ notes: 'Moved' })) });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+    expect(wrapper.get('fieldset [role=alert]').text()).toContain('The names of the activities could not be loaded.');
+    // The identifier stands where the name would, and the box can still be cleared.
+    expect(wrapper.findAll('fieldset label').map((l) => l.text())).toEqual(['EAC0005']);
+    expect(wrapper.get('dl').text()).toContain('EAC0005');
+    await type(wrapper, '#notes', 'Moved');
+    await submit(wrapper);
+    expect(s.requests.find((r) => r.method === 'PATCH')?.body).toEqual({ notes: 'Moved' });
+    s.on('GET /api/v1/catalog/engage', () => json(200, { activities: engageActivities }));
+    await wrapper.get('fieldset [role=alert] button').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('fieldset [role=alert]').exists()).toBe(false);
+    expect(wrapper.findAll('fieldset label').map((l) => l.text())).toEqual(['Lures (EAC0005)', 'Application Diversity (EAC0006)', 'Pocket Litter (EAC0011)']);
+  });
+
+  test('offers no activity to choose while the names are missing, but a way to ask again', async () => {
+    const s = server('admin', { 'GET /api/v1/catalog/engage': () => failure(503, 'unavailable'), 'POST /api/v1/scenarios': () => json(201, scenario()) });
+    const { wrapper } = await boot(s, '/scenarios/new');
+    expect(wrapper.findAll('fieldset input')).toHaveLength(0);
+    expect(wrapper.get('fieldset [role=alert] button').text()).toBe('Load again');
+    s.on('GET /api/v1/catalog/engage', () => json(200, { activities: engageActivities }));
+    await wrapper.get('fieldset [role=alert] button').trigger('click');
+    await flushPromises();
+    expect(wrapper.findAll('fieldset input')).toHaveLength(3);
+  });
+
+  test('sends nothing for the same activities in another order', async () => {
+    const s = server('admin', {
+      [`GET ${detail}`]: () => json(200, scenario({ engage_activities: ['EAC0011', 'EAC0005'] })),
+      [`PATCH ${detail}`]: () => json(200, scenario()),
+    });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+    await check(wrapper, 'Application Diversity (EAC0006)');
+    await wrapper.findAll('fieldset input')[1]?.setValue(false);
+    await submit(wrapper);
+    expect(s.requests.filter((r) => r.method === 'PATCH')).toHaveLength(0);
+    expect(wrapper.text()).toContain('Saved.');
+  });
+
+  test('keeps an activity that the list does not know, until the user clears it', async () => {
+    const s = server('admin', {
+      [`GET ${detail}`]: () => json(200, scenario({ engage_activities: ['EAC0005', 'EAC0099'] })),
+      [`PATCH ${detail}`]: () => json(200, scenario()),
+    });
+    const { wrapper } = await boot(s, `/scenarios/${scenarioId}`);
+    const labels = wrapper.findAll('fieldset label').map((l) => l.text());
+    expect(labels).toContain('EAC0099');
+    await check(wrapper, 'Pocket Litter (EAC0011)');
+    await submit(wrapper);
+    expect(s.requests.find((r) => r.method === 'PATCH')?.body).toEqual({ engage_activities: ['EAC0005', 'EAC0011', 'EAC0099'] });
   });
 
   test('keeps the form for a failure', async () => {
@@ -104,7 +167,7 @@ describe('a scenario', () => {
     const { wrapper } = await boot(server(), path);
     expect(wrapper.get('h1').text()).toBe('Stolen backup');
     expect(wrapper.get('.notes').text()).toBe('A backup that someone left on a share.');
-    expect(wrapper.text()).toContain('EAC0005');
+    expect(wrapper.get('dl').text()).toContain('Lures (EAC0005)');
   });
 
   test('lists its honeytokens and honeypots, asking for those of the scenario', async () => {
@@ -168,8 +231,9 @@ describe('a scenario', () => {
     const s = server('viewer', { 'GET /api/v1/honeytokens': () => json(200, { honeytokens: [honeytoken({ scenario_id: scenarioId })] }) });
     const { wrapper } = await boot(s, path);
     expect(wrapper.find('form').exists()).toBe(false);
-    // The frame has two buttons of its own: the one that opens the menu on a narrow screen, and the sign-out.
-    expect(wrapper.findAll('button').map((b) => b.text())).toEqual(['Menu', 'Sign out']);
+    // The frame has two buttons of its own: the one that opens the menu on a narrow screen, and the sign-out. The
+    // value of the honeytoken can be copied by whoever reads it; nothing changes the scenario.
+    expect(wrapper.findAll('button').map((b) => b.text())).toEqual(['Menu', 'Sign out', 'Copy']);
   });
 
   test('sends only what changed', async () => {
@@ -204,24 +268,30 @@ describe('a scenario', () => {
       await arrive(router, 'scenarios');
     });
 
-    test('deletes the decoys that the user chose, and only those', async () => {
+    test('deletes the honeytokens and honeypots with the scenario when the user chose it', async () => {
       const { wrapper, s } = await ask();
-      await wrapper.get('input[name="delete-honeytokens"][value="delete"]').setValue(true);
-      await wrapper.get('input[name="delete-honeypots"][value="delete"]').setValue(true);
+      expect((wrapper.get('dialog[open] input[type=checkbox]').element as HTMLInputElement).checked).toBe(false);
+      await wrapper.get('dialog[open] input[type=checkbox]').setValue(true);
       await wrapper.get('dialog[open] .danger').trigger('click');
       await flushPromises();
       expect(s.requests.find((r) => r.method === 'DELETE')?.url).toBe(`${detail}?honeytokens=delete&honeypots=delete`);
     });
 
+    test('offers the choice to a user as well as to an administrator', async () => {
+      const { wrapper } = await ask('user');
+      expect(wrapper.find('dialog[open] input[type=checkbox]').exists()).toBe(true);
+      expect(wrapper.get('dialog[open]').text()).toContain('Without it, they stay and no longer belong to a scenario.');
+    });
+
     // A choice to delete that was given up must not come back with the next click on "Delete".
     test('starts with keeping again after the user cancelled with a choice to delete', async () => {
       const { wrapper, s } = await ask();
-      await wrapper.get('input[name="delete-honeytokens"][value="delete"]').setValue(true);
+      await wrapper.get('dialog[open] input[type=checkbox]').setValue(true);
       await wrapper.get('dialog[open] .button-ghost').trigger('click');
       await flushPromises();
       await wrapper.findAll('button').find((b) => b.text() === 'Delete' && b.element.closest('dialog') === null)!.trigger('click');
       await flushPromises();
-      expect((wrapper.get('input[name="delete-honeytokens"][value="keep"]').element as HTMLInputElement).checked).toBe(true);
+      expect((wrapper.get('dialog[open] input[type=checkbox]').element as HTMLInputElement).checked).toBe(false);
       await wrapper.get('dialog[open] .danger').trigger('click');
       await flushPromises();
       expect(s.requests.find((r) => r.method === 'DELETE')?.url).toBe(detail);
@@ -230,7 +300,7 @@ describe('a scenario', () => {
     test('starts with keeping again after the server refused a choice to delete', async () => {
       const { wrapper, s } = await ask();
       s.on(`DELETE ${detail}`, () => failure(503, 'unavailable'));
-      await wrapper.get('input[name="delete-honeytokens"][value="delete"]').setValue(true);
+      await wrapper.get('dialog[open] input[type=checkbox]').setValue(true);
       await wrapper.get('dialog[open] .danger').trigger('click');
       await flushPromises();
       s.on(`DELETE ${detail}`, noContent);
@@ -239,14 +309,6 @@ describe('a scenario', () => {
       await wrapper.get('dialog[open] .danger').trigger('click');
       await flushPromises();
       expect(s.requests.filter((r) => r.method === 'DELETE').at(-1)?.url).toBe(detail);
-    });
-
-    test('asks for the honeypots to be deleted only when the user chose it', async () => {
-      const { wrapper, s } = await ask();
-      await wrapper.get('input[name="delete-honeypots"][value="delete"]').setValue(true);
-      await wrapper.get('dialog[open] .danger').trigger('click');
-      await flushPromises();
-      expect(s.requests.find((r) => r.method === 'DELETE')?.url).toBe(`${detail}?honeypots=delete`);
     });
 
     test('does nothing when the user cancels', async () => {

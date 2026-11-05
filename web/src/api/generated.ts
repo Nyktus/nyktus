@@ -249,6 +249,13 @@ export interface AlertDeliveryList {
   deliveries: AlertDelivery[];
 }
 
+export interface CatalogEngageList {
+  activities: {
+    id: string;
+    name: string;
+  }[];
+}
+
 export interface CatalogDeceptionList {
   deceptions: CatalogDeceptionSummary[];
 }
@@ -619,6 +626,7 @@ export const operations = {
   listAlertChannels: { method: 'GET', path: '/api/v1/alert-channels', access: 'alert_channels:read', navigation: false, binary: false },
   listAuditEntries: { method: 'GET', path: '/api/v1/audit-entries', access: 'audit:read', navigation: false, binary: false },
   listCatalogDeceptions: { method: 'GET', path: '/api/v1/catalog/deceptions', access: 'catalog:read', navigation: false, binary: false },
+  listCatalogEngageActivities: { method: 'GET', path: '/api/v1/catalog/engage', access: 'catalog:read', navigation: false, binary: false },
   listEvents: { method: 'GET', path: '/api/v1/events', access: 'events:read', navigation: false, binary: false },
   listHoneypots: { method: 'GET', path: '/api/v1/honeypots', access: 'honeypots:read', navigation: false, binary: false },
   listHoneytokens: { method: 'GET', path: '/api/v1/honeytokens', access: 'honeytokens:read', navigation: false, binary: false },
@@ -935,6 +943,12 @@ export interface OperationTypes {
     query: { lang?: 'en' | 'de' };
     body: undefined;
     responses: { 200: CatalogDeceptionList };
+  };
+  listCatalogEngageActivities: {
+    path: Record<string, never>;
+    query: Record<string, never>;
+    body: undefined;
+    responses: { 200: CatalogEngageList };
   };
   listEvents: {
     path: Record<string, never>;

@@ -42,13 +42,21 @@ export function sessionBody(role: 'admin' | 'user' | 'viewer' = 'admin', name = 
   };
 }
 
+/** A few activities of Engage, in the order of the list. */
+export const engageActivities = [
+  { id: 'EAC0005', name: 'Lures' },
+  { id: 'EAC0006', name: 'Application Diversity' },
+  { id: 'EAC0011', name: 'Pocket Litter' },
+];
+
 /**
  * A server for tests: it answers by method and path, such as 'GET /api/v1/session',
  * records every request and answers an unknown route with a 404, like the console.
  */
 export function fakeServer(routes: Record<string, Handler>) {
   const requests: Recorded[] = [];
-  const handlers = new Map(Object.entries(routes));
+  // The names of the Engage activities are the same for everyone, and any page that shows a scenario asks for them.
+  const handlers = new Map<string, Handler>(Object.entries({ 'GET /api/v1/catalog/engage': () => json(200, { activities: engageActivities }), ...routes }));
   return {
     requests,
     /** Replaces or adds the answer to a route. */

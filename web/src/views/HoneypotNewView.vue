@@ -13,6 +13,7 @@ import { errorText } from '../api/messages';
 import HoneypotForm from '../components/HoneypotForm.vue';
 import SecretReveal from '../components/SecretReveal.vue';
 import { t } from '../i18n';
+import { readHoneypotPrefill } from '../slotPrefill';
 
 type Body = OperationTypes['createHoneypot']['body'];
 
@@ -20,6 +21,8 @@ const route = useRoute();
 const router = useRouter();
 // A link from a scenario names it, so that the new honeypot joins it.
 const scenario = computed(() => (typeof route.query.scenario === 'string' ? route.query.scenario : ''));
+// A link from a slot of a scenario also names what the slot asks for. Only values the form offers are taken over.
+const prefill = computed(() => readHoneypotPrefill(route.query));
 const busy = ref(false);
 const error = ref<string | undefined>();
 const createdId = ref<string | undefined>();
@@ -72,7 +75,7 @@ onBeforeUnmount(discard);
         <RouterLink class="button button-primary" :to="{ name: 'honeypot', params: { id: createdId } }">{{ t('honeypots.title') }}</RouterLink>
       </p>
     </template>
-    <HoneypotForm v-else :key="scenario" :scenario="scenario" :busy="busy" :submit-label="t('honeypots.create.submit')" @create="create" />
+    <HoneypotForm v-else :key="route.fullPath" :scenario="scenario" :prefill="prefill" :busy="busy" :submit-label="t('honeypots.create.submit')" @create="create" />
   </section>
 </template>
 

@@ -287,3 +287,43 @@ func TestFile_HeadReceivesNoBody(t *testing.T) {
 		t.Errorf("status %d, length %d, want 200 and %d", resp.StatusCode, resp.ContentLength, len(configContent))
 	}
 }
+
+func TestEngage_ListsTheNamesOfTheActivitiesInOrder(t *testing.T) {
+	t.Parallel()
+	h := NewHandler(testCatalog(t))
+
+	got := decode[engageResponse](t, serve(t, h.Engage, "/api/v1/catalog/engage"))
+	if len(got.Activities) < 23 {
+		t.Fatalf("%d activities, want at least 23", len(got.Activities))
+	}
+	for i, a := range got.Activities {
+		if i > 0 && got.Activities[i-1].ID >= a.ID {
+			t.Errorf("%s follows %s; want ascending identifiers", a.ID, got.Activities[i-1].ID)
+		}
+	}
+	if first := got.Activities[0]; first.ID != "EAC0001" || first.Name != "API Monitoring" {
+		t.Errorf("first activity = %+v", first)
+	}
+	// Every identifier that a deception of the catalog can name has a name.
+	names := map[string]string{}
+	for _, a := range got.Activities {
+		names[a.ID] = a.Name
+	}
+	for _, id := range []string{"EAC0005", "EAC0011", "EAC0022"} {
+		if names[id] == "" {
+			t.Errorf("%s has no name", id)
+		}
+	}
+}
+
+func TestEngage_TakesNoQuery(t *testing.T) {
+	t.Parallel()
+	h := NewHandler(testCatalog(t))
+
+	// The names are English only, so not even the language is a parameter.
+	for _, query := range []string{"?lang=de", "?lang=", "?x=1", "?%zz"} {
+		if rec := serve(t, h.Engage, "/api/v1/catalog/engage"+query); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", query, rec.Code)
+		}
+	}
+}
