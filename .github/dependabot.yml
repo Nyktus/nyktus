@@ -55,3 +55,15 @@ updates:
     groups:
       web-dependencies:
         update-types: [minor, patch]
+
+  # The base image of the release images. It is pinned by digest, so only an
+  # update moves it.
+  - package-ecosystem: docker
+    directory: /deploy/release
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
