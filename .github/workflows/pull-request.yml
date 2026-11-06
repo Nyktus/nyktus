@@ -33,19 +33,25 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      # Dependabot cannot sign off. Its commits are exempt only in pull requests that
-      # Dependabot opened, because anyone can set the author of a commit, but not the
-      # author of a pull request.
+      # Dependabot and the app that opens the release pull requests cannot sign
+      # off. Their commits are exempt only in pull requests that they opened,
+      # because anyone can set the author of a commit, but not the author of a
+      # pull request.
       - env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          RELEASE_APP_SLUG: ${{ vars.RELEASE_APP_SLUG }}
         run: |
           dependabot='dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>'
+          release_bot="${RELEASE_APP_SLUG}[bot]"
           status=0
           for sha in $(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA"); do
             author="$(git log -1 --format='%an <%ae>' "$sha")"
             if [[ "$PR_AUTHOR" == "dependabot[bot]" && "$author" == "$dependabot" ]]; then
+              continue
+            fi
+            if [[ -n "$RELEASE_APP_SLUG" && "$PR_AUTHOR" == "$release_bot" && "$(git log -1 --format='%an' "$sha")" == "$release_bot" ]]; then
               continue
             fi
             if ! git log -1 --format='%B' "$sha" | grep --quiet --line-regexp --fixed-strings "Signed-off-by: $author"; then
