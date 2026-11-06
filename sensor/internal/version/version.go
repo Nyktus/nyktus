@@ -17,13 +17,31 @@ const Development = "devel"
 // sensor.
 var reportable = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$`)
 
+// linked is the version that the linker sets in the release builds, with
+// -ldflags "-X nyktus.org/nyktus/sensor/internal/version.linked=v0.1.0". The
+// toolchain does not stamp the tag of a module that lives in a subdirectory of
+// its repository when it builds from a checkout: it stamps a pseudo-version, which
+// Of turns into "devel". Only "go install ...@version" stamps the tag, and a
+// release builds from the checkout.
+var linked string
+
 // Current returns the version of the running binary.
 func Current() string {
 	info, ok := debug.ReadBuildInfo()
-	if !ok {
+	return resolve(linked, info, ok)
+}
+
+// resolve prefers the version of the linker over the one that the toolchain
+// stamped.
+func resolve(linked string, info *debug.BuildInfo, ok bool) string {
+	switch {
+	case linked != "":
+		return Of(linked)
+	case !ok:
 		return Development
+	default:
+		return Of(info.Main.Version)
 	}
-	return Of(info.Main.Version)
 }
 
 // Of returns the version to report for the version that the toolchain stamped
