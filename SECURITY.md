@@ -13,7 +13,7 @@ Do not open a public issue, discussion or pull request for a vulnerability.
 Report it privately through one of these channels:
 
 1. **GitHub private vulnerability reporting** (preferred): [open a draft advisory](https://github.com/nyktus/nyktus/security/advisories/new).
-2. **Email**: [security@nyktus.org](mailto:security@nyktus.org).
+2. **Email**: [contact@nyktus.org](mailto:contact@nyktus.org).
 
 Please include:
 
