@@ -67,3 +67,14 @@ updates:
     commit-message:
       prefix: build
       include: scope
+
+  # The images of the reference installation, pinned by digest.
+  - package-ecosystem: docker-compose
+    directory: /deploy/compose
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope

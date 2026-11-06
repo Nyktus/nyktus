@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: The Nyktus Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The sensor on a host of a monitored network. It is not part of compose.yaml: it
+# runs where the intruders are, and the console and the trigger run elsewhere.
+#
+#   docker compose --file sensor.compose.yaml up --detach
+#
+# The directory "sensor" next to this file holds sensor.yaml, the secrets and the
+# host key that the configuration names. Their files must be readable by the user
+# 65532 of the container and by no one else (mode 0600, owner 65532), or the
+# sensor refuses to start. The honeypots listen on the ports of sensor.yaml; use
+# ports above 1023, or publish a low port of the host to a high one, so that the
+# sensor needs no capability.
+
+name: nyktus-sensor
+
+services:
+  sensor:
+    image: ${NYKTUS_SENSOR_IMAGE:-ghcr.io/nyktus/nyktus-sensor}:${NYKTUS_SENSOR_VERSION:?set NYKTUS_SENSOR_VERSION}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    volumes:
+      - ./sensor:/etc/nyktus-sensor:ro
+    # Publish the ports of the honeypots, for example the SSH honeypot of
+    # sensor.yaml that listens on 2222:
+    # ports:
+    #   - 22:2222

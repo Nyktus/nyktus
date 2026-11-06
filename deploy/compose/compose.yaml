@@ -1,0 +1,248 @@
+# SPDX-FileCopyrightText: The Nyktus Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Reference installation of Nyktus on one host: PostgreSQL, the migrations, the
+# server roles and an nginx that serves the console over HTTPS. Read README.md
+# first. Every setting comes from the file ".env" next to this one; nothing
+# secret belongs in this file.
+#
+# The sensor does not belong here: it runs in the networks that Nyktus watches.
+# See sensor.compose.yaml.
+
+name: nyktus
+
+x-nyktus: &nyktus
+  image: ${NYKTUS_IMAGE:-ghcr.io/nyktus/nyktus}:${NYKTUS_VERSION:?set NYKTUS_VERSION in .env}
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 256
+  # Idle, the roles use 8 to 75 MiB. The limit keeps a flood or a leak from taking
+  # the host along; the service restarts when it is reached. Raise it for a
+  # console with many users.
+  mem_limit: 256m
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+  networks: [backend]
+
+x-environment: &environment
+  NYKTUS_ENV: production
+  NYKTUS_LOG_LEVEL: ${NYKTUS_LOG_LEVEL:-info}
+
+# The addresses of the two proxies in the network "backend". The console and the
+# trigger believe the client address in X-Forwarded-For only from these, and not
+# from the gateway of the network, which is what a connection from the host
+# arrives from.
+x-trusted-proxies: &trusted-proxies 172.29.88.10,172.29.88.11
+
+services:
+  db:
+    image: postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139 # 16.15
+    restart: unless-stopped
+    read_only: true
+    # The entrypoint starts as root, fixes the ownership of the data directory and
+    # then drops to the user of PostgreSQL, which needs these five.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 512
+    logging: *logging
+    networks: [backend]
+    # No published port: only the services of this file reach the database.
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      NYKTUS_OWNER_DB_PASSWORD: ${NYKTUS_OWNER_DB_PASSWORD:?set NYKTUS_OWNER_DB_PASSWORD in .env}
+      NYKTUS_CONSOLE_DB_PASSWORD: ${NYKTUS_CONSOLE_DB_PASSWORD:?set NYKTUS_CONSOLE_DB_PASSWORD in .env}
+      NYKTUS_TRIGGER_DB_PASSWORD: ${NYKTUS_TRIGGER_DB_PASSWORD:?set NYKTUS_TRIGGER_DB_PASSWORD in .env}
+      NYKTUS_DNS_DB_PASSWORD: ${NYKTUS_DNS_DB_PASSWORD:?set NYKTUS_DNS_DB_PASSWORD in .env}
+      NYKTUS_WORKER_DB_PASSWORD: ${NYKTUS_WORKER_DB_PASSWORD:?set NYKTUS_WORKER_DB_PASSWORD in .env}
+    volumes:
+      - db:/var/lib/postgresql/data
+      # The scripts run in the order of their names, on the first start only.
+      - ../postgres/roles.sql:/docker-entrypoint-initdb.d/00-roles.sql:ro
+      - ./initdb/10-nyktus.sh:/docker-entrypoint-initdb.d/10-nyktus.sh:ro
+    tmpfs:
+      - /tmp
+      - /run/postgresql
+    healthcheck:
+      test: [CMD, pg_isready, --username, postgres, --quiet]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # Applies the migrations as the owner of the database, then ends. It runs again
+  # with every "docker compose up", which is what an upgrade needs.
+  migrate:
+    <<: *nyktus
+    restart: "no"
+    command: [migrate]
+    environment:
+      <<: *environment
+      NYKTUS_DATABASE_URL: postgres://nyktus_owner:${NYKTUS_OWNER_DB_PASSWORD:?}@db/nyktus?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # The API and the web console. Only the proxy reaches it.
+  console:
+    <<: *nyktus
+    mem_limit: 512m
+    command: [serve, --roles=console]
+    environment:
+      <<: *environment
+      NYKTUS_ENCRYPTION_KEYS: ${NYKTUS_ENCRYPTION_KEYS:?set NYKTUS_ENCRYPTION_KEYS in .env}
+      NYKTUS_CONSOLE_ADDR: 0.0.0.0:8080
+      NYKTUS_CONSOLE_URL: ${NYKTUS_CONSOLE_URL:?set NYKTUS_CONSOLE_URL in .env}
+      NYKTUS_CONSOLE_DATABASE_URL: postgres://nyktus_console_login:${NYKTUS_CONSOLE_DB_PASSWORD:?}@db/nyktus?sslmode=disable
+      NYKTUS_TRIGGER_URL: ${NYKTUS_TRIGGER_URL:?set NYKTUS_TRIGGER_URL in .env}
+      NYKTUS_DNS_ZONES: ${NYKTUS_DNS_ZONES:-}
+      NYKTUS_TRUSTED_PROXIES: *trusted-proxies
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Correlates events into incidents and delivers the alerts. It runs apart from
+  # the console, so that no process holds the database logins of both. It needs
+  # no port, but it connects to the receivers of the alert channels, so the
+  # network "backend" is not internal. For email channels, add the NYKTUS_SMTP_*
+  # settings of the documentation to its environment.
+  worker:
+    <<: *nyktus
+    command: [serve, --roles=worker]
+    environment:
+      <<: *environment
+      NYKTUS_ENCRYPTION_KEYS: ${NYKTUS_ENCRYPTION_KEYS:?set NYKTUS_ENCRYPTION_KEYS in .env}
+      NYKTUS_CONSOLE_URL: ${NYKTUS_CONSOLE_URL:?set NYKTUS_CONSOLE_URL in .env}
+      NYKTUS_WORKER_DATABASE_URL: postgres://nyktus_worker_login:${NYKTUS_WORKER_DB_PASSWORD:?}@db/nyktus?sslmode=disable
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Answers the URLs of the honeytokens, and the reports of the sensors. It is the
+  # role that the internet reaches. The port is published on the loopback address
+  # for a proxy of your own; the profile "trigger-proxy" starts the one of this file.
+  trigger:
+    <<: *nyktus
+    command: [serve, --roles=trigger]
+    environment:
+      <<: *environment
+      NYKTUS_TRIGGER_ADDR: 0.0.0.0:8081
+      NYKTUS_TRIGGER_DATABASE_URL: postgres://nyktus_trigger_login:${NYKTUS_TRIGGER_DB_PASSWORD:?}@db/nyktus?sslmode=disable
+      NYKTUS_TRIGGER_DEFAULT_REDIRECT: ${NYKTUS_TRIGGER_DEFAULT_REDIRECT:?set NYKTUS_TRIGGER_DEFAULT_REDIRECT in .env}
+      NYKTUS_TRUSTED_PROXIES: *trusted-proxies
+    ports:
+      - ${NYKTUS_TRIGGER_BIND:-127.0.0.1}:${NYKTUS_TRIGGER_PORT:-8081}:8081
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # The authoritative name server for the zones of DNS honeytokens. It listens on
+  # an unprivileged port in the container, and Docker publishes port 53 to it, so
+  # that the process needs no capability. Start it with the profile "dns".
+  dns:
+    <<: *nyktus
+    profiles: [dns]
+    command: [serve, --roles=dns]
+    environment:
+      <<: *environment
+      NYKTUS_DNS_ADDR: 0.0.0.0:8053
+      NYKTUS_DNS_DATABASE_URL: postgres://nyktus_dns_login:${NYKTUS_DNS_DB_PASSWORD:?}@db/nyktus?sslmode=disable
+      NYKTUS_DNS_ZONES: ${NYKTUS_DNS_ZONES:?set NYKTUS_DNS_ZONES in .env}
+      NYKTUS_DNS_NAMESERVERS: ${NYKTUS_DNS_NAMESERVERS:?set NYKTUS_DNS_NAMESERVERS in .env}
+      NYKTUS_DNS_ANSWER_IPV4: ${NYKTUS_DNS_ANSWER_IPV4:?set NYKTUS_DNS_ANSWER_IPV4 in .env}
+    ports:
+      - ${NYKTUS_DNS_BIND:-0.0.0.0}:53:8053/udp
+      - ${NYKTUS_DNS_BIND:-0.0.0.0}:53:8053/tcp
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # HTTPS in front of the console. The configuration is a template: the host name
+  # of the console is the only value that the entrypoint of the image substitutes.
+  proxy:
+    image: nginx:stable-alpine@sha256:583b7f2fce1cdb8da5ad5c39ebd3c33b98b87d493190e548bdee1fa8c619c311 # 1.30.6
+    restart: unless-stopped
+    user: "101:101"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 128m
+    logging: *logging
+    environment:
+      NYKTUS_CONSOLE_HOST: ${NYKTUS_CONSOLE_HOST:?set NYKTUS_CONSOLE_HOST in .env}
+      NGINX_ENVSUBST_FILTER: ^NYKTUS_
+    networks:
+      frontend: {}
+      backend:
+        ipv4_address: 172.29.88.10
+    # The container listens on unprivileged ports, so that nginx needs no
+    # capability to bind them. Docker maps the usual ones.
+    ports:
+      - ${NYKTUS_CONSOLE_BIND:-127.0.0.1}:${NYKTUS_CONSOLE_HTTP_PORT:-80}:8080
+      - ${NYKTUS_CONSOLE_BIND:-127.0.0.1}:${NYKTUS_CONSOLE_HTTPS_PORT:-443}:8443
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/console.conf.template:/etc/nginx/templates/console.conf.template:ro
+      - ./certs/console:/etc/nginx/certs:ro
+      - ./acme:/var/www/acme:ro
+    tmpfs:
+      - /etc/nginx/conf.d:uid=101,gid=101,mode=0750
+      - /tmp
+    depends_on:
+      console:
+        condition: service_started
+
+  # HTTPS in front of the trigger, with its own host name and certificate. It
+  # answers like the trigger wherever it can, see nginx/trigger.conf.template.
+  # It must not share an address and port with the proxy of the console.
+  trigger-proxy:
+    image: nginx:stable-alpine@sha256:583b7f2fce1cdb8da5ad5c39ebd3c33b98b87d493190e548bdee1fa8c619c311 # 1.30.6
+    profiles: [trigger-proxy]
+    restart: unless-stopped
+    user: "101:101"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 128m
+    logging: *logging
+    environment:
+      NYKTUS_TRIGGER_HOST: ${NYKTUS_TRIGGER_HOST:?set NYKTUS_TRIGGER_HOST in .env}
+      NYKTUS_TRIGGER_DEFAULT_REDIRECT: ${NYKTUS_TRIGGER_DEFAULT_REDIRECT:?set NYKTUS_TRIGGER_DEFAULT_REDIRECT in .env}
+      NGINX_ENVSUBST_FILTER: ^NYKTUS_
+    networks:
+      frontend: {}
+      backend:
+        ipv4_address: 172.29.88.11
+    ports:
+      - ${NYKTUS_TRIGGER_PROXY_BIND:?set NYKTUS_TRIGGER_PROXY_BIND in .env}:${NYKTUS_TRIGGER_PROXY_HTTP_PORT:-80}:8080
+      - ${NYKTUS_TRIGGER_PROXY_BIND:?set NYKTUS_TRIGGER_PROXY_BIND in .env}:${NYKTUS_TRIGGER_PROXY_HTTPS_PORT:-443}:8443
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/trigger.conf.template:/etc/nginx/templates/trigger.conf.template:ro
+      - ./certs/trigger:/etc/nginx/certs:ro
+      - ./acme:/var/www/acme:ro
+    tmpfs:
+      - /etc/nginx/conf.d:uid=101,gid=101,mode=0750
+      - /tmp
+    depends_on:
+      trigger:
+        condition: service_started
+
+networks:
+  # The world reaches the proxies here.
+  frontend: {}
+  # The services of Nyktus and the database. Its addresses are fixed because the
+  # proxies are listed as trusted by their address.
+  backend:
+    ipam:
+      config:
+        - subnet: 172.29.88.0/24
+
+volumes:
+  db:
