@@ -1,9 +1,26 @@
 # Nyktus
 
-Deploy honeytokens and honeypots across your infrastructure to detect intruders, insider threats, data breaches and misconfigured systems. The deception catalog helps you build believable decoys, mapped to MITRE Engage.
+The open Cyber-Deception Platform.
 
-> [!IMPORTANT]
-> Nyktus is in early development and not ready for production use. Interfaces, configuration and the database schema will change without notice until the first tagged release.
+Nyktus helps you detect intruders, insider threats and data breaches by placing believable decoys, like honeytokens and honeypots, across your infrastructure.
+
+With a built-in Deception Catalog, Nyktus provides powerful guides for creating realistic decoy scenarios to catch attackers in the act. Every guide is mapped to MITRE ATT&CK techniques and follows the MITRE Engage approach to planning deception.
+
+## Getting started
+
+To try Nyktus on your machine, you need Docker, Make and Git:
+
+```
+git clone https://github.com/nyktus/nyktus.git
+cd nyktus
+make dev-up
+```
+
+The command builds the images from the source, starts the server and prints the setup link of the first administrator. Open it in your browser and create the account. The console runs on http://localhost:8080.
+
+This environment is for development and evaluation only. Its passwords are public, so never use it for real data. The documentation describes how to run Nyktus in production.
+
+Refer to our documentation at https://docs.nyktus.org for deception concepts, deployment guides and API reference.
 
 ## Why deception
 
@@ -26,14 +43,6 @@ This makes Nyktus a good fit for teams without a security operations center, and
 - **High signal.** A decoy has no legitimate use, so every alert deserves attention.
 - **Out-of-band.** The console and the alert path belong outside the environment they watch. An attacker who controls the monitored network should neither see which assets are decoys nor be able to suppress the alert. The internet-facing trigger endpoints can run on a separate host and cannot enumerate the decoy inventory.
 - **Secure by default.** Security is a property of the code, not a configuration option. See the [secure coding guidelines](docs/development/secure-coding.md).
-
-## What deception cannot detect
-
-A honeytoken fires only when someone acts on it: requesting a URL, resolving a DNS name or using a credential. Opening a stolen database dump in a viewer, or reading exfiltrated documents offline, triggers nothing. Nyktus reliably detects the *use* of stolen data and credentials, not the theft itself.
-
-## Getting started
-
-Installation instructions will be published with the first release.
 
 ## Contributing
 
