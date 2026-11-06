@@ -4,9 +4,17 @@ GOLANGCI_LINT_VERSION := v2.14.0
 GOVULNCHECK_VERSION   := v1.8.0
 GITLEAKS_VERSION      := v8.30.1
 
+# The tools of the release. GoReleaser calls the other two while it runs, and its
+# configuration reads their versions from the environment, so that every pin
+# stays in this file.
+GORELEASER_VERSION := v2.19.0
+COSIGN_VERSION     := v3.1.4
+SYFT_VERSION       := v1.55.0
+
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 GOVULNCHECK   := go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 GITLEAKS      := go run github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION)
+GORELEASER    := COSIGN_VERSION=$(COSIGN_VERSION) SYFT_VERSION=$(SYFT_VERSION) go run github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 
 # The sensor is a Go module of its own (sensor/), so that the server never
 # becomes one of its dependencies and its go.mod stays short. There is no
@@ -145,3 +153,22 @@ tidy: ## Verify that go.mod and go.sum are tidy
 
 .PHONY: check
 check: lint test vuln tidy web-lint web-test web-audit ## Run all checks that do not need a database
+
+# The release workflow runs the first two targets. The snapshots build the same
+# archives and images on this machine, with a version that marks them as not
+# released, and neither sign nor publish; they need Docker and Node.js.
+.PHONY: release
+release: ## Release the server (only the release workflow runs this)
+	$(GORELEASER) release --clean
+
+.PHONY: release-sensor
+release-sensor: ## Release the sensor (only the release workflow runs this)
+	$(GORELEASER) release --clean --config .goreleaser.sensor.yaml --skip=validate
+
+.PHONY: release-snapshot
+release-snapshot: ## Build the release of the server locally without signing or publishing
+	$(GORELEASER) release --snapshot --clean --skip=publish,sign
+
+.PHONY: release-snapshot-sensor
+release-snapshot-sensor: ## Build the release of the sensor locally without signing or publishing
+	$(GORELEASER) release --snapshot --clean --config .goreleaser.sensor.yaml --skip=publish,sign

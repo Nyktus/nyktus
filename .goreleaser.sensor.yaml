@@ -1,0 +1,112 @@
+# SPDX-FileCopyrightText: The Nyktus Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Release of the sensor, built for the tag "sensor/vX.Y.Z". The sensor is a
+# module of its own with its own tags, which GoReleaser cannot read: the release
+# workflow passes the version as GORELEASER_CURRENT_TAG without the prefix and
+# attaches the files to the release of the sensor tag itself, so that this
+# configuration creates no release.
+#
+# Run it through the Makefile: "make release-snapshot-sensor" builds everything
+# locally without publishing.
+
+version: 2
+project_name: nyktus-sensor
+
+builds:
+  - id: nyktus-sensor
+    dir: sensor
+    main: ./cmd/nyktus-sensor
+    binary: nyktus-sensor
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    # The toolchain stamps no tag for a module in a subdirectory of its
+    # repository, so the version is linked in.
+    ldflags:
+      - -buildid=
+      - -X nyktus.org/nyktus/sensor/internal/version.linked={{ .Version }}
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: darwin
+        goarch: amd64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: nyktus-sensor
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - artifacts: archive
+    documents: ["${artifact}.sbom.spdx.json"]
+    cmd: go
+    args:
+      - run
+      - github.com/anchore/syft/cmd/syft@{{ .Env.SYFT_VERSION }}
+      - scan
+      - "file:${artifact}"
+      - --output
+      - spdx-json=${document}
+
+signs:
+  - cmd: go
+    args:
+      - run
+      - github.com/sigstore/cosign/v3/cmd/cosign@{{ .Env.COSIGN_VERSION }}
+      - sign-blob
+      - --yes
+      - --bundle=${signature}
+      - ${artifact}
+    artifacts: checksum
+    signature: ${artifact}.sigstore.json
+    output: true
+
+dockers_v2:
+  - id: nyktus-sensor
+    ids: [nyktus-sensor]
+    dockerfile: deploy/release/Dockerfile.sensor
+    images:
+      - ghcr.io/nyktus/nyktus-sensor
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms: [linux/amd64, linux/arm64]
+    labels:
+      org.opencontainers.image.title: Nyktus sensor
+      org.opencontainers.image.description: Honeypot sensor of Nyktus for monitored networks
+      org.opencontainers.image.url: https://docs.nyktus.org
+      org.opencontainers.image.source: https://github.com/Nyktus/nyktus
+      org.opencontainers.image.licenses: AGPL-3.0-or-later
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .Date }}"
+    sbom: false
+
+docker_signs:
+  - cmd: go
+    args:
+      - run
+      - github.com/sigstore/cosign/v3/cmd/cosign@{{ .Env.COSIGN_VERSION }}
+      - sign
+      - --yes
+      - ${artifact}@${digest}
+    artifacts: manifests
+    output: true
+
+changelog:
+  disable: true
+
+release:
+  disable: true

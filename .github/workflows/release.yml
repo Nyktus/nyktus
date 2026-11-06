@@ -1,0 +1,121 @@
+name: Release
+
+# A tag starts a release: "vX.Y.Z" releases the server, "sensor/vX.Y.Z" the
+# sensor. The release pull request creates both tags. The workflow builds,
+# signs and publishes the files; the notes of the release come from that pull
+# request.
+on:
+  push:
+    tags:
+      - "v*"
+      - "sensor/v*"
+
+# No job gets a permission it does not name itself.
+permissions: {}
+
+# A release is never canceled half way.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  server:
+    name: Release the server
+    if: ${{ startsWith(github.ref_name, 'v') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write # attach the files to the release
+      packages: write # push the images to ghcr.io
+      id-token: write # sign with the identity of this workflow
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::The tag $TAG is not a version of the server."
+            exit 1
+          fi
+          # Only a commit of main is released, whoever pushed the tag.
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.node-version
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Log in to the registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      # The default builder cannot push an image for several platforms. The image
+      # of the builder is pinned by digest (moby/buildkit v0.30.0).
+      - name: Create the builder
+        run: |
+          docker buildx create --name release --driver docker-container \
+            --driver-opt image=moby/buildkit@sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f \
+            --use
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make release
+
+  sensor:
+    name: Release the sensor
+    if: ${{ startsWith(github.ref_name, 'sensor/v') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^sensor/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::The tag $TAG is not a version of the sensor."
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Log in to the registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Create the builder
+        run: |
+          docker buildx create --name release --driver docker-container \
+            --driver-opt image=moby/buildkit@sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f \
+            --use
+      # GoReleaser reads the version from the tag and cannot parse the prefix,
+      # so it gets the version alone and creates no release of its own.
+      - name: Release
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          export GORELEASER_CURRENT_TAG="v${TAG#sensor/v}"
+          make release-sensor
+      - name: Attach the files to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes "Release of the sensor."
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            dist/*.tar.gz dist/checksums.txt dist/checksums.txt.sigstore.json dist/*.sbom.spdx.json

@@ -1,0 +1,130 @@
+# SPDX-FileCopyrightText: The Nyktus Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Release of the server, built for the tag "vX.Y.Z". The sensor has a
+# configuration of its own, .goreleaser.sensor.yaml, because it is released
+# under its own tag. Run it through the targets of the Makefile, which pin the
+# tools: "make release-snapshot" builds everything locally without publishing.
+#
+# The version is the tag. The build passes no linker flag for it: the toolchain
+# stamps the tag of the checkout into the binary, which is what "nyktus version"
+# reads.
+
+version: 2
+project_name: nyktus
+
+before:
+  hooks:
+    # The console is embedded into the binary, so it is built first.
+    - make web-build
+
+builds:
+  - id: nyktus
+    main: ./cmd/nyktus
+    binary: nyktus
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    # GoReleaser would add "-s -w" and flags that set a version in main, which
+    # the binary does not have. Stripping the symbols would also leave
+    # govulncheck unable to analyse the binary.
+    ldflags:
+      - -buildid=
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: darwin
+        goarch: amd64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: nyktus
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# The SBOM of each archive lists the Go modules that went into the binary.
+sboms:
+  - artifacts: archive
+    documents: ["${artifact}.sbom.spdx.json"]
+    cmd: go
+    args:
+      - run
+      - github.com/anchore/syft/cmd/syft@{{ .Env.SYFT_VERSION }}
+      - scan
+      - "file:${artifact}"
+      - --output
+      - spdx-json=${document}
+
+# Keyless signature of the checksums with the identity of the workflow. The
+# bundle holds the signature, the certificate and the entry in the transparency
+# log, so that "cosign verify-blob" needs nothing else.
+signs:
+  - cmd: go
+    args:
+      - run
+      - github.com/sigstore/cosign/v3/cmd/cosign@{{ .Env.COSIGN_VERSION }}
+      - sign-blob
+      - --yes
+      - --bundle=${signature}
+      - ${artifact}
+    artifacts: checksum
+    signature: ${artifact}.sigstore.json
+    output: true
+
+dockers_v2:
+  - id: nyktus
+    ids: [nyktus]
+    dockerfile: deploy/release/Dockerfile
+    images:
+      - ghcr.io/nyktus/nyktus
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms: [linux/amd64, linux/arm64]
+    labels:
+      org.opencontainers.image.title: Nyktus
+      org.opencontainers.image.description: Self-hosted deception platform
+      org.opencontainers.image.url: https://docs.nyktus.org
+      org.opencontainers.image.source: https://github.com/Nyktus/nyktus
+      org.opencontainers.image.licenses: AGPL-3.0-or-later
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .Date }}"
+    # The SBOM of the archive covers the binary, the only thing the image adds
+    # to its base.
+    sbom: false
+
+# The signature covers the digest of the image index, so every tag of it is
+# verified by one signature.
+docker_signs:
+  - cmd: go
+    args:
+      - run
+      - github.com/sigstore/cosign/v3/cmd/cosign@{{ .Env.COSIGN_VERSION }}
+      - sign
+      - --yes
+      - ${artifact}@${digest}
+    artifacts: manifests
+    output: true
+
+# The notes of a release are written by the release pull request. GoReleaser
+# only attaches the files to the release that exists, and creates one if there
+# is none.
+changelog:
+  disable: true
+
+release:
+  mode: keep-existing
+  github:
+    owner: Nyktus
+    name: nyktus
