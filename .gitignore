@@ -38,3 +38,5 @@ node_modules/
 # Personal AI agent settings
 .claude/settings.local.json
 CLAUDE.local.md
+/deploy/compose/certs/
+/deploy/compose/acme/

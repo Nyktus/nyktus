@@ -1,0 +1,120 @@
+# SPDX-FileCopyrightText: The Nyktus Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# HTTPS for the console. The entrypoint of the image replaces ${NYKTUS_CONSOLE_HOST}
+# and nothing else; the variables of nginx keep their $.
+
+# The log holds the path but never the query string: the code and the state of
+# the sign-in through an identity provider travel in it.
+log_format console '$remote_addr [$time_iso8601] "$request_method $uri $server_protocol" $status $body_bytes_sent';
+access_log /dev/stdout console;
+
+# Counts the sign-in routes of the console per client address, and nothing else:
+# an empty key is not counted. The web console reads GET /api/v1/session at every
+# page load, so that route stays out. The first six are the routes that the
+# operations documentation names; the setup route is as open as long as no
+# administrator exists.
+map "$request_method $uri" $nyktus_signin_client {
+    default                                "";
+    "POST /api/v1/session"                 $binary_remote_addr;
+    "POST /api/v1/session/second-factor"   $binary_remote_addr;
+    "GET /api/v1/oidc/authorize"           $binary_remote_addr;
+    "GET /api/v1/oidc/callback"            $binary_remote_addr;
+    "POST /api/v1/activation"              $binary_remote_addr;
+    "POST /api/v1/password-reset"          $binary_remote_addr;
+    "POST /api/v1/setup"                   $binary_remote_addr;
+}
+
+limit_req_zone $nyktus_signin_client zone=nyktus_signin:10m rate=10r/m;
+# A generous limit for everything else, so that one client cannot occupy the
+# console. A page of the web console loads a few dozen files at once.
+limit_req_zone $binary_remote_addr zone=nyktus_all:10m rate=30r/s;
+limit_req_status 429;
+
+# Docker's resolver, so that a restarted console is found again at its new
+# address without a reload.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+# Port 80 only redirects, and answers the challenge of the ACME HTTP-01 method
+# from a directory that the operator mounts.
+server {
+    listen 8080 default_server;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+        default_type text/plain;
+    }
+
+    location / {
+        return 308 https://${NYKTUS_CONSOLE_HOST}$request_uri;
+    }
+}
+
+# An unknown host name gets no certificate and no answer.
+server {
+    listen 8443 ssl default_server;
+    http2 on;
+    server_name _;
+    ssl_reject_handshake on;
+}
+
+server {
+    listen 8443 ssl;
+    http2 on;
+    server_name ${NYKTUS_CONSOLE_HOST};
+
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+
+    # Browsers remember for a year that the host speaks HTTPS only. The
+    # directives "includeSubDomains" and "preload" are not set: the first would
+    # bind every other host under the domain to HTTPS, the second puts the domain
+    # on a list in the browsers that is hard to leave. Add them only when you are
+    # sure. The console sets its other security headers itself, and the proxy
+    # adds none of them.
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # The largest body the API accepts is 1 MiB.
+    client_max_body_size 1m;
+    large_client_header_buffers 4 16k;
+
+    limit_req zone=nyktus_signin burst=5 nodelay;
+    limit_req zone=nyktus_all burst=60 nodelay;
+
+    # Unreachable console: a short answer without the page of nginx.
+    error_page 502 504 = /_unavailable;
+    location = /_unavailable {
+        internal;
+        default_type text/plain;
+        add_header Retry-After 30 always;
+        return 503 "Service unavailable\n";
+    }
+
+    location / {
+        set $nyktus_console http://console:8080;
+        proxy_pass $nyktus_console;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_redirect off;
+
+        # The console reads the address of the client from X-Forwarded-For, and
+        # only from the proxy it trusts. The header is set, not appended: this
+        # proxy faces the clients, so it knows no better address than the one of
+        # the connection, and a header that a client sent must not pass.
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header X-Real-IP "";
+        proxy_set_header Forwarded "";
+        proxy_set_header Connection "";
+        # Origin, Cookie and the rest pass unchanged. The console checks Origin
+        # against NYKTUS_CONSOLE_URL.
+
+        # Only this proxy sets HSTS.
+        proxy_hide_header Strict-Transport-Security;
+    }
+}

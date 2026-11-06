@@ -1,0 +1,123 @@
+# SPDX-FileCopyrightText: The Nyktus Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# HTTPS for the trigger. The trigger is the role that the internet reaches, and it
+# answers every request in the same way and carries no mark of Nyktus. This proxy
+# must not give it away either, so it answers like the trigger wherever it
+# answers itself. The entrypoint of the image replaces ${NYKTUS_TRIGGER_HOST} and
+# ${NYKTUS_TRIGGER_DEFAULT_REDIRECT} and nothing else.
+#
+# What stays different, and cannot be changed in stock nginx: the header
+# "Server: nginx", and the answer to a request that is malformed beyond what
+# is worth imitating.
+
+# The path of a request holds the value of a honeytoken, so nothing about a
+# request is logged: no access log, and only errors that name no request.
+access_log off;
+error_log /dev/stderr crit;
+
+# An answer without a body carries no Content-Type, as the answers of the
+# trigger do.
+default_type "";
+
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+# Port 80 answers the challenge of the ACME HTTP-01 method and sends every other
+# request to the same page as the trigger does. The honeytokens have https
+# addresses, so nothing is recorded here.
+server {
+    listen 8080 default_server;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+        default_type text/plain;
+    }
+
+    error_page 418 =302 /_redirect;
+
+    location = /_redirect {
+        internal;
+        add_header Location "${NYKTUS_TRIGGER_DEFAULT_REDIRECT}" always;
+        add_header Cache-Control no-store always;
+        return 200 "";
+    }
+
+    location / {
+        return 418;
+    }
+}
+
+server {
+    listen 8443 ssl default_server;
+    http2 on;
+    # The trigger answers every host name.
+    server_name _;
+
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+
+    # The trigger refuses a request line and headers beyond 64 KiB with a plain
+    # text of the status 431. The proxy takes the same size as its limit.
+    large_client_header_buffers 4 64k;
+    # A POST is read by the trigger, which keeps its first 4096 bytes. The
+    # proxy lets it through to the trigger unchanged and does not buffer it.
+    client_max_body_size 0;
+    proxy_request_buffering off;
+
+    # What the proxy answers itself, as the trigger would answer. The status is
+    # replaced, so that the body stays empty: "error_page 502 =302" sends the
+    # body of the location with the status 302.
+    error_page 502 503 504 =302 /_redirect;
+    error_page 413 =200 /_empty;
+    error_page 414 =431 /_toolarge;
+    error_page 400 = /_bad;
+
+    location = /_redirect {
+        internal;
+        add_header Location "${NYKTUS_TRIGGER_DEFAULT_REDIRECT}" always;
+        add_header Cache-Control no-store always;
+        return 200 "";
+    }
+
+    location = /_empty {
+        internal;
+        add_header Cache-Control no-store always;
+        return 200 "";
+    }
+
+    # Go rejects a malformed request, and one that is too large, with a plain
+    # text of the status. nginx answers a header that is too large with 400, not
+    # 431, and cannot tell it from a malformed request.
+    location = /_bad {
+        internal;
+        default_type text/plain;
+        charset utf-8;
+        return 400 "400 Bad Request";
+    }
+
+    location = /_toolarge {
+        internal;
+        default_type text/plain;
+        charset utf-8;
+        return 200 "431 Request Header Fields Too Large";
+    }
+
+    location / {
+        set $nyktus_trigger http://trigger:8081;
+        proxy_pass $nyktus_trigger;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 10s;
+        proxy_redirect off;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header X-Real-IP "";
+        proxy_set_header Forwarded "";
+        proxy_set_header Connection "";
+    }
+}
