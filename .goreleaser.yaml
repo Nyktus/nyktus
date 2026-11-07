@@ -125,6 +125,8 @@ changelog:
 
 release:
   mode: keep-existing
+  # A version with a suffix, such as 0.1.0-rc.1, is marked as a pre-release.
+  prerelease: auto
   github:
     owner: Nyktus
     name: nyktus
