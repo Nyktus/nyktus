@@ -120,6 +120,7 @@ func (s *Store) ProcessNext(ctx context.Context, claimed func()) (p Processed, f
 		return Processed{}, false, fmt.Errorf("process event job: %w", err)
 	}
 	defer rollback(ctx, tx)
+	conn := tx.Conn().PgConn()
 
 	// SKIP LOCKED lets concurrent workers take different jobs instead of
 	// waiting for each other.
@@ -146,7 +147,7 @@ FOR UPDATE SKIP LOCKED`).Scan(&p.EventID)
 	held, cause := s.assignInSavepoint(ctx, tx, &p)
 	if cause == nil {
 		if err := tx.Commit(ctx); err != nil {
-			return Processed{}, true, s.postponeAfterBreak(ctx, p.EventID, fmt.Errorf("commit: %w", err))
+			return Processed{}, true, s.postponeAfterBreak(ctx, conn, p.EventID, fmt.Errorf("commit: %w", err))
 		}
 		return p, true, nil
 	}
@@ -159,7 +160,7 @@ FOR UPDATE SKIP LOCKED`).Scan(&p.EventID)
 			return Processed{}, true, jobErr
 		}
 	}
-	return Processed{}, true, s.postponeAfterBreak(ctx, p.EventID, cause)
+	return Processed{}, true, s.postponeAfterBreak(ctx, conn, p.EventID, cause)
 }
 
 // assignInSavepoint assigns the event of p in a savepoint of tx. On failure,
@@ -221,13 +222,42 @@ func postpone(ctx context.Context, q db.Querier, eventID string, cause error) (*
 	return jobErr, nil
 }
 
+// session is the connection of a transaction, as far as postponeAfterBreak
+// needs to know it. *pgconn.PgConn implements it.
+type session interface {
+	IsClosed() bool
+	CleanupDone() chan struct{}
+}
+
+// awaitEnd waits until the server has ended the session of a transaction that
+// broke off, or until ctx ends. When the context of a query ends, the driver
+// closes the connection and, in the background, asks the server to cancel the
+// query and to end the session. The server rolls the transaction back, and
+// frees the job that it holds, only when it has done so; until then, the job
+// looks like one that another worker holds. A connection that is still open
+// is not waited for: its transaction is rolled back by the caller.
+func awaitEnd(ctx context.Context, s session) {
+	if s == nil || !s.IsClosed() {
+		return
+	}
+	select {
+	case <-s.CleanupDone():
+	case <-ctx.Done():
+	}
+}
+
 // postponeAfterBreak records a failed attempt whose transaction broke off, for
-// example on its deadline, in a transaction of its own. The job is due again
+// example on its deadline, in a transaction of its own. conn is the connection
+// of the transaction that broke off, which may be nil. The job is due again
 // meanwhile; if another worker has taken or completed it, the attempt is not
 // recorded.
-func (s *Store) postponeAfterBreak(ctx context.Context, eventID string, cause error) error {
+func (s *Store) postponeAfterBreak(ctx context.Context, conn session, eventID string, cause error) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), postponeTimeout)
 	defer cancel()
+
+	// Without this, the job is skipped as long as the session that broke off
+	// still holds it, which is the case on a busy server.
+	awaitEnd(ctx, conn)
 
 	jobErr, err := postpone(ctx, s.db, eventID, cause)
 	if errors.Is(err, pgx.ErrNoRows) {
