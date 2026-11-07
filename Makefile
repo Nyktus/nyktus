@@ -6,7 +6,10 @@ GITLEAKS_VERSION      := v8.30.1
 
 # The tools of the release. GoReleaser calls the other two while it runs, and its
 # configuration reads their versions from the environment, so that every pin
-# stays in this file.
+# stays in this file. GoReleaser needs a newer Go than the module does: with
+# GOTOOLCHAIN=auto, "go run" fetches that release (the setup of Go in the
+# workflow pins GOTOOLCHAIN=local), while the binaries are still built with the
+# toolchain of go.mod.
 GORELEASER_VERSION := v2.19.0
 COSIGN_VERSION     := v3.1.4
 SYFT_VERSION       := v1.55.0
@@ -14,7 +17,7 @@ SYFT_VERSION       := v1.55.0
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 GOVULNCHECK   := go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 GITLEAKS      := go run github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION)
-GORELEASER    := COSIGN_VERSION=$(COSIGN_VERSION) SYFT_VERSION=$(SYFT_VERSION) go run github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
+GORELEASER    := GOTOOLCHAIN=auto COSIGN_VERSION=$(COSIGN_VERSION) SYFT_VERSION=$(SYFT_VERSION) go run github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
 
 # The sensor is a Go module of its own (sensor/), so that the server never
 # becomes one of its dependencies and its go.mod stays short. There is no
