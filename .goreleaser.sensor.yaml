@@ -105,6 +105,16 @@ docker_signs:
     artifacts: manifests
     output: true
 
+  # A signed SBOM of every platform of the image, with the packages of the base
+  # image as well as the Go modules. The script reads the image from the registry,
+  # so it runs after the push.
+  - id: sbom
+    cmd: deploy/release/attest-sbom.sh
+    args:
+      - ${artifact}@${digest}
+    artifacts: manifests
+    output: true
+
 changelog:
   disable: true
 
