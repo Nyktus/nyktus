@@ -41,6 +41,8 @@ archives:
     files:
       - LICENSE
       - NOTICE
+      - src: sensor/THIRD-PARTY-NOTICES.md
+        dst: THIRD-PARTY-NOTICES.md
       - README.md
 
 checksum:
@@ -83,6 +85,10 @@ dockers_v2:
       - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}"
       - "{{ if not .Prerelease }}latest{{ end }}"
     platforms: [linux/amd64, linux/arm64]
+    extra_files:
+      - LICENSE
+      - NOTICE
+      - sensor/THIRD-PARTY-NOTICES.md
     labels:
       org.opencontainers.image.title: Nyktus sensor
       org.opencontainers.image.description: Honeypot sensor of Nyktus for monitored networks

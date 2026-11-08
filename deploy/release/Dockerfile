@@ -19,6 +19,9 @@ FROM gcr.io/distroless/static:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864
 
 ARG TARGETPLATFORM
 COPY ${TARGETPLATFORM}/nyktus /usr/local/bin/nyktus
+# The licenses of Nyktus and of the software in the binary require that their text
+# accompanies a copy.
+COPY LICENSE NOTICE THIRD-PARTY-NOTICES.md /licenses/
 
 # The numeric user of "nonroot" in the base image, so that an orchestrator can
 # check that the user is not root without reading /etc/passwd.
