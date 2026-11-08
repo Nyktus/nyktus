@@ -8,7 +8,7 @@
   },
   "summary": {
     "en": "A document of your own that links an invisible image. Word loads the image when someone opens the document and enables editing, also on the computer of an intruder who copied it.",
-    "de": "Ein eigenes Dokument, das ein unsichtbares Bild verknüpft. Word lädt das Bild, wenn jemand das Dokument öffnet und die Bearbeitung aktiviert, auch auf dem Rechner eines Eindringlings, der es kopiert hat."
+    "de": "Ein eigenes Dokument, das ein unsichtbares Bild verknüpft. Word lädt das Bild, wenn jemand das Dokument öffnet und die Bearbeitung aktiviert, auch auf dem Rechner eines Angreifers, der es kopiert hat."
   },
   "techniques": ["T1005", "T1039"],
   "engage_activities": ["EAC0005"],

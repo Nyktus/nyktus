@@ -8,7 +8,7 @@
   },
   "summary": {
     "en": "Bookmarks, an internet shortcut, a note on the reset of single sign-on and a password export that lead to internal portals. Opening an address raises an event.",
-    "de": "Lesezeichen, eine Internetverknüpfung, ein Hinweis zum Zurücksetzen der Single-Sign-on-Anmeldung und ein Passwort-Export, die zu internen Portalen führen. Wer eine Adresse öffnet, löst ein Event aus."
+    "de": "Lesezeichen, eine Internetverknüpfung, ein Hinweis zum Zurücksetzen der Single-Sign-on-Anmeldung und ein Passwort-Export, die zu internen Portalen führen. Wer eine Adresse öffnet, löst ein Ereignis aus."
   },
   "techniques": ["T1217", "T1078", "T1083", "T1555.003"],
   "engage_activities": ["EAC0005", "EAC0011", "EAC0022"],

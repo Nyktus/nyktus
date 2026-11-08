@@ -8,7 +8,7 @@
   },
   "summary": {
     "en": "Three printed QR codes for a rack, a device and a patch panel. Whoever scans one raises an event, which shows that somebody stands in the room with a phone.",
-    "de": "Drei gedruckte QR-Codes für ein Rack, ein Gerät und ein Patchfeld. Wer einen scannt, löst ein Event aus; das zeigt, dass jemand mit einem Telefon im Raum steht."
+    "de": "Drei gedruckte QR-Codes für ein Rack, ein Gerät und ein Patchfeld. Wer einen scannt, löst ein Ereignis aus; das zeigt, dass jemand mit einem Telefon im Raum steht."
   },
   "techniques": ["T1592.001"],
   "engage_activities": ["EAC0005", "EAC0022"],

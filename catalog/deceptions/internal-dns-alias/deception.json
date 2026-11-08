@@ -4,11 +4,11 @@
   "category": "network",
   "title": {
     "en": "Internal name that points to a honeytoken",
-    "de": "Interner Name, der auf einen Honeytoken zeigt"
+    "de": "Interner Name, der auf ein Honeytoken zeigt"
   },
   "summary": {
     "en": "A name in the internal DNS zone, such as vault or backup01, that points to the name of a DNS honeytoken. Looking up the name raises an event.",
-    "de": "Ein Name in der internen DNS-Zone, etwa vault oder backup01, der auf den Namen eines DNS-Honeytokens zeigt. Wer den Namen nachschlägt, löst ein Event aus."
+    "de": "Ein Name in der internen DNS-Zone, etwa vault oder backup01, der auf den Namen eines DNS-Honeytokens zeigt. Wer den Namen nachschlägt, löst ein Ereignis aus."
   },
   "techniques": ["T1018"],
   "engage_activities": ["EAC0005"],

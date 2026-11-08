@@ -373,6 +373,27 @@ func TestEmbeddedCatalog_GermanGuidesUseTheTermsOfTheConsole(t *testing.T) {
 	}
 }
 
+// The titles, summaries and labels are shown in the lists of the console and
+// follow the same terms as the guides.
+func TestEmbeddedCatalog_GermanTextsUseTheTermsOfTheConsole(t *testing.T) {
+	t.Parallel()
+
+	for _, d := range load(t).Deceptions() {
+		texts := map[string]string{"title": d.Title["de"], "summary": d.Summary["de"]}
+		for i, h := range d.Honeytokens {
+			texts[fmt.Sprintf("honeytokens[%d].label", i)] = h.Label["de"]
+		}
+		for i, h := range d.Honeypots {
+			texts[fmt.Sprintf("honeypots[%d].label", i)] = h.Label["de"]
+		}
+		for field, text := range texts {
+			if p := germanProblem(text); p != "" {
+				t.Errorf("%s %s: %s", d.ID, field, p)
+			}
+		}
+	}
+}
+
 func TestGermanProblem_RejectsOtherSpellings(t *testing.T) {
 	t.Parallel()
 
