@@ -115,7 +115,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
+          # A version with a suffix, such as 0.1.0-rc.1, is a pre-release.
+          flags=()
+          if [[ "$TAG" == *-* ]]; then flags+=(--prerelease); fi
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes "Release of the sensor."
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes "Release of the sensor." "${flags[@]}"
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
             dist/*.tar.gz dist/checksums.txt dist/checksums.txt.sigstore.json dist/*.sbom.spdx.json
