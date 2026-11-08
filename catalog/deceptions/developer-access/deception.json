@@ -8,7 +8,7 @@
   },
   "summary": {
     "en": "A note with an API call, the credentials of a Git server and the configuration of the package managers npm and pip, with host names and tokens. Using them resolves the name of a DNS honeytoken.",
-    "de": "Eine Notiz mit einem API-Aufruf, die Zugangsdaten eines Git-Servers und die Konfiguration der Paketmanager npm und pip, mit Host-Namen und Token. Wer sie benutzt, löst den Namen eines DNS-Honeytokens auf."
+    "de": "Eine Notiz mit einem API-Aufruf, die Zugangsdaten eines Git-Servers und die Konfiguration der Paketmanager npm und pip, mit Hostnamen und Token. Wer sie benutzt, löst den Namen eines DNS-Honeytokens auf."
   },
   "techniques": ["T1552.001", "T1213.003", "T1195.001"],
   "engage_activities": ["EAC0005", "EAC0011", "EAC0022"],

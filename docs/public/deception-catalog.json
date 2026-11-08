@@ -183,7 +183,7 @@
         "id": "adcs-template-catalog",
         "category": "identity",
         "title": "Katalog der Zertifikatvorlagen",
-        "summary": "Eine interne Seite, die die Zertifikatvorlagen einer Zertifizierungsstelle auflistet und auf die Anforderung verweist, dazu derselbe Link als Lesezeichen. Wer ihm folgt, löst ein Event aus.",
+        "summary": "Eine interne Seite, die die Zertifikatvorlagen einer Zertifizierungsstelle auflistet und auf die Anforderung verweist, dazu derselbe Link als Lesezeichen. Wer ihm folgt, löst ein Ereignis aus.",
         "techniques": [
           "T1649"
         ],
@@ -449,7 +449,7 @@
         "id": "developer-access",
         "category": "application",
         "title": "Zugänge, die Entwickler zurücklassen",
-        "summary": "Eine Notiz mit einem API-Aufruf, die Zugangsdaten eines Git-Servers und die Konfiguration der Paketmanager npm und pip, mit Host-Namen und Token. Wer sie benutzt, löst den Namen eines DNS-Honeytokens auf.",
+        "summary": "Eine Notiz mit einem API-Aufruf, die Zugangsdaten eines Git-Servers und die Konfiguration der Paketmanager npm und pip, mit Hostnamen und Token. Wer sie benutzt, löst den Namen eines DNS-Honeytokens auf.",
         "techniques": [
           "T1552.001",
           "T1213.003",
@@ -534,7 +534,7 @@
         "id": "directory-and-shares",
         "category": "network",
         "title": "Dokumentation von Verzeichnis und Dateifreigaben",
-        "summary": "Eine Übersicht der DFS-Namespaces, ein Runbook zur Prüfung der Replikation und ein Skript, das einen Computer im Verzeichnis anlegt, mit den Namen eines Dateiservers, eines Domänencontrollers und eines Computers. Wer einen Namen auflöst, löst ein Event aus; zwei Notizen daneben tun es nicht.",
+        "summary": "Eine Übersicht der DFS-Namespaces, ein Runbook zur Prüfung der Replikation und ein Skript, das einen Computer im Verzeichnis anlegt, mit den Namen eines Dateiservers, eines Domänencontrollers und eines Computers. Wer einen Namen auflöst, löst ein Ereignis aus; zwei Notizen daneben tun es nicht.",
         "techniques": [
           "T1135",
           "T1018",
@@ -604,7 +604,7 @@
         "id": "email-link",
         "category": "data",
         "title": "Gespeicherte E-Mail mit Link und Bild",
-        "summary": "Eine E-Mail als HTML-Datei mit einem Link und einem unsichtbaren Bild. Wer dem Link folgt oder das Bild lädt, löst ein Event aus.",
+        "summary": "Eine E-Mail als HTML-Datei mit einem Link und einem unsichtbaren Bild. Wer dem Link folgt oder das Bild lädt, löst ein Ereignis aus.",
         "techniques": [
           "T1114"
         ],
@@ -686,8 +686,8 @@
       {
         "id": "internal-dns-alias",
         "category": "network",
-        "title": "Interner Name, der auf einen Honeytoken zeigt",
-        "summary": "Ein Name in der internen DNS-Zone, etwa vault oder backup01, der auf den Namen eines DNS-Honeytokens zeigt. Wer den Namen nachschlägt, löst ein Event aus.",
+        "title": "Interner Name, der auf ein Honeytoken zeigt",
+        "summary": "Ein Name in der internen DNS-Zone, etwa vault oder backup01, der auf den Namen eines DNS-Honeytokens zeigt. Wer den Namen nachschlägt, löst ein Ereignis aus.",
         "techniques": [
           "T1018"
         ],
@@ -814,7 +814,7 @@
         "id": "pdf-document",
         "category": "data",
         "title": "PDF-Dokument mit Link und Namensabfrage",
-        "summary": "Ein eigenes PDF mit einem Link über die ganze erste Seite und einer Aktion beim Öffnen. Ein Klick löst ein Event aus, und das Öffnen kann den Namen eines DNS-Honeytokens auflösen.",
+        "summary": "Ein eigenes PDF mit einem Link über die ganze erste Seite und einer Aktion beim Öffnen. Ein Klick löst ein Ereignis aus, und das Öffnen kann den Namen eines DNS-Honeytokens auflösen.",
         "techniques": [
           "T1005",
           "T1039"
@@ -922,7 +922,7 @@
         "id": "portal-access",
         "category": "identity",
         "title": "Zugang zu internen Portalen",
-        "summary": "Lesezeichen, eine Internetverknüpfung, ein Hinweis zum Zurücksetzen der Single-Sign-on-Anmeldung und ein Passwort-Export, die zu internen Portalen führen. Wer eine Adresse öffnet, löst ein Event aus.",
+        "summary": "Lesezeichen, eine Internetverknüpfung, ein Hinweis zum Zurücksetzen der Single-Sign-on-Anmeldung und ein Passwort-Export, die zu internen Portalen führen. Wer eine Adresse öffnet, löst ein Ereignis aus.",
         "techniques": [
           "T1217",
           "T1078",
@@ -1040,7 +1040,7 @@
         "id": "qr-labels",
         "category": "data",
         "title": "QR-Code-Etiketten im Serverraum",
-        "summary": "Drei gedruckte QR-Codes für ein Rack, ein Gerät und ein Patchfeld. Wer einen scannt, löst ein Event aus; das zeigt, dass jemand mit einem Telefon im Raum steht.",
+        "summary": "Drei gedruckte QR-Codes für ein Rack, ein Gerät und ein Patchfeld. Wer einen scannt, löst ein Ereignis aus; das zeigt, dass jemand mit einem Telefon im Raum steht.",
         "techniques": [
           "T1592.001"
         ],
@@ -1309,7 +1309,7 @@
         "id": "website-clone",
         "category": "application",
         "title": "Skript, das eine Kopie Ihrer Website erkennt",
-        "summary": "Ein kleines Skript für Ihre eigene Website. Wird es von einem anderen Host ausgeliefert, etwa auf einer kopierten Seite, lädt es ein unsichtbares Bild und löst ein Event aus.",
+        "summary": "Ein kleines Skript für Ihre eigene Website. Wird es von einem anderen Host ausgeliefert, etwa auf einer kopierten Seite, lädt es ein unsichtbares Bild und löst ein Ereignis aus.",
         "techniques": [
           "T1566.002",
           "T1684.001"
@@ -1403,7 +1403,7 @@
         "id": "word-image",
         "category": "data",
         "title": "Verknüpftes Bild in einem Word-Dokument",
-        "summary": "Ein eigenes Dokument, das ein unsichtbares Bild verknüpft. Word lädt das Bild, wenn jemand das Dokument öffnet und die Bearbeitung aktiviert, auch auf dem Rechner eines Eindringlings, der es kopiert hat.",
+        "summary": "Ein eigenes Dokument, das ein unsichtbares Bild verknüpft. Word lädt das Bild, wenn jemand das Dokument öffnet und die Bearbeitung aktiviert, auch auf dem Rechner eines Angreifers, der es kopiert hat.",
         "techniques": [
           "T1005",
           "T1039"
@@ -1430,7 +1430,7 @@
         "id": "word-template",
         "category": "data",
         "title": "Word-Dokument mit einer Vorlage auf einem entfernten Host",
-        "summary": "Ein eigenes Dokument, das eine Vorlage auf einem entfernten Host nennt. Word löst den Host auf, wenn jemand das Dokument öffnet, auch auf dem Rechner eines Eindringlings, der es kopiert hat.",
+        "summary": "Ein eigenes Dokument, das eine Vorlage auf einem entfernten Host nennt. Word löst den Host auf, wenn jemand das Dokument öffnet, auch auf dem Rechner eines Angreifers, der es kopiert hat.",
         "techniques": [
           "T1005",
           "T1039"

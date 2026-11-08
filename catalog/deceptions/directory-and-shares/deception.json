@@ -8,7 +8,7 @@
   },
   "summary": {
     "en": "A map of the DFS namespaces, a runbook for the replication check and a script that adds a computer to the directory, with the names of a file server, a domain controller and a computer. Resolving a name raises an event; two notes beside them raise none.",
-    "de": "Eine Übersicht der DFS-Namespaces, ein Runbook zur Prüfung der Replikation und ein Skript, das einen Computer im Verzeichnis anlegt, mit den Namen eines Dateiservers, eines Domänencontrollers und eines Computers. Wer einen Namen auflöst, löst ein Event aus; zwei Notizen daneben tun es nicht."
+    "de": "Eine Übersicht der DFS-Namespaces, ein Runbook zur Prüfung der Replikation und ein Skript, das einen Computer im Verzeichnis anlegt, mit den Namen eines Dateiservers, eines Domänencontrollers und eines Computers. Wer einen Namen auflöst, löst ein Ereignis aus; zwei Notizen daneben tun es nicht."
   },
   "techniques": ["T1135", "T1018", "T1087.002"],
   "engage_activities": ["EAC0005", "EAC0011"],

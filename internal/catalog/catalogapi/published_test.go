@@ -27,6 +27,10 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the published catalog from the embedded catalog")
 
+// updateCommand regenerates the published catalog. The flag exists in this package
+// only, so a pattern such as ./internal/catalog/... fails in the others.
+const updateCommand = "go test ./internal/catalog/catalogapi -update"
+
 // publishedPath is the published catalog, for readers without access to the
 // API, such as the documentation or an AI assistant in a chat.
 const publishedPath = "../../../docs/public/deception-catalog.json"
@@ -163,7 +167,7 @@ func encode(t *testing.T, v any, indent string) []byte {
 // embedded catalog, with the content of its files, so that it cannot differ
 // from the API. A changed,
 // added or removed entry changes it. Regenerate it with
-// go test ./internal/catalog/... -update and review the diff.
+// go test ./internal/catalog/catalogapi -update and review the diff.
 //
 // The test does not run in parallel, so that it has rewritten the file
 // before the parallel tests read it.
@@ -187,10 +191,10 @@ func TestPublishedCatalog_MatchesTheEmbeddedCatalog(t *testing.T) {
 	}
 	want, err := os.ReadFile(publishedPath)
 	if err != nil {
-		t.Fatalf("%v; run go test ./internal/catalog/... -update", err)
+		t.Fatalf("%v; run %s", err, updateCommand)
 	}
 	if !bytes.Equal(got, want) {
-		t.Errorf("%s differs from the embedded catalog; run go test ./internal/catalog/... -update and review the diff", publishedPath)
+		t.Errorf("%s differs from the embedded catalog; run %s and review the diff", publishedPath, updateCommand)
 	}
 }
 
@@ -205,7 +209,7 @@ func TestPublishedCatalog_MatchesTheSpecification(t *testing.T) {
 	}
 	b, err := os.ReadFile(publishedPath)
 	if err != nil {
-		t.Fatalf("%v; run go test ./internal/catalog/... -update", err)
+		t.Fatalf("%v; run %s", err, updateCommand)
 	}
 
 	var p published
@@ -333,4 +337,39 @@ func withoutContent(t *testing.T, raw json.RawMessage) ([]byte, map[string]bool)
 		t.Fatal(err)
 	}
 	return out, sizes
+}
+
+// The command that the failures and the README name has to work: it names this
+// package, the only one with the flag.
+func TestUpdateCommand_NamesThisPackageAndStandsInTheReadme(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join("..", "..", "..")
+	rel, err := filepath.Rel(mustAbs(t, root), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "go test ./" + filepath.ToSlash(rel) + " -update"; updateCommand != want {
+		t.Errorf("updateCommand = %q, want %q", updateCommand, want)
+	}
+	readme, err := os.ReadFile(filepath.Join(root, "catalog", "README.md")) //nolint:gosec // G304: the path is built from constants.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), "`"+updateCommand+"`") {
+		t.Errorf("catalog/README.md does not name `%s`", updateCommand)
+	}
+}
+
+func mustAbs(t *testing.T, path string) string {
+	t.Helper()
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
 }

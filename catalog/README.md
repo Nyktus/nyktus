@@ -9,7 +9,7 @@ This directory holds the catalog of Nyktus. It consists of **deceptions**, and a
 
 Nothing of a deception is rendered, generated or stored when it is applied. Its guide, slots and files are static text that the server reads from the catalog when it shows them, so a change of the catalog shows in every scenario that holds the deception. What applying a deception stores is the identifier, and, if the administrator asks for it, the honeytokens and honeypots of its slots, named after their labels.
 
-Nyktus embeds the directory when it is built and validates every deception when the server starts; a deception that does not validate keeps the server from starting. `go test ./internal/catalog/...` runs the same validation and compares the published catalog `docs/public/deception-catalog.json` with what the API returns. After a change, regenerate it with `go test ./internal/catalog/... -update` and review the diff.
+Nyktus embeds the directory when it is built and validates every deception when the server starts; a deception that does not validate keeps the server from starting. `go test ./internal/catalog/...` runs the same validation and compares the published catalog `docs/public/deception-catalog.json` with what the API returns. After a change, regenerate it with `go test ./internal/catalog/catalogapi -update` and review the diff.
 
 The deceptions are licensed under CC BY-SA 4.0, with an additional permission for the example files that Nyktus serves for download; see [LICENSE](LICENSE). The permission does not cover the guides or other works made from the deceptions, such as the published catalog.
 

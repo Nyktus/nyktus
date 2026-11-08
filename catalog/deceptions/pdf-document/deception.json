@@ -8,7 +8,7 @@
   },
   "summary": {
     "en": "A PDF of your own with a link over the whole first page and an action when it opens. Clicking raises an event, and opening may resolve the name of a DNS honeytoken.",
-    "de": "Ein eigenes PDF mit einem Link über die ganze erste Seite und einer Aktion beim Öffnen. Ein Klick löst ein Event aus, und das Öffnen kann den Namen eines DNS-Honeytokens auflösen."
+    "de": "Ein eigenes PDF mit einem Link über die ganze erste Seite und einer Aktion beim Öffnen. Ein Klick löst ein Ereignis aus, und das Öffnen kann den Namen eines DNS-Honeytokens auflösen."
   },
   "techniques": ["T1005", "T1039"],
   "engage_activities": ["EAC0005"],

@@ -8,7 +8,7 @@
   },
   "summary": {
     "en": "A document of your own that names a template on a remote host. Word resolves the host when someone opens the document, also on the computer of an intruder who copied it.",
-    "de": "Ein eigenes Dokument, das eine Vorlage auf einem entfernten Host nennt. Word löst den Host auf, wenn jemand das Dokument öffnet, auch auf dem Rechner eines Eindringlings, der es kopiert hat."
+    "de": "Ein eigenes Dokument, das eine Vorlage auf einem entfernten Host nennt. Word löst den Host auf, wenn jemand das Dokument öffnet, auch auf dem Rechner eines Angreifers, der es kopiert hat."
   },
   "techniques": ["T1005", "T1039"],
   "engage_activities": ["EAC0005"],
