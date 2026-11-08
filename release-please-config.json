@@ -9,8 +9,7 @@
       "package-name": "nyktus",
       "include-component-in-tag": false,
       "changelog-path": "CHANGELOG.md",
-      "exclude-paths": ["sensor"],
-      "release-as": "0.1.0"
+      "exclude-paths": ["sensor"]
     },
     "sensor": {
       "release-type": "go",
@@ -18,8 +17,7 @@
       "component": "sensor",
       "tag-separator": "/",
       "include-component-in-tag": true,
-      "changelog-path": "CHANGELOG.md",
-      "release-as": "0.1.0"
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }
