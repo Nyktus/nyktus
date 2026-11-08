@@ -137,6 +137,10 @@ func TestLoadServe_ConsoleURL(t *testing.T) {
 		{name: "fragment", value: "https://nyktus.example.com#token=x", err: "scheme, host and port only"},
 		{name: "empty fragment", value: "https://nyktus.example.com#", err: "scheme, host and port only"},
 		{name: "invalid port", value: "https://nyktus.example.com:https", err: "is not a URL"},
+		// The address stands in mails and in URLs, which are ASCII.
+		{name: "international host name", value: "https://m\u00fcnchen.example.de", err: "NYKTUS_CONSOLE_URL: must be ASCII"},
+		{name: "international host name in the ASCII form", value: "https://xn--mnchen-3ya.example.de", want: "https://xn--mnchen-3ya.example.de"},
+		{name: "ideographic full stop", value: "https://nyktus\u3002example.com", err: "must be ASCII"},
 		{name: "development default", development: true, want: "http://127.0.0.1:8080"},
 		{name: "development default on all interfaces", development: true, addr: ":9000", want: "http://localhost:9000"},
 		{name: "development default on unspecified IPv6", development: true, addr: "[::]:9000", want: "http://localhost:9000"},
@@ -483,6 +487,7 @@ func TestLoadServe_TriggerURL(t *testing.T) {
 		{name: "http in development", development: true, value: "http://localhost:8081", want: "http://localhost:8081"},
 		{name: "host of the console with another port in development", development: true, value: "https://nyktus.example.com:8443", want: "https://nyktus.example.com:8443"},
 		{name: "path", value: "https://t.example.com/t", err: "NYKTUS_TRIGGER_URL: must consist of scheme, host and port only"},
+		{name: "international host name", value: "https://t\u00e4ter.example.net", err: "NYKTUS_TRIGGER_URL: must be ASCII"},
 		{name: "query", value: "https://t.example.com?a", err: "NYKTUS_TRIGGER_URL: must consist of scheme, host and port only"},
 		{name: "user information", value: "https://u@t.example.com", err: "NYKTUS_TRIGGER_URL: must consist of scheme, host and port only"},
 		{name: "address of the console", value: "https://nyktus.example.com/", err: "NYKTUS_TRIGGER_URL: must name another host than NYKTUS_CONSOLE_URL"},
