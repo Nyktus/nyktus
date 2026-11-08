@@ -6,12 +6,12 @@
 #
 #   docker compose --file sensor.compose.yaml up --detach
 #
-# The directory "sensor" next to this file holds sensor.yaml, the secrets and the
-# host key that the configuration names. Their files must be readable by the user
-# 65532 of the container and by no one else (mode 0600, owner 65532), or the
-# sensor refuses to start. The honeypots listen on the ports of sensor.yaml; use
-# ports above 1023, or publish a low port of the host to a high one, so that the
-# sensor needs no capability.
+# The directory "sensor" next to this file holds sensor.yaml, the secret files and
+# the host key that the configuration names. The sensor refuses to start when a
+# secret file or a host key file can be read by the group or by others: give them
+# to the user 65532 of the container with the mode 0600. The honeypots listen on
+# the ports of sensor.yaml; use ports above 1023, or publish a low port of the
+# host to a high one, so that the sensor needs no capability.
 
 name: nyktus-sensor
 

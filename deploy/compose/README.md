@@ -19,7 +19,7 @@ Every Nyktus service runs as a user without root, with a read-only file system, 
 
 ## Start
 
-1. Copy `.env.example` to `.env`, set the host names and addresses, and fill in the secrets. The file names a command for each. Keep `.env` readable by your administrator only.
+1. Copy `.env.example` to `.env`, set the host names and addresses, and fill in the secrets. The file names a command for each. Keep `.env` readable by your administrator only. Compose reads the settings of every service, also those of a profile you do not use, so keep the example values of the DNS and `trigger-proxy` settings if you leave those profiles off.
 2. Create the directories for the certificates and the ACME challenge:
 
    ```sh
