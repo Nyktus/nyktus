@@ -1,5 +1,7 @@
 # Changelog
 
+All notable changes to the Nyktus server are documented in this file. The sensor has a changelog of its own in [sensor/CHANGELOG.md](sensor/CHANGELOG.md).
+
 ## 0.1.0 (2026-11-08)
 
 
@@ -86,7 +88,3 @@
 * **test:** confirm TOTP factors with a code that survives a step change ([#19](https://github.com/Nyktus/nyktus/issues/19)) ([444f565](https://github.com/Nyktus/nyktus/commit/444f565123f7196de753f1f91e4dee4a3b5d19b8))
 * **trigger:** replace characters that reorder or hide text in event headers ([#61](https://github.com/Nyktus/nyktus/issues/61)) ([4a6e114](https://github.com/Nyktus/nyktus/commit/4a6e114c44b3fd078b9f421f0f0e9d45f6b166c7))
 * **web:** revise console texts, password manager support and honeypot flow ([#104](https://github.com/Nyktus/nyktus/issues/104)) ([eb8dace](https://github.com/Nyktus/nyktus/commit/eb8dace2a3beb31a59ed09b6d7f010773f243c58))
-
-## Changelog
-
-All notable changes to the Nyktus server are documented in this file. The sensor has a changelog of its own in [sensor/CHANGELOG.md](sensor/CHANGELOG.md).
