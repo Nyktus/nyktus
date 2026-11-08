@@ -32,6 +32,8 @@ const error = ref<string | undefined>();
 const saved = ref(false);
 const busy = ref(false);
 const confirming = ref(false);
+// The QR code of a URL that may be a secret appears on request only.
+const showQr = ref(false);
 const created = computed(() => route.query.created === '1');
 const canWrite = computed(() => session.can('honeytokens:write'));
 
@@ -121,10 +123,22 @@ onMounted(load);
               <CopyButton :value="honeytoken.trigger_url" />
             </div>
             <p class="hint">{{ t('honeytokens.place.fixed') }}</p>
+            <p v-if="honeytoken.type === 'web_url'" class="hint">{{ t('honeytokens.place.link') }}</p>
           </div>
           <div v-if="honeytoken.type === 'web_url'" class="qr">
-            <QrCode :text="honeytoken.trigger_url" :label="t('honeytokens.qr.label')" />
-            <p class="hint">{{ t('honeytokens.qr.hint') }}</p>
+            <button
+              class="button button-ghost"
+              type="button"
+              aria-controls="honeytoken-qr"
+              :aria-expanded="showQr"
+              @click="showQr = !showQr"
+            >
+              {{ showQr ? t('honeytokens.qr.hide') : t('honeytokens.qr.show') }}
+            </button>
+            <div v-if="showQr" id="honeytoken-qr" class="qr-code">
+              <QrCode :text="honeytoken.trigger_url" :label="t('honeytokens.qr.label')" />
+              <p class="hint">{{ t('honeytokens.qr.hint') }}</p>
+            </div>
           </div>
         </div>
         <div v-else class="stack">
@@ -236,6 +250,12 @@ onMounted(load);
   display: grid;
   gap: 0.5rem;
   max-width: 14rem;
+  justify-items: start;
+}
+
+.qr-code {
+  display: grid;
+  gap: 0.5rem;
 }
 
 .notes {

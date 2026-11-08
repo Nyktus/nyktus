@@ -317,13 +317,32 @@ describe('a honeytoken', () => {
   const one = (h = honeytoken(), extra: Record<string, () => Response> = {}) =>
     server('admin', { 'GET /api/v1/honeytokens/c0ffee00-1111-4222-8333-944444444444': () => json(200, h), ...extra });
 
-  test('shows the URL to place, with a QR code of it', async () => {
+  test('shows the URL to place, and the QR code of it only on request', async () => {
     const { wrapper } = await boot(one(), path);
     expect(wrapper.get('h1').text()).toBe('Backup share link');
     expect(wrapper.get('.value').text()).toBe('https://t.example.net/abcdefghijklmnopqrstuvwxyz');
+
+    // The URL can be a secret, as the URL of a log forwarder is: no picture of it until it is asked for.
+    expect(wrapper.find('svg[role=img]').exists()).toBe(false);
+    const toggle = wrapper.get('button[aria-controls=honeytoken-qr]');
+    expect(toggle.text()).toBe('Show QR code');
+    expect(toggle.attributes('aria-expanded')).toBe('false');
+
+    await toggle.trigger('click');
     const qr = wrapper.get('svg[role=img]');
     expect(qr.attributes('aria-label')).toBe('QR code of the URL of the honeytoken');
     expect(qr.get('path').attributes('d')).toMatch(/^M\d+ \d+h\d+v1h-\d+z/);
+    expect(toggle.text()).toBe('Hide QR code');
+    expect(toggle.attributes('aria-expanded')).toBe('true');
+
+    await toggle.trigger('click');
+    expect(wrapper.find('svg[role=img]').exists()).toBe(false);
+  });
+
+  test('says that the URL is a link, which a program may use as well', async () => {
+    const { wrapper } = await boot(one(), path);
+    expect(wrapper.text()).toContain('Whoever opens this URL triggers an event');
+    expect(wrapper.text()).toContain('A log forwarder sends its events to such a URL with POST');
   });
 
   // The page of a resource loads it once, so another resource at the same page must be another page.
@@ -341,6 +360,8 @@ describe('a honeytoken', () => {
   test('has no QR code for an image', async () => {
     const { wrapper } = await boot(one(honeytoken({ type: 'web_image', trigger_url: 'https://t.example.net/abcdefghijklmnopqrstuvwxyz.gif' })), path);
     expect(wrapper.find('main svg').exists()).toBe(false);
+    expect(wrapper.find('button[aria-controls=honeytoken-qr]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Whoever opens this URL');
     expect(wrapper.get('.value').text()).toContain('.gif');
   });
 
