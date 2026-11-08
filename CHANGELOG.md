@@ -2,6 +2,20 @@
 
 All notable changes to the Nyktus server are documented in this file. The sensor has a changelog of its own in [sensor/CHANGELOG.md](sensor/CHANGELOG.md).
 
+## [0.2.0](https://github.com/Nyktus/nyktus/compare/v0.1.0...v0.2.0) (2026-11-08)
+
+
+### Features
+
+* **deploy:** add a script that sets up the database and the logins ([#137](https://github.com/Nyktus/nyktus/issues/137)) ([fd9204f](https://github.com/Nyktus/nyktus/commit/fd9204fc57fc1c812c711dc92657e0ce431d6690))
+* **web:** show the QR code of a honeytoken URL on request ([#136](https://github.com/Nyktus/nyktus/issues/136)) ([f2c63c6](https://github.com/Nyktus/nyktus/commit/f2c63c612ad053841ba8f1c6125d6f91021bbbae))
+
+
+### Bug Fixes
+
+* **catalog:** use the German terms in the lists and name the working update command ([#133](https://github.com/Nyktus/nyktus/issues/133)) ([da573ca](https://github.com/Nyktus/nyktus/commit/da573ca05a1f162667c8ed67a1f34ae3c0e1758a))
+* **config:** reject an international host name in the URLs of the console and the trigger ([#134](https://github.com/Nyktus/nyktus/issues/134)) ([7893fbb](https://github.com/Nyktus/nyktus/commit/7893fbb6d64359780bcd71497ba70222d5c9863d))
+
 ## 0.1.0 (2026-11-08)
 
 
