@@ -518,7 +518,7 @@ func TestStore_PostponeAfterBreakSkipsAJobThatAnotherWorkerHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = f.store.postponeAfterBreak(t.Context(), eventID, errors.New("deadline exceeded"))
+	err = f.store.postponeAfterBreak(t.Context(), nil, eventID, errors.New("deadline exceeded"))
 	var jobErr *JobError
 	if errors.As(err, &jobErr) || err == nil || !strings.Contains(err.Error(), "another worker took the job") {
 		t.Errorf("postponeAfterBreak() = %v, want an error that another worker took the job", err)
@@ -529,6 +529,82 @@ func TestStore_PostponeAfterBreakSkipsAJobThatAnotherWorkerHolds(t *testing.T) {
 	if n := f.count(t, "SELECT count(*) FROM event_jobs WHERE event_id = $1 AND attempts = 0", eventID); n != 1 {
 		t.Errorf("%d unchanged jobs, want 1", n)
 	}
+}
+
+// endingSession is a connection that broke off and that the server has not
+// finished with. It reports when it is asked to wait for its end.
+type endingSession struct {
+	closed  bool
+	ended   chan struct{}
+	waiting chan struct{}
+	once    sync.Once
+}
+
+func (e *endingSession) IsClosed() bool { return e.closed }
+
+func (e *endingSession) CleanupDone() chan struct{} {
+	e.once.Do(func() { close(e.waiting) })
+	return e.ended
+}
+
+// The server frees the job of a transaction that broke off only after it has
+// processed the cancel request of the driver. A failed attempt is not recorded
+// before that: the job would look like one that another worker holds.
+func TestStore_PostponeAfterBreakWaitsForTheSessionThatBrokeOff(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	id, _ := f.honeytoken(t, "web_url", nil)
+	eventID := f.event(t, id, "web_url", nil, time.Now())
+	dying, err := f.owner.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = dying.Rollback(t.Context()) }()
+	if _, err := dying.Exec(t.Context(), "SELECT FROM event_jobs WHERE event_id = $1 FOR UPDATE", eventID); err != nil {
+		t.Fatal(err)
+	}
+
+	session := &endingSession{closed: true, ended: make(chan struct{}), waiting: make(chan struct{})}
+	result := make(chan error, 1)
+	go func() {
+		result <- f.store.postponeAfterBreak(t.Context(), session, eventID, errors.New("deadline exceeded"))
+	}()
+
+	select {
+	case <-session.waiting:
+	case err := <-result:
+		t.Fatalf("postponeAfterBreak() returned %v while the session had not ended", err)
+	}
+	// The server ends the session: the transaction is rolled back and the job
+	// is free, then the driver reports the end of the connection.
+	if err := dying.Rollback(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	close(session.ended)
+
+	var jobErr *JobError
+	if err := <-result; !errors.As(err, &jobErr) || jobErr.Attempts != 1 {
+		t.Errorf("postponeAfterBreak() = %v, want a JobError after one attempt", err)
+	}
+}
+
+// A connection that is still open is not waited for: nothing ends it.
+func TestAwaitEnd_DoesNotWaitForAnOpenConnection(t *testing.T) {
+	t.Parallel()
+
+	awaitEnd(t.Context(), &endingSession{closed: false, ended: make(chan struct{}), waiting: make(chan struct{})})
+	awaitEnd(t.Context(), nil)
+}
+
+// The wait ends with the context, so that a session that never ends does not
+// hold a worker.
+func TestAwaitEnd_StopsWithTheContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	awaitEnd(ctx, &endingSession{closed: true, ended: make(chan struct{}), waiting: make(chan struct{})})
 }
 
 // The wait between attempts stops growing at an hour.
