@@ -9,6 +9,7 @@ FROM gcr.io/distroless/static:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864
 
 ARG TARGETPLATFORM
 COPY ${TARGETPLATFORM}/nyktus-sensor /usr/local/bin/nyktus-sensor
+COPY LICENSE NOTICE sensor/THIRD-PARTY-NOTICES.md /licenses/
 
 USER 65532:65532
 

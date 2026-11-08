@@ -250,7 +250,7 @@ linters:
       - path: _test\.go
         linters: [gosec]
         text: G101
-      - path: (internal/platform/(config|dbtest)/|web/dist_test\.go|internal/console/ui_test\.go)
+      - path: (internal/platform/(config|dbtest)/|web/dist_test\.go|internal/console/ui_test\.go|tools/licensegen/main_test\.go)
         linters: [forbidigo]
         text: os\.(Getenv|LookupEnv|Environ)
       - path: internal/auth/password/

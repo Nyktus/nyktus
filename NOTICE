@@ -33,3 +33,8 @@ The web console includes the typefaces Schibsted Grotesk
 as WOFF2 files of the Fontsource packages. Both are licensed under the SIL Open
 Font License, Version 1.1, whose text is next to the files. The fonts are not
 loaded from any other source.
+
+The binaries of Nyktus also contain third-party software, such as the Go
+standard library, Go modules and the packages of the web console. Its notices
+and licenses are in THIRD-PARTY-NOTICES.md, and for the sensor in
+sensor/THIRD-PARTY-NOTICES.md.
