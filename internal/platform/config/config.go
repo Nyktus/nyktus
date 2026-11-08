@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"nyktus.org/nyktus/internal/honeytoken"
 	"nyktus.org/nyktus/internal/platform/logging"
@@ -632,6 +633,14 @@ func (r *reader) origin(name string, env Environment) string {
 	value := r.get(name)
 	if value == "" {
 		r.fail("%s%s is required", prefix, name)
+		return ""
+	}
+
+	// The address stands in the headers and the body of mails and in the URLs of
+	// honeytokens, which are ASCII. An international host name has to be written in
+	// its ASCII form, such as xn--mnchen-3ya.example.de.
+	if strings.IndexFunc(value, func(c rune) bool { return c > unicode.MaxASCII }) >= 0 {
+		r.fail("%s%s: must be ASCII; write an international host name in its xn-- form", prefix, name)
 		return ""
 	}
 
