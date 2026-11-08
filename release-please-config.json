@@ -9,7 +9,8 @@
       "package-name": "nyktus",
       "include-component-in-tag": false,
       "changelog-path": "CHANGELOG.md",
-      "exclude-paths": ["sensor"]
+      "exclude-paths": ["sensor"],
+      "extra-files": ["deploy/compose/.env.example", "deploy/compose/README.md"]
     },
     "sensor": {
       "release-type": "go",
