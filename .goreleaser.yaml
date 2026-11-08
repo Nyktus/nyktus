@@ -105,8 +105,8 @@ dockers_v2:
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.created: "{{ .Date }}"
-    # The SBOM of the archive covers the binary, the only thing the image adds
-    # to its base.
+    # The SBOM of the image is made and signed by the entry "sbom" of docker_signs
+    # below, so that the tool is pinned like the others.
     sbom: false
 
 # The signature covers the digest of the image index, so every tag of it is
@@ -118,6 +118,16 @@ docker_signs:
       - github.com/sigstore/cosign/v3/cmd/cosign@{{ .Env.COSIGN_VERSION }}
       - sign
       - --yes
+      - ${artifact}@${digest}
+    artifacts: manifests
+    output: true
+
+  # A signed SBOM of every platform of the image, with the packages of the base
+  # image as well as the Go modules. The script reads the image from the registry,
+  # so it runs after the push.
+  - id: sbom
+    cmd: deploy/release/attest-sbom.sh
+    args:
       - ${artifact}@${digest}
     artifacts: manifests
     output: true
