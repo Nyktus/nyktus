@@ -34,7 +34,7 @@ Please include:
 In scope:
 
 - the server, the sensor and the web console,
-- the official deception catalog packages, including their signing and import,
+- the deception catalog,
 - the reference deployment configuration.
 
 We also treat **reliable ways to identify Nyktus decoys or sensors** as vulnerabilities. Publishing a fingerprint would help attackers avoid decoys in every installation, so please report these privately as well.
