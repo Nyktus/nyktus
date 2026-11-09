@@ -79,8 +79,10 @@ func TestTriggerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT public.honeypot_status(NULL)",
 		"SELECT * FROM public.honeypots",
 		"SELECT * FROM public.event_attempts",
+		"SELECT * FROM public.event_tool_calls",
 		"UPDATE honeypots SET last_seen_at = now()",
 		"INSERT INTO event_attempts (event_id, ordinal, username) VALUES (gen_random_uuid(), 1, 'root')",
+		"INSERT INTO event_tool_calls (event_id, ordinal, tool_name, arguments_excerpt) VALUES (gen_random_uuid(), 1, 't', '{}')",
 	} {
 		expectDenied(t, pool, statement)
 	}
@@ -118,7 +120,7 @@ func expectDenied(t *testing.T, pool *pgxpool.Pool, statement string) {
 var (
 	triggerFunctions = []string{
 		"public.record_honeytoken_request(text, text, inet, text, text, text, text)",
-		"public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb)",
+		"public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb, jsonb)",
 		"public.record_honeypot_heartbeat(bytea, text)",
 	}
 	dnsFunctions = []string{"public.record_dns_query(text, text, text, text, text, inet, interval)"}

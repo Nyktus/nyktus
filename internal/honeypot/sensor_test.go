@@ -97,7 +97,7 @@ func TestKindTechniques_AgreeWithTheFunction(t *testing.T) {
 		hash := token.Hash(string(c.Secret))
 		for _, event := range trigger.EventTypes {
 			var base, filter *string
-			attempts := `[]`
+			attempts, toolCalls := `[]`, `[]`
 			switch event {
 			case trigger.EventConnection:
 				// Nothing beyond the connection.
@@ -105,13 +105,15 @@ func TestKindTechniques_AgreeWithTheFunction(t *testing.T) {
 				attempts = `[{"username":"u"}]`
 			case trigger.EventDirectoryQuery:
 				base, filter = ptr("dc=example"), ptr("(cn=*)")
+			case trigger.EventToolCall:
+				toolCalls = `[{"tool_name":"t","arguments":"{}"}]`
 			}
 			session++
 			id := fmt.Sprintf("%032x", session)
 			var outcome string
 			err := d.owner.QueryRow(t.Context(), `
-SELECT outcome FROM public.record_honeypot_session($1, $2, interval '0', 0, '192.0.2.1', 22, $3, NULL, NULL, NULL, $4, $5, $6::jsonb)`,
-				hash, id, string(event), base, filter, attempts).Scan(&outcome)
+SELECT outcome FROM public.record_honeypot_session($1, $2, interval '0', 0, '192.0.2.1', 22, $3, NULL, NULL, NULL, $4, $5, $6::jsonb, $7::jsonb)`,
+				hash, id, string(event), base, filter, attempts, toolCalls).Scan(&outcome)
 			if err != nil {
 				t.Fatalf("%s %s: %v", service, event, err)
 			}

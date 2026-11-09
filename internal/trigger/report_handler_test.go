@@ -73,7 +73,7 @@ func TestTrigger_ReportsAreAnsweredLikeEveryOtherPost(t *testing.T) {
 		"no secret":                       fetch(t, accepting, http.MethodPost, "/", bytes.NewReader(session), nil),
 		"secret of the wrong form":        fetch(t, accepting, http.MethodPost, "/", bytes.NewReader(session), bearer("short")),
 		"unsupported version": fetch(t, accepting, http.MethodPost, "/",
-			bytes.NewReader(mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 2 })), bearer(testSecret)),
+			bytes.NewReader(mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 3 })), bearer(testSecret)),
 		"invalid report": fetch(t, accepting, http.MethodPost, "/", strings.NewReader("{"), bearer(testSecret)),
 		"no body":        fetch(t, accepting, http.MethodPost, "/", nil, bearer(testSecret)),
 	}
@@ -143,7 +143,7 @@ func TestTrigger_RejectedReportsAreNotRecorded(t *testing.T) {
 		{"no secret", session, nil, http.MethodPost, "/", ""},
 		{"secret of the wrong form", session, bearer("short"), http.MethodPost, "/", ""},
 		{"basic authentication", session, http.Header{"Authorization": {"Basic " + testSecret}}, http.MethodPost, "/", ""},
-		{"unsupported version", mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 2 }), bearer(testSecret), http.MethodPost, "/", "unsupported_version"},
+		{"unsupported version", mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 3 }), bearer(testSecret), http.MethodPost, "/", "unsupported_version"},
 		{"no version", mutated(t, "session_ssh.json", func(m map[string]any) { delete(m, "version") }), bearer(testSecret), http.MethodPost, "/", "unsupported_version"},
 		{"unknown member", mutated(t, "session_ssh.json", func(m map[string]any) { m["password"] = "x" }), bearer(testSecret), http.MethodPost, "/", "invalid_report"},
 		{"not JSON", []byte("version 1"), bearer(testSecret), http.MethodPost, "/", "invalid_report"},
@@ -281,4 +281,23 @@ func (f reporterFunc) RecordSession(ctx context.Context, _ []byte, _ Session) (R
 func (f reporterFunc) RecordHeartbeat(ctx context.Context, _ []byte, _ Heartbeat) (ReportResult, error) {
 	f(ctx)
 	return ReportResult{Outcome: ReportRecorded}, nil
+}
+
+// A tool call is what an attacker wrote, and neither its name nor its arguments
+// reach the log.
+func TestReport_LogHoldsNothingOfAToolCall(t *testing.T) {
+	t.Parallel()
+
+	rep := &fakeReporter{result: ReportResult{Outcome: ReportRecorded, HoneypotID: "7d2a", Service: "mcp"}}
+	srv, log := newReportingServer(t, &fakeRecorder{}, rep)
+	fetch(t, srv, http.MethodPost, "/", bytes.NewReader(golden(t, "session_mcp.json")), bearer(testSecret))
+
+	for _, secret := range []string{"get_page", "1002", "vpn password", "ExampleAgent"} {
+		if strings.Contains(log.String(), secret) {
+			t.Errorf("log contains %q: %s", secret, log)
+		}
+	}
+	if !strings.Contains(log.String(), `"event_type":"tool_call"`) {
+		t.Errorf("log does not name the kind of event: %s", log)
+	}
 }

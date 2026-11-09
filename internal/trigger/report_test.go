@@ -79,6 +79,11 @@ func TestDecodeReport_GoldenFiles(t *testing.T) {
 			ID: "ffeeddccbbaa99887766554433221100", Age: 5 * time.Minute,
 			ClientIP: netip.MustParseAddr("192.0.2.77"), Port: 23, Attempts: []Attempt{},
 		}}},
+		{"session_mcp.json", Report{Session: &Session{
+			ID: "aabbccddeeff00112233445566778899", Age: 62 * time.Second, Duration: 41 * time.Second,
+			ClientIP: netip.MustParseAddr("198.51.100.40"), Port: 8080, ClientVersion: "ExampleAgent/1.4.0", Attempts: []Attempt{},
+			ToolCalls: []ToolCall{{ToolName: "get_page", Arguments: `{"page_id":"1002"}`}, {ToolName: "search", Arguments: `{"query":"vpn password"}`}},
+		}}},
 		{"heartbeat.json", Report{Heartbeat: &Heartbeat{SensorVersion: "0.1.0-rc.1+build5"}}},
 		{"heartbeat_without_version.json", Report{Heartbeat: &Heartbeat{}}},
 	}
@@ -122,6 +127,18 @@ func TestDecodeReport_RefusesWhatDoesNotFit(t *testing.T) {
 	attempt := func(edit func(a map[string]any)) func(map[string]any) {
 		return func(m map[string]any) { edit(m["attempts"].([]any)[0].(map[string]any)) }
 	}
+	toolCall := func(edit func(c map[string]any)) func(map[string]any) {
+		return func(m map[string]any) { edit(m["tool_calls"].([]any)[0].(map[string]any)) }
+	}
+	manyToolCalls := func(n int) func(map[string]any) {
+		return func(m map[string]any) {
+			list := make([]any, n)
+			for i := range list {
+				list[i] = map[string]any{"tool_name": "t", "arguments": "{}"}
+			}
+			m["tool_calls"] = list
+		}
+	}
 	manyAttempts := func(n int) func(map[string]any) {
 		return func(m map[string]any) {
 			list := make([]any, n)
@@ -140,7 +157,7 @@ func TestDecodeReport_RefusesWhatDoesNotFit(t *testing.T) {
 	}{
 		{"no version", "session_ssh.json", drop("version"), ErrUnsupportedVersion},
 		{"version 0", "session_ssh.json", set("version", 0), ErrUnsupportedVersion},
-		{"version 2", "session_ssh.json", set("version", 2), ErrUnsupportedVersion},
+		{"version 3", "session_ssh.json", set("version", 3), ErrUnsupportedVersion},
 		{"version that is a string", "session_ssh.json", set("version", "1"), ErrUnsupportedVersion},
 		{"unknown type", "session_ssh.json", set("type", "event"), ErrInvalidReport},
 		{"no type", "session_ssh.json", drop("type"), ErrInvalidReport},
@@ -161,7 +178,7 @@ func TestDecodeReport_RefusesWhatDoesNotFit(t *testing.T) {
 		{"negative duration", "session_ssh.json", set("duration_ms", -1), ErrInvalidReport},
 		{"version 1.5", "session_ssh.json", set("version", 1.5), ErrUnsupportedVersion},
 		{"version of a newer form", "session_ssh.json", set("version", "2"), ErrUnsupportedVersion},
-		{"newer version that changes the type", "session_ssh.json", func(m map[string]any) { m["version"], m["type"] = 2, []any{"session"} }, ErrUnsupportedVersion},
+		{"newer version that changes the type", "session_ssh.json", func(m map[string]any) { m["version"], m["type"] = 3, []any{"session"} }, ErrUnsupportedVersion},
 		{"type that is no string", "session_ssh.json", set("type", 7), ErrInvalidReport},
 		{"no address", "session_ssh.json", drop("client_ip"), ErrInvalidReport},
 		{"address that is none", "session_ssh.json", set("client_ip", "web1"), ErrInvalidReport},
@@ -172,6 +189,13 @@ func TestDecodeReport_RefusesWhatDoesNotFit(t *testing.T) {
 		{"no attempts", "session_ssh.json", drop("attempts"), ErrInvalidReport},
 		{"null attempts", "session_ssh.json", set("attempts", nil), ErrInvalidReport},
 		{"seven attempts", "session_ssh.json", manyAttempts(7), ErrInvalidReport},
+		{"tool calls in the previous version", "session_mcp.json", set("version", 1), ErrInvalidReport},
+		{"no tool calls but the member in the previous version", "session_mcp.json", func(m map[string]any) { m["version"], m["tool_calls"] = 1, []any{} }, ErrInvalidReport},
+		{"seven tool calls", "session_mcp.json", manyToolCalls(7), ErrInvalidReport},
+		{"tool calls that are no list", "session_mcp.json", set("tool_calls", "get_page"), ErrInvalidReport},
+		{"tool call without a name", "session_mcp.json", toolCall(func(c map[string]any) { delete(c, "tool_name") }), ErrInvalidReport},
+		{"tool call without arguments", "session_mcp.json", toolCall(func(c map[string]any) { delete(c, "arguments") }), ErrInvalidReport},
+		{"tool call with another member", "session_mcp.json", toolCall(func(c map[string]any) { c["result"] = "x" }), ErrInvalidReport},
 		{"attempt without a user name", "session_ssh.json", attempt(func(a map[string]any) { delete(a, "username") }), ErrInvalidReport},
 		{"negative password length", "session_ssh.json", attempt(func(a map[string]any) { a["password_length"] = -1 }), ErrInvalidReport},
 		{"password length beyond 65535", "session_ssh.json", attempt(func(a map[string]any) { a["password_length"] = 65536 }), ErrInvalidReport},
@@ -321,13 +345,15 @@ func TestSession_EventTypeIsTheHighestStage(t *testing.T) {
 		{"an attempt", Session{Attempts: attempt}, EventLoginAttempt},
 		{"a query", Session{Query: &Query{}}, EventDirectoryQuery},
 		{"a query after an attempt", Session{Attempts: attempt, Query: &Query{BaseDN: "dc=example"}}, EventDirectoryQuery},
+		{"a tool call", Session{Attempts: []Attempt{}, ToolCalls: []ToolCall{{ToolName: "search"}}}, EventToolCall},
+		{"no tool calls", Session{Attempts: []Attempt{}, ToolCalls: []ToolCall{}}, EventConnection},
 	}
 	for _, tt := range tests {
 		if got := tt.s.EventType(); got != tt.want {
 			t.Errorf("%s: EventType() = %q, want %q", tt.name, got, tt.want)
 		}
 	}
-	if want := []EventType{EventConnection, EventLoginAttempt, EventDirectoryQuery}; !slices.Equal(EventTypes, want) {
+	if want := []EventType{EventConnection, EventLoginAttempt, EventDirectoryQuery, EventToolCall}; !slices.Equal(EventTypes, want) {
 		t.Errorf("EventTypes = %v, want %v from the lowest stage to the highest", EventTypes, want)
 	}
 }
@@ -347,6 +373,10 @@ func TestKindTechniques(t *testing.T) {
 		{"ldap", EventLoginAttempt, []string{"T1110"}},
 		{"ldap", EventDirectoryQuery, []string{"T1087.002"}},
 		{"ssh", EventDirectoryQuery, nil},
+		{"mcp", EventConnection, []string{"T1046"}},
+		{"mcp", EventToolCall, []string{"T1213"}},
+		{"mcp", EventLoginAttempt, nil},
+		{"ldap", EventToolCall, nil},
 		{"smtp", EventConnection, nil},
 	}
 	for _, tt := range tests {
@@ -467,4 +497,48 @@ func (f *fakeReporter) reported() (sessions int, heartbeats int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.sessions), len(f.heartbeats)
+}
+
+// A sensor that has not been updated keeps reporting: the server is updated
+// first, and the previous version means the same without the tool calls.
+func TestDecodeReport_AcceptsThePreviousVersion(t *testing.T) {
+	t.Parallel()
+
+	for _, file := range []string{"session_ssh.json", "heartbeat.json"} {
+		want, err := DecodeReport(golden(t, file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := DecodeReport(mutated(t, file, func(m map[string]any) { m["version"] = 1 }))
+		if err != nil || !sameReport(got, want) {
+			t.Errorf("%s in version 1 = %s, %v; want %s", file, describe(got), err, describe(want))
+		}
+	}
+}
+
+// What a client passed to a tool is cut and cleaned like the headers of a
+// request, and it stays text: it is not read as JSON.
+func TestDecodeReport_CleansTheToolCalls(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("a", maxToolArguments-1) + string(rune(0xe9)) + "b"
+	r, err := DecodeReport(mutated(t, "session_mcp.json", func(m map[string]any) {
+		m["tool_calls"] = []any{
+			map[string]any{"tool_name": "a\r\nb" + string(rune(0x202e)) + strings.Repeat("c", 200), "arguments": long},
+			map[string]any{"tool_name": "not json", "arguments": "{" + string(rune(0x2028))},
+		}
+	}))
+	if err != nil {
+		t.Fatalf("DecodeReport() error = %v", err)
+	}
+	calls := r.Session.ToolCalls
+	if len(calls[0].ToolName) > maxToolName || strings.ContainsAny(calls[0].ToolName, "\r\n") || strings.ContainsRune(calls[0].ToolName, 0x202e) {
+		t.Errorf("tool name = %q, want it cut to %d bytes and printable", calls[0].ToolName, maxToolName)
+	}
+	if want := strings.Repeat("a", maxToolArguments-1); calls[0].Arguments != want {
+		t.Errorf("arguments of %d bytes, want the %d bytes before the character that does not fit", len(calls[0].Arguments), len(want))
+	}
+	if calls[1].ToolName != "not json" || strings.ContainsRune(calls[1].Arguments, 0x2028) {
+		t.Errorf("second call = %+v, want its text kept and cleaned", calls[1])
+	}
 }

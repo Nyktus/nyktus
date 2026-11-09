@@ -257,6 +257,12 @@ type sensorResponse struct {
 	ApplicationName *string               `json:"application_name"`
 	Query           *sessionQueryResponse `json:"query"`
 	Attempts        []attemptResponse     `json:"attempts"`
+	ToolCalls       []toolCallResponse    `json:"tool_calls"`
+}
+
+type toolCallResponse struct {
+	ToolName         string `json:"tool_name"`
+	ArgumentsExcerpt string `json:"arguments_excerpt"`
 }
 
 type eventResponse struct {
@@ -314,13 +320,17 @@ func newSensorResponse(s *incident.Session) *sensorResponse {
 	out := &sensorResponse{
 		Service: s.Service, EventType: s.EventType, Port: s.Port, DurationMS: s.DurationMS,
 		ClientVersion: s.ClientVersion, Database: s.Database, ApplicationName: s.ApplicationName,
-		Attempts: make([]attemptResponse, 0, len(s.Attempts)),
+		Attempts:  make([]attemptResponse, 0, len(s.Attempts)),
+		ToolCalls: make([]toolCallResponse, 0, len(s.ToolCalls)),
 	}
 	if s.Query != nil {
 		out.Query = &sessionQueryResponse{BaseDN: s.Query.BaseDN, Filter: s.Query.Filter}
 	}
 	for _, a := range s.Attempts {
 		out.Attempts = append(out.Attempts, attemptResponse{Username: a.Username, PasswordLength: a.PasswordLength, KeyFingerprint: a.KeyFingerprint})
+	}
+	for _, c := range s.ToolCalls {
+		out.ToolCalls = append(out.ToolCalls, toolCallResponse{ToolName: c.ToolName, ArgumentsExcerpt: c.Arguments})
 	}
 	return out
 }

@@ -221,10 +221,12 @@ export const de: Record<MessageKey, string> = {
   'honeypotService.telnet': 'Telnet',
   'honeypotService.postgres': 'PostgreSQL',
   'honeypotService.ldap': 'LDAP',
+  'honeypotService.mcp': 'MCP',
   'honeypotService.ssh.hint': 'Simuliert einen SSH-Server.',
   'honeypotService.telnet.hint': 'Simuliert eine Telnet-Anmeldung, wie auf Netzwerkgeräten und alten Servern.',
   'honeypotService.postgres.hint': 'Simuliert einen PostgreSQL-Server.',
   'honeypotService.ldap.hint': 'Simuliert einen Verzeichnisdienst, wie z.B. Active Directory oder OpenLDAP.',
+  'honeypotService.mcp.hint': 'Emuliert einen MCP-Server, über den KI-Agenten Werkzeuge aufrufen.',
 
   'honeypotStatus.never': 'Keine Meldung',
   'honeypotStatus.online': 'Online',
@@ -441,6 +443,7 @@ export const de: Record<MessageKey, string> = {
   'eventType.connection': 'Verbindung',
   'eventType.login_attempt': 'Anmeldeversuch',
   'eventType.directory_query': 'Verzeichnisabfrage',
+  'eventType.tool_call': 'Tool-Aufruf',
   'unit.seconds': '{count} s',
 
   'nav.alertChannels': 'Alert-Kanäle',

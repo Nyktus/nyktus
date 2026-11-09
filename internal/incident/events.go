@@ -80,6 +80,15 @@ type Session struct {
 	// Query is the first search of a directory client, or nil.
 	Query    *SessionQuery
 	Attempts []Attempt
+	// ToolCalls are the tools that a client of an MCP honeypot called. Their
+	// arguments are what the attacker wrote and may be addressed to whatever
+	// reads them.
+	ToolCalls []ToolCall
+}
+
+// ToolCall is one call of a tool of a session.
+type ToolCall struct {
+	ToolName, Arguments string
 }
 
 // SessionQuery is the first search of a session.
@@ -137,9 +146,10 @@ func scanEvent(row pgx.Row) (Event, error) {
 	return e, err
 }
 
-// loadAttempts reads the attempts of the sessions among events, which the
-// event rows leave out, in the order in which they were made.
-func loadAttempts(ctx context.Context, q db.Querier, events []Event) error {
+// loadSessionDetails reads the attempts and the tool calls of the sessions
+// among events, which the event rows leave out, in the order in which they were
+// made.
+func loadSessionDetails(ctx context.Context, q db.Querier, events []Event) error {
 	bySession := map[string]*Session{}
 	ids := make([]string, 0, len(events))
 	for _, e := range events {
@@ -168,6 +178,21 @@ FROM public.event_attempts WHERE event_id = ANY($1::uuid[]) ORDER BY event_id, o
 	})
 	if err != nil {
 		return fmt.Errorf("load attempts: %w", err)
+	}
+	rows, err = q.Query(ctx, `
+SELECT event_id, tool_name, arguments_excerpt
+FROM public.event_tool_calls WHERE event_id = ANY($1::uuid[]) ORDER BY event_id, ordinal`, ids)
+	if err != nil {
+		return fmt.Errorf("load tool calls: %w", err)
+	}
+	var c ToolCall
+	_, err = pgx.ForEachRow(rows, []any{&id, &c.ToolName, &c.Arguments}, func() error {
+		s := bySession[id]
+		s.ToolCalls = append(s.ToolCalls, c)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("load tool calls: %w", err)
 	}
 	return nil
 }
@@ -228,7 +253,7 @@ func ListEvents(ctx context.Context, q db.Querier, f EventFilter, size int, afte
 		last := list[size-1]
 		next = &Cursor{Time: last.RecordedAt, ID: last.ID}
 	}
-	if err := loadAttempts(ctx, q, list); err != nil {
+	if err := loadSessionDetails(ctx, q, list); err != nil {
 		return nil, nil, fmt.Errorf("list events: %w", err)
 	}
 	return list, next, nil
@@ -244,7 +269,7 @@ func GetEvent(ctx context.Context, q db.Querier, id string) (Event, error) {
 		return Event{}, fmt.Errorf("get event %s: %w", id, err)
 	}
 	events := []Event{e}
-	if err := loadAttempts(ctx, q, events); err != nil {
+	if err := loadSessionDetails(ctx, q, events); err != nil {
 		return Event{}, fmt.Errorf("get event %s: %w", id, err)
 	}
 	return events[0], nil

@@ -84,7 +84,7 @@ func TestApply_VerifiesThePrivilegesForReportsOfSensors(t *testing.T) {
 
 	const (
 		heartbeatGrant = "GRANT EXECUTE ON FUNCTION public.record_honeypot_heartbeat(bytea, text) TO nyktus_trigger;"
-		eventsGrant    = "GRANT SELECT ON public.events, public.event_attempts, public.incidents TO nyktus_console;"
+		eventsGrant    = "GRANT SELECT ON public.events, public.event_attempts, public.event_tool_calls, public.incidents TO nyktus_console;"
 		statusGrant    = "GRANT EXECUTE ON FUNCTION public.honeypot_status(timestamptz) TO nyktus_console;"
 	)
 	tests := []struct {
@@ -111,8 +111,18 @@ func TestApply_VerifiesThePrivilegesForReportsOfSensors(t *testing.T) {
 		},
 		{
 			name: "attempts unreadable by the console", anchor: eventsGrant,
-			replacement: "GRANT SELECT ON public.events, public.incidents TO nyktus_console;",
+			replacement: "GRANT SELECT ON public.events, public.event_tool_calls, public.incidents TO nyktus_console;",
 			want:        "nyktus_console lacks privileges on events or incidents",
+		},
+		{
+			name: "tool calls unreadable by the console", anchor: eventsGrant,
+			replacement: "GRANT SELECT ON public.events, public.event_attempts, public.incidents TO nyktus_console;",
+			want:        "nyktus_console lacks privileges on events or incidents",
+		},
+		{
+			name: "tool calls writable by the console", anchor: eventsGrant,
+			replacement: eventsGrant + " GRANT INSERT ON public.event_tool_calls TO nyktus_console;",
+			want:        "nyktus_console has more privileges on events or incidents than granted",
 		},
 		{
 			name: "attempts writable by the console", anchor: eventsGrant,

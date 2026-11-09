@@ -254,7 +254,7 @@ func TestRun_TelnetSession_IsReportedWithItsAttempts(t *testing.T) {
 
 	// The honeypot says that it runs, with the secret of its honeypot.
 	hb := tr.next(t)
-	if hb.authorization != "Bearer "+secretOne || string(hb.body) != `{"version":1,"type":"heartbeat","sensor_version":"0.1.0"}` {
+	if hb.authorization != "Bearer "+secretOne || string(hb.body) != `{"version":2,"type":"heartbeat","sensor_version":"0.1.0"}` {
 		t.Errorf("first report = %+v, want the heartbeat of the honeypot", hb)
 	}
 
@@ -269,7 +269,7 @@ func TestRun_TelnetSession_IsReportedWithItsAttempts(t *testing.T) {
 	rc := tr.next(t)
 	s := decodeSession(t, rc)
 	_, port, _ := net.SplitHostPort(r.addr(idOne))
-	if rc.authorization != "Bearer "+secretOne || s.Version != 1 || s.Type != "session" || s.ClientIP != "127.0.0.1" || strconv.Itoa(s.Port) != port ||
+	if rc.authorization != "Bearer "+secretOne || s.Version != 2 || s.Type != "session" || s.ClientIP != "127.0.0.1" || strconv.Itoa(s.Port) != port ||
 		len(s.Attempts) != 1 || s.Attempts[0].Username != "mallory-typed-this" || s.Attempts[0].PasswordLength == nil || *s.Attempts[0].PasswordLength != 18 {
 		t.Errorf("report = %+v (%s), want the session with one login", s, rc.authorization)
 	}

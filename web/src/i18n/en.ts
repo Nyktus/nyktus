@@ -220,10 +220,12 @@ export const en = {
   'honeypotService.telnet': 'Telnet',
   'honeypotService.postgres': 'PostgreSQL',
   'honeypotService.ldap': 'LDAP',
+  'honeypotService.mcp': 'MCP',
   'honeypotService.ssh.hint': 'Emulates an SSH server.',
   'honeypotService.telnet.hint': 'Emulates a Telnet login, as on network devices and old servers.',
   'honeypotService.postgres.hint': 'Emulates a PostgreSQL server.',
   'honeypotService.ldap.hint': 'Emulates a directory service, such as Active Directory or OpenLDAP.',
+  'honeypotService.mcp.hint': 'Emulates an MCP server, through which AI agents call tools.',
 
   'honeypotStatus.never': 'No report',
   'honeypotStatus.online': 'Online',
@@ -439,6 +441,7 @@ export const en = {
   'eventType.connection': 'Connection',
   'eventType.login_attempt': 'Login attempt',
   'eventType.directory_query': 'Directory query',
+  'eventType.tool_call': 'Tool call',
   'unit.seconds': '{count} s',
 
   'nav.alertChannels': 'Alert channels',

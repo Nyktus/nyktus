@@ -251,6 +251,7 @@ export function sensorEvent(overrides: Partial<Event> = {}): Event {
         { username: 'root', password_length: 8, key_fingerprint: null },
         { username: 'admin', password_length: null, key_fingerprint: 'SHA256:abc' },
       ],
+      tool_calls: [],
     },
     ...overrides,
   });

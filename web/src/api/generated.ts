@@ -285,7 +285,7 @@ export interface CatalogDeception {
   }[];
   honeypots: {
     label: string;
-    service: 'ssh' | 'telnet' | 'postgres' | 'ldap';
+    service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp';
   }[];
   files: {
     name: string;
@@ -322,7 +322,7 @@ export interface AssignScenarioRequest {
 
 export interface Honeypot {
   id: string;
-  service: 'ssh' | 'telnet' | 'postgres' | 'ldap';
+  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp';
   name: string;
   notes: string;
   enabled: boolean;
@@ -338,7 +338,7 @@ export interface Honeypot {
 
 export interface CreatedHoneypot {
   id: string;
-  service: 'ssh' | 'telnet' | 'postgres' | 'ldap';
+  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp';
   name: string;
   notes: string;
   enabled: boolean;
@@ -356,7 +356,7 @@ export interface CreatedHoneypot {
 
 export interface HoneypotSecret {
   id: string;
-  service: 'ssh' | 'telnet' | 'postgres' | 'ldap';
+  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp';
   name: string;
   notes: string;
   enabled: boolean;
@@ -378,7 +378,7 @@ export interface HoneypotPage {
 }
 
 export interface CreateHoneypotRequest {
-  service: 'ssh' | 'telnet' | 'postgres' | 'ldap';
+  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp';
   name: string;
   notes?: string;
   enabled?: boolean;
@@ -516,8 +516,8 @@ export interface Event {
 }
 
 export interface EventSession {
-  service: 'ssh' | 'telnet' | 'postgres' | 'ldap';
-  event_type: 'connection' | 'login_attempt' | 'directory_query';
+  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp';
+  event_type: 'connection' | 'login_attempt' | 'directory_query' | 'tool_call';
   port: number;
   duration_ms: number;
   client_version: string | null;
@@ -525,11 +525,17 @@ export interface EventSession {
   application_name: string | null;
   query: null | EventSessionQuery;
   attempts: EventAttempt[];
+  tool_calls: EventToolCall[];
 }
 
 export interface EventSessionQuery {
   base_dn: string;
   filter: string;
+}
+
+export interface EventToolCall {
+  tool_name: string;
+  arguments_excerpt: string;
 }
 
 export interface EventAttempt {
@@ -958,7 +964,7 @@ export interface OperationTypes {
   };
   listHoneypots: {
     path: Record<string, never>;
-    query: { limit?: number; cursor?: string; service?: 'ssh' | 'telnet' | 'postgres' | 'ldap'; enabled?: 'true' | 'false'; scenario_id?: string };
+    query: { limit?: number; cursor?: string; service?: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp'; enabled?: 'true' | 'false'; scenario_id?: string };
     body: undefined;
     responses: { 200: HoneypotPage };
   };

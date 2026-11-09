@@ -553,3 +553,26 @@ VALUES ('honeytoken', $1, $2, 'web_image', 'low', now(), now(), 'http', 'HEAD', 
 		t.Errorf("incidents of the scenario = %v, want %s", ids, scenarioIncident)
 	}
 }
+
+// The tool calls of a session are shown in the order of the calls, and a session
+// without any has an empty list, not null.
+func TestGetEvent_ShowsTheToolCallsOfASession(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	withCalls := f.event(t, resourceA, "", "sensor", time.Now())
+	without := f.event(t, resourceA, "", "sensor", time.Now().Add(time.Second))
+	if _, err := f.owner.Exec(t.Context(), `
+INSERT INTO event_tool_calls (event_id, ordinal, tool_name, arguments_excerpt) VALUES ($1, 2, 'get_page', '{"id":"7"}'), ($1, 1, 'search', '{"q":"vpn"}')`, withCalls); err != nil {
+		t.Fatal(err)
+	}
+
+	calls := decode[eventResponse](t, f.serve(t, f.h.GetEvent, http.MethodGet, "/", withCalls, "")).Sensor.ToolCalls
+	want := []toolCallResponse{{ToolName: "search", ArgumentsExcerpt: `{"q":"vpn"}`}, {ToolName: "get_page", ArgumentsExcerpt: `{"id":"7"}`}}
+	if !slices.Equal(calls, want) {
+		t.Errorf("tool calls = %+v, want %+v", calls, want)
+	}
+	rec := f.serve(t, f.h.GetEvent, http.MethodGet, "/", without, "")
+	if !strings.Contains(rec.Body.String(), `"tool_calls":[]`) {
+		t.Errorf("session without tool calls = %s, want an empty list", rec.Body)
+	}
+}

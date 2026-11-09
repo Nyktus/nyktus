@@ -191,7 +191,7 @@ func TestStore_RecordsEveryKindOfEvent(t *testing.T) {
 	f := newFixture(t)
 
 	attempt := []Attempt{{Username: "u", PasswordLength: intPtr(1)}}
-	for _, service := range []string{"ssh", "telnet", "postgres", "ldap"} {
+	for _, service := range []string{"ssh", "telnet", "postgres", "ldap", "mcp"} {
 		_, secret := f.honeypot(t, enabled(service))
 		sessions := map[EventType]Session{
 			EventConnection:   {Attempts: []Attempt{}},
@@ -204,6 +204,10 @@ func TestStore_RecordsEveryKindOfEvent(t *testing.T) {
 			s := sessions[EventLoginAttempt]
 			s.ClientVersion = "SSH-2.0-x"
 			sessions[EventLoginAttempt] = s
+		}
+		if service == "mcp" {
+			delete(sessions, EventLoginAttempt)
+			sessions[EventToolCall] = Session{Attempts: []Attempt{}, ClientVersion: "Agent/1", ToolCalls: []ToolCall{{ToolName: "t", Arguments: "{}"}}}
 		}
 		if service == "postgres" {
 			s := sessions[EventLoginAttempt]
@@ -273,7 +277,7 @@ func TestStore_DoesNotRecordAnEventTypeThatDoesNotFitTheContent(t *testing.T) {
 		t.Helper()
 		var outcome string
 		err := f.owner.QueryRow(t.Context(), `
-SELECT outcome FROM public.record_honeypot_session($1, gen_random_uuid(), interval '0', 0, '192.0.2.1', 389, $2, NULL, NULL, NULL, $3, $4, $5::jsonb)`,
+SELECT outcome FROM public.record_honeypot_session($1, gen_random_uuid(), interval '0', 0, '192.0.2.1', 389, $2, NULL, NULL, NULL, $3, $4, $5::jsonb, '[]'::jsonb)`,
 			SecretHash(secret), eventType, baseDN, filter, attempts).Scan(&outcome)
 		if err != nil {
 			t.Fatalf("record session: %v", err)
@@ -667,7 +671,7 @@ func TestStore_PasswordIsNeverStored(t *testing.T) {
 	var outcome string
 	err := f.owner.QueryRow(t.Context(), `
 SELECT outcome FROM public.record_honeypot_session($1, gen_random_uuid(), interval '0', 0, '192.0.2.1', 22, 'login_attempt', NULL, NULL, NULL, NULL, NULL,
-	jsonb_build_array(jsonb_build_object('username', 'root', 'password_length', 15, 'password', $2::text, 'secret', $2::text)))`,
+	jsonb_build_array(jsonb_build_object('username', 'root', 'password_length', 15, 'password', $2::text, 'secret', $2::text)), '[]'::jsonb)`,
 		SecretHash(secret), password).Scan(&outcome)
 	if err != nil || outcome != "recorded" {
 		t.Fatalf("record session = %s, %v", outcome, err)
@@ -718,6 +722,12 @@ func TestStore_ChecksEveryTextFieldOfASession(t *testing.T) {
 		{"base", "ldap", "events_sensor_base_dn_check", 256, func(s *Session, v string) { s.Query = &Query{BaseDN: v, Filter: "(a=b)"} }},
 		{"filter", "ldap", "events_sensor_filter_check", 256, func(s *Session, v string) { s.Query = &Query{BaseDN: "dc=a", Filter: v} }},
 		{"user name", "telnet", "event_attempts_username_check", 256, func(s *Session, v string) { s.Attempts = []Attempt{{Username: v}} }},
+		{"tool name", "mcp", "event_tool_calls_tool_name_check", 128, func(s *Session, v string) {
+			s.Attempts, s.ToolCalls = []Attempt{}, []ToolCall{{ToolName: v, Arguments: "{}"}}
+		}},
+		{"arguments", "mcp", "event_tool_calls_arguments_excerpt_check", 2048, func(s *Session, v string) {
+			s.Attempts, s.ToolCalls = []Attempt{}, []ToolCall{{ToolName: "t", Arguments: v}}
+		}},
 	}
 	refused := map[string]rune{
 		"control character":  0x01,
@@ -826,6 +836,8 @@ VALUES ($1, gen_random_uuid(), 'medium', now(), now(), $2, $3, $4, $5, $6, $7, $
 		{"database to ssh", map[string]any{"database": "postgres"}, "events_sensor_fields_check"},
 		{"application name to ldap", map[string]any{"service": "ldap", "application_name": "psql"}, "events_sensor_fields_check"},
 		{"client version to postgres", map[string]any{"service": "postgres", "client_version": "x"}, "events_sensor_fields_check"},
+		{"tool call to ssh", map[string]any{"event_type": "tool_call"}, "events_sensor_fields_check"},
+		{"login attempt to mcp", map[string]any{"service": "mcp"}, "events_sensor_fields_check"},
 	}
 	for _, tt := range tests {
 		_, err := f.owner.Exec(t.Context(), insert, with(tt.changes)...)
@@ -881,11 +893,37 @@ VALUES ('honeypot', $1, 'medium', now(), now(), 'sensor', '192.0.2.1', $2, 'ssh'
 		}
 	}
 	// An attempt belongs to its event and leaves with it.
+	// Tool calls.
+	const toolCall = `INSERT INTO event_tool_calls (event_id, ordinal, tool_name, arguments_excerpt) VALUES ($1, $2, $3, $4)`
+	if _, err := f.owner.Exec(t.Context(), toolCall, eventID, 6, "t", "{}"); err != nil {
+		t.Fatalf("tool call at the limit: %v", err)
+	}
+	for _, tt := range []struct {
+		name       string
+		ordinal    int
+		tool, args string
+		want       string
+	}{
+		{"ordinal 0", 0, "t", "{}", "event_tool_calls_ordinal_check"},
+		{"ordinal 7", 7, "t", "{}", "event_tool_calls_ordinal_check"},
+		{"name beyond its length", 1, strings.Repeat("a", 129), "{}", "event_tool_calls_tool_name_check"},
+		{"arguments with a line break", 1, "t", "a\nb", "event_tool_calls_arguments_excerpt_check"},
+		{"ordinal twice", 6, "t", "{}", "event_tool_calls_pkey"},
+	} {
+		_, err := f.owner.Exec(t.Context(), toolCall, eventID, tt.ordinal, tt.tool, tt.args)
+		if pgError(err) == nil || pgError(err).ConstraintName != tt.want {
+			t.Errorf("%s: error = %v, want a violation of %s", tt.name, err, tt.want)
+		}
+	}
+
 	if _, err := f.owner.Exec(t.Context(), "DELETE FROM events"); err != nil {
 		t.Fatal(err)
 	}
 	if n := f.count(t, "SELECT count(*) FROM event_attempts"); n != 0 {
 		t.Errorf("%d attempts remain after their events were deleted", n)
+	}
+	if n := f.count(t, "SELECT count(*) FROM event_tool_calls"); n != 0 {
+		t.Errorf("%d tool calls remain after their events were deleted", n)
 	}
 }
 
@@ -978,6 +1016,7 @@ func TestCheckPrivileges_RefusesALoginThatReachesTheInventory(t *testing.T) {
 	}{
 		{"honeypots", "GRANT SELECT (secret_hash) ON public.honeypots TO %s", "tables [honeypots]"},
 		{"attempts", "GRANT SELECT ON public.event_attempts TO %s", "tables [event_attempts]"},
+		{"tool calls", "GRANT SELECT ON public.event_tool_calls TO %s", "tables [event_tool_calls]"},
 		{"status function", "GRANT EXECUTE ON FUNCTION public.honeypot_status(timestamptz) TO %s", "execute [honeypot_status(timestamp with time zone)]"},
 	}
 	for _, tt := range tests {
@@ -1033,7 +1072,7 @@ func TestTrigger_IdenticalReportResponsesWithTheDatabase(t *testing.T) {
 	cases["session that does not fit"] = fetch(t, srv, http.MethodPost, "/", bytes.NewReader(mutated(t, "session_postgres.json", func(map[string]any) {})), bearer(enabledSecret))
 	cases["database failure"] = fetch(t, failing, http.MethodPost, "/", bytes.NewReader(session(randomSessionID(t))), bearer(enabledSecret))
 	cases["unsupported version"] = fetch(t, srv, http.MethodPost, "/",
-		bytes.NewReader(mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 2 })), bearer(enabledSecret))
+		bytes.NewReader(mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 3 })), bearer(enabledSecret))
 	for name, got := range cases {
 		if !got.equal(want) {
 			t.Errorf("%s: response %+v, want %+v", name, got, want)
@@ -1190,5 +1229,98 @@ func TestStore_SessionFreezesTheNames(t *testing.T) {
 	}
 	if n := f.count(t, `SELECT count(*) FROM events WHERE resource_id = $1 AND resource_name = 'Renamed' AND scenario_name IS NULL`, id); n != 1 {
 		t.Errorf("%d events of the renamed honeypot without a scenario, want 1", n)
+	}
+}
+
+// One session is one event, of the highest stage: the event holds every tool
+// call in order, the technique of a tool call and the severity of the honeypot,
+// because a tool call has no severity of its own.
+func TestStore_RecordsTheToolCallsOfASession(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	_, secret := f.honeypot(t, honeypotRow{service: "mcp", enabled: true, severity: "low", techniques: []string{"T1078"}})
+	s := f.newSession(t)
+	s.Attempts, s.ClientVersion = []Attempt{}, "Agent/1"
+	s.ToolCalls = []ToolCall{{ToolName: "search", Arguments: `{"q":"vpn"}`}, {ToolName: "get_page", Arguments: `{"id":"7"}`}}
+	if res := f.session(t, secret, s); res.Outcome != ReportRecorded || res.Service != "mcp" {
+		t.Fatalf("result = %+v, want recorded for mcp", res)
+	}
+
+	var eventType, severity, client string
+	var techniques []string
+	err := f.owner.QueryRow(t.Context(), `
+SELECT sensor_event_type, severity, sensor_client_version, techniques FROM events WHERE sensor_session_id = $1`, s.ID).
+		Scan(&eventType, &severity, &client, &techniques)
+	if err != nil || eventType != "tool_call" || severity != "low" || client != "Agent/1" || !slices.Equal(techniques, []string{"T1213", "T1078"}) {
+		t.Errorf("event = %s, %s, %s, %v, %v; want tool_call, low, Agent/1, T1213 and T1078", eventType, severity, client, techniques, err)
+	}
+	var calls []ToolCall
+	rows, err := f.owner.Query(t.Context(), `SELECT tool_name, arguments_excerpt FROM event_tool_calls ORDER BY ordinal`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c ToolCall
+	if _, err := pgx.ForEachRow(rows, []any{&c.ToolName, &c.Arguments}, func() error { calls = append(calls, c); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(calls, s.ToolCalls) {
+		t.Errorf("tool calls = %+v, want %+v in order", calls, s.ToolCalls)
+	}
+	if n := f.count(t, "SELECT count(*) FROM event_jobs"); n != 1 {
+		t.Errorf("%d jobs, want 1", n)
+	}
+}
+
+// A report with tool calls that do not fit the service or the kind of event is
+// not stored, and the database says so with an outcome. Each case breaks one
+// rule.
+func TestStore_ToolCallsFitTheServiceAndTheKindOfEvent(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	_, mcpSecret := f.honeypot(t, enabled("mcp"))
+	_, ldapSecret := f.honeypot(t, enabled("ldap"))
+	const one = `[{"tool_name":"t","arguments":"{}"}]`
+	seven := `[` + strings.TrimSuffix(strings.Repeat(`{"tool_name":"t","arguments":"{}"},`, 7), ",") + `]`
+	tests := []struct {
+		name      string
+		secret    string
+		eventType string
+		attempts  string
+		toolCalls *string
+		want      string
+	}{
+		{"tool call", mcpSecret, "tool_call", `[]`, ptr(one), "recorded"},
+		{"six tool calls", mcpSecret, "tool_call", `[]`, ptr(`[` + strings.TrimSuffix(strings.Repeat(`{"tool_name":"t","arguments":"{}"},`, 6), ",") + `]`), "recorded"},
+		{"connection", mcpSecret, "connection", `[]`, ptr(`[]`), "recorded"},
+		{"login attempt", mcpSecret, "login_attempt", `[{"username":"u"}]`, ptr(`[]`), "invalid"},
+		{"tool call without a call", mcpSecret, "tool_call", `[]`, ptr(`[]`), "invalid"},
+		{"connection with a call", mcpSecret, "connection", `[]`, ptr(one), "invalid"},
+		{"tool call with an attempt", mcpSecret, "tool_call", `[{"username":"u"}]`, ptr(one), "invalid"},
+		{"seven tool calls", mcpSecret, "tool_call", `[]`, ptr(seven), "invalid"},
+		{"tool calls that are no list", mcpSecret, "tool_call", `[]`, ptr(`{"tool_name":"t"}`), "invalid"},
+		{"no tool calls at all", mcpSecret, "tool_call", `[]`, nil, "invalid"},
+		{"tool call to another service", ldapSecret, "tool_call", `[]`, ptr(one), "invalid"},
+		{"connection to another service with a call", ldapSecret, "connection", `[]`, ptr(one), "invalid"},
+		{"login attempt to another service with a call", ldapSecret, "login_attempt", `[{"username":"u"}]`, ptr(one), "invalid"},
+	}
+	for _, tt := range tests {
+		var outcome string
+		err := f.owner.QueryRow(t.Context(), `
+SELECT outcome FROM public.record_honeypot_session($1, gen_random_uuid(), interval '0', 0, '192.0.2.1', 8080, $2, NULL, NULL, NULL, NULL, NULL, $3::jsonb, $4::jsonb)`,
+			SecretHash(tt.secret), tt.eventType, tt.attempts, tt.toolCalls).Scan(&outcome)
+		if err != nil || outcome != tt.want {
+			t.Errorf("%s: outcome = %s, %v; want %s", tt.name, outcome, err, tt.want)
+		}
+	}
+
+	// A base without a filter is no directory query, and a tool call holds none.
+	var outcome string
+	err := f.owner.QueryRow(t.Context(), `
+SELECT outcome FROM public.record_honeypot_session($1, gen_random_uuid(), interval '0', 0, '192.0.2.1', 8080, 'tool_call', NULL, NULL, NULL, 'dc=a', NULL, '[]'::jsonb, $2::jsonb)`,
+		SecretHash(mcpSecret), one).Scan(&outcome)
+	if err != nil || outcome != "invalid" {
+		t.Errorf("tool call with a base: outcome = %s, %v; want invalid", outcome, err)
 	}
 }
