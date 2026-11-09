@@ -6,7 +6,7 @@ Instructions for coding agents working in this repository. Human contributors st
 
 Nyktus is a self-hosted deception platform: honeytokens and honeypots, grouped into scenarios, built from a deception catalog mapped to MITRE ATT&CK and MITRE Engage. It is a security product. Correctness and security take priority over speed and feature count.
 
-The project is in early development. Prefer a clean design over compatibility with earlier drafts of unreleased code. Released versions are installed, so a schema change is a new migration and a released migration is never edited.
+The project is in early development. Prefer a clean design over compatibility with earlier drafts of unreleased code. Until version 1.0.0, every schema change goes into `migrations/0001_initial.sql`.
 
 ## Required reading
 

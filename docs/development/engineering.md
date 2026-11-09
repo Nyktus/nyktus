@@ -117,8 +117,8 @@ Every source file starts with a license header:
 ## Database
 
 - Schema changes are numbered migrations in `migrations/`, named `NNNN_description.sql` and applied by `nyktus migrate` with the database owner role. Migrations are forward-only and run in a transaction each.
-- A released migration is never edited. The runner stores a checksum of every applied migration and refuses to run when one has changed.
-- `0001_initial.sql` holds the schema of the first release. Every later change is a new migration, because installations have applied the released ones.
+- The runner stores a checksum of every applied migration and refuses to run when one has changed.
+- Until version 1.0.0, the whole schema is one migration, `0001_initial.sql`, which changes are made in, next to the objects they belong with. A release that changes it cannot upgrade an existing database, because the runner refuses the changed migration: the database is created anew. From 1.0.0 on, a released migration is never edited.
 - Grants for the per-role database users live in migrations, next to the tables they cover. They go to the group role of the server role, such as `nyktus_console`, never to a login role.
 - A migration revokes all privileges on a new table or function before it grants any. Default privileges set by an operator, for example for a monitoring role, would otherwise widen the grants of a server role without notice.
 - Columns that the database generates, such as identifiers and creation times, are excluded from the column-level `INSERT` and `UPDATE` grants, so an application role cannot forge them. The same holds for columns that another role reports, such as the last report of a sensor: where a change of the console must reset them, as a new secret of a honeypot does, a trigger resets them instead of a grant.

@@ -96,7 +96,7 @@ docker compose pull          # after changing NYKTUS_VERSION in .env
 docker compose up --detach   # migrate runs first
 ```
 
-A migration never edits an applied one. Back up before an upgrade.
+Back up before an upgrade. Until version 1.0.0, a release can change the initial migration: `migrate` then stops with `applied migration has been modified`, and the database has to be created anew.
 
 ## Backup
 
