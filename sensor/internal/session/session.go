@@ -47,8 +47,9 @@ func (h *Honeypot) LogValue() slog.Value {
 	return slog.GroupValue(slog.String("honeypot_id", h.ID), slog.String("service", h.Service))
 }
 
-// Session is one connection of an attacker. A single goroutine fills it, and
-// it is not changed after End.
+// Session is one connection of an attacker. It is not safe for concurrent use:
+// one goroutine fills it, or, where a session spans connections, the holder of
+// its lock does. It is not changed after End.
 type Session struct {
 	honeypot *Honeypot
 	clock    clock.Clock
@@ -64,6 +65,7 @@ type Session struct {
 	database        string
 	applicationName string
 	query           *report.Query
+	toolCalls       []report.ToolCall
 }
 
 // Start begins a session of the honeypot for a connection from remote to the
@@ -123,22 +125,41 @@ func (s *Session) SetQuery(q report.Query) bool {
 	return true
 }
 
+// AddToolCall records a call of a tool. It reports false and records nothing once
+// the session holds the most that it keeps.
+func (s *Session) AddToolCall(c report.ToolCall) bool {
+	if len(s.toolCalls) >= report.MaxToolCalls {
+		return false
+	}
+	s.toolCalls = append(s.toolCalls, c)
+	return true
+}
+
 // Attempts returns the number of logins recorded.
 func (s *Session) Attempts() int { return len(s.attempts) }
 
-// End closes the session. A second call changes nothing.
-func (s *Session) End() {
+// End closes the session now. A second call changes nothing.
+func (s *Session) End() { s.EndAt(s.clock.Elapsed()) }
+
+// EndAt closes the session as of at, a time of the clock of the session. A
+// service whose session is over only after a time of silence ends it at its
+// last traffic, so that the duration does not hold the silence. A second call
+// changes nothing.
+func (s *Session) EndAt(at time.Duration) {
 	if s.finished {
 		return
 	}
 	s.finished = true
-	s.ended = s.clock.Elapsed()
+	s.ended = at
 }
 
 // EventType names the stage that the session reached, for the log. The server
 // decides the kind of event from the report; this is what it will find in a
-// session of a service that logs in and, for a directory, searches.
+// session of a service that logs in, searches a directory or offers tools.
 func (s *Session) EventType() string {
+	if len(s.toolCalls) > 0 {
+		return "tool_call"
+	}
 	if s.query != nil {
 		return "directory_query"
 	}
@@ -184,6 +205,11 @@ func (s *Session) Report(now time.Duration) (report.Session, bool) {
 		q := *s.query
 		query = &q
 	}
+	var toolCalls []report.ToolCall
+	if len(s.toolCalls) > 0 {
+		toolCalls = make([]report.ToolCall, len(s.toolCalls))
+		copy(toolCalls, s.toolCalls)
+	}
 	return report.Session{
 		Version:    report.Version,
 		Type:       report.TypeSession,
@@ -198,5 +224,6 @@ func (s *Session) Report(now time.Duration) (report.Session, bool) {
 		ApplicationName: s.applicationName,
 		Attempts:        attempts,
 		Query:           query,
+		ToolCalls:       toolCalls,
 	}, true
 }

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -222,6 +224,81 @@ func TestSensor_LDAP_EndToEnd(t *testing.T) { //nolint:paralleltest // see above
 	}
 	logs := env.process.log()
 	for _, forbidden := range []string{string(env.created.Secret), "mallory-typed-this", password, "corp"} {
+		if strings.Contains(logs, forbidden) {
+			t.Errorf("the log of the sensor holds %q:\n%s", forbidden, logs)
+		}
+	}
+}
+
+// An MCP honeypot of the console and a sensor with its entry, filled in: a client
+// that lists the tools and calls one becomes one event of the call, with its
+// arguments and the technique of the kind of event.
+func TestSensor_MCP_EndToEnd(t *testing.T) { //nolint:paralleltest // see above.
+	env := startEndToEnd(t, honeypot.ServiceMCP, ":8080", false, func(dir string, _ honeypot.Created) {
+		path := filepath.Join(dir, "sensor.yaml")
+		data, err := os.ReadFile(path) //nolint:gosec // G304: the path of the test.
+		if err != nil {
+			t.Fatal(err)
+		}
+		filled := strings.NewReplacer(`path: ""`, `path: "/mcp"`, `server_name: ""`, `server_name: "acme-wiki"`, `server_version: ""`, `server_version: "3.1"`,
+			`- name: ""`, `- name: "get_page"`, `description: ""`, `description: "Read a page."`, `response: ""`, `response: "fixed text"`).Replace(string(data))
+		if err := os.WriteFile(path, []byte(filled), 0o600); err != nil { //nolint:gosec // G703: the path of the test.
+			t.Fatal(err)
+		}
+	})
+
+	conn := dial(t, env.port)
+	const meta = `"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"Agent","version":"2"},"io.modelcontextprotocol/clientCapabilities":{}}`
+	exchange := func(method, name, params, want string) {
+		t.Helper()
+		body := `{"jsonrpc":"2.0","id":1,"method":"` + method + `","params":{` + params + meta + `}}`
+		head := "POST /mcp HTTP/1.1\r\nHost: wiki\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: " + method + "\r\n"
+		if name != "" {
+			head += "Mcp-Name: " + name + "\r\n"
+		}
+		if _, err := fmt.Fprintf(conn, "%sContent-Length: %d\r\n\r\n%s", head, len(body), body); err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 4096)
+		n, err := conn.Read(buf)
+		if err != nil || !bytes.Contains(buf[:n], []byte(want)) {
+			t.Fatalf("%s: answer = %q, %v; want %q", method, buf[:n], err, want)
+		}
+	}
+	exchange("tools/list", "", "", "Read a page.")
+	exchange("tools/call", "get_page", `"name":"get_page","arguments":{"id":"mallory-typed-this"},`, "fixed text")
+	_ = conn.Close()
+
+	if err := env.process.stop(t); err != nil {
+		t.Errorf("the sensor ended with %v, want a clean exit", err)
+	}
+	var eventID string
+	eventually(t, "the event of the call", func() bool {
+		return env.owner.QueryRow(t.Context(), `SELECT id FROM events WHERE resource_id = $1 AND sensor_event_type = 'tool_call'`, env.created.ID).Scan(&eventID) == nil
+	})
+	var (
+		service, client, severity, tool, args string
+		techniques                            []string
+	)
+	if err := env.owner.QueryRow(t.Context(), `SELECT sensor_service, sensor_client_version, severity, techniques FROM events WHERE id = $1`, eventID).
+		Scan(&service, &client, &severity, &techniques); err != nil {
+		t.Fatal(err)
+	}
+	if service != "mcp" || client != "Agent/2" || severity != "medium" || !slices.Equal(techniques, []string{"T1213"}) {
+		t.Errorf("event = %s %s %s %v, want a tool call of medium severity with T1213", service, client, severity, techniques)
+	}
+	if err := env.owner.QueryRow(t.Context(), `SELECT tool_name, arguments_excerpt FROM event_tool_calls WHERE event_id = $1`, eventID).Scan(&tool, &args); err != nil {
+		t.Fatal(err)
+	}
+	if tool != "get_page" || args != `{"id":"mallory-typed-this"}` {
+		t.Errorf("tool call = %s %s", tool, args)
+	}
+	var events int
+	if err := env.owner.QueryRow(t.Context(), `SELECT count(*) FROM events WHERE resource_id = $1`, env.created.ID).Scan(&events); err != nil || events != 1 {
+		t.Errorf("%d events, %v; want one for the whole session", events, err)
+	}
+	logs := env.process.log()
+	for _, forbidden := range []string{string(env.created.Secret), "mallory-typed-this", "get_page"} {
 		if strings.Contains(logs, forbidden) {
 			t.Errorf("the log of the sensor holds %q:\n%s", forbidden, logs)
 		}

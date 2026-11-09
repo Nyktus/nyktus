@@ -5,7 +5,6 @@ package reporter
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -185,7 +184,7 @@ func (r *Reporter) send(s *session.Session) {
 		if !ok {
 			return nil, false
 		}
-		body, err := json.Marshal(rep)
+		body, err := report.Marshal(rep)
 		return body, err == nil
 	}
 	out, _ := r.sender.deliver(r.sendCtx, s.Honeypot().Secret, build)
@@ -208,7 +207,7 @@ func (r *Reporter) send(s *session.Session) {
 // answering, not the ones after it. The heartbeats do not use the queue, which
 // an attacker can fill: a honeypot under attack must not look offline.
 func (r *Reporter) RunHeartbeats(ctx context.Context, sensorVersion string, honeypots []*session.Honeypot) {
-	body, err := json.Marshal(report.NewHeartbeat(sensorVersion))
+	body, err := report.Marshal(report.NewHeartbeat(sensorVersion))
 	if err != nil {
 		panic("reporter: heartbeat does not serialize")
 	}

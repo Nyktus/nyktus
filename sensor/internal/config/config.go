@@ -24,6 +24,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"nyktus.org/nyktus/sensor/internal/mcp"
 	"nyktus.org/nyktus/sensor/internal/postgres"
 	"nyktus.org/nyktus/sensor/internal/secret"
 	"nyktus.org/nyktus/sensor/internal/ssh"
@@ -64,6 +65,7 @@ const (
 	Telnet   Service = "telnet"
 	Postgres Service = "postgres"
 	LDAP     Service = "ldap"
+	MCP      Service = "mcp"
 )
 
 // Config is the configuration of the sensor.
@@ -89,8 +91,8 @@ type Honeypot struct {
 	SecretFile string        `yaml:"secret_file"`
 	// Banner is what the service says first. Nil means the default of the
 	// service. An empty value means no banner, which an SSH server cannot do:
-	// its first words are its identification string. PostgreSQL and LDAP say
-	// nothing before a login, so they take none.
+	// its first words are its identification string. PostgreSQL, LDAP and MCP say
+	// nothing before a client does, so they take none.
 	Banner *string `yaml:"banner"`
 	// LoginPrompt is the prompt for the user name; telnet only.
 	LoginPrompt *string `yaml:"login_prompt"`
@@ -105,8 +107,10 @@ type Honeypot struct {
 	RSAHostKeyFile string `yaml:"rsa_host_key_file"`
 	// RSAHostKey is the key read from RSAHostKeyFile by Load.
 	RSAHostKey ssh.HostKey `yaml:"-"`
+	// MCP is what an MCP honeypot presents; mcp only, and required there.
+	MCP *mcp.Config `yaml:"mcp"`
 	// TLSCertFile and TLSKeyFile name the certificate and its key; postgres
-	// only, optional, and always both. The sensor never makes a certificate of
+	// and mcp only, optional, and always both. The sensor never makes a certificate of
 	// its own: it would identify the honeypot.
 	TLSCertFile string `yaml:"tls_cert_file"`
 	TLSKeyFile  string `yaml:"tls_key_file"`
@@ -191,7 +195,7 @@ func Load(path string) (*Config, error) {
 				hostKeys[id] = i
 			}
 		}
-		if hp.Service == Postgres && hp.TLSCertFile != "" && hp.TLSKeyFile != "" {
+		if (hp.Service == Postgres || hp.Service == MCP) && hp.TLSCertFile != "" && hp.TLSKeyFile != "" {
 			cert, err := readCertificate(resolve(filepath.Dir(path), hp.TLSCertFile), resolve(filepath.Dir(path), hp.TLSKeyFile))
 			if err != nil {
 				problems = append(problems, fmt.Errorf("honeypots[%d].tls_cert_file: %w", i, err))
@@ -411,7 +415,7 @@ func (hp *Honeypot) validate() []error {
 		add("id: must be the identifier of the honeypot in the console, a lowercase UUID")
 	}
 	switch hp.Service {
-	case Telnet, SSH, Postgres, LDAP:
+	case Telnet, SSH, Postgres, LDAP, MCP:
 	case "":
 		add("service: required")
 	default:
@@ -433,7 +437,7 @@ func (hp *Honeypot) validate() []error {
 		switch hp.Service {
 		case SSH:
 			err = validateSSHVersion(*hp.Banner)
-		case Postgres, LDAP:
+		case Postgres, LDAP, MCP:
 			err = errors.New("only for ssh and telnet: the service says nothing before the login")
 		default:
 			err = validateText(*hp.Banner, maxBanner, true)
@@ -448,14 +452,24 @@ func (hp *Honeypot) validate() []error {
 	case hp.Service != SSH && hp.HostKeyFile != "":
 		add("host_key_file: only for ssh")
 	}
-	if hp.Service != Postgres && (hp.TLSCertFile != "" || hp.TLSKeyFile != "") {
-		add("tls_cert_file and tls_key_file: only for postgres")
+	if hp.Service != Postgres && hp.Service != MCP && (hp.TLSCertFile != "" || hp.TLSKeyFile != "") {
+		add("tls_cert_file and tls_key_file: only for postgres and mcp")
 	}
 	if (hp.TLSCertFile == "") != (hp.TLSKeyFile == "") {
 		add("tls_cert_file and tls_key_file: set both or neither")
 	}
 	if hp.Service != SSH && hp.RSAHostKeyFile != "" {
 		add("rsa_host_key_file: only for ssh")
+	}
+	switch {
+	case hp.Service == MCP && hp.MCP == nil:
+		add("mcp: required for mcp: what every installation shared would identify the honeypot")
+	case hp.Service == MCP:
+		for _, err := range hp.MCP.Validate() {
+			add("mcp.%v", err)
+		}
+	case hp.MCP != nil:
+		add("mcp: only for mcp")
 	}
 	if hp.LoginPrompt != nil {
 		if hp.Service != Telnet {

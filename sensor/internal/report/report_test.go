@@ -104,6 +104,49 @@ func TestHeartbeat_WithoutVersion_OmitsTheMember(t *testing.T) {
 	}
 }
 
+// The trigger reads at most MaxBody of a report and loses the whole session if
+// it is larger. A session that holds the most the sensor keeps, filled with
+// what a JSON encoder writes longest, fits, whatever the attacker typed: it
+// is not the characters that json.Marshal escapes that decide, but the size.
+func TestMarshal_TheLargestSession_FitsWhatTheTriggerReads(t *testing.T) {
+	t.Parallel()
+
+	// < is six bytes with json.Marshal, a backslash and a quote two, and the
+	// line separator, which the encoder always escapes, six for three.
+	for _, filler := range []string{"<", `\`, `"`, "\u2028"} {
+		fill := func(n int) string { return report.Clean(strings.Repeat(filler, n), n) }
+		s := report.Session{
+			Version: report.Version, Type: report.TypeSession, SessionID: strings.Repeat("a", 32), ClientIP: "203.0.113.9", Port: 8080,
+			ClientVersion: fill(report.MaxClientVersion), Database: fill(report.MaxDatabase), ApplicationName: fill(report.MaxApplicationName),
+			Query: &report.Query{BaseDN: fill(report.MaxBaseDN), Filter: fill(report.MaxFilter)},
+		}
+		length := 1
+		for range report.MaxAttempts {
+			s.Attempts = append(s.Attempts, report.Attempt{Username: fill(report.MaxUsername), PasswordLength: &length, KeyFingerprint: "SHA256:" + strings.Repeat("A", 43)})
+		}
+		for range report.MaxToolCalls {
+			s.ToolCalls = append(s.ToolCalls, report.ToolCall{ToolName: fill(report.MaxToolName), Arguments: fill(report.MaxToolArguments)})
+		}
+		got, err := report.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) > report.MaxBody {
+			t.Errorf("filled with %q: %d bytes, more than the %d that the trigger reads", filler, len(got), report.MaxBody)
+		}
+	}
+}
+
+// Marshal leaves the characters of HTML as they are and ends no line.
+func TestMarshal_KeepsHTMLCharacters(t *testing.T) {
+	t.Parallel()
+
+	got, err := report.Marshal(report.ToolCall{ToolName: "a", Arguments: "<&>"})
+	if err != nil || string(got) != `{"tool_name":"a","arguments":"<&>"}` {
+		t.Errorf("Marshal() = %q, %v", got, err)
+	}
+}
+
 func TestClean(t *testing.T) {
 	t.Parallel()
 
