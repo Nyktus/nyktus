@@ -78,12 +78,25 @@ func TestSensor_PostgreSQL_EndToEnd(t *testing.T) { //nolint:paralleltest // see
 	if _, err := conn.Write(message(196608, []byte(params))); err != nil {
 		t.Fatal(err)
 	}
-	if got := read(9); !bytes.Equal(got, []byte{'R', 0, 0, 0, 8, 0, 0, 0, 3}) {
-		t.Fatalf("request = %q, want the request for a password in clear text", got)
+	if got := read(24); !bytes.Contains(got, []byte("SCRAM-SHA-256")) {
+		t.Fatalf("offer = %q, want SCRAM", got)
 	}
-	password := "hunter2-typed-this"
-	pw := append([]byte{'p', 0, 0, 0, byte(5 + len(password))}, password...) //nolint:gosec // G115: the test password is short.
-	if _, err := conn.Write(append(pw, 0)); err != nil {
+	sasl := func(body string) []byte {
+		b := binary.BigEndian.AppendUint32([]byte{'p'}, uint32(4+len(body))) //nolint:gosec // G115: the test messages are small
+		return append(b, body...)
+	}
+	const clientFirst = "n,,n=,r=abcdefghijklmnop"
+	first := "SCRAM-SHA-256\x00" + string(binary.BigEndian.AppendUint32(nil, uint32(len(clientFirst)))) + clientFirst
+	if _, err := conn.Write(sasl(first)); err != nil {
+		t.Fatal(err)
+	}
+	challenge := read(5)
+	if challenge[0] != 'R' {
+		t.Fatalf("message type = %c, want the challenge", challenge[0])
+	}
+	read(int(binary.BigEndian.Uint32(challenge[1:])) - 4)
+	const password = "hunter2-typed-this"
+	if _, err := conn.Write(sasl("c=biws,r=abcdefghijklmnopx,p=" + password)); err != nil {
 		t.Fatal(err)
 	}
 	head := read(5)
@@ -111,8 +124,8 @@ func TestSensor_PostgreSQL_EndToEnd(t *testing.T) { //nolint:paralleltest // see
 	if err := env.owner.QueryRow(t.Context(), `SELECT username, password_length FROM event_attempts WHERE event_id = $1`, eventID).Scan(&user, &length); err != nil {
 		t.Fatal(err)
 	}
-	if user != "mallory-typed-this" || length == nil || *length != len(password) {
-		t.Errorf("attempt = %q with a password of %v bytes, want the login of the attacker", user, length)
+	if user != "mallory-typed-this" || length != nil {
+		t.Errorf("attempt = %q with a password of %v bytes, want the login of the attacker without a length", user, length)
 	}
 
 	// A client that cancels is a connection.

@@ -80,7 +80,7 @@ func newService(hp config.Honeypot, clk clock.Clock) service {
 		}
 		return telnet.New(cfg, clk)
 	case config.Postgres:
-		return postgres.New(clk)
+		return postgres.New(postgres.Config{Certificate: hp.TLSCertificate}, clk)
 	case config.LDAP:
 		return ldap.New(clk)
 	default:
