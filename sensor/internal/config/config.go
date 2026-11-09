@@ -96,6 +96,11 @@ type Honeypot struct {
 	HostKeyFile string `yaml:"host_key_file"`
 	// HostKey is the key read from HostKeyFile by Load.
 	HostKey ssh.HostKey `yaml:"-"`
+	// RSAHostKeyFile names the file with a second host key, an RSA key for
+	// clients that know no other; ssh only, and optional.
+	RSAHostKeyFile string `yaml:"rsa_host_key_file"`
+	// RSAHostKey is the key read from RSAHostKeyFile by Load.
+	RSAHostKey ssh.HostKey `yaml:"-"`
 }
 
 var (
@@ -157,6 +162,20 @@ func Load(path string) (*Config, error) {
 				id := string(k.PublicKey().Marshal())
 				if prev, ok := hostKeys[id]; ok {
 					problems = append(problems, fmt.Errorf("honeypots[%d].host_key_file: the same host key as honeypots[%d]; every honeypot has its own", i, prev))
+				}
+				hostKeys[id] = i
+			}
+		}
+		if hp.Service == SSH && hp.RSAHostKeyFile != "" {
+			k, err := readHostKeyWith(resolve(filepath.Dir(path), hp.RSAHostKeyFile), ssh.ParseRSAHostKey)
+			if err != nil {
+				problems = append(problems, fmt.Errorf("honeypots[%d].rsa_host_key_file: %w", i, err))
+			}
+			hp.RSAHostKey = k
+			if err == nil {
+				id := string(k.PublicKey().Marshal())
+				if prev, ok := hostKeys[id]; ok {
+					problems = append(problems, fmt.Errorf("honeypots[%d].rsa_host_key_file: the same host key as honeypots[%d]; every honeypot has its own", i, prev))
 				}
 				hostKeys[id] = i
 			}
@@ -235,6 +254,10 @@ func readSecretFile(path string) (secret.Secret, error) {
 // readHostKey reads the private key of an SSH honeypot from a file that only its
 // owner can access.
 func readHostKey(path string) (ssh.HostKey, error) {
+	return readHostKeyWith(path, ssh.ParseHostKey)
+}
+
+func readHostKeyWith(path string, parse func([]byte) (ssh.HostKey, error)) (ssh.HostKey, error) {
 	data, err := readPrivateFile(path, "host key file", maxHostKeyFile)
 	if err != nil {
 		return ssh.HostKey{}, err
@@ -242,7 +265,7 @@ func readHostKey(path string) (ssh.HostKey, error) {
 	if len(data) > maxHostKeyFile {
 		return ssh.HostKey{}, fmt.Errorf("the host key file is larger than %d bytes", maxHostKeyFile)
 	}
-	return ssh.ParseHostKey(data)
+	return parse(data)
 }
 
 // decode reads the YAML into the types, refusing what they do not have.
@@ -383,6 +406,9 @@ func (hp *Honeypot) validate() []error {
 		add("host_key_file: required for ssh: a host key that changes with every start would identify the honeypot")
 	case hp.Service != SSH && hp.HostKeyFile != "":
 		add("host_key_file: only for ssh")
+	}
+	if hp.Service != SSH && hp.RSAHostKeyFile != "" {
+		add("rsa_host_key_file: only for ssh")
 	}
 	if hp.LoginPrompt != nil {
 		if hp.Service != Telnet {

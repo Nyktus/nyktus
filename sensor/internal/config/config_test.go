@@ -883,3 +883,93 @@ func TestLoad_HostKeyFileOfAnotherService_IsRefusedWithoutBeingOpened(t *testing
 		t.Errorf("Load() = %v, want only the error that the field is for ssh", err)
 	}
 }
+
+const withRSAHostKey = withHostKey + "    rsa_host_key_file: ssh_host_key_rsa\n"
+
+func rsaPrivateKey(t *testing.T, bits int) crypto.PrivateKey {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, bits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
+func TestLoad_RSAHostKeyFile_IsReadBesideTheEd25519Key(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeKey(t, dir, "ssh_host_key", ed25519Key(t), "", 0o600)
+	writeKey(t, dir, "ssh_host_key_rsa", rsaPrivateKey(t, 2048), "", 0o600)
+	write(t, dir, "ssh.secret", secretOne, 0o600)
+	path := write(t, dir, "sensor.yaml", withRSAHostKey, 0o644)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hp := cfg.Honeypots[0]
+	if hp.RSAHostKey.Signer == nil || hp.RSAHostKey.PublicKey().Type() != cryptossh.KeyAlgoRSA || hp.HostKey.PublicKey().Type() != cryptossh.KeyAlgoED25519 {
+		t.Errorf("keys = %v and %v, want Ed25519 and RSA", hp.HostKey, hp.RSAHostKey)
+	}
+}
+
+func TestLoad_RSAHostKeyFile_Invalid(t *testing.T) {
+	t.Parallel()
+
+	short, err := rsa.GenerateKey(rand.Reader, 1024) //nolint:gosec // G403: the key must be too short for the test.
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		key  crypto.PrivateKey
+		mode os.FileMode
+		want string
+	}{
+		{name: "an Ed25519 key", key: ed25519Key(t), mode: 0o600, want: "rsa_host_key_file: the host key is of type ssh-ed25519, want ssh-rsa"},
+		{name: "too short", key: short, mode: 0o600, want: "rsa_host_key_file: the RSA host key has fewer than 2048 bits"},
+		{name: "readable by the group", key: rsaPrivateKey(t, 2048), mode: 0o640, want: "rsa_host_key_file: the group or other users can access the host key file"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			writeKey(t, dir, "ssh_host_key", ed25519Key(t), "", 0o600)
+			writeKey(t, dir, "ssh_host_key_rsa", tt.key, "", tt.mode)
+			write(t, dir, "ssh.secret", secretOne, 0o600)
+			path := write(t, dir, "sensor.yaml", withRSAHostKey, 0o644)
+			if _, err := config.Load(path); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("Load() = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoad_RSAHostKeyFile_SameKeyOnTwoHoneypots_IsRefused(t *testing.T) {
+	t.Parallel()
+
+	const otherID = "8e3b62d5-4c9f-4a1b-8d7e-2f3a4b5c6d7e"
+	entry := func(id, listen, secret, key string) string {
+		return "  - id: " + id + "\n    service: ssh\n    listen: \"" + listen + "\"\n    secret: " + secret + "\n    host_key_file: " + key + "\n    rsa_host_key_file: ssh_host_key_rsa\n"
+	}
+	dir := t.TempDir()
+	writeKey(t, dir, "ssh_host_key", ed25519Key(t), "", 0o600)
+	writeKey(t, dir, "ssh_host_key_b", ed25519Key(t), "", 0o600)
+	writeKey(t, dir, "ssh_host_key_rsa", rsaPrivateKey(t, 2048), "", 0o600)
+	body := "trigger_url: https://trigger.example.com/\nhoneypots:\n" + entry(idOne, ":2222", secretOne, "ssh_host_key") + entry(otherID, ":2223", secretTwo, "ssh_host_key_b")
+	path := write(t, dir, "sensor.yaml", body, 0o600)
+	if _, err := config.Load(path); err == nil || !strings.Contains(err.Error(), "rsa_host_key_file: the same host key") {
+		t.Errorf("Load() = %v, want the second use of the key refused", err)
+	}
+}
+
+func TestValidate_RSAHostKeyFileForAnotherService_IsRefused(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := write(t, dir, "sensor.yaml", strings.Replace(valid, "service: telnet", "service: ldap", 1)+"    rsa_host_key_file: k\n", 0o644)
+	if _, err := config.Load(path); err == nil || !strings.Contains(err.Error(), "rsa_host_key_file: only for ssh") {
+		t.Errorf("Load() = %v, want the field refused", err)
+	}
+}

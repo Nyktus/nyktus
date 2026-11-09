@@ -10,6 +10,7 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -115,7 +116,9 @@ func (h *honeypot) login(t *testing.T, cc *cryptossh.ClientConfig) error {
 	if cc.ClientVersion == "" {
 		cc.ClientVersion = "SSH-2.0-OpenSSH_9.6"
 	}
-	cc.HostKeyCallback = cryptossh.FixedHostKey(h.cfg.HostKey.PublicKey())
+	if cc.HostKeyCallback == nil {
+		cc.HostKeyCallback = cryptossh.FixedHostKey(h.cfg.HostKey.PublicKey())
+	}
 	cc.Timeout = 10 * time.Second
 	conn, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(t.Context(), "tcp", h.addr)
 	if err != nil {
@@ -665,4 +668,146 @@ func TestHostKey_NeverPrintsTheKey(t *testing.T) {
 			}
 		}
 	}
+}
+
+func newRSASigner(t *testing.T) cryptossh.Signer {
+	t.Helper()
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := cryptossh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signer
+}
+
+func oldClient(mutate func(*cryptossh.ClientConfig)) *cryptossh.ClientConfig {
+	cc := &cryptossh.ClientConfig{
+		User:    "root",
+		Auth:    []cryptossh.AuthMethod{cryptossh.Password("hunter2")},
+		Timeout: 10 * time.Second,
+	}
+	mutate(cc)
+	return cc
+}
+
+// A bot that knows only old algorithms still reaches the login, where the
+// honeypot sees what it tries.
+func TestServe_ClientWithOnlyOldAlgorithms_ReachesTheLogin(t *testing.T) {
+	t.Parallel()
+
+	old := cryptossh.InsecureAlgorithms()
+	type variant struct {
+		name   string
+		mutate func(*cryptossh.ClientConfig)
+	}
+	var variants []variant
+	for _, kex := range old.KeyExchanges {
+		variants = append(variants, variant{"kex " + kex, func(c *cryptossh.ClientConfig) { c.KeyExchanges = []string{kex} }})
+	}
+	for _, cipher := range old.Ciphers {
+		variants = append(variants, variant{"cipher " + cipher, func(c *cryptossh.ClientConfig) { c.Ciphers = []string{cipher} }})
+	}
+	for _, mac := range old.MACs {
+		variants = append(variants, variant{"mac " + mac, func(c *cryptossh.ClientConfig) {
+			c.MACs = []string{mac}
+			// An authenticated cipher would leave the MAC unused.
+			c.Ciphers = []string{cryptossh.CipherAES128CTR}
+		}})
+	}
+	if len(variants) < 8 {
+		t.Fatalf("variants = %d, want the old algorithms of the library", len(variants))
+	}
+	for _, v := range variants {
+		t.Run(v.name, func(t *testing.T) {
+			t.Parallel()
+			h := serve(t)
+			if err := h.login(t, oldClient(v.mutate)); err == nil {
+				t.Fatal("login succeeded, want it refused")
+			}
+			rep := h.report(t)
+			if len(rep.Attempts) != 1 || rep.Attempts[0].Username != "root" {
+				t.Errorf("attempts = %+v, want the login of root", rep.Attempts)
+			}
+		})
+	}
+}
+
+func TestServe_RSAHostKey_IsOfferedToClientsThatKnowNoOther(t *testing.T) {
+	t.Parallel()
+
+	rsaKey := newRSASigner(t)
+	for _, algo := range []string{cryptossh.KeyAlgoRSA, cryptossh.KeyAlgoRSASHA256, cryptossh.KeyAlgoRSASHA512} {
+		t.Run(algo, func(t *testing.T) {
+			t.Parallel()
+			h := serveWith(t, ssh.Config{Version: ssh.DefaultVersion, HostKey: ssh.HostKey{Signer: newSigner(t)}, RSAHostKey: ssh.HostKey{Signer: rsaKey}}, clocktest.New())
+			var seen cryptossh.PublicKey
+			cc := oldClient(func(c *cryptossh.ClientConfig) {
+				c.HostKeyAlgorithms = []string{algo}
+				c.HostKeyCallback = func(_ string, _ net.Addr, k cryptossh.PublicKey) error {
+					seen = k
+					return nil
+				}
+			})
+			if err := h.login(t, cc); err == nil {
+				t.Fatal("login succeeded, want it refused")
+			}
+			if seen == nil || !bytes.Equal(seen.Marshal(), rsaKey.PublicKey().Marshal()) {
+				t.Errorf("host key = %v, want the configured RSA key", seen)
+			}
+			if rep := h.report(t); len(rep.Attempts) != 1 {
+				t.Errorf("attempts = %+v, want the login", rep.Attempts)
+			}
+		})
+	}
+}
+
+func TestServe_ModernClient_StillGetsTheEd25519Key(t *testing.T) {
+	t.Parallel()
+
+	ed := newSigner(t)
+	h := serveWith(t, ssh.Config{Version: ssh.DefaultVersion, HostKey: ssh.HostKey{Signer: ed}, RSAHostKey: ssh.HostKey{Signer: newRSASigner(t)}}, clocktest.New())
+	var seen cryptossh.PublicKey
+	cc := oldClient(func(c *cryptossh.ClientConfig) {
+		c.HostKeyAlgorithms = []string{cryptossh.KeyAlgoED25519}
+		c.HostKeyCallback = func(_ string, _ net.Addr, k cryptossh.PublicKey) error {
+			seen = k
+			return nil
+		}
+	})
+	_ = h.login(t, cc)
+	h.session(t)
+	if seen == nil || !bytes.Equal(seen.Marshal(), ed.PublicKey().Marshal()) {
+		t.Errorf("host key = %v, want the Ed25519 key", seen)
+	}
+}
+
+func TestServe_OldRSAClientKey_IsRecorded(t *testing.T) {
+	t.Parallel()
+
+	signer, err := cryptossh.NewSignerWithAlgorithms(newRSASigner(t).(cryptossh.AlgorithmSigner), []string{cryptossh.KeyAlgoRSA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := serve(t)
+	if err := h.login(t, oldClient(func(c *cryptossh.ClientConfig) { c.Auth = []cryptossh.AuthMethod{cryptossh.PublicKeys(signer)} })); err == nil {
+		t.Fatal("login succeeded, want it refused")
+	}
+	rep := h.report(t)
+	if len(rep.Attempts) != 1 || rep.Attempts[0].KeyFingerprint != cryptossh.FingerprintSHA256(signer.PublicKey()) {
+		t.Errorf("attempts = %+v, want the fingerprint of the key", rep.Attempts)
+	}
+}
+
+func TestNew_RSAHostKeyOfAnotherType_Panics(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if recover() == nil {
+			t.Error("New with an Ed25519 key as the RSA key did not panic")
+		}
+	}()
+	ssh.New(ssh.Config{Version: ssh.DefaultVersion, HostKey: ssh.HostKey{Signer: newSigner(t)}, RSAHostKey: ssh.HostKey{Signer: newSigner(t)}}, clocktest.New())
 }
