@@ -65,7 +65,7 @@ type service interface {
 func newService(hp config.Honeypot, clk clock.Clock) service {
 	switch hp.Service {
 	case config.SSH:
-		cfg := ssh.Config{Version: ssh.DefaultVersion, HostKey: hp.HostKey}
+		cfg := ssh.Config{Version: ssh.DefaultVersion, HostKey: hp.HostKey, RSAHostKey: hp.RSAHostKey}
 		if hp.Banner != nil {
 			cfg.Version = *hp.Banner
 		}

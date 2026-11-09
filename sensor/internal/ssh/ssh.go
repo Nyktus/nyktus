@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"slices"
 
 	cryptossh "golang.org/x/crypto/ssh"
 
@@ -42,6 +43,8 @@ type Config struct {
 	// HostKey is the key of the server. It stays the same from one start to the
 	// next: a key that changes would identify the honeypot.
 	HostKey HostKey
+	// RSAHostKey is an optional second key, for clients that know no other.
+	RSAHostKey HostKey
 }
 
 // Service is the SSH honeypot.
@@ -70,7 +73,34 @@ func New(cfg Config, clk clock.Clock) *Service {
 	// which asks for the methods, is free.
 	s.base.MaxAuthTries = session.MaxAttempts
 	s.base.AddHostKey(cfg.HostKey)
+	if cfg.RSAHostKey.Signer != nil {
+		if t := cfg.RSAHostKey.PublicKey().Type(); t != cryptossh.KeyAlgoRSA {
+			panic("ssh: the RSA host key is of type " + t)
+		}
+		// Unwrapped, so that the library offers every signature of the key.
+		s.base.AddHostKey(cfg.RSAHostKey.Signer)
+	}
+	// Old clients and bots know only algorithms that the library leaves out by
+	// default. Refused in the key exchange, they would never reach the login, and
+	// the login is what the honeypot is there to see. Nothing is protected by
+	// these algorithms but what the client itself sends.
+	modern, old := cryptossh.SupportedAlgorithms(), cryptossh.InsecureAlgorithms()
+	s.base.KeyExchanges = union(modern.KeyExchanges, old.KeyExchanges)
+	s.base.Ciphers = union(modern.Ciphers, old.Ciphers)
+	s.base.MACs = union(modern.MACs, old.MACs)
+	s.base.PublicKeyAuthAlgorithms = union(modern.PublicKeyAuths, old.PublicKeyAuths)
 	return s
+}
+
+// union lists a, then what only b holds.
+func union(a, b []string) []string {
+	out := slices.Clone(a)
+	for _, v := range b {
+		if !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // Serve plays the login on conn and records the logins in sess. It returns when
