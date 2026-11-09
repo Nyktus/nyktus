@@ -17,5 +17,6 @@ defineProps<{ event: Event }>();
   <span v-else-if="event.dns !== null" class="summary"><UntrustedText :value="event.dns.qtype" /> <UntrustedText :value="event.dns.prefix" /></span>
   <span v-else-if="event.sensor !== null" class="summary">
     {{ t(`honeypotService.${event.sensor.service}`) }}: {{ t(`eventType.${event.sensor.event_type}`) }}<template v-if="event.sensor.attempts.length > 0">, <UntrustedText :value="event.sensor.attempts[0]?.username ?? null" /></template>
+    <template v-if="event.sensor.tool_calls.length > 0">, <UntrustedText :value="event.sensor.tool_calls[0]?.tool_name ?? null" /></template>
   </span>
 </template>

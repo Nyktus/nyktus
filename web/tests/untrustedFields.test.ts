@@ -9,7 +9,7 @@ import { attackerFields } from './scan';
 // The rule that attacker text is shown by one component only knows the fields in its list. A text
 // member that the specification adds to these types, and that nobody added to the list, is shown
 // without the component until this test says so.
-const types = ['EventRequest', 'EventSession', 'EventAttempt', 'EventQuery', 'EventSessionQuery'];
+const types = ['EventRequest', 'EventSession', 'EventAttempt', 'EventQuery', 'EventSessionQuery', 'EventToolCall'];
 
 function textMembers(source: string, type: string): string[] {
   const body = new RegExp(`export interface ${type} \\{(.*?)\\n\\}`, 's').exec(source)?.[1];

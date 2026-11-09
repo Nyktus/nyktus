@@ -13,6 +13,7 @@ import SeverityBadge from '../components/SeverityBadge.vue';
 import StateBadge from '../components/StateBadge.vue';
 import TimeStamp from '../components/TimeStamp.vue';
 import { t } from '../i18n';
+import { honeypotServices } from '../resourceChoices';
 import { session } from '../session';
 import { usePagedList } from '../usePagedList';
 
@@ -53,10 +54,7 @@ watch([service, state], list.reload);
         <label for="filter-service">{{ t('honeypots.filter.service') }}</label>
         <select id="filter-service" v-model="service">
           <option value="">{{ t('common.all') }}</option>
-          <option value="ssh">{{ t('honeypotService.ssh') }}</option>
-          <option value="telnet">{{ t('honeypotService.telnet') }}</option>
-          <option value="postgres">{{ t('honeypotService.postgres') }}</option>
-          <option value="ldap">{{ t('honeypotService.ldap') }}</option>
+          <option v-for="name in honeypotServices" :key="name" :value="name">{{ t(`honeypotService.${name}`) }}</option>
         </select>
       </div>
       <div class="field">

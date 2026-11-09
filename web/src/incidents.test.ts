@@ -755,6 +755,55 @@ describe('an event', () => {
     expect(wrapper.find('.table').exists()).toBe(false);
   });
 
+  test('shows the tool calls of an MCP session in order, as text of an attacker, and no login attempts', async () => {
+    const e = sensorEvent({
+      sensor: {
+        ...sensorEvent().sensor!,
+        service: 'mcp',
+        event_type: 'tool_call',
+        client_version: 'Agent/2',
+        attempts: [],
+        tool_calls: [
+          { tool_name: 'search', arguments_excerpt: '{"q":"vpn"}' },
+          { tool_name: 'get_page', arguments_excerpt: '{"id":"7"}' },
+        ],
+      },
+    });
+    const { wrapper } = await boot(one(e), at(e.id));
+    const rows = wrapper.findAll('.table tbody tr');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.findAll('bdi.untrusted').map((cell) => cell.text())).toEqual(['search', '{"q":"vpn"}']);
+    expect(rows[1]?.findAll('bdi.untrusted').map((cell) => cell.text())).toEqual(['get_page', '{"id":"7"}']);
+    expect(wrapper.text()).toContain('Tool calls');
+    expect(wrapper.text()).not.toContain('Login attempts');
+    // What the client calls itself is text of an attacker as well.
+    expect(wrapper.findAll('dd bdi.untrusted').map((cell) => cell.text())).toContain('Agent/2');
+  });
+
+  test('names the first tool in the list of the events of an incident', async () => {
+    const { mount } = await import('@vue/test-utils');
+    const { default: EventSummary } = await import('./components/EventSummary.vue');
+    const summary = mount(EventSummary, { props: { event: sensorEvent({ sensor: { ...sensorEvent().sensor!, service: 'mcp', event_type: 'tool_call', attempts: [], tool_calls: [{ tool_name: 'get_page', arguments_excerpt: '{}' }] } }) } });
+    expect(summary.text()).toContain('get_page');
+    expect(summary.find('bdi.untrusted').text()).toBe('get_page');
+  });
+
+  test('says that an MCP session called no tool', async () => {
+    const e = sensorEvent({ sensor: { ...sensorEvent().sensor!, service: 'mcp', event_type: 'connection', attempts: [], tool_calls: [] } });
+    const { wrapper } = await boot(one(e), at(e.id));
+    expect(wrapper.text()).toContain('Tool calls');
+    expect(wrapper.find('.table').exists()).toBe(false);
+    const heading = wrapper.findAll('h3').find((h) => h.text() === 'Tool calls');
+    expect(heading?.element.nextElementSibling?.textContent).toBe('None');
+  });
+
+  test('leaves the tool calls out of a session of another service', async () => {
+    const e = sensorEvent();
+    const { wrapper } = await boot(one(e), at(e.id));
+    expect(wrapper.text()).not.toContain('Tool calls');
+    expect(wrapper.text()).toContain('Login attempts');
+  });
+
   test('leaves out the members that the session does not have', async () => {
     const e = sensorEvent({ sensor: { ...sensorEvent().sensor!, client_version: null } });
     const { wrapper } = await boot(one(e), at(e.id));
@@ -768,6 +817,8 @@ describe('an event', () => {
     ['the body of a POST request', event({ http: { method: 'POST', user_agent: '', referer: '', accept_language: '', body_excerpt: '<script>alert(1)</script>' } })],
     ['a user name', sensorEvent({ sensor: { ...sensorEvent().sensor!, attempts: [{ username: '<script>alert(1)</script>', password_length: null, key_fingerprint: null }] } })],
     ['the search filter', sensorEvent({ sensor: { ...sensorEvent().sensor!, query: { base_dn: '<script>alert(1)</script>', filter: '<script>alert(1)</script>' } } })],
+    ['the name of a tool', sensorEvent({ sensor: { ...sensorEvent().sensor!, service: 'mcp', event_type: 'tool_call', attempts: [], tool_calls: [{ tool_name: '<script>alert(1)</script>', arguments_excerpt: '{}' }] } })],
+    ['the arguments of a tool', sensorEvent({ sensor: { ...sensorEvent().sensor!, service: 'mcp', event_type: 'tool_call', attempts: [], tool_calls: [{ tool_name: 't', arguments_excerpt: '<script>alert(1)</script>' }] } })],
     ['the name before the zone', dnsEvent({ dns: { zone: 'z', prefix: '<script>alert(1)</script>', qtype: 'A', transport: 'tcp' } })],
   ])('draws %s as text', async (_, e) => {
     const { wrapper } = await boot(one(e), at(e.id));

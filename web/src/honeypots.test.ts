@@ -49,6 +49,16 @@ describe('the list of honeypots', () => {
     expect(s.requests.at(-1)?.url).toBe('/api/v1/honeypots?limit=50&service=postgres&enabled=true');
   });
 
+  test('offers every service as a filter, MCP among them', async () => {
+    const s = server();
+    const { wrapper } = await boot(s, '/honeypots');
+    const options = wrapper.findAll('#filter-service option').map((option) => option.attributes('value'));
+    expect(options).toEqual(['', 'ssh', 'telnet', 'postgres', 'ldap', 'mcp']);
+    await wrapper.get('#filter-service').setValue('mcp');
+    await flushPromises();
+    expect(s.requests.at(-1)?.url).toBe('/api/v1/honeypots?limit=50&service=mcp');
+  });
+
   test('offers to create one to whoever may', async () => {
     for (const [role, offered] of [['admin', true], ['user', true], ['viewer', false]] as const) {
       const { wrapper } = await boot(server(role), '/honeypots');
@@ -136,6 +146,13 @@ describe('the secret of a new honeypot', () => {
     await submit(app.wrapper);
     return { ...app, s };
   }
+
+  test('offers an MCP honeypot and says what it emulates', async () => {
+    const app = await boot(server('admin'), '/honeypots/new');
+    await app.wrapper.get('#service').setValue('mcp');
+    expect(app.wrapper.get('#service-hint').text()).toContain('MCP server');
+    expect(app.wrapper.get<HTMLSelectElement>('#service').element.value).toBe('mcp');
+  });
 
   test('sends what was entered, with the default severity left to the server', async () => {
     const { s } = await make();
