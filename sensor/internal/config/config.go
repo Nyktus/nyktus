@@ -10,6 +10,7 @@ package config
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"nyktus.org/nyktus/sensor/internal/postgres"
 	"nyktus.org/nyktus/sensor/internal/secret"
 	"nyktus.org/nyktus/sensor/internal/ssh"
 )
@@ -35,6 +37,8 @@ const (
 	maxBanner      = 256
 	maxLoginPrompt = 64
 	maxHostKeyFile = 8 << 10
+	// maxCertFile is the longest certificate chain that is read.
+	maxCertFile = 64 << 10
 	// maxSSHVersion is the longest identification string that a server may
 	// send: 255 bytes with the line ending (RFC 4253, section 4.2).
 	maxSSHVersion = 253
@@ -101,6 +105,13 @@ type Honeypot struct {
 	RSAHostKeyFile string `yaml:"rsa_host_key_file"`
 	// RSAHostKey is the key read from RSAHostKeyFile by Load.
 	RSAHostKey ssh.HostKey `yaml:"-"`
+	// TLSCertFile and TLSKeyFile name the certificate and its key; postgres
+	// only, optional, and always both. The sensor never makes a certificate of
+	// its own: it would identify the honeypot.
+	TLSCertFile string `yaml:"tls_cert_file"`
+	TLSKeyFile  string `yaml:"tls_key_file"`
+	// TLSCertificate is what Load read from those two files.
+	TLSCertificate *postgres.Certificate `yaml:"-"`
 }
 
 var (
@@ -180,6 +191,13 @@ func Load(path string) (*Config, error) {
 				hostKeys[id] = i
 			}
 		}
+		if hp.Service == Postgres && hp.TLSCertFile != "" && hp.TLSKeyFile != "" {
+			cert, err := readCertificate(resolve(filepath.Dir(path), hp.TLSCertFile), resolve(filepath.Dir(path), hp.TLSKeyFile))
+			if err != nil {
+				problems = append(problems, fmt.Errorf("honeypots[%d].tls_cert_file: %w", i, err))
+			}
+			hp.TLSCertificate = cert
+		}
 		if hp.Secret != "" {
 			inline = true
 			continue
@@ -249,6 +267,29 @@ func readSecretFile(path string) (secret.Secret, error) {
 		return "", errSecretFormat
 	}
 	return secret.Secret(s), nil
+}
+
+// readCertificate reads a certificate chain and its key. The key is held to the
+// rules of a secret; the chain is public.
+func readCertificate(certPath, keyPath string) (*postgres.Certificate, error) {
+	f, err := os.Open(certPath) //nolint:gosec // G304: the operator names the file.
+	if err != nil {
+		return nil, errors.New("cannot read the certificate file")
+	}
+	defer func() { _ = f.Close() }()
+	chain, err := io.ReadAll(io.LimitReader(f, maxCertFile))
+	if err != nil {
+		return nil, errors.New("cannot read the certificate file")
+	}
+	key, err := readPrivateFile(keyPath, "key file of the certificate", maxHostKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	cert, err := tls.X509KeyPair(chain, key)
+	if err != nil {
+		return nil, errors.New("the certificate and its key do not form a valid pair")
+	}
+	return &postgres.Certificate{Certificate: cert}, nil
 }
 
 // readHostKey reads the private key of an SSH honeypot from a file that only its
@@ -406,6 +447,12 @@ func (hp *Honeypot) validate() []error {
 		add("host_key_file: required for ssh: a host key that changes with every start would identify the honeypot")
 	case hp.Service != SSH && hp.HostKeyFile != "":
 		add("host_key_file: only for ssh")
+	}
+	if hp.Service != Postgres && (hp.TLSCertFile != "" || hp.TLSKeyFile != "") {
+		add("tls_cert_file and tls_key_file: only for postgres")
+	}
+	if (hp.TLSCertFile == "") != (hp.TLSKeyFile == "") {
+		add("tls_cert_file and tls_key_file: set both or neither")
 	}
 	if hp.Service != SSH && hp.RSAHostKeyFile != "" {
 		add("rsa_host_key_file: only for ssh")

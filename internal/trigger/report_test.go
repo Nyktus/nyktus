@@ -67,7 +67,7 @@ func TestDecodeReport_GoldenFiles(t *testing.T) {
 		{"session_postgres.json", Report{Session: &Session{
 			ID: "fedcba9876543210fedcba9876543210", Duration: 350 * time.Millisecond,
 			ClientIP: netip.MustParseAddr("2001:db8::7"), Port: 5432, Database: "postgres", ApplicationName: "psql",
-			Attempts: []Attempt{{Username: "postgres", PasswordLength: intPtr(12)}},
+			Attempts: []Attempt{{Username: "postgres"}},
 		}}},
 		{"session_ldap.json", Report{Session: &Session{
 			ID: "00112233445566778899aabbccddeeff", Age: 800 * time.Millisecond, Duration: 1200 * time.Millisecond,

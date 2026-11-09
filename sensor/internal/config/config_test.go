@@ -11,13 +11,17 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	cryptossh "golang.org/x/crypto/ssh"
 
@@ -971,5 +975,83 @@ func TestValidate_RSAHostKeyFileForAnotherService_IsRefused(t *testing.T) {
 	path := write(t, dir, "sensor.yaml", strings.Replace(valid, "service: telnet", "service: ldap", 1)+"    rsa_host_key_file: k\n", 0o644)
 	if _, err := config.Load(path); err == nil || !strings.Contains(err.Error(), "rsa_host_key_file: only for ssh") {
 		t.Errorf("Load() = %v, want the field refused", err)
+	}
+}
+
+const postgresWithTLS = `
+trigger_url: https://trigger.example.com/
+honeypots:
+  - id: ` + idOne + `
+    service: postgres
+    listen: ":5432"
+    secret: ` + secretOne + `
+    tls_cert_file: server.crt
+    tls_key_file: server.key
+`
+
+// certificateFiles writes a self-signed certificate and its key into dir.
+func certificateFiles(t *testing.T, dir string, keyMode os.FileMode) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "db"}, NotAfter: time.Now().Add(time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, dir, "server.crt", string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), 0o644)
+	write(t, dir, "server.key", string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: key})), keyMode)
+}
+
+func TestLoad_TLSFiles_AreReadForPostgres(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	certificateFiles(t, dir, 0o600)
+	path := write(t, dir, "sensor.yaml", postgresWithTLS, 0o600)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Honeypots[0].TLSCertificate == nil {
+		t.Error("TLSCertificate = nil, want the certificate of the files")
+	}
+}
+
+func TestLoad_TLSFiles_Invalid(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		prep func(t *testing.T, dir string)
+		yaml string
+		want string
+	}{
+		{name: "a key that others can read", prep: func(t *testing.T, dir string) { t.Helper(); certificateFiles(t, dir, 0o640) }, yaml: postgresWithTLS, want: "the group or other users can access the key file of the certificate"},
+		{name: "no certificate file", prep: func(t *testing.T, _ string) { t.Helper() }, yaml: postgresWithTLS, want: "cannot read the certificate file"},
+		{name: "not a certificate", prep: func(t *testing.T, dir string) {
+			t.Helper()
+			certificateFiles(t, dir, 0o600)
+			write(t, dir, "server.crt", "not a certificate\n", 0o644)
+		}, yaml: postgresWithTLS, want: "do not form a valid pair"},
+		{name: "only the certificate", prep: func(t *testing.T, _ string) { t.Helper() }, yaml: strings.Replace(postgresWithTLS, "    tls_key_file: server.key\n", "", 1), want: "set both or neither"},
+		{name: "another service", prep: func(t *testing.T, _ string) { t.Helper() }, yaml: strings.Replace(postgresWithTLS, "service: postgres", "service: telnet", 1), want: "only for postgres"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			tt.prep(t, dir)
+			path := write(t, dir, "sensor.yaml", tt.yaml, 0o600)
+			if _, err := config.Load(path); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("Load() = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }

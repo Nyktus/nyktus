@@ -10,8 +10,7 @@
   "application_name": "psql",
   "attempts": [
     {
-      "username": "postgres",
-      "password_length": 12
+      "username": "postgres"
     }
   ]
 }
