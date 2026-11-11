@@ -48,8 +48,8 @@ func TestSession_Report_NamesTheAddressAndThePortTheAttackerReached(t *testing.T
 	if !ok {
 		t.Fatal("Report() = not ok, want a report")
 	}
-	if got.Version != 1 || got.Type != "session" || got.ClientIP != "203.0.113.9" || got.Port != 2323 {
-		t.Errorf("Report() = %+v, want version 1, type session, the client and the local port", got)
+	if got.Version != 2 || got.Type != "session" || got.ClientIP != "203.0.113.9" || got.Port != 2323 {
+		t.Errorf("Report() = %+v, want version 2, type session, the client and the local port", got)
 	}
 	if got.AgeMS != 2000 || got.DurationMS != 1500 {
 		t.Errorf("age = %d ms, duration = %d ms; want 2000 and 1500", got.AgeMS, got.DurationMS)

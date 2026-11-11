@@ -17,7 +17,7 @@ import (
 
 // Version is the version of the documents. The server reads only versions it
 // knows, so a new member needs a new version.
-const Version = 1
+const Version = 2
 
 // Types of reports.
 const (
@@ -35,6 +35,9 @@ const (
 	MaxApplicationName = 64
 	MaxBaseDN          = 256
 	MaxFilter          = 256
+	MaxToolCalls       = 6
+	MaxToolName        = 128
+	MaxToolArguments   = 2048
 )
 
 // Session is the report of one session of an attacker.
@@ -56,6 +59,8 @@ type Session struct {
 	// Attempts is never nil, because the server requires the member.
 	Attempts []Attempt `json:"attempts"`
 	Query    *Query    `json:"query,omitempty"`
+	// ToolCalls are the first tool calls of an MCP client.
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 }
 
 // Attempt is one login or bind. A password is never part of it, only its
@@ -73,6 +78,13 @@ type Attempt struct {
 type Query struct {
 	BaseDN string `json:"base_dn"`
 	Filter string `json:"filter"`
+}
+
+// ToolCall is one call of a tool of an MCP honeypot: the name that the client
+// asked for and the start of its arguments as JSON text.
+type ToolCall struct {
+	ToolName  string `json:"tool_name"`
+	Arguments string `json:"arguments"`
 }
 
 // Heartbeat is the sign of life of a sensor for one honeypot.

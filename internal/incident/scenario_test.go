@@ -92,7 +92,7 @@ VALUES ('ssh', 'h', $1, $2, sha256(convert_to(gen_random_uuid()::text, 'UTF8')),
 		t.Fatalf("create honeypot: %v", err)
 	}
 	return id, `SELECT * FROM public.record_honeypot_session((SELECT secret_hash FROM honeypots WHERE id = '` + id + `'),
-	gen_random_uuid(), interval '0', 10, '192.0.2.1', 22, 'login_attempt', NULL, NULL, NULL, NULL, NULL, '[{"username":"root"}]')`
+	gen_random_uuid(), interval '0', 10, '192.0.2.1', 22, 'login_attempt', NULL, NULL, NULL, NULL, NULL, '[{"username":"root"}]', '[]')`
 }
 
 // A honeytoken and a honeypot of one scenario share one incident with one

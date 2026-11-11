@@ -64,7 +64,7 @@ Unknown members are an error. `honeytokens`, `honeypots` and `files` may be empt
 | `techniques` | 1 to 20 distinct identifiers of MITRE ATT&CK techniques that a trigger suggests, from the version that Nyktus bundles. |
 | `engage_activities` | 1 to 20 distinct engagement activities of MITRE Engage that the deception carries out, see below. |
 | `honeytokens` | Up to 10 slots for a honeytoken, each with a honeytoken `type` (`web_url`, `web_image` or `dns`), a `label` in both languages of up to 60 characters, which names the honeytoken when it is created, up to 20 `techniques`, which the honeytoken receives, and optionally a `severity` (`low`, `medium`, `high` or `critical`), without which the honeytoken has the default of its type. Choose `high` for a honeytoken that nobody but an intruder has a reason to use, such as credentials in a file. |
-| `honeypots` | Up to 10 slots for a honeypot, each with a `service` (`ssh`, `telnet`, `postgres` or `ldap`) and a `label` as for a honeytoken. |
+| `honeypots` | Up to 10 slots for a honeypot, each with a `service` (`ssh`, `telnet`, `postgres`, `ldap` or `mcp`) and a `label` as for a honeytoken. |
 | `files` | Up to 20 example files, each with the `name` under which it is downloaded, a `format` and the `file` in the directory `files` that holds its content. Names are unique, also when compared in lower case, because two names that differ only in case are the same file on Windows and macOS. |
 | `guide` | The Markdown file of the guide for each language, one file for each. |
 

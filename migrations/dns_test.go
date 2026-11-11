@@ -72,6 +72,7 @@ func TestDNSRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT public.event_limit_reached(gen_random_uuid())",
 		"SELECT public.untrusted_text_valid('a', 1)",
 		"SELECT public.attack_technique_ids_valid('{T1078}')",
+		"SELECT * FROM public.event_tool_calls",
 	} {
 		expectDenied(t, pool, statement)
 	}

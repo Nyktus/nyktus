@@ -33,7 +33,7 @@ func NewStore(q db.Querier) *Store {
 // records requests and reports, the only privileges of its database role.
 var recordFunctions = []string{
 	"public.record_honeytoken_request(text, text, inet, text, text, text, text)",
-	"public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb)",
+	"public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb, jsonb)",
 	"public.record_honeypot_heartbeat(bytea, text)",
 }
 
@@ -87,11 +87,21 @@ type attemptJSON struct {
 	KeyFingerprint *string `json:"key_fingerprint"`
 }
 
+// toolCallJSON is a tool call as the database function reads it.
+type toolCallJSON struct {
+	ToolName  string `json:"tool_name"`
+	Arguments string `json:"arguments"`
+}
+
 // RecordSession implements Reporter.
 func (s *Store) RecordSession(ctx context.Context, secretHash []byte, session Session) (ReportResult, error) {
 	attempts := make([]attemptJSON, len(session.Attempts))
 	for i, a := range session.Attempts {
 		attempts[i] = attemptJSON{Username: a.Username, PasswordLength: a.PasswordLength, KeyFingerprint: nilIfEmpty(a.KeyFingerprint)}
+	}
+	toolCalls := make([]toolCallJSON, len(session.ToolCalls))
+	for i, c := range session.ToolCalls {
+		toolCalls[i] = toolCallJSON(c)
 	}
 	var baseDN, filter *string
 	if session.Query != nil {
@@ -99,10 +109,10 @@ func (s *Store) RecordSession(ctx context.Context, secretHash []byte, session Se
 	}
 	row := s.q.QueryRow(ctx, `
 SELECT outcome, honeypot_id, service
-FROM public.record_honeypot_session($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+FROM public.record_honeypot_session($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
 		secretHash, session.ID, session.Age, session.Duration.Milliseconds(), session.ClientIP, session.Port,
 		string(session.EventType()), nilIfEmpty(session.ClientVersion), nilIfEmpty(session.Database),
-		nilIfEmpty(session.ApplicationName), baseDN, filter, attempts)
+		nilIfEmpty(session.ApplicationName), baseDN, filter, attempts, toolCalls)
 	return scanReport(row, "record session")
 }
 

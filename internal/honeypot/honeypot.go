@@ -30,6 +30,7 @@ const (
 	ServiceTelnet   Service = "telnet"
 	ServicePostgres Service = "postgres"
 	ServiceLDAP     Service = "ldap"
+	ServiceMCP      Service = "mcp"
 )
 
 // ResourceType names honeypots where other records refer to them, such as
@@ -38,7 +39,7 @@ const ResourceType = "honeypot"
 
 // Services lists every service, in the order in which documentation names
 // them.
-var Services = []Service{ServiceSSH, ServiceTelnet, ServicePostgres, ServiceLDAP}
+var Services = []Service{ServiceSSH, ServiceTelnet, ServicePostgres, ServiceLDAP, ServiceMCP}
 
 // Valid reports whether s is a known service.
 func (s Service) Valid() bool {
@@ -53,6 +54,7 @@ var defaultSeverity = map[Service]severity.Level{
 	ServiceTelnet:   severity.Medium,
 	ServicePostgres: severity.Medium,
 	ServiceLDAP:     severity.Medium,
+	ServiceMCP:      severity.Medium,
 }
 
 // DefaultSeverity returns the severity of a honeypot of service s unless

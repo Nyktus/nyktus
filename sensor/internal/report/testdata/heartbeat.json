@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "type": "heartbeat",
   "sensor_version": "0.1.0-rc.1+build5"
 }

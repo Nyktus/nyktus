@@ -19,6 +19,7 @@ import (
 const (
 	goldenEntry    = "../../sensor/internal/config/testdata/console_entry.yaml"
 	goldenSSHEntry = "../../sensor/internal/config/testdata/console_entry_ssh.yaml"
+	goldenMCPEntry = "../../sensor/internal/config/testdata/console_entry_mcp.yaml"
 )
 
 func TestCreated_SensorConfig_IsTheEntryThatTheSensorReads(t *testing.T) {
@@ -102,6 +103,7 @@ func TestCreated_SensorConfig_NamesTheUsualPortOfEveryService(t *testing.T) {
 		honeypot.ServiceTelnet:   ":23",
 		honeypot.ServicePostgres: ":5432",
 		honeypot.ServiceLDAP:     ":389",
+		honeypot.ServiceMCP:      ":8080",
 	}
 	for _, service := range honeypot.Services {
 		if _, ok := want[service]; !ok {
@@ -152,5 +154,23 @@ func TestCreated_SensorConfig_QuotesEveryValue(t *testing.T) {
 		if len(entries) != 1 || len(entries[0]) != 4 || entries[0]["id"] != v || entries[0]["service"] != v || entries[0]["secret"] != v {
 			t.Errorf("%q: entries = %q, want one entry with the value in id, service and secret", v, entries)
 		}
+	}
+}
+
+// The entry of an MCP honeypot is a frame with empty values: anything filled in
+// would be the same in every installation and identify the honeypot.
+func TestCreated_SensorConfig_MCP_IsTheEntryThatTheSensorReads(t *testing.T) {
+	t.Parallel()
+
+	want, err := os.ReadFile(goldenMCPEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := honeypot.Created{
+		Honeypot: honeypot.Honeypot{ID: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d", Service: honeypot.ServiceMCP, Name: "Wiki", Notes: "rack 4"},
+		Secret:   honeypot.Secret(strings.Repeat("A", 43)),
+	}
+	if got := c.SensorConfig(); got != string(want) {
+		t.Errorf("SensorConfig() = %q, want the content of %s: %q", got, goldenMCPEntry, want)
 	}
 }

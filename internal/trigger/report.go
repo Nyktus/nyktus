@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/netip"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -24,14 +25,19 @@ import (
 // log instead of silently losing fields. Operators update the server before the
 // sensors.
 
-// ReportVersion is the version of the report that the trigger accepts.
-const ReportVersion = 1
+// ReportVersion is the version of the report that sensors send. The trigger
+// also accepts the one before it, so that a sensor that has not been updated
+// keeps reporting; that version has no tool calls.
+const (
+	ReportVersion         = 2
+	previousReportVersion = 1
+)
 
 // Errors of a report that is not stored. The response is the same for every
 // outcome; the log tells them apart.
 var (
-	// ErrUnsupportedVersion means that the report names a version other than
-	// ReportVersion, or none.
+	// ErrUnsupportedVersion means that the report names a version that the
+	// trigger does not accept, or none.
 	ErrUnsupportedVersion = errors.New("unsupported report version")
 	// ErrInvalidReport means that the report is not JSON of a known form or
 	// holds a value that the trigger refuses.
@@ -49,10 +55,11 @@ const (
 	EventConnection     EventType = "connection"
 	EventLoginAttempt   EventType = "login_attempt"
 	EventDirectoryQuery EventType = "directory_query"
+	EventToolCall       EventType = "tool_call"
 )
 
 // EventTypes lists every event type, from the lowest stage to the highest.
-var EventTypes = []EventType{EventConnection, EventLoginAttempt, EventDirectoryQuery}
+var EventTypes = []EventType{EventConnection, EventLoginAttempt, EventDirectoryQuery, EventToolCall}
 
 // kind is the key of the techniques that an event suggests by itself.
 type kind struct {
@@ -69,6 +76,7 @@ var kindTechniques = map[kind][]string{
 	{"telnet", EventConnection}:   {"T1046"},
 	{"postgres", EventConnection}: {"T1046"},
 	{"ldap", EventConnection}:     {"T1046"},
+	{"mcp", EventConnection}:      {"T1046"},
 
 	{"ssh", EventLoginAttempt}:      {"T1110", "T1021.004"},
 	{"telnet", EventLoginAttempt}:   {"T1110"},
@@ -76,6 +84,8 @@ var kindTechniques = map[kind][]string{
 	{"ldap", EventLoginAttempt}:     {"T1110"},
 
 	{"ldap", EventDirectoryQuery}: {"T1087.002"},
+
+	{"mcp", EventToolCall}: {"T1213"},
 }
 
 // KindTechniques returns the techniques that an event of the type t suggests
@@ -95,6 +105,9 @@ const (
 	maxUsername        = 256
 	maxBaseDN          = 256
 	maxFilter          = 256
+	maxToolCalls       = 6
+	maxToolName        = 128
+	maxToolArguments   = 2048
 	maxPasswordLength  = 65535
 	// maxAge is the oldest age that the trigger passes on, and the longest
 	// duration. The database keeps the age within five minutes as well, and a
@@ -123,6 +136,16 @@ type Query struct {
 	Filter string
 }
 
+// ToolCall is one call of a tool of an MCP honeypot.
+type ToolCall struct {
+	// ToolName is the name that the client asked for, whether or not the
+	// honeypot has such a tool.
+	ToolName string
+	// Arguments is the start of the arguments as JSON text. It is what an
+	// attacker wrote: it is stored as text and never parsed.
+	Arguments string
+}
+
 // Session is what a sensor reports about one session of an attacker. The sensor
 // is not trusted: it chooses every value, and the trigger shortens text and
 // replaces characters that are not printable, as for the headers of a request.
@@ -146,11 +169,16 @@ type Session struct {
 	Attempts        []Attempt
 	// Query is the first search of the session, or nil if there was none.
 	Query *Query
+	// ToolCalls are the first tool calls of the session, or nil if there were
+	// none.
+	ToolCalls []ToolCall
 }
 
 // EventType returns the highest stage that the session reached.
 func (s Session) EventType() EventType {
 	switch {
+	case len(s.ToolCalls) > 0:
+		return EventToolCall
 	case s.Query != nil:
 		return EventDirectoryQuery
 	case len(s.Attempts) > 0:
@@ -201,6 +229,7 @@ type sessionWire struct {
 	ApplicationName *string        `json:"application_name"`
 	Attempts        *[]attemptWire `json:"attempts"`
 	Query           *queryWire     `json:"query"`
+	ToolCalls       []toolCallWire `json:"tool_calls"`
 }
 
 type attemptWire struct {
@@ -212,6 +241,11 @@ type attemptWire struct {
 type queryWire struct {
 	BaseDN *string `json:"base_dn"`
 	Filter *string `json:"filter"`
+}
+
+type toolCallWire struct {
+	ToolName  *string `json:"tool_name"`
+	Arguments *string `json:"arguments"`
 }
 
 type heartbeatWire struct {
@@ -236,7 +270,7 @@ func DecodeReport(body []byte) (Report, error) {
 	if err := json.Unmarshal(body, &env); err != nil {
 		return Report{}, ErrInvalidReport
 	}
-	if string(env.Version) != "1" {
+	if !acceptedVersion(env.Version) {
 		return Report{}, ErrUnsupportedVersion
 	}
 	switch string(env.Type) {
@@ -265,6 +299,10 @@ func DecodeReport(body []byte) (Report, error) {
 	}
 }
 
+func acceptedVersion(v json.RawMessage) bool {
+	return string(v) == strconv.Itoa(ReportVersion) || string(v) == strconv.Itoa(previousReportVersion)
+}
+
 // decodeStrict decodes body into v, refusing unknown members. Data after the
 // value was refused already when the version was read.
 func decodeStrict(body []byte, v any) bool {
@@ -277,6 +315,11 @@ func (w sessionWire) session() (Session, bool) {
 	if w.SessionID == nil || w.AgeMS == nil || w.DurationMS == nil || w.ClientIP == nil || w.Port == nil || w.Attempts == nil {
 		return Session{}, false
 	}
+	// The member is new in the current version, and a new member needs a new
+	// version.
+	if w.Version == previousReportVersion && w.ToolCalls != nil {
+		return Session{}, false
+	}
 	ip, err := netip.ParseAddr(*w.ClientIP)
 	if err != nil || ip.Zone() != "" {
 		return Session{}, false
@@ -286,7 +329,8 @@ func (w sessionWire) session() (Session, bool) {
 		*w.AgeMS < 0,
 		*w.DurationMS < 0,
 		*w.Port < 1 || *w.Port > 65535,
-		len(*w.Attempts) > maxAttempts:
+		len(*w.Attempts) > maxAttempts,
+		len(w.ToolCalls) > maxToolCalls:
 		return Session{}, false
 	}
 	s := Session{
@@ -317,6 +361,12 @@ func (w sessionWire) session() (Session, bool) {
 			return Session{}, false
 		}
 		s.Query = &Query{BaseDN: untrusted(*w.Query.BaseDN, maxBaseDN), Filter: untrusted(*w.Query.Filter, maxFilter)}
+	}
+	for _, c := range w.ToolCalls {
+		if c.ToolName == nil || c.Arguments == nil {
+			return Session{}, false
+		}
+		s.ToolCalls = append(s.ToolCalls, ToolCall{ToolName: untrusted(*c.ToolName, maxToolName), Arguments: untrusted(*c.Arguments, maxToolArguments)})
 	}
 	return s, true
 }

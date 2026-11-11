@@ -16,6 +16,8 @@ var sensorPorts = map[Service]string{
 	ServiceTelnet:   ":23",
 	ServicePostgres: ":5432",
 	ServiceLDAP:     ":389",
+	// MCP has no usual port; this is a common one for an internal web service.
+	ServiceMCP: ":8080",
 }
 
 // SensorConfig returns the entry of this honeypot for the configuration file
@@ -36,9 +38,29 @@ func (c Created) SensorConfig() string {
 `, strconv.Quote(c.ID), strconv.Quote(string(c.Service)), strconv.Quote(sensorPorts[c.Service]), c.serviceFields(), strconv.Quote(string(c.Secret)))
 }
 
+// mcpFields is the frame of what an MCP honeypot presents. Its values are empty
+// on purpose: the sensor has no defaults and starts only once they are filled
+// in, because what every installation shares would identify the honeypot.
+const mcpFields = `  # What the server calls itself and what it offers. Fill in every empty value:
+  # the sensor does not start before, because values that every installation
+  # shares would identify the honeypot. The description of a tool is what an AI
+  # agent reads to decide whether to call it, and the response is plain text.
+  mcp:
+    path: ""
+    server_name: ""
+    server_version: ""
+    tools:
+      - name: ""
+        description: ""
+        response: ""
+`
+
 // serviceFields returns the lines that a service needs besides the common ones.
 // A comment holds no value of the honeypot, and the value of a field is quoted.
 func (c Created) serviceFields() string {
+	if c.Service == ServiceMCP {
+		return mcpFields
+	}
 	if c.Service != ServiceSSH {
 		return ""
 	}

@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "type": "session",
+  "session_id": "aabbccddeeff00112233445566778899",
+  "age_ms": 62000,
+  "duration_ms": 41000,
+  "client_ip": "198.51.100.40",
+  "port": 8080,
+  "client_version": "ExampleAgent/1.4.0",
+  "attempts": [],
+  "tool_calls": [
+    {
+      "tool_name": "get_page",
+      "arguments": "{\"page_id\":\"1002\"}"
+    },
+    {
+      "tool_name": "search",
+      "arguments": "{\"query\":\"vpn password\"}"
+    }
+  ]
+}

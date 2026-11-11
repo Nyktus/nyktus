@@ -1248,7 +1248,7 @@ CREATE TABLE public.honeypots (
 	-- Set by the trigger below on insert, as for accounts.
 	updated_at     timestamptz NOT NULL,
 
-	CONSTRAINT honeypots_service_check CHECK (service IN ('ssh', 'telnet', 'postgres', 'ldap')),
+	CONSTRAINT honeypots_service_check CHECK (service IN ('ssh', 'telnet', 'postgres', 'ldap', 'mcp')),
 	CONSTRAINT honeypots_name_check CHECK (
 		char_length(name) BETWEEN 1 AND 100
 		AND name = btrim(name)
@@ -1476,17 +1476,19 @@ CREATE TABLE public.events (
 	-- is a copy of the one of the honeypot. A session is stored when it ends, so
 	-- occurred_at is its start and the duration tells how long it lasted. The
 	-- port is the one the attacker reached. A password is never stored; the
-	-- attempts of the session are in event_attempts.
+	-- attempts of the session are in event_attempts and the calls of tools in
+	-- event_tool_calls.
 	sensor_session_id       uuid,
 	sensor_service          text,
-	-- The highest stage that the session reached: a directory query ranks above
-	-- a login attempt, which ranks above a bare connection.
+	-- The highest stage that the session reached: a tool call or a directory
+	-- query ranks above a login attempt, which ranks above a bare connection.
 	sensor_event_type       text,
 	sensor_port             integer,
 	sensor_duration_ms      integer,
 	-- What the client says about itself, such as the version string of an SSH
-	-- client, the database and the application name of a PostgreSQL client, and
-	-- the base and the filter of the first search of a directory client.
+	-- client or the name and version of an MCP client, the database and the
+	-- application name of a PostgreSQL client, and the base and the filter of the
+	-- first search of a directory client.
 	sensor_client_version   text,
 	sensor_database         text,
 	sensor_application_name text,
@@ -1552,12 +1554,14 @@ CREATE TABLE public.events (
 			AND (sensor_event_type = 'directory_query') = (sensor_filter IS NOT NULL)
 			AND (sensor_event_type <> 'directory_query' OR sensor_service = 'ldap')
 			AND ((sensor_database IS NULL AND sensor_application_name IS NULL) OR sensor_service = 'postgres')
-			AND (sensor_client_version IS NULL OR sensor_service = 'ssh')
+			AND (sensor_client_version IS NULL OR sensor_service IN ('ssh', 'mcp'))
+			AND (sensor_event_type <> 'tool_call' OR sensor_service = 'mcp')
+			AND (sensor_service <> 'mcp' OR sensor_event_type IN ('connection', 'tool_call'))
 		)
 	),
-	CONSTRAINT events_sensor_service_check CHECK (sensor_service IN ('ssh', 'telnet', 'postgres', 'ldap')),
+	CONSTRAINT events_sensor_service_check CHECK (sensor_service IN ('ssh', 'telnet', 'postgres', 'ldap', 'mcp')),
 	CONSTRAINT events_sensor_event_type_check CHECK (
-		sensor_event_type IN ('connection', 'login_attempt', 'directory_query')
+		sensor_event_type IN ('connection', 'login_attempt', 'directory_query', 'tool_call')
 	),
 	CONSTRAINT events_sensor_port_check CHECK (sensor_port BETWEEN 1 AND 65535),
 	-- A session is reported within five minutes of its beginning, as the window of
@@ -1641,6 +1645,26 @@ CREATE TABLE public.event_attempts (
 	CONSTRAINT event_attempts_username_check CHECK (public.untrusted_text_valid(username, 256)),
 	CONSTRAINT event_attempts_password_length_check CHECK (password_length BETWEEN 0 AND 65535),
 	CONSTRAINT event_attempts_key_fingerprint_check CHECK (key_fingerprint ~ '^SHA256:[A-Za-z0-9+/]{43}$')
+);
+
+-- The tools that a client of an MCP honeypot called during a session, in the
+-- order of the calls: the name it asked for, also of a tool that does not
+-- exist, and the start of its arguments as text. The arguments are what the
+-- attacker or their AI agent wrote, are never parsed, can hold personal data
+-- and can hold instructions addressed to whatever reads them. Like the session,
+-- the values are untrusted. The calls belong to the event and leave with it.
+CREATE TABLE public.event_tool_calls (
+	event_id          uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
+	ordinal           smallint NOT NULL,
+	tool_name         text NOT NULL,
+	arguments_excerpt text NOT NULL,
+
+	PRIMARY KEY (event_id, ordinal),
+	-- A session holds at most six calls, so that one client cannot fill the
+	-- table.
+	CONSTRAINT event_tool_calls_ordinal_check CHECK (ordinal BETWEEN 1 AND 6),
+	CONSTRAINT event_tool_calls_tool_name_check CHECK (public.untrusted_text_valid(tool_name, 128)),
+	CONSTRAINT event_tool_calls_arguments_excerpt_check CHECK (public.untrusted_text_valid(arguments_excerpt, 2048))
 );
 
 -- At most 10 events per resource and minute are recorded, over HTTP, DNS and
@@ -1802,8 +1826,11 @@ $$;
 -- outcome 'invalid' tells the trigger, so that a PostgreSQL log does not
 -- receive a row with captured values from a failed check.
 --
--- A session is stored as one event, with its attempts and its job, in one
--- transaction. The sensor passes how long ago the session began, measured with
+-- A session is stored as one event, with its attempts or tool calls and its
+-- job, in one transaction. A report is valid when its parts fit its kind: a
+-- tool call only for an MCP honeypot and only with tool calls, a login only with
+-- attempts, a directory query only with a base and a filter, and a bare
+-- connection with none of them. The sensor passes how long ago the session began, measured with
 -- its own clock, which the function keeps between zero and five minutes, as for
 -- DNS. A session of a disabled honeypot is not stored. A session that is
 -- stored, or that the limit of events or the identifier of an earlier report
@@ -1826,6 +1853,7 @@ CREATE FUNCTION public.record_honeypot_session(
 	report_base_dn text,
 	report_filter text,
 	report_attempts jsonb,
+	report_tool_calls jsonb,
 	OUT outcome text,
 	OUT honeypot_id uuid,
 	OUT service text
@@ -1839,6 +1867,7 @@ DECLARE
 	new_event_id uuid;
 	now_at timestamptz := clock_timestamp();
 	attempt_count integer;
+	tool_call_count integer;
 	kind_techniques text[];
 	event_techniques text[];
 BEGIN
@@ -1868,17 +1897,22 @@ BEGIN
 	kind_techniques := CASE
 		WHEN report_event_type = 'connection' THEN ARRAY['T1046']
 		WHEN report_event_type = 'login_attempt' AND h.service = 'ssh' THEN ARRAY['T1110', 'T1021.004']
-		WHEN report_event_type = 'login_attempt' THEN ARRAY['T1110']
+		WHEN report_event_type = 'login_attempt' AND h.service <> 'mcp' THEN ARRAY['T1110']
 		WHEN report_event_type = 'directory_query' AND h.service = 'ldap' THEN ARRAY['T1087.002']
+		WHEN report_event_type = 'tool_call' AND h.service = 'mcp' THEN ARRAY['T1213']
 	END;
 	attempt_count := CASE WHEN jsonb_typeof(report_attempts) = 'array' THEN jsonb_array_length(report_attempts) END;
+	tool_call_count := CASE WHEN jsonb_typeof(report_tool_calls) = 'array' THEN jsonb_array_length(report_tool_calls) END;
 	IF kind_techniques IS NULL OR attempt_count IS NULL OR attempt_count > 6
-		OR (report_event_type = 'connection') <> (attempt_count = 0 AND report_base_dn IS NULL)
+		OR tool_call_count IS NULL OR tool_call_count > 6
+		OR (report_event_type = 'tool_call') <> (tool_call_count > 0)
+		OR (report_event_type = 'tool_call' AND (attempt_count > 0 OR report_base_dn IS NOT NULL))
+		OR (report_event_type = 'connection') <> (attempt_count = 0 AND report_base_dn IS NULL AND tool_call_count = 0)
 		OR (report_event_type = 'login_attempt' AND (attempt_count = 0 OR report_base_dn IS NOT NULL))
 		OR (report_event_type = 'directory_query') <> (report_base_dn IS NOT NULL AND report_filter IS NOT NULL)
 		OR (report_filter IS NOT NULL AND report_base_dn IS NULL)
 		OR ((report_database IS NOT NULL OR report_application_name IS NOT NULL) AND h.service <> 'postgres')
-		OR (report_client_version IS NOT NULL AND h.service <> 'ssh') THEN
+		OR (report_client_version IS NOT NULL AND h.service NOT IN ('ssh', 'mcp')) THEN
 		outcome := 'invalid';
 		RETURN;
 	END IF;
@@ -1919,6 +1953,9 @@ BEGIN
 	SELECT new_event_id, a.ordinal, a.item ->> 'username', (a.item ->> 'password_length')::integer,
 		a.item ->> 'key_fingerprint'
 	FROM jsonb_array_elements(report_attempts) WITH ORDINALITY AS a (item, ordinal);
+	INSERT INTO public.event_tool_calls (event_id, ordinal, tool_name, arguments_excerpt)
+	SELECT new_event_id, c.ordinal, c.item ->> 'tool_name', c.item ->> 'arguments'
+	FROM jsonb_array_elements(report_tool_calls) WITH ORDINALITY AS c (item, ordinal);
 	INSERT INTO public.event_jobs (event_id) VALUES (new_event_id);
 	outcome := 'recorded';
 END
@@ -2125,7 +2162,7 @@ CREATE TABLE public.alerts (
 
 -- Nobody writes events except through the functions above, and incidents and
 -- alerts only the worker, apart from the triage of the console.
-REVOKE ALL ON public.events, public.event_attempts, public.event_jobs, public.incidents, public.alerts
+REVOKE ALL ON public.events, public.event_attempts, public.event_tool_calls, public.event_jobs, public.incidents, public.alerts
 	FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.incidents_change_status() FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.untrusted_text_valid(text, integer) FROM PUBLIC, nyktus_console;
@@ -2134,7 +2171,7 @@ REVOKE ALL ON FUNCTION public.record_honeytoken_request(text, text, inet, text, 
 	FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_dns_query(text, text, text, text, text, inet, interval) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text,
-	text, text, jsonb) FROM PUBLIC, nyktus_console;
+	text, text, jsonb, jsonb) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_honeypot_heartbeat(bytea, text) FROM PUBLIC, nyktus_console;
 
 -- The console reads events and incidents and triages incidents: it moves their
@@ -2142,7 +2179,7 @@ REVOKE ALL ON FUNCTION public.record_honeypot_heartbeat(bytea, text) FROM PUBLIC
 -- write or change an event, open an incident, change what the worker
 -- correlated, or choose when the status changed. It reads neither the jobs nor
 -- the alerts.
-GRANT SELECT ON public.events, public.event_attempts, public.incidents TO nyktus_console;
+GRANT SELECT ON public.events, public.event_attempts, public.event_tool_calls, public.incidents TO nyktus_console;
 GRANT UPDATE (status, notes, severity_override, techniques_override) ON public.incidents TO nyktus_console;
 
 -- GRANT and REVOKE only warn when the executing role lacks the privilege, so the
@@ -2158,13 +2195,15 @@ BEGIN
 	WITH granted (relname, attname, privilege) AS (
 		-- A NULL column stands for the whole table.
 		VALUES
-			('events', NULL, 'SELECT'), ('event_attempts', NULL, 'SELECT'), ('incidents', NULL, 'SELECT'),
+			('events', NULL, 'SELECT'), ('event_attempts', NULL, 'SELECT'), ('event_tool_calls', NULL, 'SELECT'),
+			('incidents', NULL, 'SELECT'),
 			('incidents', 'status', 'UPDATE'), ('incidents', 'notes', 'UPDATE'),
 			('incidents', 'severity_override', 'UPDATE'), ('incidents', 'techniques_override', 'UPDATE')
 	),
 	tables AS (
 		SELECT c.oid, c.relname FROM pg_catalog.pg_class AS c
-		WHERE c.oid IN ('public.events'::regclass, 'public.event_attempts'::regclass, 'public.event_jobs'::regclass,
+		WHERE c.oid IN ('public.events'::regclass, 'public.event_attempts'::regclass,
+			'public.event_tool_calls'::regclass, 'public.event_jobs'::regclass,
 			'public.incidents'::regclass, 'public.alerts'::regclass)
 	),
 	privileges (object, privilege, held, wanted) AS (
@@ -2194,7 +2233,7 @@ BEGIN
 			'public.event_limit_reached(uuid)',
 			'public.record_honeytoken_request(text, text, inet, text, text, text, text)',
 			'public.record_dns_query(text, text, text, text, text, inet, interval)',
-			'public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb)',
+			'public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb, jsonb)',
 			'public.record_honeypot_heartbeat(bytea, text)'
 		]) AS f (signature)
 	)
@@ -2854,7 +2893,7 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM nyktus_trigger, nyktus_dns, ny
 GRANT USAGE ON SCHEMA public TO nyktus_trigger, nyktus_dns, nyktus_worker;
 GRANT EXECUTE ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text, text) TO nyktus_trigger;
 GRANT EXECUTE ON FUNCTION public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text,
-	text, text, text, jsonb) TO nyktus_trigger;
+	text, text, text, jsonb, jsonb) TO nyktus_trigger;
 GRANT EXECUTE ON FUNCTION public.record_honeypot_heartbeat(bytea, text) TO nyktus_trigger;
 GRANT EXECUTE ON FUNCTION public.record_dns_query(text, text, text, text, text, inet, interval) TO nyktus_dns;
 
@@ -2869,7 +2908,7 @@ BEGIN
 	FOR role_name, function_names IN VALUES
 		('nyktus_trigger', ARRAY[
 			'public.record_honeytoken_request(text, text, inet, text, text, text, text)',
-			'public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb)',
+			'public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb, jsonb)',
 			'public.record_honeypot_heartbeat(bytea, text)'
 		]),
 		('nyktus_dns', ARRAY['public.record_dns_query(text, text, text, text, text, inet, interval)'])

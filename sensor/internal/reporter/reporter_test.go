@@ -173,7 +173,7 @@ func TestReporter_Session_IsPostedWithTheSecretAsBearer(t *testing.T) {
 	if err := json.Unmarshal(got.body, &s); err != nil {
 		t.Fatal(err)
 	}
-	if s.Version != 1 || s.Type != "session" || s.ClientIP != "203.0.113.9" || s.Port != 23 ||
+	if s.Version != 2 || s.Type != "session" || s.ClientIP != "203.0.113.9" || s.Port != 23 ||
 		len(s.Attempts) != 1 || s.Attempts[0].Username != "root" || s.Attempts[0].PasswordLength == nil || *s.Attempts[0].PasswordLength != 7 {
 		t.Errorf("report = %+v, want the session that was queued", s)
 	}
@@ -628,10 +628,10 @@ func TestReporter_Heartbeats_AtTheStartAndEveryFiveMinutesForEveryHoneypot(t *te
 	if !auths["Bearer "+secretOne] || !auths["Bearer "+secretTwo] {
 		t.Errorf("authorizations = %q, %q; want the secret of each honeypot", calls[0].authorization, calls[1].authorization)
 	}
-	if h := heartbeatOf(t, calls[0]); h.Version != 1 || h.Type != "heartbeat" || h.SensorVersion != "0.1.0" {
-		t.Errorf("heartbeat = %+v, want version 1, type heartbeat and the version of the sensor", h)
+	if h := heartbeatOf(t, calls[0]); h.Version != 2 || h.Type != "heartbeat" || h.SensorVersion != "0.1.0" {
+		t.Errorf("heartbeat = %+v, want version 2, type heartbeat and the version of the sensor", h)
 	}
-	if got := string(calls[0].body); got != `{"version":1,"type":"heartbeat","sensor_version":"0.1.0"}` {
+	if got := string(calls[0].body); got != `{"version":2,"type":"heartbeat","sensor_version":"0.1.0"}` {
 		t.Errorf("body = %s", got)
 	}
 
@@ -667,7 +667,7 @@ func TestReporter_Heartbeat_WithoutAVersion_NamesNone(t *testing.T) {
 	cancel()
 	<-done
 
-	if got := string(f.tr.calls()[0].body); got != `{"version":1,"type":"heartbeat"}` {
+	if got := string(f.tr.calls()[0].body); got != `{"version":2,"type":"heartbeat"}` {
 		t.Errorf("body = %s", got)
 	}
 }

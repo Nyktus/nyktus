@@ -193,6 +193,8 @@ func TestWorkerRole_HasOnlyGrantedPrivileges(t *testing.T) {
 		"SELECT count(*) FROM api_keys",
 		"SELECT count(*) FROM sessions",
 		"SELECT count(*) FROM audit_entries",
+		"SELECT count(*) FROM event_attempts",
+		"SELECT count(*) FROM event_tool_calls",
 		"INSERT INTO event_jobs (event_id) SELECT id FROM events",
 		"UPDATE event_jobs SET created_at = now()",
 		"TRUNCATE event_jobs",

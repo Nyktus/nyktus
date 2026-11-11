@@ -743,6 +743,7 @@ describe('an event', () => {
         application_name: 'psql',
         query: { base_dn: 'dc=example,dc=net', filter: '(objectClass=*)' },
         attempts: [],
+        tool_calls: [],
       },
     });
     const { wrapper } = await boot(one(e), at(e.id));

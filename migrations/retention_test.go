@@ -417,57 +417,71 @@ FROM generate_series(0, $2::int) AS i`, beyond, kept); err != nil {
 	}
 }
 
-// The attempts of a session leave with the event beyond the retention, and
-// those of a session within it stay: no attempt outlives its event, so that the
-// user names of attackers are kept no longer than the events.
-func TestDeleteExpiredIncidentData_RemovesTheAttemptsOfExpiredEvents(t *testing.T) {
+// The attempts and the tool calls of a session leave with the event beyond the
+// retention, and those of a session within it stay: nothing that an attacker
+// typed outlives its event, so that the user names and the arguments of tools
+// are kept no longer than the events.
+func TestDeleteExpiredIncidentData_RemovesTheDetailsOfExpiredEvents(t *testing.T) {
 	t.Parallel()
 
-	ownerURL, workerURL := schematest.Worker(t)
-	owner := schematest.Open(t, ownerURL)
-	d := incidentData{owner: owner, t: t}
-	const retention = 180
-	var honeypotID string
-	if err := owner.QueryRow(t.Context(), `
-INSERT INTO honeypots (service, name, severity, secret_hash, secret_sealed) VALUES ('ssh', 'p', 'medium', sha256('x'), sha256('x')) RETURNING id`).Scan(&honeypotID); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name, service, eventType, attempts, toolCalls, table string
+		port, rows                                           int
+	}{
+		{"attempts", "ssh", "login_attempt", `[{"username":"root","password_length":3},{"username":"admin"}]`, `[]`, "event_attempts", 22, 2},
+		{"tool calls", "mcp", "tool_call", `[]`, `[{"tool_name":"search","arguments":"{\"q\":\"vpn\"}"},{"tool_name":"get_page","arguments":"{}"}]`, "event_tool_calls", 8080, 2},
 	}
-	incident := d.incident(honeypotID, days(retention)+time.Hour, days(retention)+margin)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	session := func(age time.Duration) string {
-		t.Helper()
-		if _, err := owner.Exec(t.Context(), `
-SELECT * FROM public.record_honeypot_session(sha256('x'), gen_random_uuid(), interval '0', 0, '192.0.2.1', 22, 'login_attempt',
-	NULL, NULL, NULL, NULL, NULL, '[{"username":"root","password_length":3},{"username":"admin"}]')`); err != nil {
-			t.Fatal(err)
-		}
-		var id string
-		if err := owner.QueryRow(t.Context(), `SELECT id FROM events WHERE incident_id IS NULL`).Scan(&id); err != nil {
-			t.Fatal(err)
-		}
-		// Processed, and recorded age ago.
-		if _, err := owner.Exec(t.Context(), `DELETE FROM event_jobs WHERE event_id = $1`, id); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := owner.Exec(t.Context(), `
+			ownerURL, workerURL := schematest.Worker(t)
+			owner := schematest.Open(t, ownerURL)
+			d := incidentData{owner: owner, t: t}
+			const retention = 180
+			var honeypotID string
+			if err := owner.QueryRow(t.Context(), `
+INSERT INTO honeypots (service, name, severity, secret_hash, secret_sealed) VALUES ($1, 'p', 'medium', sha256('x'), sha256('x')) RETURNING id`, tt.service).Scan(&honeypotID); err != nil {
+				t.Fatal(err)
+			}
+			incident := d.incident(honeypotID, days(retention)+time.Hour, days(retention)+margin)
+
+			session := func(age time.Duration) string {
+				t.Helper()
+				if _, err := owner.Exec(t.Context(), `
+SELECT * FROM public.record_honeypot_session(sha256('x'), gen_random_uuid(), interval '0', 0, '192.0.2.1', $1, $2,
+	NULL, NULL, NULL, NULL, NULL, $3::jsonb, $4::jsonb)`, tt.port, tt.eventType, tt.attempts, tt.toolCalls); err != nil {
+					t.Fatal(err)
+				}
+				var id string
+				if err := owner.QueryRow(t.Context(), `SELECT id FROM events WHERE incident_id IS NULL`).Scan(&id); err != nil {
+					t.Fatal(err)
+				}
+				// Processed, and recorded age ago.
+				if _, err := owner.Exec(t.Context(), `DELETE FROM event_jobs WHERE event_id = $1`, id); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := owner.Exec(t.Context(), `
 UPDATE events SET incident_id = $2, occurred_at = occurred_at - $3::interval, recorded_at = recorded_at - $3::interval WHERE id = $1`,
-			id, incident, age); err != nil {
-			t.Fatal(err)
-		}
-		return id
-	}
-	old, young := session(days(retention)+margin), session(days(retention)-margin)
+					id, incident, age); err != nil {
+					t.Fatal(err)
+				}
+				return id
+			}
+			old, young := session(days(retention)+margin), session(days(retention)-margin)
 
-	if _, err := schematest.Open(t, workerURL).Exec(t.Context(), "SELECT public.delete_expired_incident_data($1, 100)", retention); err != nil {
-		t.Fatalf("delete_expired_incident_data() error = %v", err)
-	}
-	if n := count(t, owner, "SELECT count(*) FROM event_attempts WHERE event_id = $1", old); n != 0 {
-		t.Errorf("%d attempts of the expired event remain, want none", n)
-	}
-	if n := count(t, owner, "SELECT count(*) FROM event_attempts WHERE event_id = $1", young); n != 2 {
-		t.Errorf("%d attempts of the event within the retention, want 2", n)
-	}
-	if n := count(t, owner, "SELECT count(*) FROM event_attempts AS a WHERE NOT EXISTS (SELECT FROM events AS e WHERE e.id = a.event_id)"); n != 0 {
-		t.Errorf("%d attempts without an event", n)
+			if _, err := schematest.Open(t, workerURL).Exec(t.Context(), "SELECT public.delete_expired_incident_data($1, 100)", retention); err != nil {
+				t.Fatalf("delete_expired_incident_data() error = %v", err)
+			}
+			if n := count(t, owner, "SELECT count(*) FROM "+tt.table+" WHERE event_id = $1", old); n != 0 {
+				t.Errorf("%d rows of %s of the expired event remain, want none", n, tt.table)
+			}
+			if n := count(t, owner, "SELECT count(*) FROM "+tt.table+" WHERE event_id = $1", young); n != tt.rows {
+				t.Errorf("%d rows of %s of the event within the retention, want %d", n, tt.table, tt.rows)
+			}
+			if n := count(t, owner, "SELECT count(*) FROM "+tt.table+" AS a WHERE NOT EXISTS (SELECT FROM events AS e WHERE e.id = a.event_id)"); n != 0 {
+				t.Errorf("%d rows of %s without an event", n, tt.table)
+			}
+		})
 	}
 }

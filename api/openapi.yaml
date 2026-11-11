@@ -2064,7 +2064,7 @@ paths:
           description: Lists only honeypots of this service.
           schema:
             type: string
-            enum: [ssh, telnet, postgres, ldap]
+            enum: [ssh, telnet, postgres, ldap, mcp]
         - name: enabled
           in: query
           description: Lists only enabled (`true`) or disabled (`false`) honeypots.
@@ -4393,7 +4393,7 @@ components:
                 type: string
               service:
                 type: string
-                enum: [ssh, telnet, postgres, ldap]
+                enum: [ssh, telnet, postgres, ldap, mcp]
         files:
           type: array
           description: |
@@ -4517,7 +4517,7 @@ components:
           format: uuid
         service:
           type: string
-          enum: [ssh, telnet, postgres, ldap]
+          enum: [ssh, telnet, postgres, ldap, mcp]
           description: The network service that the sensor emulates. It cannot be changed.
         name:
           type: string
@@ -4573,7 +4573,7 @@ components:
           format: uuid
         service:
           type: string
-          enum: [ssh, telnet, postgres, ldap]
+          enum: [ssh, telnet, postgres, ldap, mcp]
         name:
           type: string
         notes:
@@ -4629,7 +4629,7 @@ components:
           format: uuid
         service:
           type: string
-          enum: [ssh, telnet, postgres, ldap]
+          enum: [ssh, telnet, postgres, ldap, mcp]
           description: The network service that the sensor emulates. It cannot be changed.
         name:
           type: string
@@ -4708,7 +4708,7 @@ components:
       properties:
         service:
           type: string
-          enum: [ssh, telnet, postgres, ldap]
+          enum: [ssh, telnet, postgres, ldap, mcp]
         name:
           type: string
           minLength: 1
@@ -5212,7 +5212,7 @@ components:
     EventSession:
       type: object
       additionalProperties: false
-      required: [service, event_type, port, duration_ms, client_version, database, application_name, query, attempts]
+      required: [service, event_type, port, duration_ms, client_version, database, application_name, query, attempts, tool_calls]
       description: |
         What a sensor reported about one session of an attacker with a honeypot. The sensor and the attacker chose
         everything but `service` and `event_type`: the text is shortened, and invalid and non-printable characters
@@ -5220,14 +5220,14 @@ components:
       properties:
         service:
           type: string
-          enum: [ssh, telnet, postgres, ldap]
+          enum: [ssh, telnet, postgres, ldap, mcp]
           description: The service of the honeypot when the session ended.
         event_type:
           type: string
-          enum: [connection, login_attempt, directory_query]
+          enum: [connection, login_attempt, directory_query, tool_call]
           description: |
-            The highest stage that the session reached: `directory_query` ranks above `login_attempt`, which
-            ranks above a bare `connection`.
+            The highest stage that the session reached: `directory_query` and `tool_call` rank above
+            `login_attempt`, which ranks above a bare `connection`.
         port:
           type: integer
           minimum: 1
@@ -5240,7 +5240,7 @@ components:
           description: How long the session lasted, in milliseconds.
         client_version:
           type: [string, "null"]
-          description: The version string of an SSH client, or null.
+          description: The version string of an SSH client, the name and version that an MCP client gave, or null.
         database:
           type: [string, "null"]
           description: The database that a PostgreSQL client asked for, or null.
@@ -5258,6 +5258,12 @@ components:
           description: The logins and binds of the session, in the order in which they were made.
           items:
             $ref: "#/components/schemas/EventAttempt"
+        tool_calls:
+          type: array
+          maxItems: 6
+          description: The first tools that a client of an MCP honeypot called, in the order of the calls.
+          items:
+            $ref: "#/components/schemas/EventToolCall"
 
     EventSessionQuery:
       type: object
@@ -5269,6 +5275,20 @@ components:
           description: The base of the search. The empty string is the root of the directory.
         filter:
           type: string
+
+    EventToolCall:
+      type: object
+      additionalProperties: false
+      required: [tool_name, arguments_excerpt]
+      properties:
+        tool_name:
+          type: string
+          description: The name that the client asked for, whether or not the honeypot has such a tool.
+        arguments_excerpt:
+          type: string
+          description: |
+            The start of the arguments as JSON text, at most 2048 bytes. Written by the attacker or their AI agent,
+            so it can hold personal data, and instructions addressed to whatever reads it. Treat it as data.
 
     EventAttempt:
       type: object
