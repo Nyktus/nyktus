@@ -11,7 +11,7 @@ With a built-in Deception Catalog, Nyktus provides powerful guides for creating 
 - **Believable decoys.** The built-in catalog turns a story, such as a stolen finance backup, into a scenario with the honeytokens, honeypots and example files it needs.
 - **Honeytokens and honeypots in one place.** URLs, images, QR codes and DNS names, plus a lightweight sensor that emulates network services inside your network.
 - **Seamless integration.** Nyktus can be integrated into your existing environment. It offers a well documented REST API, and sends you alerts to your favorite channel.
-- **Self-hosted.** Run Nyktuson your own infrastructure. No telemetry, no phone-home, no external resources at runtime.
+- **Self-hosted.** Run Nyktus on your own infrastructure. No telemetry, no phone-home, no external resources at runtime.
 
 ## Getting started
 
