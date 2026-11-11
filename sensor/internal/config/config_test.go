@@ -1055,3 +1055,101 @@ func TestLoad_TLSFiles_Invalid(t *testing.T) {
 		})
 	}
 }
+
+const mcpBlock = `    mcp:
+      path: /mcp
+      server_name: acme-wiki
+      server_version: 3.1.4
+      tools:
+        - name: get_page
+          description: Read a page.
+          arguments:
+            - {name: page_id, type: string, required: true}
+          response: Not found.
+          select_by: page_id
+          responses:
+            "1002": A page.
+`
+
+func mcpHoneypot(extra string) string {
+	return "trigger_url: https://trigger.example.com/\nhoneypots:\n  - id: " + idOne +
+		"\n    service: mcp\n    listen: \":8080\"\n    secret: " + secretOne + "\n" + extra
+}
+
+func TestParse_MCP_ReadsTheBlock(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Parse([]byte(mcpHoneypot(mcpBlock)))
+	if err != nil {
+		t.Fatalf("Parse() = %v", err)
+	}
+	m := cfg.Honeypots[0].MCP
+	if m == nil || m.ServerName != "acme-wiki" || len(m.Tools) != 1 || m.Tools[0].SelectBy != "page_id" ||
+		m.Tools[0].Responses["1002"] != "A page." || !m.Tools[0].Arguments[0].Required {
+		t.Errorf("mcp = %+v", m)
+	}
+}
+
+func TestParse_MCP_Refuses(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, data, want string
+	}{
+		{"no block", mcpHoneypot(""), "honeypots[0].mcp: required"},
+		{"a problem of the block", mcpHoneypot(strings.Replace(mcpBlock, "server_name: acme-wiki", "server_name: \"\"", 1)), "honeypots[0].mcp.server_name:"},
+		{"a banner", mcpHoneypot(mcpBlock + "    banner: x\n"), "honeypots[0].banner:"},
+		{"a misspelled key", mcpHoneypot(strings.Replace(mcpBlock, "server_name", "servername", 1)), "servername"},
+		{"the block for another service", strings.Replace(mcpHoneypot(mcpBlock), "service: mcp", "service: telnet", 1), "honeypots[0].mcp: only for mcp"},
+	}
+	for _, tt := range tests {
+		if _, err := config.Parse([]byte(tt.data)); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: Parse() = %v, want %q", tt.name, err, tt.want)
+		}
+	}
+}
+
+// The entry that the console shows is read by the sensor and refused until its
+// values are filled in, so that no installation runs with what all would share.
+func TestParse_MCPConsoleEntry_IsRefusedUntilItIsFilledIn(t *testing.T) {
+	t.Parallel()
+
+	entry, err := os.ReadFile("testdata/console_entry_mcp.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const head = "trigger_url: https://trigger.example.com/\nhoneypots:\n"
+	_, err = config.Parse(append([]byte(head), entry...))
+	if err == nil {
+		t.Fatal("Parse() of the empty frame succeeded")
+	}
+	for _, want := range []string{"mcp.path:", "mcp.server_name:", "mcp.server_version:", "mcp.tools[0].name:", "mcp.tools[0].description:", "mcp.tools[0].response:"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Parse() = %v, want a problem of %s", err, want)
+		}
+	}
+	filled := strings.NewReplacer(`path: ""`, `path: "/wiki"`, `server_name: ""`, `server_name: "w"`, `server_version: ""`, `server_version: "1"`,
+		`- name: ""`, `- name: "t"`, `description: ""`, `description: "d"`, `response: ""`, `response: "r"`).Replace(string(entry))
+	cfg, err := config.Parse([]byte(head + filled))
+	if err != nil {
+		t.Fatalf("Parse() of the filled frame = %v", err)
+	}
+	if hp := cfg.Honeypots[0]; hp.Service != config.MCP || hp.Listen != ":8080" || hp.MCP.Path != "/wiki" {
+		t.Errorf("honeypot = %+v", hp)
+	}
+}
+
+func TestLoad_TLSFiles_AreReadForMCP(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	certificateFiles(t, dir, 0o600)
+	path := write(t, dir, "sensor.yaml", mcpHoneypot(mcpBlock+"    tls_cert_file: server.crt\n    tls_key_file: server.key\n"), 0o600)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Honeypots[0].TLSCertificate == nil {
+		t.Error("TLSCertificate = nil, want the certificate of the files")
+	}
+}

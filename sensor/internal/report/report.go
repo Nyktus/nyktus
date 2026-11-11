@@ -11,6 +11,8 @@
 package report
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"unicode/utf8"
 )
@@ -39,6 +41,24 @@ const (
 	MaxToolName        = 128
 	MaxToolArguments   = 2048
 )
+
+// MaxBody is the most that the trigger reads of a report. A larger one is not
+// stored, and the sensor cannot tell.
+const MaxBody = 64 << 10
+
+// Marshal returns the JSON of a report. The characters that matter only in HTML
+// stay as they are: json.Marshal writes < as six bytes, and an attacker who
+// fills the arguments of six calls with it would make the report larger than
+// MaxBody, so that the whole session, its first connection included, was lost.
+func Marshal(v any) ([]byte, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
+}
 
 // Session is the report of one session of an attacker.
 type Session struct {

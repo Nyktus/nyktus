@@ -19,6 +19,7 @@ import (
 	"nyktus.org/nyktus/sensor/internal/config"
 	"nyktus.org/nyktus/sensor/internal/ldap"
 	"nyktus.org/nyktus/sensor/internal/listener"
+	"nyktus.org/nyktus/sensor/internal/mcp"
 	"nyktus.org/nyktus/sensor/internal/postgres"
 	"nyktus.org/nyktus/sensor/internal/reporter"
 	"nyktus.org/nyktus/sensor/internal/session"
@@ -88,6 +89,34 @@ func newService(hp config.Honeypot, clk clock.Clock) service {
 	}
 }
 
+// newMCP returns the MCP honeypot of an entry. Its sessions outlive a connection,
+// so it opens and reports them itself.
+func newMCP(c config.Honeypot, hp *session.Honeypot, clk clock.Clock, rep *reporter.Reporter) *mcp.Service {
+	cfg := *c.MCP
+	if c.TLSCertificate != nil {
+		cfg.Certificate = &c.TLSCertificate.Certificate
+	}
+	return mcp.New(mcp.Options{
+		Config: &cfg,
+		Clock:  clk,
+		Start: func(remote, local netip.AddrPort) (*session.Session, error) {
+			return session.Start(clk, hp, remote, local)
+		},
+		Submit: rep.Submit,
+	})
+}
+
+// mcpHandler is a handler of the listener for an MCP honeypot.
+type mcpHandler struct{ service *mcp.Service }
+
+func (h mcpHandler) Handle(ctx context.Context, conn net.Conn) {
+	remote, okRemote := addrPort(conn.RemoteAddr())
+	local, okLocal := addrPort(conn.LocalAddr())
+	if okRemote && okLocal {
+		h.service.Serve(ctx, conn, remote, local)
+	}
+}
+
 // honeypot is a handler of the listener: it opens a session for each
 // connection, lets the service fill it and queues it when the connection ends.
 type honeypot struct {
@@ -130,6 +159,9 @@ func addrPort(a net.Addr) (netip.AddrPort, bool) {
 type bound struct {
 	hp     *session.Honeypot
 	server *listener.Server
+	// mcp is the service of an MCP honeypot, whose sessions end apart from its
+	// connections, or nil.
+	mcp *mcp.Service
 }
 
 // Run binds the honeypots, serves them until ctx is done and delivers what is
@@ -169,6 +201,11 @@ func Run(ctx context.Context, o Options) error {
 		serving.Go(func() { b.server.Serve(ctx) })
 	}
 	var background sync.WaitGroup
+	for _, b := range servers {
+		if b.mcp != nil {
+			background.Go(func() { b.mcp.Run(ctx) })
+		}
+	}
 	background.Go(func() { rep.RunHeartbeats(ctx, o.Version, honeypots) })
 	background.Go(func() {
 		for o.Clock.Wait(ctx, o.StatsInterval) == nil {
@@ -181,6 +218,11 @@ func Run(ctx context.Context, o Options) error {
 	// the sessions that were open.
 	serving.Wait()
 	background.Wait()
+	for _, b := range servers {
+		if b.mcp != nil {
+			b.mcp.Flush()
+		}
+	}
 
 	after := context.WithoutCancel(ctx)
 	drain, cancel := context.WithTimeout(after, o.DrainTimeout)
@@ -206,16 +248,20 @@ func bind(ctx context.Context, o Options, rep *reporter.Reporter) ([]bound, erro
 			}
 			return nil, fmt.Errorf("honeypot %s: %w", c.ID, err)
 		}
-		servers = append(servers, bound{hp: hp, server: listener.New(listener.Options{
+		var (
+			handler listener.Handler
+			service *mcp.Service
+		)
+		if c.Service == config.MCP {
+			service = newMCP(c, hp, o.Clock, rep)
+			handler = mcpHandler{service: service}
+		} else {
+			handler = &honeypot{hp: hp, service: newService(c, o.Clock), clock: o.Clock, reporter: rep, logger: o.Logger}
+		}
+		servers = append(servers, bound{hp: hp, mcp: service, server: listener.New(listener.Options{
 			Listener: ln,
 			Clock:    o.Clock,
-			Handler: &honeypot{
-				hp:       hp,
-				service:  newService(c, o.Clock),
-				clock:    o.Clock,
-				reporter: rep,
-				logger:   o.Logger,
-			},
+			Handler:  handler,
 		})})
 	}
 	return servers, nil
@@ -232,6 +278,11 @@ func logStats(ctx context.Context, logger *slog.Logger, rep *reporter.Reporter, 
 			slog.Int("failed", s.Failed), slog.Int("shutdown", s.Shutdown))
 	}
 	for _, b := range servers {
+		if b.mcp != nil {
+			if n := b.mcp.TakeDropped(); n > 0 {
+				logger.WarnContext(ctx, "sensor: requests not recorded, too many sessions", b.hp.Attr(), slog.Int("requests", n))
+			}
+		}
 		st := b.server.TakeStats()
 		if st.RefusedTotal+st.RefusedSource > 0 {
 			logger.WarnContext(ctx, "sensor: connections refused", b.hp.Attr(),

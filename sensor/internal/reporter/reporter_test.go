@@ -182,6 +182,30 @@ func TestReporter_Session_IsPostedWithTheSecretAsBearer(t *testing.T) {
 	}
 }
 
+// What an attacker types is sent as it is: written as an HTML encoder does, six
+// calls would be larger than the trigger reads and the session would be lost.
+func TestReporter_Session_IsSentWithoutHTMLEscapes(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	r := f.reporter(reporter.Options{})
+	r.Start()
+	s := f.session("<&>")
+	for range report.MaxToolCalls {
+		s.AddToolCall(report.ToolCall{ToolName: "<t>", Arguments: strings.Repeat("<", report.MaxToolArguments)})
+	}
+	r.Submit(s)
+	shutdown(t, r)
+
+	calls := f.tr.calls()
+	if len(calls) != 1 {
+		t.Fatalf("%d requests, want 1", len(calls))
+	}
+	if body := calls[0].body; len(body) > report.MaxBody || !bytes.Contains(body, []byte(`"username":"<&>"`)) {
+		t.Errorf("body of %d bytes: %.120s", len(body), body)
+	}
+}
+
 func TestReporter_TransportFailure_RepeatsThreeTimesWithGrowingPauses(t *testing.T) {
 	t.Parallel()
 

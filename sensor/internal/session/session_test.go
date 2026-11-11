@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -183,6 +184,20 @@ func TestSession_End_Twice_KeepsTheFirstEnd(t *testing.T) {
 	}
 }
 
+func TestSession_EndAt_EndsAtTheGivenTime(t *testing.T) {
+	t.Parallel()
+
+	clk := clocktest.New()
+	s := start(t, clk)
+	clk.Advance(time.Minute)
+	s.EndAt(2 * time.Second)
+	s.EndAt(5 * time.Second)
+	got, _ := s.Report(clk.Elapsed())
+	if got.DurationMS != 2000 {
+		t.Errorf("duration = %d ms, want 2000, the first end", got.DurationMS)
+	}
+}
+
 func TestSession_AddAttempt_KeepsAtMostSix(t *testing.T) {
 	t.Parallel()
 
@@ -317,5 +332,42 @@ func TestSession_SetStartup_IsInTheReport(t *testing.T) {
 	got, _ := s.Report(0)
 	if got.Database != "app" || got.ApplicationName != "psql" {
 		t.Errorf("database = %q, application name = %q, want app and psql", got.Database, got.ApplicationName)
+	}
+}
+
+// A tool call is the highest stage, and a session keeps its first six.
+func TestSession_AddToolCall_KeepsAtMostSixAndIsTheHighestStage(t *testing.T) {
+	t.Parallel()
+
+	s := start(t, clocktest.New())
+	for i := range 6 {
+		if !s.AddToolCall(report.ToolCall{ToolName: "t", Arguments: strconv.Itoa(i)}) {
+			t.Fatalf("call %d refused", i)
+		}
+	}
+	if s.AddToolCall(report.ToolCall{ToolName: "seventh"}) {
+		t.Error("a seventh call was kept")
+	}
+	if got := s.EventType(); got != "tool_call" {
+		t.Errorf("EventType() = %q, want tool_call", got)
+	}
+	r, ok := s.Report(0)
+	if !ok || len(r.ToolCalls) != 6 || r.ToolCalls[5].Arguments != "5" {
+		t.Fatalf("report = %+v, want the first six", r)
+	}
+	r.ToolCalls[0].ToolName = "changed"
+	if again, _ := s.Report(0); again.ToolCalls[0].ToolName != "t" {
+		t.Error("the report shares its calls with the session")
+	}
+}
+
+// A session without tool calls leaves the member out, as the server of the
+// previous version does not know it.
+func TestSession_WithoutToolCalls_HasNoMember(t *testing.T) {
+	t.Parallel()
+
+	r, _ := start(t, clocktest.New()).Report(0)
+	if r.ToolCalls != nil {
+		t.Errorf("tool calls = %v, want nil", r.ToolCalls)
 	}
 }

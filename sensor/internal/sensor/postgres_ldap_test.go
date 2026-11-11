@@ -5,9 +5,19 @@ package sensor_test
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"io"
+	"math/big"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ber encodes one element of BER whose content is shorter than 128 bytes.
@@ -122,5 +132,141 @@ func TestRun_LDAPSession_IsReportedWithTheSearch(t *testing.T) {
 		if !strings.Contains(logs, want) {
 			t.Errorf("log lacks %s: %s", want, logs)
 		}
+	}
+}
+
+// A session of an MCP honeypot is reported with its calls, and what the client
+// wrote reaches neither the log nor the answer. It ends when the sensor stops.
+func TestRun_MCPSession_IsReportedWithItsToolCalls(t *testing.T) {
+	t.Parallel()
+
+	tr := newTrigger(t, false)
+	entry := honeypotOf("mcp") + `    mcp:
+      path: /mcp
+      server_name: acme-wiki
+      server_version: "3.1"
+      tools:
+        - {name: get_status, description: Status., response: nominal}
+`
+	r := start(t, parse(t, tr.URL, entry), nil)
+	tr.next(t) // the heartbeat
+
+	const meta = `"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"Agent","version":"2"},"io.modelcontextprotocol/clientCapabilities":{}}`
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_status","arguments":{"q":"mallory-typed-this"},` + meta + `}}`
+	c := connect(t, r.addr(idOne))
+	c.send(t, "POST /mcp HTTP/1.1\r\nHost: wiki\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: tools/call\r\nMcp-Name: get_status\r\nConnection: close\r\nContent-Length: "+strconv.Itoa(len(body))+"\r\n\r\n"+body)
+	answer, err := io.ReadAll(c.r)
+	if err != nil || !bytes.Contains(answer, []byte("nominal")) || bytes.Contains(answer, []byte("mallory")) {
+		t.Fatalf("answer = %q, %v", answer, err)
+	}
+	if err := r.stop(); err != nil {
+		t.Errorf("Run() = %v", err)
+	}
+	s := decodeSession(t, tr.next(t))
+	if len(s.ToolCalls) != 1 || s.ToolCalls[0].ToolName != "get_status" || s.ToolCalls[0].Arguments != `{"q":"mallory-typed-this"}` || s.ClientVersion != "Agent/2" {
+		t.Errorf("report = %+v", s)
+	}
+	for _, want := range []string{`"service":"mcp"`} {
+		if !strings.Contains(r.logs.String(), want) {
+			t.Errorf("log does not contain %s: %s", want, r.logs)
+		}
+	}
+	if strings.Contains(r.logs.String(), "mallory") || strings.Contains(r.logs.String(), "get_status") {
+		t.Errorf("log holds what the client wrote: %s", r.logs)
+	}
+}
+
+// mcpEntry is an MCP honeypot of one tool, with extra lines for its entry.
+func mcpEntry(extra string) string {
+	return honeypotOf("mcp") + extra + `    mcp:
+      path: /mcp
+      server_name: acme-wiki
+      server_version: "3.1"
+      tools:
+        - {name: get_status, description: Status., response: nominal}
+`
+}
+
+// mcpRequest is a request of a tool list that ends the connection.
+func mcpRequest() string {
+	const body = `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"Probe","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}`
+	return "POST /mcp HTTP/1.1\r\nHost: wiki\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: tools/list\r\nConnection: close\r\nContent-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n" + body
+}
+
+// A session that has gone quiet is reported while the sensor goes on running,
+// and not before the minute of silence is over.
+func TestRun_MCPSession_EndsWhenItHasGoneQuiet(t *testing.T) {
+	t.Parallel()
+
+	tr := newTrigger(t, false)
+	r := start(t, parse(t, tr.URL, mcpEntry("")), nil)
+	tr.next(t) // the heartbeat
+
+	c := connect(t, r.addr(idOne))
+	c.send(t, mcpRequest())
+	if _, err := io.ReadAll(c.r); err != nil {
+		t.Fatal(err)
+	}
+	for elapsed := 5 * time.Second; elapsed <= 200*time.Second; elapsed += 5 * time.Second {
+		r.clock.Advance(5 * time.Second)
+		select {
+		case rc := <-tr.requests:
+			if !bytes.Contains(rc.body, []byte(`"type":"session"`)) {
+				continue
+			}
+			s := decodeSession(t, rc)
+			if elapsed < time.Minute {
+				t.Fatalf("reported after %v of silence: %+v", elapsed, s)
+			}
+			if s.Port == 0 || s.ClientVersion != "Probe/1" || len(s.ToolCalls) != 0 || s.DurationMS != 0 || s.AgeMS < 60_000 {
+				t.Errorf("report = %+v, want the listing of a client named Probe/1, reported after a minute of silence that is no part of its duration", s)
+			}
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	t.Fatal("no session was reported while the sensor ran")
+}
+
+// The certificate of the file makes the port of an MCP honeypot speak TLS.
+func TestRun_MCPWithACertificate_SpeaksTLS(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), NotAfter: time.Now().Add(time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certFile, keyFile := filepath.Join(dir, "server.crt"), filepath.Join(dir, "server.key")
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: key}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tr := newTrigger(t, false)
+	r := start(t, parse(t, tr.URL, mcpEntry("    tls_cert_file: "+certFile+"\n    tls_key_file: "+keyFile+"\n")), nil)
+	tr.next(t) // the heartbeat
+
+	c := connect(t, r.addr(idOne))
+	tc := tls.Client(c.conn, &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}) //nolint:gosec // G402: the certificate of the test is its own.
+	if err := tc.HandshakeContext(t.Context()); err != nil {
+		t.Fatalf("handshake: %v", err)
+	}
+	if _, err := io.WriteString(tc, mcpRequest()); err != nil {
+		t.Fatal(err)
+	}
+	answer, err := io.ReadAll(tc)
+	if err != nil || !bytes.Contains(answer, []byte("get_status")) {
+		t.Fatalf("answer = %q, %v", answer, err)
 	}
 }

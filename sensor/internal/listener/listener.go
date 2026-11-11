@@ -286,9 +286,15 @@ func sourceOf(a net.Addr) (netip.Addr, bool) {
 	if !ok {
 		return netip.Addr{}, false
 	}
+	return Source(addr), true
+}
+
+// Source returns the source network of an address: the address of an IPv4
+// client, the /64 of an IPv6 client.
+func Source(addr netip.Addr) netip.Addr {
 	addr = addr.Unmap().WithZone("")
 	if addr.Is4() {
-		return addr, true
+		return addr
 	}
-	return netip.PrefixFrom(addr, sourceBitsIPv6).Masked().Addr(), true
+	return netip.PrefixFrom(addr, sourceBitsIPv6).Masked().Addr()
 }
