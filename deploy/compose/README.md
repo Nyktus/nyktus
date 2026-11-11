@@ -114,12 +114,12 @@ Releases are signed by the release workflow with its identity, without a key to 
 
 <!-- x-release-please-start-version -->
 ```sh
-cosign verify ghcr.io/nyktus/nyktus:0.2.0 \
+cosign verify ghcr.io/nyktus/nyktus:0.3.0 \
   --certificate-identity-regexp '^https://github.com/Nyktus/nyktus/\.github/workflows/release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-For the sensor, the identity ends with `@refs/tags/sensor/v`. Pin the digest that it prints in your copy of the compose file (`image: ghcr.io/nyktus/nyktus:0.2.0@sha256:…`).
+For the sensor, the identity ends with `@refs/tags/sensor/v`. Pin the digest that it prints in your copy of the compose file (`image: ghcr.io/nyktus/nyktus:0.3.0@sha256:…`).
 <!-- x-release-please-end -->
 
 ## Logs

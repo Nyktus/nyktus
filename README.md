@@ -6,6 +6,13 @@ Nyktus helps you detect intruders, insider threats and data breaches by placing 
 
 With a built-in Deception Catalog, Nyktus provides powerful guides for creating realistic decoy scenarios to catch attackers in the act. Every guide is mapped to MITRE ATT&CK techniques and follows the MITRE Engage approach to planning deception.
 
+## Feature highlights
+
+- **Believable decoys.** The built-in catalog turns a story, such as a stolen finance backup, into a scenario with the honeytokens, honeypots and example files it needs.
+- **Honeytokens and honeypots in one place.** URLs, images, QR codes and DNS names, plus a lightweight sensor that emulates network services inside your network.
+- **Seamless integration.** Nyktus can be integrated into your existing environment. It offers a well documented REST API, and sends you alerts to your favorite channel.
+- **Self-hosted.** Run Nyktus on your own infrastructure. No telemetry, no phone-home, no external resources at runtime.
+
 ## Getting started
 
 The [quickstart](https://docs.nyktus.org/getting-started/quickstart) runs the released containers with Docker Compose on one machine and takes a honeytoken and a honeypot through to an incident. [Deploy](https://docs.nyktus.org/operate/deploy) describes an installation that holds real data.

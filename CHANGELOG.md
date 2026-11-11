@@ -2,6 +2,21 @@
 
 All notable changes to the Nyktus server are documented in this file. The sensor has a changelog of its own in [sensor/CHANGELOG.md](sensor/CHANGELOG.md).
 
+## [0.3.0](https://github.com/Nyktus/nyktus/compare/v0.2.0...v0.3.0) (2026-11-11)
+
+
+### Features
+
+* **honeypots:** record the tool calls of MCP honeypots ([#148](https://github.com/Nyktus/nyktus/issues/148)) ([a20ae39](https://github.com/Nyktus/nyktus/commit/a20ae39f28122f85a50837b3d97fd79233c28ccc))
+* **sensor:** emulate a server of the Model Context Protocol ([#149](https://github.com/Nyktus/nyktus/issues/149)) ([8fc8840](https://github.com/Nyktus/nyktus/commit/8fc88402eb1f07a36ad525eaf567e14ea7d777aa))
+* **sensor:** let the PostgreSQL honeypot speak SCRAM and TLS ([#146](https://github.com/Nyktus/nyktus/issues/146)) ([969d692](https://github.com/Nyktus/nyktus/commit/969d69231393a7811da0d69a752462cf6750639e))
+* **web:** create MCP honeypots and show their tool calls ([#150](https://github.com/Nyktus/nyktus/issues/150)) ([1ed5eb2](https://github.com/Nyktus/nyktus/commit/1ed5eb2423f9f718053e561fe37d4149f4eab9fa))
+
+
+### Bug Fixes
+
+* **deploy:** name the current release in the reference installation ([#138](https://github.com/Nyktus/nyktus/issues/138)) ([6068d20](https://github.com/Nyktus/nyktus/commit/6068d2069b0f2ba68ad6bcc534777cc3f33b1242))
+
 ## [0.2.0](https://github.com/Nyktus/nyktus/compare/v0.1.0...v0.2.0) (2026-11-08)
 
 
