@@ -35,6 +35,8 @@ export const attackerFields = [
   'qtype',
   'base_dn',
   'filter',
+  'tool_name',
+  'arguments_excerpt',
 ] as const;
 
 /**

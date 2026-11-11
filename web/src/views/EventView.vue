@@ -151,9 +151,30 @@ onMounted(load);
           </template>
         </dl>
 
-        <h3>{{ t('event.attempts') }}</h3>
-        <p v-if="event.sensor.attempts.length === 0">{{ t('common.none') }}</p>
-        <div v-else class="table-wrap">
+        <template v-if="event.sensor.service === 'mcp'">
+          <h3>{{ t('event.toolCalls') }}</h3>
+          <p v-if="event.sensor.tool_calls.length === 0">{{ t('common.none') }}</p>
+          <div v-else class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">{{ t('event.toolName') }}</th>
+                  <th scope="col">{{ t('event.toolArguments') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(call, index) in event.sensor.tool_calls" :key="index">
+                  <td><UntrustedText :value="call.tool_name" /></td>
+                  <td><UntrustedText :value="call.arguments_excerpt" /></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
+        <h3 v-if="event.sensor.service !== 'mcp'">{{ t('event.attempts') }}</h3>
+        <p v-if="event.sensor.service !== 'mcp' && event.sensor.attempts.length === 0">{{ t('common.none') }}</p>
+        <div v-else-if="event.sensor.service !== 'mcp'" class="table-wrap">
           <table class="table">
             <thead>
               <tr>
