@@ -461,7 +461,9 @@ func TestToolsCall_ArgumentsThatAreNoObject_AreRefusedAndRecorded(t *testing.T) 
 }
 
 // The headers that the transport mirrors must agree with the body, as this
-// revision requires, and each rule has a case of its own.
+// revision requires, and each rule has a case of its own. A call that is refused
+// for its headers is still recorded, as the caller shows what it wanted, unless
+// it names another revision.
 func TestHeaders_AreComparedWithTheBody(t *testing.T) {
 	t.Parallel()
 
@@ -469,29 +471,61 @@ func TestHeaders_AreComparedWithTheBody(t *testing.T) {
 		return func(h map[string]string) { h[name] = value }
 	}
 	tests := []struct {
-		name string
-		edit func(map[string]string)
-		code int
+		name     string
+		edit     func(map[string]string)
+		code     int
+		recorded bool
 	}{
-		{"no version", set("MCP-Protocol-Version", ""), -32020},
-		{"version that is no date", set("MCP-Protocol-Version", "latest"), -32020},
-		{"version that is not spoken", set("MCP-Protocol-Version", "2025-11-25"), -32022},
-		{"no method", set("Mcp-Method", ""), -32020},
-		{"another method", set("Mcp-Method", "tools/list"), -32020},
-		{"no name", set("Mcp-Name", ""), -32020},
-		{"another name", set("Mcp-Name", "admin_reset"), -32020},
-		{"a name that is not base64", set("Mcp-Name", "=?base64?***?="), -32020},
+		{"no version", set("MCP-Protocol-Version", ""), -32020, true},
+		{"version that is no date", set("MCP-Protocol-Version", "latest"), -32020, true},
+		{"version that is not spoken", set("MCP-Protocol-Version", "2025-11-25"), -32022, false},
+		{"no method", set("Mcp-Method", ""), -32020, true},
+		{"another method", set("Mcp-Method", "tools/list"), -32020, true},
+		{"no name", set("Mcp-Name", ""), -32020, true},
+		{"another name", set("Mcp-Name", "admin_reset"), -32020, true},
+		{"a name that is not base64", set("Mcp-Name", "=?base64?***?="), -32020, true},
 	}
 	for _, tt := range tests {
 		h := newHarness(t, config())
-		c := toolCall("get_status", nil)
+		c := toolCall("get_status", map[string]any{"q": "x"})
 		c.edit = tt.edit
 		got := h.play(t, remote, c.bytes(t))[0]
 		if e := got.rpc(t).Error; got.status != 400 || e == nil || e.Code != tt.code {
 			t.Errorf("%s: %d %s, want 400 with %d", tt.name, got.status, got.body, tt.code)
 		}
+		rep := h.one(t)
+		if tt.recorded != (len(rep.ToolCalls) == 1) || (tt.recorded && (rep.ToolCalls[0].ToolName != "get_status" || rep.ToolCalls[0].Arguments != `{"q":"x"}`)) {
+			t.Errorf("%s: tool calls = %+v, recorded = %v wanted", tt.name, rep.ToolCalls, tt.recorded)
+		}
+	}
+}
+
+// A client that does not know the headers and the metadata of the revision, such
+// as a hand-written one, is refused and still shows the tool that it wanted.
+func TestHeaders_ACallWithoutThem_IsRecorded(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, config())
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"admin_reset","arguments":{"user":"root"}}}`
+	got := h.play(t, remote, raw(nil, []byte(body)))[0]
+	if e := got.rpc(t).Error; got.status != 400 || e == nil || e.Code != -32020 {
+		t.Errorf("response = %d %s", got.status, got.body)
+	}
+	rep := h.one(t)
+	if len(rep.ToolCalls) != 1 || rep.ToolCalls[0].ToolName != "admin_reset" || rep.ToolCalls[0].Arguments != `{"user":"root"}` {
+		t.Errorf("tool calls = %+v", rep.ToolCalls)
+	}
+	// Another method that is refused says nothing that counts, and a call without
+	// the name of a tool has none to show.
+	for _, body := range []string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"name":"get_status"}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":7}}`,
+	} {
+		h := newHarness(t, config())
+		h.play(t, remote, raw(nil, []byte(body)))
 		if rep := h.one(t); len(rep.ToolCalls) != 0 {
-			t.Errorf("%s: a refused call was recorded: %+v", tt.name, rep.ToolCalls)
+			t.Errorf("%s: tool calls = %+v", body, rep.ToolCalls)
 		}
 	}
 }
@@ -511,6 +545,27 @@ func TestHeaders_NameInBase64_IsDecoded(t *testing.T) {
 
 // The version in the metadata of the request must be the one of the header. The
 // capabilities of the client are not asked for.
+func TestMetadata_OfAnotherRevision_IsNoCall(t *testing.T) {
+	t.Parallel()
+
+	for version, recorded := range map[string]bool{"2025-11-25": false, "latest": true, "": true} {
+		h := newHarness(t, config())
+		meta := map[string]any{"io.modelcontextprotocol/clientCapabilities": map[string]any{}}
+		if version != "" {
+			meta["io.modelcontextprotocol/protocolVersion"] = version
+		}
+		c := toolCall("get_status", nil)
+		c.params["_meta"] = meta
+		got := h.play(t, remote, c.bytes(t))[0]
+		if e := got.rpc(t).Error; got.status != 400 || e == nil || e.Code != -32020 {
+			t.Errorf("version %q: %d %s", version, got.status, got.body)
+		}
+		if rep := h.one(t); (len(rep.ToolCalls) == 1) != recorded {
+			t.Errorf("version %q: tool calls = %+v, recorded = %v wanted", version, rep.ToolCalls, recorded)
+		}
+	}
+}
+
 func TestMetadata_VersionMustMatchTheHeader(t *testing.T) {
 	t.Parallel()
 
