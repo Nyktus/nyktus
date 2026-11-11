@@ -229,7 +229,7 @@ func (s *Service) answer(req *request) (reply, func(*entry)) {
 		return unsupportedVersion(id, p.ProtocolVersion), nil
 	}
 	if bad, ok := checkHeaders(req, method, &p, id); !ok {
-		return bad, nil
+		return bad, refusedCall(req, method, &p)
 	}
 	record := func(e *entry) { recordClient(e, &p) }
 
@@ -338,10 +338,11 @@ func recordClient(e *entry, p *params) {
 	e.session.SetClientVersion(report.Clean(text, report.MaxClientVersion))
 }
 
-// call answers a call of a tool and, with the client, records it. A call of a
-// tool that does not exist shows what the caller wanted as well, and so does one
-// whose arguments are no object: the name is what matters.
-func (s *Service) call(id json.RawMessage, p *params) (reply, func(*entry)) {
+// recordCall returns what records a call of a tool and its client in the
+// session: the name as the client wrote it, also of a tool that does not exist,
+// and the start of its arguments. It also returns the arguments as an object,
+// or nil if they are none.
+func recordCall(p *params) (func(*entry), map[string]json.RawMessage) {
 	var name string
 	_ = json.Unmarshal(p.Name, &name)
 	args := bytes.TrimSpace(p.Arguments)
@@ -355,15 +356,24 @@ func (s *Service) call(id json.RawMessage, p *params) (reply, func(*entry)) {
 		ToolName:  report.Clean(name, report.MaxToolName),
 		Arguments: report.Clean(compact.String(), report.MaxToolArguments),
 	}
-	record := func(e *entry) {
+	var values map[string]json.RawMessage
+	_ = json.Unmarshal(args, &values)
+	return func(e *entry) {
 		recordClient(e, p)
 		e.session.AddToolCall(called)
-	}
+	}, values
+}
 
-	var values map[string]json.RawMessage
-	if json.Unmarshal(args, &values) != nil || values == nil {
+// call answers a call of a tool and, with the client, records it. A call of a
+// tool that does not exist shows what the caller wanted as well, and so does one
+// whose arguments are no object: the name is what matters.
+func (s *Service) call(id json.RawMessage, p *params) (reply, func(*entry)) {
+	record, values := recordCall(p)
+	if values == nil {
 		return rpcError(statusOK, id, codeInvalidParams, "Invalid params", nil), record
 	}
+	var name string
+	_ = json.Unmarshal(p.Name, &name)
 	tool, ok := s.tools[name]
 	if !ok {
 		return rpcError(statusOK, id, codeInvalidParams, "Unknown tool", nil), record
@@ -374,6 +384,27 @@ func (s *Service) call(id json.RawMessage, p *params) (reply, func(*entry)) {
 		IsError:    tool.IsError,
 		Meta:       s.meta,
 	})), record
+}
+
+// refusedCall returns what records a call that was refused because its headers
+// or its metadata do not fit: a client that does not know the headers of the
+// revision still shows what it wanted. A call that names another revision does
+// not count, as that client is not one of this revision, and neither does one
+// without the name of a tool.
+func refusedCall(req *request, method string, p *params) func(*entry) {
+	var name string
+	if method != "tools/call" || json.Unmarshal(p.Name, &name) != nil {
+		return nil
+	}
+	var declared string
+	_ = json.Unmarshal(p.Meta[metaVersion], &declared)
+	for _, version := range []string{req.header["mcp-protocol-version"], declared} {
+		if datePattern.MatchString(version) && version != protocolVersion {
+			return nil
+		}
+	}
+	record, _ := recordCall(p)
+	return record
 }
 
 // answer returns the fixed text that a call selects.
