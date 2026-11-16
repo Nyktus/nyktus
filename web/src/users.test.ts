@@ -148,10 +148,18 @@ describe('a new account', () => {
     expect(wrapper.find('[role=region]').exists()).toBe(false);
   });
 
+  test('ends on the list of accounts once the user says that they passed it on', async () => {
+    const { wrapper, router } = await make();
+    expect(wrapper.find('a.button-primary').exists()).toBe(false);
+    await wrapper.get('[role=region] button.button-primary').trigger('click');
+    await arrive(router, 'users');
+    expect(router.currentRoute.value.fullPath).toBe('/users');
+  });
+
   test('is gone when the user leaves, and the page that they go to does not have it', async () => {
     const { wrapper, router } = await make();
-    await wrapper.get('a.button-primary').trigger('click');
-    await arrive(router, 'user');
+    await wrapper.get('[role=region] button.button-primary').trigger('click');
+    await arrive(router, 'users');
     expect(wrapper.html()).not.toContain(token);
   });
 

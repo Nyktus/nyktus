@@ -234,13 +234,11 @@ export const de: Record<MessageKey, string> = {
   'honeypotStatus.online': 'Online',
   'honeypotStatus.offline': 'Offline',
 
-  'secret.title': 'Secret des Honeypots',
-  'secret.warning':
-    'Das Secret wie ein Passwort behandeln. Es wird verschlüsselt gespeichert, und wer Honeypots ändern darf, kann es wieder anzeigen.',
-  'secret.secret': 'Secret',
+  'secret.title': 'Konfiguration des Honeypots',
+  'secret.warning': 'Kopiere die Konfiguration und passe sie an. Die Konfiguration lässt sich erneut anzeigen.',
   'secret.config': 'Eintrag für die Konfigurationsdatei des Sensors',
   'secret.done': 'Fertig',
-  'secret.show': 'Secret anzeigen',
+  'secret.show': 'Konfiguration anzeigen',
   'secret.replace': 'Secret ersetzen',
   'secret.replace.title': 'Secret ersetzen?',
   'secret.replace.body':
@@ -580,7 +578,6 @@ export const de: Record<MessageKey, string> = {
   'users.create.title': 'Neues Konto',
   'users.create.submit': 'Konto anlegen',
   'users.emailHint': 'Der Anmeldename. Er kann später nicht geändert werden.',
-  'users.toAccount': 'Konto öffnen',
   'users.own': 'Das ist Ihr eigenes Konto.',
   'users.ownLink': 'Passwort und MFA verwalten',
   'users.ownLocked': 'Das können Sie bei Ihrem eigenen Konto nicht tun. Bitten Sie einen anderen Administrator.',

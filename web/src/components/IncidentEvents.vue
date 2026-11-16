@@ -43,6 +43,7 @@ watch(() => props.incidentId, list.reload);
           <tr>
             <th scope="col">{{ t('field.recorded') }}</th>
             <th scope="col">{{ t('incident.eventWhat') }}</th>
+            <th scope="col">{{ t('event.clientIp') }}</th>
             <th scope="col">{{ t('field.resource') }}</th>
             <th scope="col">{{ t('field.severity') }}</th>
           </tr>
@@ -53,6 +54,7 @@ watch(() => props.incidentId, list.reload);
               <RouterLink :to="{ name: 'event', params: { id: event.id } }"><TimeStamp :value="event.recorded_at" /></RouterLink>
             </td>
             <td><EventSummary :event="event" /></td>
+            <td class="mono">{{ event.client_ip ?? t('common.none') }}</td>
             <td><ResourceRef :type="event.resource_type" :id="event.resource_id" :entry="names.entries.value[names.key(event.resource_type, event.resource_id)]" /></td>
             <td><SeverityBadge :severity="event.severity" /></td>
           </tr>

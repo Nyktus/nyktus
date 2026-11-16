@@ -4,7 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script setup lang="ts">
-import { computed, onMounted, ref, useId, watch } from 'vue';
+import { computed, onMounted, ref, useId, useTemplateRef, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ApiError } from '../api/errors';
 import { errorText } from '../api/messages';
@@ -37,6 +37,7 @@ const router = useRouter();
 const id = useId();
 
 const password = ref('');
+const passwordInput = useTemplateRef<HTMLInputElement>('password-input');
 const busy = ref(false);
 const message = ref<string | undefined>();
 const needsReauthentication = ref(false);
@@ -63,6 +64,10 @@ watch(
     }
   },
 );
+
+// The dialog renders its body once it is open, so the field appears after the dialog took the
+// focus. Moving it to the field is what a password manager waits for to offer its entry.
+watch(passwordInput, (input) => input?.focus());
 
 async function run(): Promise<void> {
   if (busy.value) {
@@ -115,7 +120,7 @@ async function run(): Promise<void> {
         <!-- With two text fields the browser no longer submits on Enter by itself, so the form needs a submit button. -->
         <button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
         <label :for="`${id}-password`">{{ t('confirm.password') }}</label>
-        <input :id="`${id}-password`" v-model="password" type="password" name="password" autocomplete="current-password" required />
+        <input :id="`${id}-password`" ref="password-input" v-model="password" type="password" name="password" autocomplete="current-password" required />
       </form>
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
     </div>

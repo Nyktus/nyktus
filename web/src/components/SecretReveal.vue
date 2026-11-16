@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { t } from '../i18n';
 import CopyButton from './CopyButton.vue';
 
-defineProps<{ secret: string; config: string }>();
+defineProps<{ config: string }>();
 defineEmits<{ done: [] }>();
 </script>
 
@@ -16,13 +16,6 @@ defineEmits<{ done: [] }>();
     <h2>{{ t('secret.title') }}</h2>
     <p class="notice" role="status">{{ t('secret.warning') }}</p>
     <div class="stack">
-      <div>
-        <p class="label">{{ t('secret.secret') }}</p>
-        <div class="row">
-          <code class="mono value">{{ secret }}</code>
-          <CopyButton :value="secret" />
-        </div>
-      </div>
       <div>
         <p class="label">{{ t('secret.config') }}</p>
         <pre class="mono value config">{{ config }}</pre>
@@ -40,13 +33,6 @@ defineEmits<{ done: [] }>();
   margin-bottom: 0.35rem;
   font-size: 0.8125rem;
   font-weight: 600;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: center;
 }
 
 .value {
