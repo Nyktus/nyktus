@@ -1,14 +1,13 @@
 name: Release
 
-# A tag starts a release: "vX.Y.Z" releases the server, "sensor/vX.Y.Z" the
-# sensor. The release pull request creates both tags. The workflow builds,
-# signs and publishes the files; the notes of the release come from that pull
-# request.
+# A tag "vX.Y.Z" starts a release of the server and the sensor, which always have
+# the same version. The release pull request creates the tag. The workflow
+# builds, signs and publishes the files of both; the notes of the release come
+# from that pull request.
 on:
   push:
     tags:
       - "v*"
-      - "sensor/v*"
 
 # No job gets a permission it does not name itself.
 permissions: {}
@@ -19,9 +18,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  server:
-    name: Release the server
-    if: ${{ startsWith(github.ref_name, 'v') }}
+  release:
+    name: Release the server and the sensor
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -38,7 +36,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::The tag $TAG is not a version of the server."
+            echo "::error::The tag $TAG is not a version."
             exit 1
           fi
           # Only a commit of main is released, whoever pushed the tag.
@@ -61,64 +59,27 @@ jobs:
           docker buildx create --name release --driver docker-container \
             --driver-opt image=moby/buildkit@sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f \
             --use
-      - name: Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make release
-
-  sensor:
-    name: Release the sensor
-    if: ${{ startsWith(github.ref_name, 'sensor/v') }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    permissions:
-      contents: write
-      packages: write
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Check the tag
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          if [[ ! "$TAG" =~ ^sensor/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::The tag $TAG is not a version of the sensor."
-            exit 1
-          fi
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: Log in to the registry
-        env:
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      - name: Create the builder
-        run: |
-          docker buildx create --name release --driver docker-container \
-            --driver-opt image=moby/buildkit@sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f \
-            --use
-      # GoReleaser reads the version from the tag and cannot parse the prefix,
-      # so it gets the version alone and creates no release of its own.
-      - name: Release
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          export GORELEASER_CURRENT_TAG="v${TAG#sensor/v}"
-          make release-sensor
-      - name: Attach the files to the release
+      # The sensor is a module of its own, and "go install" resolves its version
+      # from a tag with the prefix of its directory. The tag points at the commit
+      # of the release and exists only for that; a tag that the workflow token
+      # creates starts no workflow, so it releases nothing a second time. It is
+      # made before the release, so that a run that is started again finds it
+      # and the one step that cannot be repeated cheaply comes last.
+      - name: Tag the module of the sensor
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          # A version with a suffix, such as 0.1.0-rc.1, is a pre-release.
-          flags=()
-          if [[ "$TAG" == *-* ]]; then flags+=(--prerelease); fi
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes "Release of the sensor." "${flags[@]}"
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-            dist/*.tar.gz dist/checksums.txt dist/checksums.txt.sigstore.json dist/*.sbom.spdx.json
+          # A missing tag is a 404; any other failure shows when the tag is created.
+          have=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/sensor/$TAG" --jq .object.sha 2>/dev/null || true)
+          if [ -z "$have" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" --method POST \
+              --field "ref=refs/tags/sensor/$TAG" --field "sha=$GITHUB_SHA" >/dev/null
+          elif [ "$have" != "$GITHUB_SHA" ]; then
+            echo "::error::sensor/$TAG exists and points at another commit."
+            exit 1
+          fi
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make release

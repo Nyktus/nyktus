@@ -21,8 +21,8 @@ func TestRelease_ShipsTheThirdPartyNotices(t *testing.T) {
 		file string
 		want string
 	}{
-		{".goreleaser.sensor.yaml", "- src: " + notices + "\n        dst: THIRD-PARTY-NOTICES.md\n"},
-		{".goreleaser.sensor.yaml", "extra_files:\n      - LICENSE\n      - NOTICE\n      - " + notices + "\n"},
+		{".goreleaser.yaml", "- src: " + notices + "\n        dst: THIRD-PARTY-NOTICES.md\n"},
+		{".goreleaser.yaml", "extra_files:\n      - LICENSE\n      - NOTICE\n      - " + notices + "\n"},
 		{"deploy/release/Dockerfile.sensor", "COPY LICENSE NOTICE " + notices + " /licenses/\n"},
 	}
 	for _, tc := range cases {
@@ -41,5 +41,21 @@ func TestRelease_ShipsTheThirdPartyNotices(t *testing.T) {
 	}
 	if info.Size() == 0 {
 		t.Errorf("%s is empty", notices)
+	}
+}
+
+// The toolchain stamps no version for a module in a subdirectory, so the release
+// links it in. A rename of the variable or of the flag would make every released
+// sensor report a development version.
+func TestRelease_LinksTheVersionOfTheSensor(t *testing.T) {
+	t.Parallel()
+
+	data, err := os.ReadFile("../../../.goreleaser.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const flag = "-X nyktus.org/nyktus/sensor/internal/version.linked={{ .Version }}"
+	if !strings.Contains(string(data), flag) {
+		t.Errorf(".goreleaser.yaml does not link the version with %q", flag)
 	}
 }

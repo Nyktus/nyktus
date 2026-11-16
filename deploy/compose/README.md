@@ -119,7 +119,7 @@ cosign verify ghcr.io/nyktus/nyktus:0.3.0 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-For the sensor, the identity ends with `@refs/tags/sensor/v`. Pin the digest that it prints in your copy of the compose file (`image: ghcr.io/nyktus/nyktus:0.3.0@sha256:…`).
+The image of the sensor, `ghcr.io/nyktus/nyktus-sensor`, has the same version and the same signature identity: replace the name in the command above. Pin the digest that it prints in your copy of the compose file (`image: ghcr.io/nyktus/nyktus:0.3.0@sha256:…`, or `ghcr.io/nyktus/nyktus-sensor:0.3.0@sha256:…` for the sensor).
 <!-- x-release-please-end -->
 
 ## Logs

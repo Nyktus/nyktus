@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Nyktus server are documented in this file. The sensor has a changelog of its own in [sensor/CHANGELOG.md](sensor/CHANGELOG.md).
+All notable changes to Nyktus are documented in this file. The server and the sensor have the same version; changes of the sensor carry the scope `sensor`. The changes of the sensor before it joined the version of the server are in [sensor/CHANGELOG.md](sensor/CHANGELOG.md).
 
 ## [0.3.0](https://github.com/Nyktus/nyktus/compare/v0.2.0...v0.3.0) (2026-11-11)
 

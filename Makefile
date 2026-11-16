@@ -157,21 +157,14 @@ tidy: ## Verify that go.mod and go.sum are tidy
 .PHONY: check
 check: lint test vuln tidy web-lint web-test web-audit ## Run all checks that do not need a database
 
-# The release workflow runs the first two targets. The snapshots build the same
-# archives and images on this machine, with a version that marks them as not
-# released, and neither sign nor publish; they need Docker and Node.js.
+# The release workflow runs the first target, for the server and the sensor
+# together. The snapshot builds the same archives and images on this machine,
+# with a version that marks them as not released, and neither signs nor
+# publishes; it needs Docker and Node.js.
 .PHONY: release
-release: ## Release the server (only the release workflow runs this)
+release: ## Release the server and the sensor (only the release workflow runs this)
 	$(GORELEASER) release --clean
 
-.PHONY: release-sensor
-release-sensor: ## Release the sensor (only the release workflow runs this)
-	$(GORELEASER) release --clean --config .goreleaser.sensor.yaml --skip=validate
-
 .PHONY: release-snapshot
-release-snapshot: ## Build the release of the server locally without signing or publishing
+release-snapshot: ## Build the release locally without signing or publishing
 	$(GORELEASER) release --snapshot --clean --skip=publish,sign
-
-.PHONY: release-snapshot-sensor
-release-snapshot-sensor: ## Build the release of the sensor locally without signing or publishing
-	$(GORELEASER) release --snapshot --clean --config .goreleaser.sensor.yaml --skip=publish,sign
