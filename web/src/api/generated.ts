@@ -540,6 +540,7 @@ export interface EventToolCall {
 
 export interface EventAttempt {
   username: string;
+  password: string | null;
   password_length: number | null;
   key_fingerprint: string | null;
 }

@@ -70,9 +70,17 @@ describe('every rule fires on a violation', () => {
     expect(scan({ 'a.vue': '<template v-if="event.sensor.database !== null">' })).toEqual([]);
   });
 
-  test.each(attackerFields)('the field %s is found outside UntrustedText, and not inside', (field) => {
+  test.each(attackerFields.filter((field) => field !== 'password'))('the field %s is found outside UntrustedText, and not inside', (field) => {
     expect(scan({ 'a.vue': `<td>{{ row.${field} }}</td>` }).map((v) => v.rule)).toContain('text that an attacker sent is shown only by UntrustedText');
     expect(scan({ 'a.vue': `<td><UntrustedText :value="row.${field}" /></td>` })).toEqual([]);
+  });
+
+  test('the password of an attempt is found outside UntrustedText, and not inside, while the password of a form is no attempt', () => {
+    expect(scan({ 'a.vue': '<td>{{ attempt.password }}</td>' }).map((v) => v.rule)).toContain('text that an attacker sent is shown only by UntrustedText');
+    expect(scan({ 'a.vue': '<td>{{ event.sensor.attempts[0].password }}</td>' }).map((v) => v.rule)).toContain('text that an attacker sent is shown only by UntrustedText');
+    expect(scan({ 'a.vue': '<td><UntrustedText :value="attempt.password" /></td>' })).toEqual([]);
+    expect(scan({ 'a.vue': '<template v-if="attempt.password === null">' })).toEqual([]);
+    expect(scan({ 'a.vue': '<form v-if="options.password">' })).toEqual([]);
   });
 
   test('a second field on the line of a first, which is handed over, is found', () => {

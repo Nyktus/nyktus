@@ -64,8 +64,9 @@ type Event struct {
 
 // Session is what a sensor reported about a session of an attacker with a
 // honeypot. Everything but the service and the kind of event is chosen by the
-// attacker or the sensor and is untrusted. It never holds a password, only the
-// length of one.
+// attacker or the sensor and is untrusted. It may hold the passwords that the
+// attacker tried, which are no secret of the installation but may be the real
+// password of someone who mistyped an address.
 type Session struct {
 	// Service is the service of the honeypot when the session ended.
 	Service string
@@ -99,8 +100,11 @@ type SessionQuery struct {
 // Attempt is one login or bind of a session.
 type Attempt struct {
 	Username string
-	// PasswordLength is the length of the password that was sent, or nil if
-	// none was.
+	// Password is the password that was sent, or nil if none was. A sensor of
+	// an older report version does not send it.
+	Password *string
+	// PasswordLength is the length of the password that a sensor of the older
+	// report version sent in its place, or nil.
 	PasswordLength *int
 	// KeyFingerprint is the fingerprint of the public key that was offered,
 	// or nil.
@@ -162,7 +166,7 @@ func loadSessionDetails(ctx context.Context, q db.Querier, events []Event) error
 		return nil
 	}
 	rows, err := q.Query(ctx, `
-SELECT event_id, username, password_length, key_fingerprint
+SELECT event_id, username, password, password_length, key_fingerprint
 FROM public.event_attempts WHERE event_id = ANY($1::uuid[]) ORDER BY event_id, ordinal`, ids)
 	if err != nil {
 		return fmt.Errorf("load attempts: %w", err)
@@ -171,7 +175,7 @@ FROM public.event_attempts WHERE event_id = ANY($1::uuid[]) ORDER BY event_id, o
 		id string
 		a  Attempt
 	)
-	_, err = pgx.ForEachRow(rows, []any{&id, &a.Username, &a.PasswordLength, &a.KeyFingerprint}, func() error {
+	_, err = pgx.ForEachRow(rows, []any{&id, &a.Username, &a.Password, &a.PasswordLength, &a.KeyFingerprint}, func() error {
 		s := bySession[id]
 		s.Attempts = append(s.Attempts, a)
 		return nil

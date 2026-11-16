@@ -440,7 +440,7 @@ export const en = {
   'event.toolName': 'Tool',
   'event.toolArguments': 'Arguments (start, as sent)',
   'event.username': 'User name',
-  'event.passwordLength': 'Password',
+  'event.password': 'Password',
   'event.keyFingerprint': 'Fingerprint',
   'event.characters': '{count} characters',
   'eventType.connection': 'Connection',

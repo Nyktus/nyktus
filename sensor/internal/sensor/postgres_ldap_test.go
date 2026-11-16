@@ -45,24 +45,12 @@ func TestRun_PostgreSQLSession_IsReportedWithTheLoginAndTheDatabase(t *testing.T
 	if _, err := c.conn.Write(startup); err != nil {
 		t.Fatal(err)
 	}
-	offer := make([]byte, 24)
-	if _, err := io.ReadFull(c.r, offer); err != nil || !bytes.Contains(offer, []byte("SCRAM-SHA-256")) {
-		t.Fatalf("offer = %q, %v, want SCRAM", offer, err)
+	request := make([]byte, 9)
+	if _, err := io.ReadFull(c.r, request); err != nil || !bytes.Equal(request, []byte{'R', 0, 0, 0, 8, 0, 0, 0, 3}) {
+		t.Fatalf("request = %q, %v, want the request for a password in clear text", request, err)
 	}
-	const clientFirst = "n,,n=,r=abcdefgh"
-	mech := "SCRAM-SHA-256\x00\x00\x00\x00" + string([]byte{byte(len(clientFirst))}) + clientFirst
-	if _, err := c.conn.Write(append([]byte{'p', 0, 0, 0, byte(4 + len(mech))}, mech...)); err != nil { //nolint:gosec // G115: the test message is small
-		t.Fatal(err)
-	}
-	head := make([]byte, 5)
-	if _, err := io.ReadFull(c.r, head); err != nil || head[0] != 'R' {
-		t.Fatalf("challenge = %q, %v", head, err)
-	}
-	if _, err := io.ReadFull(c.r, make([]byte, int(head[4])-4)); err != nil {
-		t.Fatal(err)
-	}
-	final := "c=biws,r=abcdefghx,p=hunter2-typed-this"
-	if _, err := c.conn.Write(append([]byte{'p', 0, 0, 0, byte(4 + len(final))}, final...)); err != nil { //nolint:gosec // G115: the test message is small
+	const password = "hunter2-typed-this"
+	if _, err := c.conn.Write(append([]byte{'p', 0, 0, 0, byte(5 + len(password))}, password+"\x00"...)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := io.ReadAll(c.r); err != nil {
@@ -72,11 +60,8 @@ func TestRun_PostgreSQLSession_IsReportedWithTheLoginAndTheDatabase(t *testing.T
 	rc := tr.next(t)
 	s := decodeSession(t, rc)
 	if s.Database != "payroll" || s.ApplicationName != "psql" || len(s.Attempts) != 1 || s.Attempts[0].Username != "mallory-typed-this" ||
-		s.Attempts[0].PasswordLength != nil || s.Query != nil {
+		s.Attempts[0].Password == nil || *s.Attempts[0].Password != password || s.Query != nil {
 		t.Errorf("report = %+v, want the login with the database and the application", s)
-	}
-	if strings.Contains(string(rc.body), "hunter2") {
-		t.Errorf("report %s holds the password", rc.body)
 	}
 	if err := r.stop(); err != nil {
 		t.Errorf("Run() = %v", err)

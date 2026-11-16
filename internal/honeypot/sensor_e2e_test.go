@@ -329,23 +329,23 @@ FROM events WHERE id = $1`, eventID).Scan(&channel, &service, &eventType, &sev, 
 		t.Errorf("event = %s %s %s %s port %d %v from %s, want a login attempt at the honeypot", channel, service, eventType, sev, sensorPort, techniques, clientIP)
 	}
 	var user string
-	var passwordLength *int
-	if err := owner.QueryRow(t.Context(), `SELECT username, password_length FROM event_attempts WHERE event_id = $1`, eventID).Scan(&user, &passwordLength); err != nil {
+	var password *string
+	if err := owner.QueryRow(t.Context(), `SELECT username, password FROM event_attempts WHERE event_id = $1`, eventID).Scan(&user, &password); err != nil {
 		t.Fatal(err)
 	}
-	if user != "mallory-typed-this" || passwordLength == nil || *passwordLength != 18 {
-		t.Errorf("attempt = %q with a password of %v bytes, want the login of the attacker", user, passwordLength)
+	if user != "mallory-typed-this" || password == nil || *password != "hunter2-typed-this" {
+		t.Errorf("attempt = %q with the password %v, want the login of the attacker with its password", user, password)
 	}
 
-	// The password is nowhere: not in the event, not in its attempts.
-	var stored string
+	// The password is in the column of its attempt and nowhere else.
+	var elsewhere string
 	if err := owner.QueryRow(t.Context(), `
-SELECT coalesce(string_agg(row_to_json(e)::text, ' '), '') || coalesce((SELECT string_agg(row_to_json(a)::text, ' ') FROM event_attempts a), '')
-FROM events e`).Scan(&stored); err != nil {
+SELECT coalesce(string_agg(row_to_json(e)::text, ' '), '') || coalesce((SELECT string_agg((to_jsonb(a) - 'password')::text, ' ') FROM event_attempts a), '')
+FROM events e`).Scan(&elsewhere); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(stored, "hunter2") {
-		t.Errorf("the database holds the password: %s", stored)
+	if strings.Contains(elsewhere, "hunter2") {
+		t.Errorf("the database holds the password outside its attempt: %s", elsewhere)
 	}
 
 	if err := p.stop(t); err != nil {

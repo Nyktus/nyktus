@@ -13,13 +13,14 @@ package report
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"unicode/utf8"
 )
 
 // Version is the version of the documents. The server reads only versions it
 // knows, so a new member needs a new version.
-const Version = 2
+const Version = 3
 
 // Types of reports.
 const (
@@ -32,6 +33,7 @@ const (
 const (
 	MaxAttempts        = 6
 	MaxUsername        = 256
+	MaxPassword        = 256
 	MaxClientVersion   = 128
 	MaxDatabase        = 64
 	MaxApplicationName = 64
@@ -83,14 +85,13 @@ type Session struct {
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 }
 
-// Attempt is one login or bind. A password is never part of it, only its
-// length.
+// Attempt is one login or bind.
 type Attempt struct {
 	Username string `json:"username"`
-	// PasswordLength is the length of the password that was sent, or nil if
-	// none was.
-	PasswordLength *int   `json:"password_length,omitempty"`
-	KeyFingerprint string `json:"key_fingerprint,omitempty"`
+	// Password is the password that was sent, as the client sent it and cut to
+	// MaxPassword, or nil if none was. An empty password is a value.
+	Password       *string `json:"password,omitempty"`
+	KeyFingerprint string  `json:"key_fingerprint,omitempty"`
 }
 
 // Query is the first search of a directory client. The base may be empty, the
@@ -136,3 +137,16 @@ func Clean(s string, limit int) string {
 	}
 	return s
 }
+
+const redacted = "[redacted]"
+
+// String implements fmt.Stringer. An attempt holds what an attacker typed, a
+// password included, so it never prints it, whatever formats or logs a value
+// that holds it ends up in.
+func (a Attempt) String() string { return redacted }
+
+// GoString implements fmt.GoStringer, which %#v uses.
+func (Attempt) GoString() string { return redacted }
+
+// LogValue implements slog.LogValuer.
+func (Attempt) LogValue() slog.Value { return slog.StringValue(redacted) }

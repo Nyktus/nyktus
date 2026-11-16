@@ -62,17 +62,17 @@ func TestDecodeReport_GoldenFiles(t *testing.T) {
 		{"session_ssh.json", Report{Session: &Session{
 			ID: "0123456789abcdef0123456789abcdef", Age: 1500 * time.Millisecond, Duration: 4200 * time.Millisecond,
 			ClientIP: netip.MustParseAddr("203.0.113.9"), Port: 22, ClientVersion: "SSH-2.0-OpenSSH_9.6",
-			Attempts: []Attempt{{Username: "root", PasswordLength: intPtr(8)}, {Username: "admin", KeyFingerprint: fingerprint}},
+			Attempts: []Attempt{{Username: "root", Password: ptr("letmein1")}, {Username: "admin", KeyFingerprint: fingerprint}},
 		}}},
 		{"session_postgres.json", Report{Session: &Session{
 			ID: "fedcba9876543210fedcba9876543210", Duration: 350 * time.Millisecond,
 			ClientIP: netip.MustParseAddr("2001:db8::7"), Port: 5432, Database: "postgres", ApplicationName: "psql",
-			Attempts: []Attempt{{Username: "postgres"}},
+			Attempts: []Attempt{{Username: "postgres", Password: ptr("changeme")}},
 		}}},
 		{"session_ldap.json", Report{Session: &Session{
 			ID: "00112233445566778899aabbccddeeff", Age: 800 * time.Millisecond, Duration: 1200 * time.Millisecond,
 			ClientIP: netip.MustParseAddr("198.51.100.23"), Port: 389,
-			Attempts: []Attempt{{Username: "cn=admin,dc=example,dc=com", PasswordLength: intPtr(0)}},
+			Attempts: []Attempt{{Username: "cn=admin,dc=example,dc=com", Password: ptr("")}},
 			Query:    &Query{BaseDN: "dc=example,dc=com", Filter: "(objectClass=*)"},
 		}}},
 		{"session_telnet.json", Report{Session: &Session{
@@ -127,6 +127,20 @@ func TestDecodeReport_RefusesWhatDoesNotFit(t *testing.T) {
 	attempt := func(edit func(a map[string]any)) func(map[string]any) {
 		return func(m map[string]any) { edit(m["attempts"].([]any)[0].(map[string]any)) }
 	}
+	// previous makes the report one of the previous version, which sends the
+	// length of a password in place of the password; edit changes its first
+	// attempt after that.
+	previous := func(edit func(a map[string]any)) func(map[string]any) {
+		return func(m map[string]any) {
+			m["version"] = previousReportVersion
+			a := m["attempts"].([]any)[0].(map[string]any)
+			if edit != nil {
+				delete(a, "password")
+				a["password_length"] = 8
+				edit(a)
+			}
+		}
+	}
 	toolCall := func(edit func(c map[string]any)) func(map[string]any) {
 		return func(m map[string]any) { edit(m["tool_calls"].([]any)[0].(map[string]any)) }
 	}
@@ -157,12 +171,15 @@ func TestDecodeReport_RefusesWhatDoesNotFit(t *testing.T) {
 	}{
 		{"no version", "session_ssh.json", drop("version"), ErrUnsupportedVersion},
 		{"version 0", "session_ssh.json", set("version", 0), ErrUnsupportedVersion},
-		{"version 3", "session_ssh.json", set("version", 3), ErrUnsupportedVersion},
+		{"version 4", "session_ssh.json", set("version", 4), ErrUnsupportedVersion},
+		{"version 1", "session_ssh.json", set("version", 1), ErrUnsupportedVersion},
 		{"version that is a string", "session_ssh.json", set("version", "1"), ErrUnsupportedVersion},
 		{"unknown type", "session_ssh.json", set("type", "event"), ErrInvalidReport},
 		{"no type", "session_ssh.json", drop("type"), ErrInvalidReport},
 		{"unknown member", "session_ssh.json", set("service", "ssh"), ErrInvalidReport},
-		{"password member", "session_ssh.json", attempt(func(a map[string]any) { a["password"] = "hunter2" }), ErrInvalidReport},
+		{"password in the previous version", "session_ssh.json", previous(nil), ErrInvalidReport},
+		{"password length in the current version", "session_ssh.json", attempt(func(a map[string]any) { a["password_length"] = 8 }), ErrInvalidReport},
+		{"password that is no text", "session_ssh.json", attempt(func(a map[string]any) { a["password"] = 8 }), ErrInvalidReport},
 		{"unknown member of a heartbeat", "heartbeat.json", set("host", "web1"), ErrInvalidReport},
 		{"unknown member of a query", "session_ldap.json", func(m map[string]any) {
 			m["query"].(map[string]any)["scope"] = "sub"
@@ -178,7 +195,7 @@ func TestDecodeReport_RefusesWhatDoesNotFit(t *testing.T) {
 		{"negative duration", "session_ssh.json", set("duration_ms", -1), ErrInvalidReport},
 		{"version 1.5", "session_ssh.json", set("version", 1.5), ErrUnsupportedVersion},
 		{"version of a newer form", "session_ssh.json", set("version", "2"), ErrUnsupportedVersion},
-		{"newer version that changes the type", "session_ssh.json", func(m map[string]any) { m["version"], m["type"] = 3, []any{"session"} }, ErrUnsupportedVersion},
+		{"newer version that changes the type", "session_ssh.json", func(m map[string]any) { m["version"], m["type"] = 4, []any{"session"} }, ErrUnsupportedVersion},
 		{"type that is no string", "session_ssh.json", set("type", 7), ErrInvalidReport},
 		{"no address", "session_ssh.json", drop("client_ip"), ErrInvalidReport},
 		{"address that is none", "session_ssh.json", set("client_ip", "web1"), ErrInvalidReport},
@@ -189,16 +206,14 @@ func TestDecodeReport_RefusesWhatDoesNotFit(t *testing.T) {
 		{"no attempts", "session_ssh.json", drop("attempts"), ErrInvalidReport},
 		{"null attempts", "session_ssh.json", set("attempts", nil), ErrInvalidReport},
 		{"seven attempts", "session_ssh.json", manyAttempts(7), ErrInvalidReport},
-		{"tool calls in the previous version", "session_mcp.json", set("version", 1), ErrInvalidReport},
-		{"no tool calls but the member in the previous version", "session_mcp.json", func(m map[string]any) { m["version"], m["tool_calls"] = 1, []any{} }, ErrInvalidReport},
 		{"seven tool calls", "session_mcp.json", manyToolCalls(7), ErrInvalidReport},
 		{"tool calls that are no list", "session_mcp.json", set("tool_calls", "get_page"), ErrInvalidReport},
 		{"tool call without a name", "session_mcp.json", toolCall(func(c map[string]any) { delete(c, "tool_name") }), ErrInvalidReport},
 		{"tool call without arguments", "session_mcp.json", toolCall(func(c map[string]any) { delete(c, "arguments") }), ErrInvalidReport},
 		{"tool call with another member", "session_mcp.json", toolCall(func(c map[string]any) { c["result"] = "x" }), ErrInvalidReport},
 		{"attempt without a user name", "session_ssh.json", attempt(func(a map[string]any) { delete(a, "username") }), ErrInvalidReport},
-		{"negative password length", "session_ssh.json", attempt(func(a map[string]any) { a["password_length"] = -1 }), ErrInvalidReport},
-		{"password length beyond 65535", "session_ssh.json", attempt(func(a map[string]any) { a["password_length"] = 65536 }), ErrInvalidReport},
+		{"negative password length", "session_ssh.json", previous(func(a map[string]any) { a["password_length"] = -1 }), ErrInvalidReport},
+		{"password length beyond 65535", "session_ssh.json", previous(func(a map[string]any) { a["password_length"] = 65536 }), ErrInvalidReport},
 		{"fingerprint of another form", "session_ssh.json", attempt(func(a map[string]any) { a["key_fingerprint"] = "MD5:aa:bb" }), ErrInvalidReport},
 		{"query without a base", "session_ldap.json", func(m map[string]any) { delete(m["query"].(map[string]any), "base_dn") }, ErrInvalidReport},
 		{"query without a filter", "session_ldap.json", func(m map[string]any) { delete(m["query"].(map[string]any), "filter") }, ErrInvalidReport},
@@ -256,9 +271,19 @@ func TestDecodeReport_AcceptsTheLimits(t *testing.T) {
 		},
 		{"port 1", "session_ssh.json", func(m map[string]any) { m["port"] = 1 }, func(s Session) bool { return s.Port == 1 }},
 		{"port 65535", "session_ssh.json", func(m map[string]any) { m["port"] = 65535 }, func(s Session) bool { return s.Port == 65535 }},
-		{"password length 65535", "session_ssh.json", func(m map[string]any) {
+		{"password length 65535 in the previous version", "session_ssh.json", func(m map[string]any) {
+			m["version"] = previousReportVersion
 			m["attempts"] = []any{map[string]any{"username": "root", "password_length": 65535}}
-		}, func(s Session) bool { return *s.Attempts[0].PasswordLength == 65535 }},
+		}, func(s Session) bool { return *s.Attempts[0].PasswordLength == 65535 && s.Attempts[0].Password == nil }},
+		{"an empty password", "session_ssh.json", func(m map[string]any) {
+			m["attempts"] = []any{map[string]any{"username": "root", "password": ""}}
+		}, func(s Session) bool { return s.Attempts[0].Password != nil && *s.Attempts[0].Password == "" }},
+		{"a password of 256 bytes", "session_ssh.json", func(m map[string]any) {
+			m["attempts"] = []any{map[string]any{"username": "root", "password": strings.Repeat("p", maxPassword)}}
+		}, func(s Session) bool { return len(*s.Attempts[0].Password) == maxPassword }},
+		{"a null password", "session_ssh.json", func(m map[string]any) {
+			m["attempts"] = []any{map[string]any{"username": "root", "password": nil}}
+		}, func(s Session) bool { return s.Attempts[0].Password == nil }},
 		{
 			"the root of a directory", "session_ldap.json", func(m map[string]any) { m["query"].(map[string]any)["base_dn"] = "" },
 			func(s Session) bool { return s.Query != nil && s.Query.BaseDN == "" },
@@ -297,7 +322,7 @@ func TestDecodeReport_CleansEveryTextField(t *testing.T) {
 		m["client_version"] = hostile
 		m["database"] = hostile
 		m["application_name"] = hostile
-		m["attempts"] = []any{map[string]any{"username": hostile, "password_length": 3}}
+		m["attempts"] = []any{map[string]any{"username": hostile, "password": hostile}}
 		m["query"] = map[string]any{"base_dn": hostile, "filter": hostile}
 	})
 	r, err := DecodeReport(body)
@@ -313,6 +338,7 @@ func TestDecodeReport_CleansEveryTextField(t *testing.T) {
 		"database":         {s.Database, maxDatabase},
 		"application name": {s.ApplicationName, maxApplicationName},
 		"user name":        {s.Attempts[0].Username, maxUsername},
+		"password":         {*s.Attempts[0].Password, maxPassword},
 		"base":             {s.Query.BaseDN, maxBaseDN},
 		"filter":           {s.Query.Filter, maxFilter},
 	} {
@@ -500,19 +526,30 @@ func (f *fakeReporter) reported() (sessions int, heartbeats int) {
 }
 
 // A sensor that has not been updated keeps reporting: the server is updated
-// first, and the previous version means the same without the tool calls.
+// first, and the previous version means the same, except that it sends the
+// length of a password and not the password.
 func TestDecodeReport_AcceptsThePreviousVersion(t *testing.T) {
 	t.Parallel()
 
-	for _, file := range []string{"session_ssh.json", "heartbeat.json"} {
+	for _, file := range []string{"session_mcp.json", "session_telnet.json", "heartbeat.json"} {
 		want, err := DecodeReport(golden(t, file))
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := DecodeReport(mutated(t, file, func(m map[string]any) { m["version"] = 1 }))
+		got, err := DecodeReport(mutated(t, file, func(m map[string]any) { m["version"] = previousReportVersion }))
 		if err != nil || !sameReport(got, want) {
-			t.Errorf("%s in version 1 = %s, %v; want %s", file, describe(got), err, describe(want))
+			t.Errorf("%s in the previous version = %s, %v; want %s", file, describe(got), err, describe(want))
 		}
+	}
+
+	got, err := DecodeReport(mutated(t, "session_ssh.json", func(m map[string]any) {
+		m["version"] = previousReportVersion
+		m["attempts"] = []any{map[string]any{"username": "root", "password_length": 8}, map[string]any{"username": "admin"}}
+	}))
+	if err != nil || got.Session == nil || len(got.Session.Attempts) != 2 ||
+		got.Session.Attempts[0].Password != nil || got.Session.Attempts[0].PasswordLength == nil || *got.Session.Attempts[0].PasswordLength != 8 ||
+		got.Session.Attempts[1].Password != nil || got.Session.Attempts[1].PasswordLength != nil {
+		t.Errorf("session in the previous version = %s, %v; want the length of the password and no password", describe(got), err)
 	}
 }
 

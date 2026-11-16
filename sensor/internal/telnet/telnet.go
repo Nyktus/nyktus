@@ -7,7 +7,7 @@
 //
 // It offers nothing behind the login. What the client types is read, counted
 // and recorded in the session, never run, never answered with anything but the
-// prompts, and never passed on. A password is not kept: only its length.
+// prompts, and never passed on. A password is recorded as it was typed.
 package telnet
 
 import (
@@ -105,10 +105,10 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 		if write([]byte(passwordPrompt)) != nil {
 			return
 		}
-		pass, err := r.read(0, nil)
+		pass, err := r.read(report.MaxPassword, nil)
 		if pass.n > 0 || pass.complete {
-			n := pass.n
-			open.PasswordLength = &n
+			p := report.Clean(string(pass.text), report.MaxPassword)
+			open.Password = &p
 		}
 		if err != nil || !pass.complete {
 			return

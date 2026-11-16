@@ -29,6 +29,7 @@ export const attackerFields = [
   'database',
   'application_name',
   'username',
+  'password',
   'key_fingerprint',
   'zone',
   'prefix',
@@ -38,6 +39,13 @@ export const attackerFields = [
   'tool_name',
   'arguments_excerpt',
 ] as const;
+
+/**
+ * The fields that the two rules below look for by name. `password` is a text of an attacker as well,
+ * but it is also the name of the fields of the sign-in and of the confirmation, which the rules would
+ * report in every form. The first rule therefore looks for it only on an attempt, `attempt.password`.
+ */
+const scannedFields = attackerFields.filter((field) => field !== 'password');
 
 /**
  * The rules of the web console that a type check does not enforce. A rule is
@@ -81,14 +89,14 @@ export const rules: Rule[] = [
     // asking whether a member is there shows nothing.
     name: 'text that an attacker sent is shown only by UntrustedText',
     strip: /'[^']*'/g,
-    pattern: new RegExp(`\\.(${attackerFields.join('|')})\\b(?!\\(|\\s*[!=]==\\s*null)`),
+    pattern: new RegExp(`(?:\\.(${scannedFields.join('|')})|\\battempts?(?:\\[[^\\]]*\\])?\\.password)\\b(?!\\(|\\s*[!=]==\\s*null)`),
     within: /<UntrustedText\b[^>]*>/,
   },
   {
     // A rule that looks for `.user_agent` cannot see a field that was taken out of its object.
     name: 'text that an attacker sent is not taken out of its object by name',
     pattern: new RegExp(
-      `\\{[\\w$\\s,:]*\\b(${attackerFields.join('|')})\\b[\\w$\\s,:]*\\}\\s*(?:=[^=>]|\\)|in\\s|of\\s)|\\[\\s*['"](${attackerFields.join('|')})['"]\\s*\\]`,
+      `\\{[\\w$\\s,:]*\\b(${scannedFields.join('|')})\\b[\\w$\\s,:]*\\}\\s*(?:=[^=>]|\\)|in\\s|of\\s)|\\[\\s*['"](${scannedFields.join('|')})['"]\\s*\\]`,
     ),
   },
   {

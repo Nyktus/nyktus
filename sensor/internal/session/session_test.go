@@ -49,8 +49,8 @@ func TestSession_Report_NamesTheAddressAndThePortTheAttackerReached(t *testing.T
 	if !ok {
 		t.Fatal("Report() = not ok, want a report")
 	}
-	if got.Version != 2 || got.Type != "session" || got.ClientIP != "203.0.113.9" || got.Port != 2323 {
-		t.Errorf("Report() = %+v, want version 2, type session, the client and the local port", got)
+	if got.Version != 3 || got.Type != "session" || got.ClientIP != "203.0.113.9" || got.Port != 2323 {
+		t.Errorf("Report() = %+v, want version 3, type session, the client and the local port", got)
 	}
 	if got.AgeMS != 2000 || got.DurationMS != 1500 {
 		t.Errorf("age = %d ms, duration = %d ms; want 2000 and 1500", got.AgeMS, got.DurationMS)
@@ -264,15 +264,15 @@ func TestSession_Logged_HoldsNoInputAndNoSecret(t *testing.T) {
 	t.Parallel()
 
 	s := start(t, clocktest.New())
-	n := 14
-	s.AddAttempt(report.Attempt{Username: "mallory-typed-this", PasswordLength: &n})
+	password := "mallory-password"
+	s.AddAttempt(report.Attempt{Username: "mallory-typed-this", Password: &password})
 	var logged bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logged, nil))
 	logger.Info("test", s.Attr(), slog.Any("value", s), slog.Any("secret", secret.Secret(sampleSecret)))
 	logger.Info("test", honeypot.Attr(), slog.Any("value", honeypot))
 
 	out := logged.String()
-	for _, forbidden := range []string{"mallory-typed-this", sampleSecret} {
+	for _, forbidden := range []string{"mallory-typed-this", "mallory-password", sampleSecret} {
 		if strings.Contains(out, forbidden) {
 			t.Errorf("log %s holds %q", out, forbidden)
 		}

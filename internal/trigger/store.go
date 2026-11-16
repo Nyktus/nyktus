@@ -79,10 +79,10 @@ FROM public.record_honeytoken_request($1, $2, $3, $4, $5, $6, $7)`,
 	return res, nil
 }
 
-// attemptJSON is an attempt as the database function reads it. A password has
-// no member: only its length leaves the trigger.
+// attemptJSON is an attempt as the database function reads it.
 type attemptJSON struct {
 	Username       string  `json:"username"`
+	Password       *string `json:"password"`
 	PasswordLength *int    `json:"password_length"`
 	KeyFingerprint *string `json:"key_fingerprint"`
 }
@@ -97,7 +97,7 @@ type toolCallJSON struct {
 func (s *Store) RecordSession(ctx context.Context, secretHash []byte, session Session) (ReportResult, error) {
 	attempts := make([]attemptJSON, len(session.Attempts))
 	for i, a := range session.Attempts {
-		attempts[i] = attemptJSON{Username: a.Username, PasswordLength: a.PasswordLength, KeyFingerprint: nilIfEmpty(a.KeyFingerprint)}
+		attempts[i] = attemptJSON{Username: a.Username, Password: a.Password, PasswordLength: a.PasswordLength, KeyFingerprint: nilIfEmpty(a.KeyFingerprint)}
 	}
 	toolCalls := make([]toolCallJSON, len(session.ToolCalls))
 	for i, c := range session.ToolCalls {

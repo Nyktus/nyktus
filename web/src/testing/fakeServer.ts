@@ -248,8 +248,9 @@ export function sensorEvent(overrides: Partial<Event> = {}): Event {
       application_name: null,
       query: null,
       attempts: [
-        { username: 'root', password_length: 8, key_fingerprint: null },
-        { username: 'admin', password_length: null, key_fingerprint: 'SHA256:abc' },
+        { username: 'root', password: 'hunter2', password_length: null, key_fingerprint: null },
+        { username: 'admin', password: null, password_length: null, key_fingerprint: 'SHA256:abc' },
+        { username: 'old', password: null, password_length: 8, key_fingerprint: null },
       ],
       tool_calls: [],
     },

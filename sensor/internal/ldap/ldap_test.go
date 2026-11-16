@@ -120,20 +120,23 @@ func sessionReport(t *testing.T, s *session.Session) report.Session {
 	return rep
 }
 
-// login is one attempt of a report: the name and the length of the password.
+// none stands for an attempt without a password in the comparison of logins.
+const none = "(no password)"
+
+// login is one attempt of a report: the name and the password.
 type login struct {
 	user string
-	pass int
+	pass string
 }
 
 func logins(rep report.Session) []login {
 	var out []login
 	for _, a := range rep.Attempts {
-		n := -1
-		if a.PasswordLength != nil {
-			n = *a.PasswordLength
+		p := none
+		if a.Password != nil {
+			p = *a.Password
 		}
-		out = append(out, login{a.Username, n})
+		out = append(out, login{a.Username, p})
 	}
 	return out
 }
@@ -170,9 +173,9 @@ func TestServe_Bind_RecordsTheNameAndTheLengthOfThePasswordAndFails(t *testing.T
 		want     []login
 		wantCode byte
 	}{
-		{name: "name and password", bind: bindRequest("cn=admin,dc=example,dc=com", "hunter2"), want: []login{{"cn=admin,dc=example,dc=com", 7}}, wantCode: 49},
-		{name: "name without a password", bind: bindRequest("cn=admin,dc=example,dc=com", ""), want: []login{{"cn=admin,dc=example,dc=com", 0}}, wantCode: 49},
-		{name: "password without a name", bind: bindRequest("", "secret"), want: []login{{"", 6}}, wantCode: 49},
+		{name: "name and password", bind: bindRequest("cn=admin,dc=example,dc=com", "hunter2"), want: []login{{"cn=admin,dc=example,dc=com", "hunter2"}}, wantCode: 49},
+		{name: "name without a password", bind: bindRequest("cn=admin,dc=example,dc=com", ""), want: []login{{"cn=admin,dc=example,dc=com", ""}}, wantCode: 49},
+		{name: "password without a name", bind: bindRequest("", "secret"), want: []login{{"", "secret"}}, wantCode: 49},
 		{name: "anonymous", bind: bindRequest("", ""), want: nil, wantCode: 0},
 		{name: "sasl", bind: saslBind("cn=admin", "GSS-SPNEGO"), want: nil, wantCode: 7},
 	}
@@ -190,21 +193,17 @@ func TestServe_Bind_RecordsTheNameAndTheLengthOfThePasswordAndFails(t *testing.T
 	}
 }
 
-func TestServe_Password_IsNeverKeptOrSentBack(t *testing.T) {
+func TestServe_Password_IsRecordedAndNeverSentBackOrLogged(t *testing.T) {
 	t.Parallel()
 
 	const pw = "S3cr3t-Passw0rd!"
 	s, conn := play(t, join(message(1, bindRequest("cn=admin", pw)), message(2, searchRequest("dc=x", present("cn")))))
 
-	body, err := json.Marshal(sessionReport(t, s))
-	if err != nil {
-		t.Fatal(err)
+	if strings.Contains(s.Attr().Value.String(), pw) || bytes.Contains(conn.Written(), []byte(pw)) {
+		t.Errorf("the password is in the log or the answer")
 	}
-	if bytes.Contains(body, []byte(pw)) || strings.Contains(s.Attr().Value.String(), pw) || bytes.Contains(conn.Written(), []byte(pw)) {
-		t.Errorf("the password is in the report, the log or the answer")
-	}
-	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=admin", len(pw)}}) {
-		t.Errorf("logins = %+v, want the length of the password", got)
+	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=admin", pw}}) {
+		t.Errorf("logins = %+v, want the password as it was sent", got)
 	}
 }
 
@@ -395,7 +394,7 @@ func TestServe_OperationsThatAreNotOffered_EndTheSessionWithoutAnswer(t *testing
 			if want := reply(1, 0x61, 49); !bytes.Equal(conn.Written(), want) {
 				t.Errorf("written = %x, want only the answer to the bind %x", conn.Written(), want)
 			}
-			if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=a", 2}}) {
+			if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=a", "pw"}}) {
 				t.Errorf("logins = %+v, want what came before", got)
 			}
 		})
@@ -485,7 +484,7 @@ func TestServe_PaddedLengths_AreReadLikeShortOnes(t *testing.T) {
 				tlv(0x01, []byte{0}), wide(0xa3, octets, wide(0x04, octets, []byte("cn")), wide(0x04, octets, []byte("a"))), tlv(0x30))
 			s, conn := play(t, join(wide(0x30, octets, integer(1), bind), wide(0x30, octets, integer(2), search)))
 			rep := sessionReport(t, s)
-			if got := logins(rep); !reflect.DeepEqual(got, []login{{"admin", 2}}) {
+			if got := logins(rep); !reflect.DeepEqual(got, []login{{"admin", "pw"}}) {
 				t.Errorf("logins = %+v, want the bind", got)
 			}
 			if rep.Query == nil || *rep.Query != (report.Query{BaseDN: "dc=x", Filter: "(cn=a)"}) {
@@ -573,7 +572,7 @@ func TestServe_BindRecorded_WhenTheAnswerCannotBeWritten(t *testing.T) {
 	s := start(t, clk)
 	ldap.New(clk).Serve(t.Context(), conn, s)
 	s.End()
-	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=admin", 2}}) {
+	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=admin", "pw"}}) {
 		t.Errorf("logins = %+v, want the bind", got)
 	}
 	if len(conn.Written()) != 0 {
@@ -590,7 +589,7 @@ func TestServe_AnswerThatCannotBeWritten_EndsTheSession(t *testing.T) {
 	s := start(t, clk)
 	ldap.New(clk).Serve(t.Context(), conn, s)
 	s.End()
-	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=a", 2}}) {
+	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=a", "pw"}}) {
 		t.Errorf("logins = %+v, want only the bind whose answer failed", got)
 	}
 }
@@ -713,7 +712,7 @@ func TestServe_Dialog_WithAClientThatWaitsForTheAnswers(t *testing.T) {
 	}
 	_ = client.Close()
 	<-done
-	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=admin", 7}}) {
+	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"cn=admin", "hunter2"}}) {
 		t.Errorf("logins = %+v, want the failed bind", got)
 	}
 }

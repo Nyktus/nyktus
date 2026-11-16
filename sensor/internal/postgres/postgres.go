@@ -2,29 +2,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package postgres emulates the login of a PostgreSQL server: it reads the
-// startup message of a client, plays the start of a SCRAM exchange and refuses
-// the proof, as a server does that has no such user.
+// startup message of a client, asks for the password in clear text, as a server
+// does whose pg_hba.conf says "password", and refuses it.
 //
 // It offers nothing behind the login. There is no session, no query and no SQL:
 // the connection ends with the refusal. What the client sent is read, counted
-// and recorded in the session. SCRAM never shows a password, so none is seen,
-// and the proof of the client is dropped unread.
+// and recorded in the session, the password included. A server that asks for
+// SCRAM never sees a password, so this one asks in clear text.
 package postgres
 
 import (
 	"bufio"
 	"context"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"io"
 	"log/slog"
 	"net"
-	"strings"
 
 	"nyktus.org/nyktus/sensor/internal/clock"
 	"nyktus.org/nyktus/sensor/internal/guard"
@@ -42,20 +37,14 @@ const (
 	// message: a request for TLS and one for GSSAPI encryption, as libpq sends
 	// one after the other.
 	maxPackets = 3
-	// maxSASL is the longest message of the SCRAM exchange that is read.
-	maxSASL = 2048
-	// maxNonce is the longest nonce of a client that is sent back.
-	maxNonce = 256
+	// maxPasswordMessage is the longest message with a password that is read.
+	// A longer one ends the session, and the login is recorded without it.
+	maxPasswordMessage = 2048
 )
 
-// What a server of PostgreSQL 16 sends in a SCRAM exchange.
-const (
-	mechanism     = "SCRAM-SHA-256"
-	mechanismPlus = "SCRAM-SHA-256-PLUS"
-	saltBytes     = 16
-	nonceBytes    = 18
-	iterations    = "4096"
-)
+// authenticationCleartextPassword is the code of the request for a password in
+// clear text.
+const authenticationCleartextPassword = 3
 
 // Codes of the first packet of a client. A code below 0x10000 does not exist;
 // the high half of the others is the major version of the protocol.
@@ -99,9 +88,6 @@ func (Certificate) MarshalText() ([]byte, error) { return []byte(redacted), nil 
 type Service struct {
 	clock clock.Clock
 	tls   *tls.Config
-	// saltKey makes the salt of a user the same on every attempt, as a real
-	// server's is, without any list of users.
-	saltKey []byte
 }
 
 // New returns a PostgreSQL honeypot. It panics if clk is nil.
@@ -109,8 +95,7 @@ func New(cfg Config, clk clock.Clock) *Service {
 	if clk == nil {
 		panic("postgres: missing clock")
 	}
-	s := &Service{clock: clk, saltKey: make([]byte, sha256.Size)}
-	_, _ = rand.Read(s.saltKey)
+	s := &Service{clock: clk}
 	if cfg.Certificate != nil {
 		s.tls = &tls.Config{Certificates: []tls.Certificate{cfg.Certificate.Certificate}, MinVersion: tls.VersionTLS12}
 	}
@@ -145,26 +130,22 @@ func (s *Service) Serve(ctx context.Context, conn net.Conn, sess *session.Sessio
 	attempt := report.Attempt{Username: report.Clean(st.user, report.MaxUsername)}
 	defer func() { sess.AddAttempt(attempt) }()
 
-	s.exchange(c, attempt.Username)
+	s.exchange(c, &attempt)
 }
 
-// exchange plays SCRAM as far as a server can without knowing the password. A
-// server that has no such user answers just the same, up to the refusal.
-func (s *Service) exchange(c *stream, user string) {
-	if write(c, authenticationSASL(c.encrypted)) != nil {
+// exchange asks for the password and refuses it, as a server does that has no
+// such user. The login is recorded once the user is known, so a password that
+// does not arrive in full leaves a login without one.
+func (s *Service) exchange(c *stream, attempt *report.Attempt) {
+	if write(c, message('R', binary.BigEndian.AppendUint32(nil, authenticationCleartextPassword))) != nil {
 		return
 	}
-	nonce, ok := readClientFirst(c.r)
+	password, ok := readPassword(c.r)
 	if !ok {
 		return
 	}
-	if write(c, s.serverFirst(user, nonce)) != nil {
-		return
-	}
-	if !readMessage(c.r) {
-		return
-	}
-	_ = write(c, errorResponse(user))
+	attempt.Password = &password
+	_ = write(c, errorResponse(attempt.Username))
 }
 
 // negotiate answers the requests for encryption and reads the startup message.
@@ -266,88 +247,32 @@ func cutString(b []byte) (s string, rest []byte, ok bool) {
 	return "", nil, false
 }
 
-// readSASL reads one message of the exchange. The length in its header is
-// checked before anything is allocated.
-func readSASL(r *bufio.Reader) ([]byte, bool) {
+// readPassword reads the message with the password: its type, its length, which
+// is checked before anything is allocated, and the password with its end. The
+// password is cut to the limit of the report; a message without the end of the
+// string is no password.
+func readPassword(r *bufio.Reader) (string, bool) {
 	typ, err := r.ReadByte()
 	if err != nil || typ != 'p' {
-		return nil, false
+		return "", false
 	}
 	var head [4]byte
 	if _, err := io.ReadFull(r, head[:]); err != nil {
-		return nil, false
+		return "", false
 	}
 	n := binary.BigEndian.Uint32(head[:])
-	if n < 4 || n-4 > maxSASL {
-		return nil, false
+	if n < 5 || n-4 > maxPasswordMessage {
+		return "", false
 	}
 	buf := make([]byte, n-4)
 	if _, err := io.ReadFull(r, buf); err != nil {
-		return nil, false
+		return "", false
 	}
-	return buf, true
-}
-
-// readMessage reads the last message of the client, whose proof nothing could
-// check, and drops it.
-func readMessage(r *bufio.Reader) bool {
-	_, ok := readSASL(r)
-	return ok
-}
-
-// readClientFirst reads the first message of the exchange and returns the nonce
-// of the client: the mechanism, the length of the rest, and a text like
-// "n,,n=,r=nonce". The nonce is sent back, as the protocol requires, so only a
-// short one of printable characters passes.
-func readClientFirst(r *bufio.Reader) (string, bool) {
-	body, ok := readSASL(r)
+	password, _, ok := cutString(buf)
 	if !ok {
 		return "", false
 	}
-	name, rest, ok := cutString(body)
-	if !ok || (name != mechanism && name != mechanismPlus) || len(rest) < 4 {
-		return "", false
-	}
-	if int64(binary.BigEndian.Uint32(rest)) != int64(len(rest)-4) {
-		return "", false
-	}
-	fields := strings.Split(string(rest[4:]), ",")
-	if len(fields) < 4 || !strings.HasPrefix(fields[3], "r=") {
-		return "", false
-	}
-	nonce := fields[3][2:]
-	if nonce == "" || len(nonce) > maxNonce {
-		return "", false
-	}
-	for i := range len(nonce) {
-		if nonce[i] < 0x21 || nonce[i] > 0x7e {
-			return "", false
-		}
-	}
-	return nonce, true
-}
-
-// authenticationSASL offers the mechanisms of a server. Channel binding exists
-// only on TLS.
-func authenticationSASL(encrypted bool) []byte {
-	body := binary.BigEndian.AppendUint32(nil, 10)
-	if encrypted {
-		body = append(append(body, mechanismPlus...), 0)
-	}
-	body = append(append(body, mechanism...), 0, 0)
-	return message('R', body)
-}
-
-// serverFirst is the challenge of the server: the nonce of the client with one
-// of its own, the salt of the user and the iterations.
-func (s *Service) serverFirst(user, nonce string) []byte {
-	own := make([]byte, nonceBytes)
-	_, _ = rand.Read(own)
-	mac := hmac.New(sha256.New, s.saltKey)
-	_, _ = mac.Write([]byte(user))
-	salt := mac.Sum(nil)[:saltBytes]
-	text := "r=" + nonce + base64.StdEncoding.EncodeToString(own) + ",s=" + base64.StdEncoding.EncodeToString(salt) + ",i=" + iterations
-	return message('R', append(binary.BigEndian.AppendUint32(nil, 11), text...))
+	return report.Clean(password, report.MaxPassword), true
 }
 
 // errorResponse is the refusal of a server for a wrong password. The message

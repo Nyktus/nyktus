@@ -9,8 +9,9 @@
 // channel, a shell, a command, a forwarded port or a subsystem: the library
 // ends the connection when the authentication fails, and no callback returns
 // anything but a refusal. What the client sent is read, counted and recorded in
-// the session. A password is not kept: only its length. A key is not kept
-// either: only its fingerprint.
+// the session. A password is kept as the client sent it, because a login that
+// is refused leaves nothing else to learn from it. A key is not kept: only its
+// fingerprint.
 package ssh
 
 import (
@@ -139,8 +140,8 @@ type recorder struct {
 }
 
 func (r *recorder) password(m cryptossh.ConnMetadata, password []byte) (*cryptossh.Permissions, error) {
-	n := len(password)
-	r.sess.AddAttempt(report.Attempt{Username: report.Clean(m.User(), report.MaxUsername), PasswordLength: &n})
+	p := report.Clean(string(password), report.MaxPassword)
+	r.sess.AddAttempt(report.Attempt{Username: report.Clean(m.User(), report.MaxUsername), Password: &p})
 	return nil, errRefused
 }
 

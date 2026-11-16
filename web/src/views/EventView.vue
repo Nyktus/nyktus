@@ -183,14 +183,17 @@ onMounted(load);
             <thead>
               <tr>
                 <th scope="col">{{ t('event.username') }}</th>
-                <th scope="col">{{ t('event.passwordLength') }}</th>
+                <th scope="col">{{ t('event.password') }}</th>
                 <th scope="col">{{ t('event.keyFingerprint') }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(attempt, index) in event.sensor.attempts" :key="index">
                 <td><UntrustedText :value="attempt.username" /></td>
-                <td>{{ attempt.password_length === null ? t('common.none') : t('event.characters', { count: attempt.password_length }) }}</td>
+                <td>
+                  <template v-if="attempt.password === null && attempt.password_length !== null">{{ t('event.characters', { count: attempt.password_length }) }}</template>
+                  <UntrustedText v-else :value="attempt.password" />
+                </td>
                 <td><UntrustedText :value="attempt.key_fingerprint" /></td>
               </tr>
             </tbody>

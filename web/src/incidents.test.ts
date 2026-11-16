@@ -713,7 +713,7 @@ describe('an event', () => {
     expect(text).toContain('udp');
   });
 
-  test('shows a session of a honeypot with its attempts and no password', async () => {
+  test('shows a session of a honeypot with its attempts and the passwords that were sent', async () => {
     const e = sensorEvent();
     const { wrapper } = await boot(one(e), at(e.id));
     const text = wrapper.text();
@@ -722,13 +722,14 @@ describe('an event', () => {
     expect(text).toContain('SSH-2.0-libssh_0.9');
     expect(text).toContain('4.2 s');
     const rows = wrapper.findAll('.table tbody tr');
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows[0]?.text()).toContain('root');
-    expect(rows[0]?.text()).toContain('8 characters');
     expect(rows[1]?.text()).toContain('admin');
     expect(rows[1]?.text()).toContain('SHA256:abc');
-    expect(rows[0]?.findAll('td')[1]?.text()).toBe('8 characters');
+    expect(rows[0]?.findAll('td')[1]?.text()).toBe('hunter2');
     expect(rows[1]?.findAll('td')[1]?.text()).toBe('None');
+    // A sensor of an older version sent the length only.
+    expect(rows[2]?.findAll('td')[1]?.text()).toBe('8 characters');
   });
 
   test('shows the database, the application and the search of a session', async () => {
@@ -824,7 +825,8 @@ describe('an event', () => {
   test.each([
     ['the user agent', event({ http: { method: 'GET', user_agent: '<script>alert(1)</script>', referer: '', accept_language: '', body_excerpt: '' } })],
     ['the body of a POST request', event({ http: { method: 'POST', user_agent: '', referer: '', accept_language: '', body_excerpt: '<script>alert(1)</script>' } })],
-    ['a user name', sensorEvent({ sensor: { ...sensorEvent().sensor!, attempts: [{ username: '<script>alert(1)</script>', password_length: null, key_fingerprint: null }] } })],
+    ['a user name', sensorEvent({ sensor: { ...sensorEvent().sensor!, attempts: [{ username: '<script>alert(1)</script>', password: null, password_length: null, key_fingerprint: null }] } })],
+    ['a password', sensorEvent({ sensor: { ...sensorEvent().sensor!, attempts: [{ username: 'root', password: '<script>alert(1)</script>', password_length: null, key_fingerprint: null }] } })],
     ['the search filter', sensorEvent({ sensor: { ...sensorEvent().sensor!, query: { base_dn: '<script>alert(1)</script>', filter: '<script>alert(1)</script>' } } })],
     ['the name of a tool', sensorEvent({ sensor: { ...sensorEvent().sensor!, service: 'mcp', event_type: 'tool_call', attempts: [], tool_calls: [{ tool_name: '<script>alert(1)</script>', arguments_excerpt: '{}' }] } })],
     ['the arguments of a tool', sensorEvent({ sensor: { ...sensorEvent().sensor!, service: 'mcp', event_type: 'tool_call', attempts: [], tool_calls: [{ tool_name: 't', arguments_excerpt: '<script>alert(1)</script>' }] } })],

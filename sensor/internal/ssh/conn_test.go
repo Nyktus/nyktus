@@ -274,7 +274,7 @@ func TestRecorder_Other_RecordsAMethodThatIsNotOfferedAsALoginWithoutAPassword(t
 			}
 			if tt.want == 1 {
 				rep, _ := s.Report(0)
-				if a := rep.Attempts[0]; a.Username != "root" || a.PasswordLength != nil || a.KeyFingerprint != "" {
+				if a := rep.Attempts[0]; a.Username != "root" || a.Password != nil || a.KeyFingerprint != "" {
 					t.Errorf("attempt = %+v, want the user name only", a)
 				}
 			}
