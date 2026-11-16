@@ -20,6 +20,7 @@ const (
 	goldenEntry    = "../../sensor/internal/config/testdata/console_entry.yaml"
 	goldenSSHEntry = "../../sensor/internal/config/testdata/console_entry_ssh.yaml"
 	goldenMCPEntry = "../../sensor/internal/config/testdata/console_entry_mcp.yaml"
+	goldenTCPEntry = "../../sensor/internal/config/testdata/console_entry_tcp.yaml"
 )
 
 func TestCreated_SensorConfig_IsTheEntryThatTheSensorReads(t *testing.T) {
@@ -106,6 +107,10 @@ func TestCreated_SensorConfig_NamesTheUsualPortOfEveryService(t *testing.T) {
 		honeypot.ServiceMCP:      ":8080",
 	}
 	for _, service := range honeypot.Services {
+		if service == honeypot.ServiceTCP {
+			// A port without a protocol has no usual port, see its own test.
+			continue
+		}
 		if _, ok := want[service]; !ok {
 			t.Fatalf("service %s is missing in the table of the test", service)
 		}
@@ -172,5 +177,24 @@ func TestCreated_SensorConfig_MCP_IsTheEntryThatTheSensorReads(t *testing.T) {
 	}
 	if got := c.SensorConfig(); got != string(want) {
 		t.Errorf("SensorConfig() = %q, want the content of %s: %q", got, goldenMCPEntry, want)
+	}
+}
+
+// The entry of a tcp honeypot has an empty address: a port that is the same in
+// every installation would identify the honeypot, so the sensor refuses it until
+// the operator has named the ports.
+func TestCreated_SensorConfig_TCP_IsTheEntryThatTheSensorReads(t *testing.T) {
+	t.Parallel()
+
+	want, err := os.ReadFile(goldenTCPEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := honeypot.Created{
+		Honeypot: honeypot.Honeypot{ID: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d", Service: honeypot.ServiceTCP, Name: "Jump host", Notes: "rack 4"},
+		Secret:   honeypot.Secret(strings.Repeat("A", 43)),
+	}
+	if got := c.SensorConfig(); got != string(want) {
+		t.Errorf("SensorConfig() = %q, want the content of %s: %q", got, goldenTCPEntry, want)
 	}
 }

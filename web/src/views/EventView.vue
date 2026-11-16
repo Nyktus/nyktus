@@ -27,6 +27,10 @@ const error = ref<string | undefined>();
 
 const names = useResourceNames();
 
+// An MCP honeypot records tool calls and a tcp honeypot only the connection, so
+// a table of logins would always be empty there.
+const hasLogins = (service: string) => service !== 'mcp' && service !== 'tcp';
+
 async function load(): Promise<void> {
   try {
     const loaded = (await api.call('getEvent', { path: { id: id.value } })).body;
@@ -172,9 +176,9 @@ onMounted(load);
           </div>
         </template>
 
-        <h3 v-if="event.sensor.service !== 'mcp'">{{ t('event.attempts') }}</h3>
-        <p v-if="event.sensor.service !== 'mcp' && event.sensor.attempts.length === 0">{{ t('common.none') }}</p>
-        <div v-else-if="event.sensor.service !== 'mcp'" class="table-wrap">
+        <h3 v-if="hasLogins(event.sensor.service)">{{ t('event.attempts') }}</h3>
+        <p v-if="hasLogins(event.sensor.service) && event.sensor.attempts.length === 0">{{ t('common.none') }}</p>
+        <div v-else-if="hasLogins(event.sensor.service)" class="table-wrap">
           <table class="table">
             <thead>
               <tr>

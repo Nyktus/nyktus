@@ -65,7 +65,7 @@ func TestLogStats_ServiceFailure_NamesTheFailureAndItsPlace(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(&logged, nil))
 	hp := &session.Honeypot{ID: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d", Service: "telnet", Secret: "x"}
 	rep := reporter.New(reporter.Options{URL: "http://127.0.0.1:1/", Clock: clk, Logger: logger})
-	logStats(t.Context(), logger, rep, []bound{{hp: hp, server: server}})
+	logStats(t.Context(), logger, rep, []bound{{hp: hp, servers: []*listener.Server{server}}})
 
 	out := logged.String()
 	for _, want := range []string{"sensor: sessions ended by a failure of the service", `"honeypot_id":"` + hp.ID + `"`, `"sessions":1`, "integer divide by zero", "stats_test.go"} {

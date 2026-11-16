@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -15,14 +16,17 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	"nyktus.org/nyktus/sensor/internal/clock/clocktest"
 	"nyktus.org/nyktus/sensor/internal/config"
+	"nyktus.org/nyktus/sensor/internal/listener"
 	"nyktus.org/nyktus/sensor/internal/report"
 	"nyktus.org/nyktus/sensor/internal/sensor"
 )
@@ -106,10 +110,13 @@ func (tr *trigger) next(t *testing.T) received {
 
 // running is a sensor in the process.
 type running struct {
-	t      *testing.T
-	clock  *clocktest.Fake
-	logs   *syncBuffer
+	t     *testing.T
+	clock *clocktest.Fake
+	logs  *syncBuffer
+	// addrs is the first address of each honeypot, and all of them in the order
+	// of the configuration.
 	addrs  map[string]net.Addr
+	all    map[string][]net.Addr
 	cancel context.CancelFunc
 	// finished is closed when Run has returned, with its error in err.
 	finished chan struct{}
@@ -134,13 +141,16 @@ const oneHoneypot = "  - id: " + idOne + "\n    service: telnet\n    listen: \"1
 
 func start(t *testing.T, cfg *config.Config, tweak func(*sensor.Options)) *running {
 	t.Helper()
-	r := &running{t: t, clock: clocktest.New(), logs: &syncBuffer{}, addrs: map[string]net.Addr{}, finished: make(chan struct{})}
+	r := &running{t: t, clock: clocktest.New(), logs: &syncBuffer{}, addrs: map[string]net.Addr{}, all: map[string][]net.Addr{}, finished: make(chan struct{})}
 	// The configuration names ports, which it must, and the test takes free ones.
+	listeners := 0
 	for i := range cfg.Honeypots {
-		cfg.Honeypots[i].Listen = "127.0.0.1:0"
+		n := max(len(cfg.Honeypots[i].Listen), 1)
+		cfg.Honeypots[i].Listen = slices.Repeat(config.Listen{"127.0.0.1:0"}, n)
+		listeners += n
 	}
 	var mu sync.Mutex
-	listening := make(chan struct{}, len(cfg.Honeypots))
+	listening := make(chan struct{}, listeners)
 	opts := sensor.Options{
 		Config:  cfg,
 		Version: "0.1.0",
@@ -148,7 +158,10 @@ func start(t *testing.T, cfg *config.Config, tweak func(*sensor.Options)) *runni
 		Clock:   r.clock,
 		Listening: func(id string, addr net.Addr) {
 			mu.Lock()
-			r.addrs[id] = addr
+			if _, ok := r.addrs[id]; !ok {
+				r.addrs[id] = addr
+			}
+			r.all[id] = append(r.all[id], addr)
 			mu.Unlock()
 			listening <- struct{}{}
 		},
@@ -162,7 +175,7 @@ func start(t *testing.T, cfg *config.Config, tweak func(*sensor.Options)) *runni
 		r.err = sensor.Run(ctx, opts)
 		close(r.finished)
 	}()
-	for range cfg.Honeypots {
+	for range listeners {
 		select {
 		case <-listening:
 		case <-r.finished:
@@ -520,4 +533,109 @@ func TestRun_MissingDependencies_Panic(t *testing.T) {
 		}
 	}()
 	_ = sensor.Run(t.Context(), sensor.Options{})
+}
+
+// One tcp honeypot listens on all its addresses with one secret and one
+// heartbeat, and each session names the port that was reached.
+func TestRun_TCPHoneypotWithSeveralPorts_ReportsThePortOfEachSession(t *testing.T) {
+	t.Parallel()
+
+	tr := newTrigger(t, false)
+	entry := "  - id: " + idOne + "\n    service: tcp\n    listen: [\":3389\", \":445\", \":1433\"]\n    secret: " + secretOne + "\n    banner: \"hello\\r\\n\"\n"
+	r := start(t, parse(t, tr.URL, entry), nil)
+
+	if hb := tr.next(t); string(hb.body) != `{"version":2,"type":"heartbeat","sensor_version":"0.1.0"}` {
+		t.Errorf("first report = %s, want the heartbeat", hb.body)
+	}
+	addrs := r.all[idOne]
+	if len(addrs) != 3 {
+		t.Fatalf("%d addresses listening, want 3", len(addrs))
+	}
+	ports := map[string]bool{}
+	for _, a := range addrs {
+		ports[strconv.Itoa(a.(*net.TCPAddr).Port)] = true
+	}
+	if len(ports) != 3 {
+		t.Fatalf("ports = %v, want three different ones", ports)
+	}
+
+	for i, a := range addrs {
+		c := connect(t, a.String())
+		c.until(t, "hello\r\n")
+		c.send(t, "GET / HTTP/1.1\r\nAuthorization: Basic bWFsbG9yeTpodW50ZXIy\r\n\r\n")
+		_ = c.conn.Close()
+		rc := tr.next(t)
+		s := decodeSession(t, rc)
+		if rc.authorization != "Bearer "+secretOne || s.Type != "session" || strconv.Itoa(s.Port) != strconv.Itoa(a.(*net.TCPAddr).Port) || len(s.Attempts) != 0 {
+			t.Errorf("address %d: report = %+v (%s), want a session that only connected, to port %s", i, s, rc.authorization, a)
+		}
+		if strings.Contains(string(rc.body), "bWFsbG9yeT") || strings.Contains(string(rc.body), "GET") {
+			t.Errorf("address %d: report %s holds what the client sent", i, rc.body)
+		}
+	}
+	if err := r.stop(); err != nil {
+		t.Errorf("Run() = %v", err)
+	}
+	if got := strings.Count(r.logs.String(), "sensor: honeypot listening"); got != 3 {
+		t.Errorf("%d honeypot listening records, want one for each address", got)
+	}
+}
+
+// A honeypot that cannot bind one of its addresses stops the sensor, and the
+// addresses that it had bound are free again.
+func TestRun_TCPHoneypotWhoseSecondPortIsTaken_FailsAndLeavesNothingBound(t *testing.T) {
+	t.Parallel()
+
+	busy, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = busy.Close() })
+	free, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	freeAddr := free.Addr().String()
+	_ = free.Close()
+
+	tr := newTrigger(t, false)
+	cfg := parse(t, tr.URL, "  - id: "+idOne+"\n    service: tcp\n    listen: [\"127.0.0.1:1\", \"127.0.0.1:2\"]\n    secret: "+secretOne+"\n")
+	cfg.Honeypots[0].Listen = config.Listen{freeAddr, busy.Addr().String()}
+	err = sensor.Run(t.Context(), sensor.Options{Config: cfg, Version: "0.1.0", Logger: slog.New(slog.DiscardHandler), Clock: clocktest.New()})
+	if err == nil || !strings.Contains(err.Error(), "honeypot "+idOne) {
+		t.Fatalf("Run() = %v, want the honeypot that failed to bind", err)
+	}
+	again, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", freeAddr)
+	if err != nil {
+		t.Fatalf("the first address stays bound after the failure: %v", err)
+	}
+	_ = again.Close()
+}
+
+// The addresses of one honeypot share its limits: a source that holds the
+// connections it may have to one port is refused on the others.
+func TestRun_TCPHoneypotWithSeveralPorts_SharesItsLimitsBetweenThem(t *testing.T) {
+	t.Parallel()
+
+	tr := newTrigger(t, false)
+	entry := "  - id: " + idOne + "\n    service: tcp\n    listen: [\":3389\", \":445\"]\n    secret: " + secretOne + "\n"
+	r := start(t, parse(t, tr.URL, entry), nil)
+
+	addrs := r.all[idOne]
+	for range listener.MaxPerSource {
+		connect(t, addrs[0].String())
+	}
+	// The sensor admits the connections one after the other, so the ninth on
+	// the other port is refused once the first eight are counted.
+	refused := false
+	for end := time.Now().Add(deadline); !refused && time.Now().Before(end); {
+		c := connect(t, addrs[1].String())
+		_ = c.conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		_, err := c.r.ReadByte()
+		refused = errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET)
+		_ = c.conn.Close()
+	}
+	if !refused {
+		t.Error("a ninth connection of the source to the second port was served, want it refused")
+	}
 }

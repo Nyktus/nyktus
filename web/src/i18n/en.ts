@@ -221,11 +221,13 @@ export const en = {
   'honeypotService.postgres': 'PostgreSQL',
   'honeypotService.ldap': 'LDAP',
   'honeypotService.mcp': 'MCP',
+  'honeypotService.tcp': 'TCP port',
   'honeypotService.ssh.hint': 'Emulates an SSH server.',
   'honeypotService.telnet.hint': 'Emulates a Telnet login, as on network devices and old servers.',
   'honeypotService.postgres.hint': 'Emulates a PostgreSQL server.',
   'honeypotService.ldap.hint': 'Emulates a directory service, such as Active Directory or OpenLDAP.',
   'honeypotService.mcp.hint': 'Emulates an MCP server, through which AI agents call tools.',
+  'honeypotService.tcp.hint': 'Listens on one or more ports without speaking a protocol. Records every connection, never what is sent.',
 
   'honeypotStatus.never': 'No report',
   'honeypotStatus.online': 'Online',

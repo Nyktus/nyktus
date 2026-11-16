@@ -788,6 +788,15 @@ describe('an event', () => {
     expect(summary.find('bdi.untrusted').text()).toBe('get_page');
   });
 
+  test('shows the port of a session of a tcp honeypot and neither logins nor tool calls', async () => {
+    const e = sensorEvent({ sensor: { ...sensorEvent().sensor!, service: 'tcp', event_type: 'connection', port: 3389, attempts: [], tool_calls: [] } });
+    const { wrapper } = await boot(one(e), at(e.id));
+    expect(wrapper.text()).toContain('3389');
+    expect(wrapper.text()).not.toContain('Login attempts');
+    expect(wrapper.text()).not.toContain('Tool calls');
+    expect(wrapper.find('.table').exists()).toBe(false);
+  });
+
   test('says that an MCP session called no tool', async () => {
     const e = sensorEvent({ sensor: { ...sensorEvent().sensor!, service: 'mcp', event_type: 'connection', attempts: [], tool_calls: [] } });
     const { wrapper } = await boot(one(e), at(e.id));

@@ -1248,7 +1248,7 @@ CREATE TABLE public.honeypots (
 	-- Set by the trigger below on insert, as for accounts.
 	updated_at     timestamptz NOT NULL,
 
-	CONSTRAINT honeypots_service_check CHECK (service IN ('ssh', 'telnet', 'postgres', 'ldap', 'mcp')),
+	CONSTRAINT honeypots_service_check CHECK (service IN ('ssh', 'telnet', 'postgres', 'ldap', 'mcp', 'tcp')),
 	CONSTRAINT honeypots_name_check CHECK (
 		char_length(name) BETWEEN 1 AND 100
 		AND name = btrim(name)
@@ -1557,9 +1557,11 @@ CREATE TABLE public.events (
 			AND (sensor_client_version IS NULL OR sensor_service IN ('ssh', 'mcp'))
 			AND (sensor_event_type <> 'tool_call' OR sensor_service = 'mcp')
 			AND (sensor_service <> 'mcp' OR sensor_event_type IN ('connection', 'tool_call'))
+			-- A port without a protocol has no login to record.
+			AND (sensor_service <> 'tcp' OR sensor_event_type = 'connection')
 		)
 	),
-	CONSTRAINT events_sensor_service_check CHECK (sensor_service IN ('ssh', 'telnet', 'postgres', 'ldap', 'mcp')),
+	CONSTRAINT events_sensor_service_check CHECK (sensor_service IN ('ssh', 'telnet', 'postgres', 'ldap', 'mcp', 'tcp')),
 	CONSTRAINT events_sensor_event_type_check CHECK (
 		sensor_event_type IN ('connection', 'login_attempt', 'directory_query', 'tool_call')
 	),
@@ -1897,7 +1899,7 @@ BEGIN
 	kind_techniques := CASE
 		WHEN report_event_type = 'connection' THEN ARRAY['T1046']
 		WHEN report_event_type = 'login_attempt' AND h.service = 'ssh' THEN ARRAY['T1110', 'T1021.004']
-		WHEN report_event_type = 'login_attempt' AND h.service <> 'mcp' THEN ARRAY['T1110']
+		WHEN report_event_type = 'login_attempt' AND h.service NOT IN ('mcp', 'tcp') THEN ARRAY['T1110']
 		WHEN report_event_type = 'directory_query' AND h.service = 'ldap' THEN ARRAY['T1087.002']
 		WHEN report_event_type = 'tool_call' AND h.service = 'mcp' THEN ARRAY['T1213']
 	END;

@@ -24,6 +24,7 @@ import (
 	"nyktus.org/nyktus/sensor/internal/reporter"
 	"nyktus.org/nyktus/sensor/internal/session"
 	"nyktus.org/nyktus/sensor/internal/ssh"
+	"nyktus.org/nyktus/sensor/internal/tcp"
 	"nyktus.org/nyktus/sensor/internal/telnet"
 )
 
@@ -49,8 +50,8 @@ type Options struct {
 	// DrainTimeout and StatsInterval replace the defaults.
 	DrainTimeout  time.Duration
 	StatsInterval time.Duration
-	// Listening, if set, is called for each honeypot with the address it
-	// listens on, before any session is served.
+	// Listening, if set, is called for each address of each honeypot with the
+	// address it listens on, before any session is served.
 	Listening func(honeypotID string, addr net.Addr)
 }
 
@@ -80,6 +81,12 @@ func newService(hp config.Honeypot, clk clock.Clock) service {
 			cfg.LoginPrompt = *hp.LoginPrompt
 		}
 		return telnet.New(cfg, clk)
+	case config.TCP:
+		cfg := tcp.Config{}
+		if hp.Banner != nil {
+			cfg.Banner = *hp.Banner
+		}
+		return tcp.New(cfg, clk)
 	case config.Postgres:
 		return postgres.New(postgres.Config{Certificate: hp.TLSCertificate}, clk)
 	case config.LDAP:
@@ -155,10 +162,11 @@ func addrPort(a net.Addr) (netip.AddrPort, bool) {
 	return tcp.AddrPort(), true
 }
 
-// bound is a honeypot with its listener.
+// bound is a honeypot with its listeners, one for each address it listens on.
+// Each has the limits of a listener of its own.
 type bound struct {
-	hp     *session.Honeypot
-	server *listener.Server
+	hp      *session.Honeypot
+	servers []*listener.Server
 	// mcp is the service of an MCP honeypot, whose sessions end apart from its
 	// connections, or nil.
 	mcp *mcp.Service
@@ -194,11 +202,13 @@ func Run(ctx context.Context, o Options) error {
 	var serving sync.WaitGroup
 	for _, b := range servers {
 		honeypots = append(honeypots, b.hp)
-		o.Logger.InfoContext(ctx, "sensor: honeypot listening", b.hp.Attr(), slog.String("listen", b.server.Addr().String()))
-		if o.Listening != nil {
-			o.Listening(b.hp.ID, b.server.Addr())
+		for _, srv := range b.servers {
+			o.Logger.InfoContext(ctx, "sensor: honeypot listening", b.hp.Attr(), slog.String("listen", srv.Addr().String()))
+			if o.Listening != nil {
+				o.Listening(b.hp.ID, srv.Addr())
+			}
+			serving.Go(func() { srv.Serve(ctx) })
 		}
-		serving.Go(func() { b.server.Serve(ctx) })
 	}
 	var background sync.WaitGroup
 	for _, b := range servers {
@@ -233,7 +243,7 @@ func Run(ctx context.Context, o Options) error {
 	return nil
 }
 
-// bind opens the listener of every honeypot, or none.
+// bind opens the listeners of every honeypot, or none.
 func bind(ctx context.Context, o Options, rep *reporter.Reporter) ([]bound, error) {
 	var (
 		lc      net.ListenConfig
@@ -241,13 +251,8 @@ func bind(ctx context.Context, o Options, rep *reporter.Reporter) ([]bound, erro
 	)
 	for _, c := range o.Config.Honeypots {
 		hp := &session.Honeypot{ID: c.ID, Service: string(c.Service), Secret: c.Secret}
-		ln, err := lc.Listen(ctx, c.Network(), c.Listen)
-		if err != nil {
-			for _, b := range servers {
-				_ = b.server.Close()
-			}
-			return nil, fmt.Errorf("honeypot %s: %w", c.ID, err)
-		}
+		// One handler serves every address of the honeypot: a session takes its
+		// port from the connection, so the report names the port that was hit.
 		var (
 			handler listener.Handler
 			service *mcp.Service
@@ -258,13 +263,30 @@ func bind(ctx context.Context, o Options, rep *reporter.Reporter) ([]bound, erro
 		} else {
 			handler = &honeypot{hp: hp, service: newService(c, o.Clock), clock: o.Clock, reporter: rep, logger: o.Logger}
 		}
-		servers = append(servers, bound{hp: hp, mcp: service, server: listener.New(listener.Options{
-			Listener: ln,
-			Clock:    o.Clock,
-			Handler:  handler,
-		})})
+		// The addresses of a honeypot share its limits: a source that sweeps the
+		// ports holds no more connections than it would on one.
+		b := bound{hp: hp, mcp: service}
+		limits := listener.NewLimits(0, 0)
+		for _, addr := range c.Listen {
+			ln, err := lc.Listen(ctx, config.Network(addr), addr)
+			if err != nil {
+				closeAll(append(servers, b))
+				return nil, fmt.Errorf("honeypot %s: %w", c.ID, err)
+			}
+			b.servers = append(b.servers, listener.New(listener.Options{Listener: ln, Clock: o.Clock, Handler: handler, Limits: limits}))
+		}
+		servers = append(servers, b)
 	}
 	return servers, nil
+}
+
+// closeAll closes the listeners of honeypots that were bound but not started.
+func closeAll(bounds []bound) {
+	for _, b := range bounds {
+		for _, s := range b.servers {
+			_ = s.Close()
+		}
+	}
 }
 
 // logStats writes what the sensor turned away or lost since the last call. An
@@ -283,7 +305,12 @@ func logStats(ctx context.Context, logger *slog.Logger, rep *reporter.Reporter, 
 				logger.WarnContext(ctx, "sensor: requests not recorded, too many sessions", b.hp.Attr(), slog.Int("requests", n))
 			}
 		}
-		st := b.server.TakeStats()
+		// The addresses of one honeypot are summed, so that a scan of all of them
+		// is one record and not one for each.
+		var st listener.Stats
+		for _, srv := range b.servers {
+			st.Add(srv.TakeStats())
+		}
 		if st.RefusedTotal+st.RefusedSource > 0 {
 			logger.WarnContext(ctx, "sensor: connections refused", b.hp.Attr(),
 				slog.Int("too_many", st.RefusedTotal), slog.Int("too_many_from_source", st.RefusedSource))

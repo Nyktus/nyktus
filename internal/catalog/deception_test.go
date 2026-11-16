@@ -205,7 +205,7 @@ func TestLoad_RejectsInvalidDeceptions(t *testing.T) {
 		{"honeytoken severity info", edit(t, sampleJSON, `"severity": "high"`, `"severity": "info"`), "severity"},
 		{"honeytoken label too long", edit(t, sampleJSON, `"label": {"en": "Link", "de": "Link"}`, `"label": {"en": "`+strings.Repeat("x", 61)+`", "de": "Link"}`), "label"},
 		{"honeytoken label that is no name", edit(t, sampleJSON, `"label": {"en": "Link", "de": "Link"}`, `"label": {"en": "Link", "de": "Li\u0007nk"}`), "label"},
-		{"unknown honeypot service", edit(t, sampleJSON, `"service": "postgres"`, `"service": "tcp"`), "unknown service"},
+		{"unknown honeypot service", edit(t, sampleJSON, `"service": "postgres"`, `"service": "ftp"`), "unknown service"},
 		{"honeypot label empty", edit(t, sampleJSON, `"label": {"en": "Database", "de": "Datenbank"}`, `"label": {"en": "", "de": "Datenbank"}`), "label"},
 		{"file with a path as its name", edit(t, sampleJSON, `"name": "config.ini"`, `"name": "../config.ini"`), "name that every system accepts"},
 		{"file named like a device of Windows", edit(t, sampleJSON, `"name": "config.ini"`, `"name": "Aux.txt"`), "name that every system accepts"},

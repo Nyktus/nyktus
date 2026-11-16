@@ -32,9 +32,14 @@ import (
 
 // Limits of the file and of its fields.
 const (
-	maxFileSize    = 1 << 20
-	maxSecretFile  = 256
-	maxHoneypots   = 32
+	maxFileSize   = 1 << 20
+	maxSecretFile = 256
+	maxHoneypots  = 32
+	// maxListen is the number of addresses of a honeypot that listens on
+	// several, and maxListeners the number of all addresses of a sensor, each of
+	// which holds a socket and its own limits.
+	maxListen      = 32
+	maxListeners   = 256
 	maxBanner      = 256
 	maxLoginPrompt = 64
 	maxHostKeyFile = 8 << 10
@@ -66,6 +71,7 @@ const (
 	Postgres Service = "postgres"
 	LDAP     Service = "ldap"
 	MCP      Service = "mcp"
+	TCP      Service = "tcp"
 )
 
 // Config is the configuration of the sensor.
@@ -77,22 +83,49 @@ type Config struct {
 	Honeypots  []Honeypot `yaml:"honeypots"`
 }
 
-// Honeypot is one service on one listener.
+// Listen is the address or the addresses of a honeypot. The file holds one
+// address as text and several as a list.
+type Listen []string
+
+// UnmarshalYAML reads an address or a list of addresses.
+func (l *Listen) UnmarshalYAML(n *yaml.Node) error {
+	switch n.Kind {
+	case yaml.ScalarNode:
+		var s string
+		if err := n.Decode(&s); err != nil {
+			return err
+		}
+		*l = Listen{s}
+	case yaml.SequenceNode:
+		var list []string
+		if err := n.Decode(&list); err != nil {
+			return err
+		}
+		*l = list
+	default:
+		return errors.New("must be an address or a list of addresses")
+	}
+	return nil
+}
+
+// Honeypot is one service on one or more listeners.
 type Honeypot struct {
 	// ID is the identifier of the honeypot in the console. The sensor logs it
 	// and sends nothing else with a report to name the honeypot.
 	ID      string  `yaml:"id"`
 	Service Service `yaml:"service"`
-	// Listen is the address to listen on, such as ":23" or "127.0.0.1:2323".
-	Listen string `yaml:"listen"`
+	// Listen is the address to listen on, such as ":23" or "127.0.0.1:2323". A
+	// tcp honeypot may name several, which share its secret and its status.
+	Listen Listen `yaml:"listen"`
 	// Secret is the secret of the honeypot, from the file itself or from
 	// SecretFile. Exactly one of them is set in the file.
 	Secret     secret.Secret `yaml:"secret"`
 	SecretFile string        `yaml:"secret_file"`
 	// Banner is what the service says first. Nil means the default of the
-	// service. An empty value means no banner, which an SSH server cannot do:
-	// its first words are its identification string. PostgreSQL, LDAP and MCP say
-	// nothing before a client does, so they take none.
+	// service; tcp has none and says nothing before the client does. An empty
+	// value means no banner, which an SSH server cannot do: its first words are
+	// its identification string. PostgreSQL, LDAP and MCP say nothing before a
+	// client does, so they take none.
 	Banner *string `yaml:"banner"`
 	// LoginPrompt is the prompt for the user name; telnet only.
 	LoginPrompt *string `yaml:"login_prompt"`
@@ -376,13 +409,31 @@ func (c *Config) validate() error {
 		}
 		ids[hp.ID] = i
 	}
+	// Every address of every honeypot, in the order of the file, so that a
+	// conflict names the later of the two.
+	type placed struct {
+		addr   listenAddr
+		honey  int
+		listen int
+	}
+	var all []placed
 	for i := range c.Honeypots {
-		a, okA := parseListen(c.Honeypots[i].Listen)
-		for j := range i {
-			if b, okB := parseListen(c.Honeypots[j].Listen); okA && okB && a.overlaps(b) {
-				add("honeypots[%d].listen: conflicts with honeypots[%d].listen", i, j)
+		for k, s := range c.Honeypots[i].Listen {
+			a, ok := parseListen(s)
+			if !ok {
+				continue
 			}
+			for _, b := range all {
+				if a.overlaps(b.addr) {
+					add("honeypots[%d].listen[%d]: conflicts with honeypots[%d].listen[%d]", i, k, b.honey, b.listen)
+					break
+				}
+			}
+			all = append(all, placed{a, i, k})
 		}
+	}
+	if len(all) > maxListeners {
+		add("honeypots: at most %d addresses to listen on in all", maxListeners)
 	}
 	return errors.Join(problems...)
 }
@@ -415,14 +466,26 @@ func (hp *Honeypot) validate() []error {
 		add("id: must be the identifier of the honeypot in the console, a lowercase UUID")
 	}
 	switch hp.Service {
-	case Telnet, SSH, Postgres, LDAP, MCP:
+	case Telnet, SSH, Postgres, LDAP, MCP, TCP:
 	case "":
 		add("service: required")
 	default:
 		add("service: unknown service %q", string(hp.Service))
 	}
-	if err := validateListen(hp.Listen); err != nil {
-		add("listen: %v", err)
+	if n := len(hp.Listen); n == 0 {
+		add("listen: required")
+	} else {
+		if n > maxListen {
+			add("listen: at most %d addresses", maxListen)
+		}
+		if n > 1 && hp.Service != TCP {
+			add("listen: only tcp listens on several addresses")
+		}
+	}
+	for k, l := range hp.Listen {
+		if err := validateListen(l); err != nil {
+			add("listen[%d]: %v", k, err)
+		}
 	}
 	switch {
 	case hp.Secret != "" && hp.SecretFile != "":
@@ -438,7 +501,7 @@ func (hp *Honeypot) validate() []error {
 		case SSH:
 			err = validateSSHVersion(*hp.Banner)
 		case Postgres, LDAP, MCP:
-			err = errors.New("only for ssh and telnet: the service says nothing before the login")
+			err = errors.New("only for ssh, telnet and tcp: the service says nothing before the client does")
 		default:
 			err = validateText(*hp.Banner, maxBanner, true)
 		}
@@ -529,12 +592,12 @@ type listenAddr struct {
 	port string
 }
 
-// Network returns the network to listen on. An IPv4 address is listened on with
-// tcp4, so that 0.0.0.0 takes IPv4 only, as the operator means; with "tcp" Go
-// would take IPv6 too. No host, and an IPv6 address, use tcp, which takes both
-// families for a wildcard.
-func (hp Honeypot) Network() string {
-	if a, ok := parseListen(hp.Listen); ok && a.host.Is4() {
+// Network returns the network to listen on for an address. An IPv4 address
+// is listened on with tcp4, so that 0.0.0.0 takes IPv4 only, as the operator
+// means; with "tcp" Go would take IPv6 too. No host, and an IPv6 address, use
+// tcp, which takes both families for a wildcard.
+func Network(listen string) string {
+	if a, ok := parseListen(listen); ok && a.host.Is4() {
 		return "tcp4"
 	}
 	return "tcp"

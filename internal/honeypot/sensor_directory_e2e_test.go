@@ -304,3 +304,50 @@ func TestSensor_MCP_EndToEnd(t *testing.T) { //nolint:paralleltest // see above.
 		}
 	}
 }
+
+// A tcp honeypot of the console and a sensor with its entry, filled in with two
+// ports: a client of each port becomes an event of the honeypot with the port
+// that it reached and the technique of a connection, and what it sent is not
+// stored.
+func TestSensor_TCP_EndToEnd(t *testing.T) { //nolint:paralleltest // see above.
+	env := startEndToEnd(t, honeypot.ServiceTCP, "", false, nil)
+
+	const credentials = "Authorization: Basic bWFsbG9yeTpodW50ZXIy"
+	for _, port := range []int{env.port, env.extraPort} {
+		conn := dial(t, port)
+		if _, err := fmt.Fprintf(conn, "GET / HTTP/1.1\r\nHost: x\r\n%s\r\n\r\n", credentials); err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.Close()
+	}
+
+	if err := env.process.stop(t); err != nil {
+		t.Errorf("the sensor ended with %v, want a clean exit", err)
+	}
+	for _, port := range []int{env.port, env.extraPort} {
+		var (
+			service, eventType string
+			techniques         []string
+		)
+		eventually(t, fmt.Sprintf("the event of port %d", port), func() bool {
+			return env.owner.QueryRow(t.Context(), `SELECT sensor_service, sensor_event_type, techniques FROM events WHERE resource_id = $1 AND sensor_port = $2`,
+				env.created.ID, port).Scan(&service, &eventType, &techniques) == nil
+		})
+		if service != "tcp" || eventType != "connection" || !slices.Equal(techniques, []string{"T1046"}) {
+			t.Errorf("port %d: event = %s %s %v, want a connection to the tcp honeypot with T1046", port, service, eventType, techniques)
+		}
+	}
+	var n int
+	if err := env.owner.QueryRow(t.Context(), `SELECT count(*) FROM events WHERE resource_id = $1`, env.created.ID).Scan(&n); err != nil || n != 2 {
+		t.Errorf("%d events, %v; want one for each port", n, err)
+	}
+	var stored string
+	if err := env.owner.QueryRow(t.Context(), `SELECT coalesce(string_agg(row_to_json(e)::text, ' '), '') FROM events e`).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"bWFsbG9yeT", "Authorization", "GET /"} {
+		if strings.Contains(stored, secret) {
+			t.Errorf("the database holds %q of what the client sent: %s", secret, stored)
+		}
+	}
+}
