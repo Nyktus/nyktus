@@ -480,13 +480,52 @@ func TestRun_RefusedConnections_AreLoggedOncePerInterval(t *testing.T) {
 func TestRun_IPv4Wildcard_LeavesIPv6ThePort(t *testing.T) {
 	t.Parallel()
 
-	probe, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp6", "[::1]:0")
-	if err != nil {
+	if probe, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp6", "[::1]:0"); err != nil {
 		t.Skipf("no IPv6 loopback: %v", err)
+	} else {
+		_ = probe.Close()
 	}
-	port := probe.Addr().(*net.TCPAddr).Port
-	_ = probe.Close()
 
+	// A port that was free a moment ago can be taken by a test that runs at the same time, which
+	// binds the wildcard of IPv4 with port 0. The test then looks for another port.
+	for range 10 {
+		port := freeOnBothFamilies(t)
+		err := runOnTwoFamilies(t, port)
+		if err == nil {
+			return
+		}
+		if !strings.Contains(err.Error(), "address already in use") {
+			t.Fatalf("Run() = %v, want both honeypots to bind", err)
+		}
+	}
+	t.Fatal("no port was free on both families")
+}
+
+// freeOnBothFamilies returns a port that was free on the wildcard of IPv4 and on the loopback of
+// IPv6 when it looked.
+func freeOnBothFamilies(t *testing.T) int {
+	t.Helper()
+	for range 50 {
+		v4, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp4", "0.0.0.0:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := v4.Addr().(*net.TCPAddr).Port
+		v6, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp6", "[::1]:"+strconv.Itoa(port))
+		_ = v4.Close()
+		if err == nil {
+			_ = v6.Close()
+			return port
+		}
+	}
+	t.Fatal("no port is free on both families")
+	return 0
+}
+
+// runOnTwoFamilies starts the sensor with a honeypot on the wildcard of IPv4 and one on the loopback
+// of IPv6 with the same port, and returns the error of the start if one does not bind.
+func runOnTwoFamilies(t *testing.T, port int) error {
+	t.Helper()
 	tr := newTrigger(t, false)
 	honeypots := "  - id: " + idOne + "\n    service: telnet\n    listen: \"0.0.0.0:" + strconv.Itoa(port) + "\"\n    secret: " + secretOne + "\n" +
 		"  - id: " + idTwo + "\n    service: telnet\n    listen: \"[::1]:" + strconv.Itoa(port) + "\"\n    secret: " + secretTwo + "\n"
@@ -505,8 +544,10 @@ func TestRun_IPv4Wildcard_LeavesIPv6ThePort(t *testing.T) {
 		select {
 		case <-listening:
 		case err := <-done:
-			t.Fatalf("Run() = %v, want both honeypots to bind", err)
+			cancel()
+			return err
 		case <-time.After(deadline):
+			cancel()
 			t.Fatal("the honeypots did not listen")
 		}
 	}
@@ -514,6 +555,7 @@ func TestRun_IPv4Wildcard_LeavesIPv6ThePort(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Errorf("Run() = %v", err)
 	}
+	return nil
 }
 
 func TestDefaults_AreTheDocumentedOnes(t *testing.T) {
