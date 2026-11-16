@@ -288,6 +288,7 @@ func (s *Server) admit(conn net.Conn) (netip.Addr, bool) {
 	case refusedSource:
 		s.refusedSource.Add(1)
 		return netip.Addr{}, false
+	case admitted:
 	}
 	return source, true
 }
