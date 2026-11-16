@@ -191,7 +191,7 @@ func TestStore_RecordsEveryKindOfEvent(t *testing.T) {
 	f := newFixture(t)
 
 	attempt := []Attempt{{Username: "u", PasswordLength: intPtr(1)}}
-	for _, service := range []string{"ssh", "telnet", "postgres", "ldap", "mcp"} {
+	for _, service := range []string{"ssh", "telnet", "postgres", "ldap", "mcp", "tcp"} {
 		_, secret := f.honeypot(t, enabled(service))
 		sessions := map[EventType]Session{
 			EventConnection:   {Attempts: []Attempt{}},
@@ -204,6 +204,10 @@ func TestStore_RecordsEveryKindOfEvent(t *testing.T) {
 			s := sessions[EventLoginAttempt]
 			s.ClientVersion = "SSH-2.0-x"
 			sessions[EventLoginAttempt] = s
+		}
+		if service == "tcp" {
+			// A port without a protocol has no login to record.
+			delete(sessions, EventLoginAttempt)
 		}
 		if service == "mcp" {
 			delete(sessions, EventLoginAttempt)
@@ -251,6 +255,8 @@ func TestStore_DoesNotRecordASessionThatDoesNotFitTheService(t *testing.T) {
 		{"application name to ldap", "ldap", func(s *Session) { s.ApplicationName = "psql" }},
 		{"client version to postgres", "postgres", func(s *Session) { s.ClientVersion = "SSH-2.0-x" }},
 		{"client version to telnet", "telnet", func(s *Session) { s.ClientVersion = "x" }},
+		{"login attempt to tcp", "tcp", func(*Session) {}},
+		{"client version to tcp", "tcp", func(s *Session) { s.Attempts = []Attempt{}; s.ClientVersion = "x" }},
 	}
 	for _, tt := range tests {
 		_, secret := f.honeypot(t, enabled(tt.service))
@@ -810,11 +816,15 @@ VALUES ($1, gen_random_uuid(), 'medium', now(), now(), $2, $3, $4, $5, $6, $7, $
 	if _, err := f.owner.Exec(t.Context(), insert, with(nil)...); err != nil {
 		t.Fatalf("a valid session event: %v", err)
 	}
+	if _, err := f.owner.Exec(t.Context(), insert, with(map[string]any{"service": "tcp", "event_type": "connection"})...); err != nil {
+		t.Fatalf("a connection to a tcp honeypot: %v", err)
+	}
 	tests := []struct {
 		name       string
 		changes    map[string]any
 		constraint string
 	}{
+		{"login attempt to a tcp honeypot", map[string]any{"service": "tcp"}, "events_sensor_fields_check"},
 		{"honeypot over http", map[string]any{"channel": "http", "method": "GET"}, "events_sensor_check"},
 		{"honeytoken over the sensor channel", map[string]any{"resource_type": "honeytoken", "honeytoken_type": "web_url"}, "events_sensor_check"},
 		{"no session identifier", map[string]any{"session": nil}, "events_sensor_check"},

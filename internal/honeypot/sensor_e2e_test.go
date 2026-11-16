@@ -177,12 +177,14 @@ type sensorEnv struct {
 	bin     string
 	process *process
 	port    int
+	// extraPort is a second port of a honeypot that listens on two, or 0.
+	extraPort int
 }
 
 // startEndToEnd creates a honeypot of the service, configures a sensor with the
 // entry that the console shows, starts it and waits until the honeypot is
 // online. usualPort is the port in that entry, which the test replaces by a free
-// one. prepare writes the files that the entry names, next to the configuration.
+// one; a service without a usual port, whose entry holds an empty address, gets two. prepare writes the files that the entry names, next to the configuration.
 func startEndToEnd(t *testing.T, service honeypot.Service, usualPort string, useTLS bool, prepare func(dir string, created honeypot.Created)) *sensorEnv {
 	t.Helper()
 	// The database comes first: without one the test is skipped, and nothing
@@ -234,6 +236,14 @@ func startEndToEnd(t *testing.T, service honeypot.Service, usualPort string, use
 	entry := created.SensorConfig()
 	listen := fmt.Sprintf("listen: \"127.0.0.1:%d\"", port)
 	usual := fmt.Sprintf("listen: %q", usualPort)
+	extraPort := 0
+	if usualPort == "" {
+		for extraPort == 0 || extraPort == port {
+			extraPort = freePort(t)
+		}
+		listen = fmt.Sprintf("listen:\n    - \"127.0.0.1:%d\"\n    - \"127.0.0.1:%d\"", port, extraPort)
+		usual = "listen:\n    - \"\""
+	}
 	if !strings.Contains(entry, usual) {
 		t.Fatalf("entry = %q, want the usual port %s", entry, usualPort)
 	}
@@ -263,7 +273,7 @@ func startEndToEnd(t *testing.T, service honeypot.Service, usualPort string, use
 	if got, _ := console.Get(t.Context(), created.ID); *got.SensorVersion != strings.TrimSpace(string(printed)) {
 		t.Errorf("sensor_version = %q, want %q, the version that the sensor prints", *got.SensorVersion, strings.TrimSpace(string(printed)))
 	}
-	return &sensorEnv{owner: owner, console: console, created: created, bin: bin, process: p, port: port}
+	return &sensorEnv{owner: owner, console: console, created: created, bin: bin, process: p, port: port, extraPort: extraPort}
 }
 
 func endToEnd(t *testing.T, useTLS bool) {

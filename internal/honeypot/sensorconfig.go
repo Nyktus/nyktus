@@ -32,10 +32,27 @@ var sensorPorts = map[Service]string{
 func (c Created) SensorConfig() string {
 	return fmt.Sprintf(`- id: %s
   service: %s
-  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.
-  listen: %s
-%s  secret: %s
-`, strconv.Quote(c.ID), strconv.Quote(string(c.Service)), strconv.Quote(sensorPorts[c.Service]), c.serviceFields(), strconv.Quote(string(c.Secret)))
+%s%s  secret: %s
+`, strconv.Quote(c.ID), strconv.Quote(string(c.Service)), c.listenLines(), c.serviceFields(), strconv.Quote(string(c.Secret)))
+}
+
+// listenLines returns the comment and the key for the address to listen on. A
+// port without a protocol has no usual port, and one that every installation
+// shares would identify it, so its entry holds an empty address that the
+// sensor refuses until the operator has named the ports.
+func (c Created) listenLines() string {
+	if c.Service == ServiceTCP {
+		return `  # The addresses and ports to listen on, one or more: the sensor answers
+  # on every one of them as this honeypot, and a session names the port that
+  # was reached. Fill in the empty address: the sensor does not start before,
+  # because a port that every installation shares would identify the honeypot.
+  # Ports below 1024 need CAP_NET_BIND_SERVICE.
+  listen:
+    - ""
+`
+	}
+	return `  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.
+  listen: ` + strconv.Quote(sensorPorts[c.Service]) + "\n"
 }
 
 // mcpFields is the frame of what an MCP honeypot presents. Its values are empty

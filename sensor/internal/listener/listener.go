@@ -102,6 +102,18 @@ type Stats struct {
 	Stack string
 }
 
+// Add adds the counts of other to s. The description of a failure is that of the
+// first one.
+func (s *Stats) Add(other Stats) {
+	s.RefusedTotal += other.RefusedTotal
+	s.RefusedSource += other.RefusedSource
+	s.AcceptErrors += other.AcceptErrors
+	if s.Panics == 0 {
+		s.Panic, s.Stack = other.Panic, other.Stack
+	}
+	s.Panics += other.Panics
+}
+
 // New returns a server. It panics if a dependency is missing.
 func New(o Options) *Server {
 	if o.Listener == nil || o.Handler == nil || o.Clock == nil {

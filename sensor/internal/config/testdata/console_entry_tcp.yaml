@@ -1,0 +1,10 @@
+- id: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d"
+  service: "tcp"
+  # The addresses and ports to listen on, one or more: the sensor answers
+  # on every one of them as this honeypot, and a session names the port that
+  # was reached. Fill in the empty address: the sensor does not start before,
+  # because a port that every installation shares would identify the honeypot.
+  # Ports below 1024 need CAP_NET_BIND_SERVICE.
+  listen:
+    - ""
+  secret: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"

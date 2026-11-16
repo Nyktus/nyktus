@@ -91,12 +91,14 @@ describe('summarizeHoneypots', () => {
         honeypot({ id: uuid(3), service: 'ldap' }),
         honeypot({ id: uuid(4), service: 'telnet', enabled: false }),
         honeypot({ id: uuid(5), service: 'mcp' }),
+        honeypot({ id: uuid(6), service: 'tcp' }),
       ]),
     );
     expect(summary.byService).toEqual([
       { service: 'ssh', count: 1 },
       { service: 'ldap', count: 2 },
       { service: 'mcp', count: 1 },
+      { service: 'tcp', count: 1 },
     ]);
   });
 });

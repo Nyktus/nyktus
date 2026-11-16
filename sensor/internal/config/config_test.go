@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -56,7 +57,7 @@ func TestParse_ValidConfiguration_HasTheDefaults(t *testing.T) {
 		t.Errorf("environment = %q, log level = %q; want production and info", cfg.Environment, cfg.LogLevel)
 	}
 	hp := cfg.Honeypots[0]
-	if hp.ID != idOne || hp.Service != config.Telnet || hp.Listen != ":2323" || string(hp.Secret) != secretOne || hp.Banner != nil || hp.LoginPrompt != nil {
+	if hp.ID != idOne || hp.Service != config.Telnet || !slices.Equal(hp.Listen, config.Listen{":2323"}) || string(hp.Secret) != secretOne || hp.Banner != nil || hp.LoginPrompt != nil {
 		t.Errorf("honeypot = %+v", hp)
 	}
 	if cfg.TriggerURL != "https://trigger.example.com/" {
@@ -102,8 +103,8 @@ func TestParse_Invalid_NamesTheRule(t *testing.T) {
 		{name: "an upper case id", yaml: strings.Replace(valid, idOne, strings.ToUpper(idOne), 1), want: "honeypots[0].id"},
 		{name: "a missing service", yaml: strings.Replace(valid, "service: telnet\n    ", "", 1), want: "service: required"},
 		{name: "an unknown service", yaml: strings.Replace(valid, "service: telnet", "service: ftp", 1), want: `unknown service "ftp"`},
-		{name: "a missing listen address", yaml: strings.Replace(valid, "listen: \":2323\"\n    ", "", 1), want: "listen: must be host:port or :port"},
-		{name: "a port without a host and colon", yaml: strings.Replace(valid, `":2323"`, "2323", 1), want: "listen: must be host:port or :port"},
+		{name: "a missing listen address", yaml: strings.Replace(valid, "listen: \":2323\"\n    ", "", 1), want: "listen: required"},
+		{name: "a port without a host and colon", yaml: strings.Replace(valid, `":2323"`, "2323", 1), want: "listen[0]: must be host:port or :port"},
 		{name: "a port of 0", yaml: strings.Replace(valid, `":2323"`, `":0"`, 1), want: "a port from 1 to 65535"},
 		{name: "a port of 65536", yaml: strings.Replace(valid, `":2323"`, `":65536"`, 1), want: "a port from 1 to 65535"},
 		{name: "a port that is a name", yaml: strings.Replace(valid, `":2323"`, `":telnet"`, 1), want: "a port from 1 to 65535"},
@@ -140,9 +141,9 @@ func TestParse_Invalid_NamesTheRule(t *testing.T) {
 		{name: "an ssh banner with a tab", yaml: sshEntry("    banner: \"SSH-2.0-a\\tb\"\n"), want: "banner: must be an identification string"},
 		{name: "an ssh banner with a non-ASCII character", yaml: sshEntry("    banner: \"SSH-2.0-a\\u00e9\"\n"), want: "banner: must be an identification string"},
 		{name: "an ssh banner that is too long", yaml: sshEntry("    banner: SSH-2.0-" + strings.Repeat("a", 246) + "\n"), want: "banner: must be an identification string"},
-		{name: "a banner for postgres", yaml: strings.Replace(valid, "service: telnet", "service: postgres", 1) + "    banner: \"14.13\"\n", want: "banner: only for ssh and telnet"},
-		{name: "a banner for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    banner: \"x\"\n", want: "banner: only for ssh and telnet"},
-		{name: "an empty banner for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    banner: \"\"\n", want: "banner: only for ssh and telnet"},
+		{name: "a banner for postgres", yaml: strings.Replace(valid, "service: telnet", "service: postgres", 1) + "    banner: \"14.13\"\n", want: "banner: only for ssh, telnet and tcp"},
+		{name: "a banner for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    banner: \"x\"\n", want: "banner: only for ssh, telnet and tcp"},
+		{name: "an empty banner for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    banner: \"\"\n", want: "banner: only for ssh, telnet and tcp"},
 		{name: "a prompt for postgres", yaml: strings.Replace(valid, "service: telnet", "service: postgres", 1) + "    login_prompt: x\n", want: "login_prompt: only for telnet"},
 		{name: "a host key file for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    host_key_file: ssh_host_key\n", want: "host_key_file: only for ssh"},
 		{name: "a prompt with a line break", yaml: entry("    login_prompt: \"a\\r\\nb\"\n"), want: "login_prompt: printable ASCII only"},
@@ -234,7 +235,7 @@ func TestHoneypot_Network(t *testing.T) {
 		{listen: "[2001:db8::1]:23", want: "tcp"},
 	}
 	for _, tt := range tests {
-		if got := (config.Honeypot{Listen: tt.listen}).Network(); got != tt.want {
+		if got := config.Network(tt.listen); got != tt.want {
 			t.Errorf("Network(%s) = %q, want %q", tt.listen, got, tt.want)
 		}
 	}
@@ -584,7 +585,7 @@ func TestParse_ConsoleEntry_IsReadBySensor(t *testing.T) {
 		t.Fatalf("%d honeypots, want 1", len(cfg.Honeypots))
 	}
 	hp := cfg.Honeypots[0]
-	if hp.ID != "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d" || hp.Service != config.Telnet || hp.Listen != ":23" ||
+	if hp.ID != "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d" || hp.Service != config.Telnet || !slices.Equal(hp.Listen, config.Listen{":23"}) ||
 		string(hp.Secret) != strings.Repeat("A", 43) {
 		t.Errorf("honeypot = %+v, want what the console wrote", hp)
 	}
@@ -609,7 +610,7 @@ func TestParse_ConsoleEntry_OfPostgresAndLDAP_IsReadBySensor(t *testing.T) {
 			t.Errorf("%s: Parse() = %v", tt.service, err)
 			continue
 		}
-		if hp := cfg.Honeypots[0]; hp.Service != tt.service || hp.Listen != tt.port || hp.Banner != nil {
+		if hp := cfg.Honeypots[0]; hp.Service != tt.service || !slices.Equal(hp.Listen, config.Listen{tt.port}) || hp.Banner != nil {
 			t.Errorf("%s: honeypot = %+v, want the service, its port and no banner", tt.service, hp)
 		}
 	}
@@ -866,7 +867,7 @@ func TestParse_SSHConsoleEntry_IsReadBySensor(t *testing.T) {
 		t.Fatalf("Parse() = %v", err)
 	}
 	hp := cfg.Honeypots[0]
-	if hp.Service != config.SSH || hp.Listen != ":22" || hp.HostKeyFile == "" || string(hp.Secret) != strings.Repeat("A", 43) {
+	if hp.Service != config.SSH || !slices.Equal(hp.Listen, config.Listen{":22"}) || hp.HostKeyFile == "" || string(hp.Secret) != strings.Repeat("A", 43) {
 		t.Errorf("honeypot = %+v, want what the console wrote", hp)
 	}
 }
@@ -1134,7 +1135,7 @@ func TestParse_MCPConsoleEntry_IsRefusedUntilItIsFilledIn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse() of the filled frame = %v", err)
 	}
-	if hp := cfg.Honeypots[0]; hp.Service != config.MCP || hp.Listen != ":8080" || hp.MCP.Path != "/wiki" {
+	if hp := cfg.Honeypots[0]; hp.Service != config.MCP || !slices.Equal(hp.Listen, config.Listen{":8080"}) || hp.MCP.Path != "/wiki" {
 		t.Errorf("honeypot = %+v", hp)
 	}
 }
@@ -1151,5 +1152,179 @@ func TestLoad_TLSFiles_AreReadForMCP(t *testing.T) {
 	}
 	if cfg.Honeypots[0].TLSCertificate == nil {
 		t.Error("TLSCertificate = nil, want the certificate of the files")
+	}
+}
+
+const tcpHoneypot = `
+trigger_url: https://trigger.example.com/
+honeypots:
+  - id: ` + idOne + `
+    service: tcp
+    listen: ":3389"
+    secret: ` + secretOne + `
+`
+
+func TestParse_TCP_IsValidWithoutABanner(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Parse([]byte(tcpHoneypot))
+	if err != nil {
+		t.Fatalf("Parse() = %v", err)
+	}
+	if hp := cfg.Honeypots[0]; hp.Service != config.TCP || !slices.Equal(hp.Listen, config.Listen{":3389"}) || hp.Banner != nil {
+		t.Errorf("honeypot = %+v, want a tcp honeypot on one port and no banner", hp)
+	}
+}
+
+func TestParse_TCP_ListensOnEveryAddressOfAList(t *testing.T) {
+	t.Parallel()
+
+	data := strings.Replace(tcpHoneypot, `listen: ":3389"`, "listen:\n      - \":3389\"\n      - \"127.0.0.1:445\"\n      - \"[::1]:1433\"", 1)
+	cfg, err := config.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("Parse() = %v", err)
+	}
+	if got, want := cfg.Honeypots[0].Listen, (config.Listen{":3389", "127.0.0.1:445", "[::1]:1433"}); !slices.Equal(got, want) {
+		t.Errorf("Listen = %v, want %v", got, want)
+	}
+}
+
+// The other services answer on one port: a list of one is the same as text, a
+// longer list is refused.
+func TestParse_Listen_OnlyTCPTakesSeveralAddresses(t *testing.T) {
+	t.Parallel()
+
+	one := strings.Replace(valid, `listen: ":2323"`, "listen: [\":2323\"]", 1)
+	if _, err := config.Parse([]byte(one)); err != nil {
+		t.Errorf("Parse() of a list of one = %v", err)
+	}
+	two := strings.Replace(valid, `listen: ":2323"`, "listen: [\":2323\", \":2324\"]", 1)
+	_, err := config.Parse([]byte(two))
+	if err == nil || !strings.Contains(err.Error(), "listen: only tcp listens on several addresses") {
+		t.Errorf("Parse() of a list of two for telnet = %v, want it refused", err)
+	}
+}
+
+func TestParse_Listen_RefusesWhatIsNoAddressOrList(t *testing.T) {
+	t.Parallel()
+
+	for name, listen := range map[string]string{
+		"a mapping":                 "{a: b}",
+		"an empty list":             "[]",
+		"a list with a bad address": `[":3389", "3390"]`,
+		"a list with an empty one":  `[""]`,
+		"a list that holds a list":  `[[":3389"]]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, err := config.Parse([]byte(strings.Replace(tcpHoneypot, `listen: ":3389"`, "listen: "+listen, 1)))
+			if err == nil {
+				t.Fatal("Parse() succeeded")
+			}
+		})
+	}
+}
+
+func TestParse_Listen_AnAddressTwiceInOneHoneypotConflicts(t *testing.T) {
+	t.Parallel()
+
+	data := strings.Replace(tcpHoneypot, `listen: ":3389"`, `listen: [":3389", "127.0.0.1:3389"]`, 1)
+	_, err := config.Parse([]byte(data))
+	if err == nil || !strings.Contains(err.Error(), "honeypots[0].listen[1]: conflicts with honeypots[0].listen[0]") {
+		t.Errorf("Parse() = %v, want the second address to conflict with the first", err)
+	}
+}
+
+func TestParse_Listen_AnAddressOfAnotherHoneypotConflicts(t *testing.T) {
+	t.Parallel()
+
+	data := strings.Replace(tcpHoneypot, `listen: ":3389"`, `listen: [":3388", ":3389"]`, 1) + twin(idTwo, ":3389", secretTwo)
+	_, err := config.Parse([]byte(data))
+	if err == nil || !strings.Contains(err.Error(), "honeypots[1].listen[0]: conflicts with honeypots[0].listen[1]") {
+		t.Errorf("Parse() = %v, want the second honeypot to conflict with the second address of the first", err)
+	}
+}
+
+func TestParse_Listen_TooManyAddresses(t *testing.T) {
+	t.Parallel()
+
+	var list []string
+	for port := 1000; port < 1033; port++ {
+		list = append(list, `":`+strconv.Itoa(port)+`"`)
+	}
+	_, err := config.Parse([]byte(strings.Replace(tcpHoneypot, `":3389"`, "["+strings.Join(list, ",")+"]", 1)))
+	if err == nil || !strings.Contains(err.Error(), "listen: at most 32 addresses") {
+		t.Errorf("Parse() = %v, want a refusal of 33 addresses", err)
+	}
+}
+
+func TestParse_TCP_TakesABannerAndNothingElseOfTheOthers(t *testing.T) {
+	t.Parallel()
+
+	good := tcpHoneypot + "    banner: \"220 ready\\r\\n\"\n"
+	cfg, err := config.Parse([]byte(good))
+	if err != nil {
+		t.Fatalf("Parse() = %v", err)
+	}
+	if b := cfg.Honeypots[0].Banner; b == nil || *b != "220 ready\r\n" {
+		t.Errorf("Banner = %v, want the text", b)
+	}
+	for name, tt := range map[string]struct{ extra, want string }{
+		"a banner with a byte above ASCII": {"    banner: \"a\\xFFb\"\n", "banner: printable ASCII"},
+		"a login prompt":                   {"    login_prompt: \"x\"\n", "login_prompt: only for telnet"},
+		"a host key file":                  {"    host_key_file: k\n", "host_key_file: only for ssh"},
+		"a certificate":                    {"    tls_cert_file: a\n    tls_key_file: b\n", "only for postgres and mcp"},
+	} {
+		_, err := config.Parse([]byte(tcpHoneypot + tt.extra))
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: Parse() = %v, want %q", name, err, tt.want)
+		}
+	}
+}
+
+// Every address holds a socket and limits of its own, so the sensor as a whole
+// is bounded as well, not only each honeypot.
+func TestParse_Listen_TooManyAddressesInAll(t *testing.T) {
+	t.Parallel()
+
+	var data strings.Builder
+	data.WriteString("trigger_url: https://trigger.example.com/\nhoneypots:\n")
+	port := 1000
+	for i := range 9 {
+		var list []string
+		for range 29 {
+			list = append(list, `":`+strconv.Itoa(port)+`"`)
+			port++
+		}
+		data.WriteString("  - id: 00000000-0000-4000-8000-00000000000" + strconv.Itoa(i) + "\n    service: tcp\n    listen: [" + strings.Join(list, ",") + "]\n    secret: " + strings.Repeat(string(rune('A'+i)), 43) + "\n")
+	}
+	_, err := config.Parse([]byte(data.String()))
+	if err == nil || !strings.Contains(err.Error(), "at most 256 addresses to listen on in all") {
+		t.Errorf("Parse() = %v, want a refusal of 261 addresses", err)
+	}
+}
+
+// The entry that the console shows for a tcp honeypot has an empty address and
+// is refused until the ports are named, so that no installation runs with a port
+// that all would share.
+func TestParse_TCPConsoleEntry_IsRefusedUntilThePortsAreNamed(t *testing.T) {
+	t.Parallel()
+
+	entry, err := os.ReadFile("testdata/console_entry_tcp.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const head = "trigger_url: https://trigger.example.com/\nhoneypots:\n"
+	_, err = config.Parse(append([]byte(head), entry...))
+	if err == nil || !strings.Contains(err.Error(), "honeypots[0].listen[0]: must be host:port") {
+		t.Fatalf("Parse() of the empty frame = %v, want the empty address refused", err)
+	}
+	filled := strings.Replace(string(entry), `- ""`, `- ":3389"`, 1)
+	cfg, err := config.Parse([]byte(head + filled))
+	if err != nil {
+		t.Fatalf("Parse() of the filled frame = %v", err)
+	}
+	if hp := cfg.Honeypots[0]; hp.Service != config.TCP || !slices.Equal(hp.Listen, config.Listen{":3389"}) {
+		t.Errorf("honeypot = %+v", hp)
 	}
 }

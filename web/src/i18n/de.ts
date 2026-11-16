@@ -222,11 +222,13 @@ export const de: Record<MessageKey, string> = {
   'honeypotService.postgres': 'PostgreSQL',
   'honeypotService.ldap': 'LDAP',
   'honeypotService.mcp': 'MCP',
+  'honeypotService.tcp': 'TCP-Port',
   'honeypotService.ssh.hint': 'Simuliert einen SSH-Server.',
   'honeypotService.telnet.hint': 'Simuliert eine Telnet-Anmeldung, wie auf Netzwerkgeräten und alten Servern.',
   'honeypotService.postgres.hint': 'Simuliert einen PostgreSQL-Server.',
   'honeypotService.ldap.hint': 'Simuliert einen Verzeichnisdienst, wie z.B. Active Directory oder OpenLDAP.',
   'honeypotService.mcp.hint': 'Simuliert einen MCP-Server, über den KI-Agenten Tools aufrufen.',
+  'honeypotService.tcp.hint': 'Lauscht auf einem oder mehreren Ports, ohne ein Protokoll zu sprechen. Zeichnet jede Verbindung auf, nie was gesendet wird.',
 
   'honeypotStatus.never': 'Keine Meldung',
   'honeypotStatus.online': 'Online',

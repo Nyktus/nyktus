@@ -77,6 +77,7 @@ var kindTechniques = map[kind][]string{
 	{"postgres", EventConnection}: {"T1046"},
 	{"ldap", EventConnection}:     {"T1046"},
 	{"mcp", EventConnection}:      {"T1046"},
+	{"tcp", EventConnection}:      {"T1046"},
 
 	{"ssh", EventLoginAttempt}:      {"T1110", "T1021.004"},
 	{"telnet", EventLoginAttempt}:   {"T1110"},
