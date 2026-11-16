@@ -472,13 +472,15 @@ func (hp *Honeypot) validate() []error {
 	default:
 		add("service: unknown service %q", string(hp.Service))
 	}
-	switch n := len(hp.Listen); {
-	case n == 0:
+	if n := len(hp.Listen); n == 0 {
 		add("listen: required")
-	case n > maxListen:
-		add("listen: at most %d addresses", maxListen)
-	case n > 1 && hp.Service != TCP:
-		add("listen: only tcp listens on several addresses")
+	} else {
+		if n > maxListen {
+			add("listen: at most %d addresses", maxListen)
+		}
+		if n > 1 && hp.Service != TCP {
+			add("listen: only tcp listens on several addresses")
+		}
 	}
 	for k, l := range hp.Listen {
 		if err := validateListen(l); err != nil {
