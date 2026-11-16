@@ -99,7 +99,11 @@ func fetch(t *testing.T, srv *httptest.Server, method, path string, body io.Read
 		t.Fatal(err)
 	}
 	maps.Copy(req.Header, header)
-	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	// The default transport is shared by every test of the package, and the close of any test server
+	// closes its idle connections, also those that another test has just taken.
+	transport := &http.Transport{}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	res, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
