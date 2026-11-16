@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -19,11 +20,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	"nyktus.org/nyktus/sensor/internal/clock/clocktest"
 	"nyktus.org/nyktus/sensor/internal/config"
+	"nyktus.org/nyktus/sensor/internal/listener"
 	"nyktus.org/nyktus/sensor/internal/report"
 	"nyktus.org/nyktus/sensor/internal/sensor"
 )
@@ -607,4 +610,32 @@ func TestRun_TCPHoneypotWhoseSecondPortIsTaken_FailsAndLeavesNothingBound(t *tes
 		t.Fatalf("the first address stays bound after the failure: %v", err)
 	}
 	_ = again.Close()
+}
+
+// The addresses of one honeypot share its limits: a source that holds the
+// connections it may have to one port is refused on the others.
+func TestRun_TCPHoneypotWithSeveralPorts_SharesItsLimitsBetweenThem(t *testing.T) {
+	t.Parallel()
+
+	tr := newTrigger(t, false)
+	entry := "  - id: " + idOne + "\n    service: tcp\n    listen: [\":3389\", \":445\"]\n    secret: " + secretOne + "\n"
+	r := start(t, parse(t, tr.URL, entry), nil)
+
+	addrs := r.all[idOne]
+	for range listener.MaxPerSource {
+		connect(t, addrs[0].String())
+	}
+	// The sensor admits the connections one after the other, so the ninth on
+	// the other port is refused once the first eight are counted.
+	refused := false
+	for end := time.Now().Add(deadline); !refused && time.Now().Before(end); {
+		c := connect(t, addrs[1].String())
+		_ = c.conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		_, err := c.r.ReadByte()
+		refused = errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET)
+		_ = c.conn.Close()
+	}
+	if !refused {
+		t.Error("a ninth connection of the source to the second port was served, want it refused")
+	}
 }

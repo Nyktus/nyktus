@@ -590,10 +590,10 @@ type listenAddr struct {
 	port string
 }
 
-// Network returns the network to listen on for an address. An IPv4 address is listened on with
-// tcp4, so that 0.0.0.0 takes IPv4 only, as the operator means; with "tcp" Go
-// would take IPv6 too. No host, and an IPv6 address, use tcp, which takes both
-// families for a wildcard.
+// Network returns the network to listen on for an address. An IPv4 address
+// is listened on with tcp4, so that 0.0.0.0 takes IPv4 only, as the operator
+// means; with "tcp" Go would take IPv6 too. No host, and an IPv6 address, use
+// tcp, which takes both families for a wildcard.
 func Network(listen string) string {
 	if a, ok := parseListen(listen); ok && a.host.Is4() {
 		return "tcp4"

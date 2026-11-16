@@ -263,25 +263,30 @@ func bind(ctx context.Context, o Options, rep *reporter.Reporter) ([]bound, erro
 		} else {
 			handler = &honeypot{hp: hp, service: newService(c, o.Clock), clock: o.Clock, reporter: rep, logger: o.Logger}
 		}
+		// The addresses of a honeypot share its limits: a source that sweeps the
+		// ports holds no more connections than it would on one.
 		b := bound{hp: hp, mcp: service}
+		limits := listener.NewLimits(0, 0)
 		for _, addr := range c.Listen {
 			ln, err := lc.Listen(ctx, config.Network(addr), addr)
 			if err != nil {
-				for _, s := range b.servers {
-					_ = s.Close()
-				}
-				for _, other := range servers {
-					for _, s := range other.servers {
-						_ = s.Close()
-					}
-				}
+				closeAll(append(servers, b))
 				return nil, fmt.Errorf("honeypot %s: %w", c.ID, err)
 			}
-			b.servers = append(b.servers, listener.New(listener.Options{Listener: ln, Clock: o.Clock, Handler: handler}))
+			b.servers = append(b.servers, listener.New(listener.Options{Listener: ln, Clock: o.Clock, Handler: handler, Limits: limits}))
 		}
 		servers = append(servers, b)
 	}
 	return servers, nil
+}
+
+// closeAll closes the listeners of honeypots that were bound but not started.
+func closeAll(bounds []bound) {
+	for _, b := range bounds {
+		for _, s := range b.servers {
+			_ = s.Close()
+		}
+	}
 }
 
 // logStats writes what the sensor turned away or lost since the last call. An

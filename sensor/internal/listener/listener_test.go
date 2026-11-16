@@ -156,6 +156,35 @@ func TestServer_ConnectionsFromOneSourceBeyondTheLimit_AreRefusedAndCounted(t *t
 	_, _ = a, b
 }
 
+// A honeypot that listens on several addresses stays within one set of limits:
+// a source that sweeps its ports gets no more connections than on one port.
+func TestServer_ServersThatShareLimits_CountTogether(t *testing.T) {
+	t.Parallel()
+
+	h := newHoldHandler()
+	limits := NewLimits(100, 2)
+	first, _ := serve(t, Options{Handler: h, Limits: limits})
+	second, _ := serve(t, Options{Handler: h, Limits: limits})
+	a, b := dial(t, first), dial(t, second)
+	waitEntered(t, h, 2)
+
+	c := dial(t, first)
+	if !refused(t, c) {
+		t.Fatal("the third connection of the source was served on a port of the honeypot, want it refused")
+	}
+	d := dial(t, second)
+	if !refused(t, d) {
+		t.Fatal("the third connection of the source was served on the other port, want it refused")
+	}
+	if got := first.TakeStats(); got.RefusedSource != 1 {
+		t.Errorf("first.TakeStats() = %+v, want one connection refused because of the source", got)
+	}
+	if got := second.TakeStats(); got.RefusedSource != 1 {
+		t.Errorf("second.TakeStats() = %+v, want one connection refused because of the source", got)
+	}
+	_, _ = a, b
+}
+
 func TestServer_ClosedConnection_FreesItsSlot(t *testing.T) {
 	t.Parallel()
 
@@ -183,8 +212,8 @@ func TestServer_Defaults_AreThe128And8AndTwoMinutes(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ln.Close() })
 	srv := New(Options{Listener: ln, Handler: newHoldHandler(), Clock: clocktest.New()})
-	if srv.maxConns != 128 || srv.maxPerSource != 8 || srv.maxSession != 2*time.Minute {
-		t.Errorf("limits = %d, %d, %v; want 128, 8 and 2m0s", srv.maxConns, srv.maxPerSource, srv.maxSession)
+	if srv.limits.maxConns != 128 || srv.limits.maxPerSource != 8 || srv.maxSession != 2*time.Minute {
+		t.Errorf("limits = %d, %d, %v; want 128, 8 and 2m0s", srv.limits.maxConns, srv.limits.maxPerSource, srv.maxSession)
 	}
 }
 
@@ -200,21 +229,21 @@ func TestServer_SourceTable_IsBoundedByTheOpenConnections(t *testing.T) {
 		if source, ok := srv.admit(conn); ok {
 			sources = append(sources, source)
 		}
-		if len(srv.sources) > 16 {
-			t.Fatalf("the table holds %d sources with at most 16 connections", len(srv.sources))
+		if len(srv.limits.sources) > 16 {
+			t.Fatalf("the table holds %d sources with at most 16 connections", len(srv.limits.sources))
 		}
 	}
-	if len(sources) != 16 || srv.open != 16 {
-		t.Errorf("admitted %d connections, open = %d; want 16", len(sources), srv.open)
+	if len(sources) != 16 || srv.limits.open != 16 {
+		t.Errorf("admitted %d connections, open = %d; want 16", len(sources), srv.limits.open)
 	}
 	if got := srv.TakeStats().RefusedTotal; got != 1000-16 {
 		t.Errorf("refused = %d, want %d", got, 1000-16)
 	}
 	for _, s := range sources {
-		srv.release(s)
+		srv.limits.release(s)
 	}
-	if len(srv.sources) != 0 || srv.open != 0 {
-		t.Errorf("table holds %d sources, open = %d after all connections ended, want none", len(srv.sources), srv.open)
+	if len(srv.limits.sources) != 0 || srv.limits.open != 0 {
+		t.Errorf("table holds %d sources, open = %d after all connections ended, want none", len(srv.limits.sources), srv.limits.open)
 	}
 }
 

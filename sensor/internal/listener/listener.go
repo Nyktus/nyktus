@@ -50,26 +50,84 @@ type Handler interface {
 // Options configure a Server. Zero limits mean the defaults above; tests set
 // smaller ones.
 type Options struct {
-	Listener     net.Listener
-	Handler      Handler
-	Clock        clock.Clock
+	Listener net.Listener
+	Handler  Handler
+	Clock    clock.Clock
+	// Limits is shared with the servers of the other addresses of a honeypot,
+	// so that the honeypot stays within its limits however many addresses it
+	// listens on. Nil means limits of its own, from MaxConns and MaxPerSource.
+	Limits       *Limits
 	MaxConns     int
 	MaxPerSource int
 	MaxSession   time.Duration
 }
 
-// Server accepts connections on a listener.
-type Server struct {
-	ln           net.Listener
-	handler      Handler
-	clock        clock.Clock
+// Limits counts the open connections of a honeypot and of each source. Servers
+// that share one count together.
+type Limits struct {
 	maxConns     int
 	maxPerSource int
-	maxSession   time.Duration
 
 	mu      sync.Mutex
 	open    int
 	sources map[netip.Addr]int
+}
+
+// NewLimits returns limits for a honeypot. A limit that is not positive means
+// the default.
+func NewLimits(maxConns, maxPerSource int) *Limits {
+	if maxConns <= 0 {
+		maxConns = MaxConns
+	}
+	if maxPerSource <= 0 {
+		maxPerSource = MaxPerSource
+	}
+	return &Limits{maxConns: maxConns, maxPerSource: maxPerSource, sources: map[netip.Addr]int{}}
+}
+
+// refusal tells which limit turned a connection away.
+type refusal int
+
+const (
+	admitted refusal = iota
+	refusedTotal
+	refusedSource
+)
+
+// admit counts the connection of a source if the limits allow it.
+func (l *Limits) admit(source netip.Addr) refusal {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	switch {
+	case l.open >= l.maxConns:
+		return refusedTotal
+	case l.sources[source] >= l.maxPerSource:
+		return refusedSource
+	}
+	l.open++
+	l.sources[source]++
+	return admitted
+}
+
+// release uncounts a connection. A source without connections leaves the
+// table, so that the table never holds more entries than there are open
+// connections, however many sources have come by.
+func (l *Limits) release(source netip.Addr) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.open--
+	if l.sources[source]--; l.sources[source] <= 0 {
+		delete(l.sources, source)
+	}
+}
+
+// Server accepts connections on a listener.
+type Server struct {
+	ln         net.Listener
+	handler    Handler
+	clock      clock.Clock
+	limits     *Limits
+	maxSession time.Duration
 
 	refusedTotal  atomic.Int64
 	refusedSource atomic.Int64
@@ -108,7 +166,7 @@ func (s *Stats) Add(other Stats) {
 	s.RefusedTotal += other.RefusedTotal
 	s.RefusedSource += other.RefusedSource
 	s.AcceptErrors += other.AcceptErrors
-	if s.Panics == 0 {
+	if s.Panics == 0 && other.Panics > 0 {
 		s.Panic, s.Stack = other.Panic, other.Stack
 	}
 	s.Panics += other.Panics
@@ -120,19 +178,14 @@ func New(o Options) *Server {
 		panic("listener: missing listener, handler or clock")
 	}
 	s := &Server{
-		ln:           o.Listener,
-		handler:      o.Handler,
-		clock:        o.Clock,
-		maxConns:     o.MaxConns,
-		maxPerSource: o.MaxPerSource,
-		maxSession:   o.MaxSession,
-		sources:      map[netip.Addr]int{},
+		ln:         o.Listener,
+		handler:    o.Handler,
+		clock:      o.Clock,
+		limits:     o.Limits,
+		maxSession: o.MaxSession,
 	}
-	if s.maxConns <= 0 {
-		s.maxConns = MaxConns
-	}
-	if s.maxPerSource <= 0 {
-		s.maxPerSource = MaxPerSource
+	if s.limits == nil {
+		s.limits = NewLimits(o.MaxConns, o.MaxPerSource)
 	}
 	if s.maxSession <= 0 {
 		s.maxSession = MaxSession
@@ -228,38 +281,22 @@ func (s *Server) admit(conn net.Conn) (netip.Addr, bool) {
 	if !ok {
 		return netip.Addr{}, false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	switch {
-	case s.open >= s.maxConns:
+	switch s.limits.admit(source) {
+	case refusedTotal:
 		s.refusedTotal.Add(1)
 		return netip.Addr{}, false
-	case s.sources[source] >= s.maxPerSource:
+	case refusedSource:
 		s.refusedSource.Add(1)
 		return netip.Addr{}, false
 	}
-	s.open++
-	s.sources[source]++
 	return source, true
-}
-
-// release uncounts a connection. A source without connections leaves the
-// table, so that the table never holds more entries than there are open
-// connections, however many sources have come by.
-func (s *Server) release(source netip.Addr) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.open--
-	if s.sources[source]--; s.sources[source] <= 0 {
-		delete(s.sources, source)
-	}
 }
 
 func (s *Server) serve(ctx context.Context, conn net.Conn, source netip.Addr) {
 	// The connection is closed last: a client that sees it closed finds the
 	// slot free and the count of a failed handler made.
 	defer conn.Close() //nolint:errcheck // nothing to do about a failed close of a connection that is done.
-	defer s.release(source)
+	defer s.limits.release(source)
 	defer func() {
 		// A protocol that panics on what an attacker sent must not end the
 		// sensor, which would blind every other honeypot on it.

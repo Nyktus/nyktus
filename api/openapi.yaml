@@ -4616,7 +4616,9 @@ components:
             sensor: a list item for `honeypots:`, in YAML, with the identifier,
             the service, the usual port of the service as the address to listen
             on, and the secret. For `ssh` it also names the file of the host
-            key, which the operator creates. It holds the secret. Name and notes
+            key, which the operator creates. For `tcp`, which has no usual port,
+            the address is empty and the sensor does not start before the
+            operator has named the ports. It holds the secret. Name and notes
             are not part of it.
 
     HoneypotSecret:
@@ -4685,7 +4687,9 @@ components:
             sensor: a list item for `honeypots:`, in YAML, with the identifier,
             the service, the usual port of the service as the address to listen
             on, and the secret. For `ssh` it also names the file of the host
-            key, which the operator creates. It holds the secret. Name and notes
+            key, which the operator creates. For `tcp`, which has no usual port,
+            the address is empty and the sensor does not start before the
+            operator has named the ports. It holds the secret. Name and notes
             are not part of it.
 
     HoneypotPage:
