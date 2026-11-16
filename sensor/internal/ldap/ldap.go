@@ -6,8 +6,8 @@
 // maps a domain sends them, and answers every search with an empty result.
 //
 // It offers nothing behind the bind. No entry is ever returned and nothing is
-// changed. What the client sent is read, counted and recorded in the session. A
-// password is not kept: only its length.
+// changed. What the client sent is read, counted and recorded in the session,
+// the password of a bind included.
 package ldap
 
 import (
@@ -138,8 +138,8 @@ func bind(op []byte, sess *session.Session) (code byte, err error) {
 		if len(name) == 0 && len(auth.content) == 0 {
 			return resultSuccess, nil
 		}
-		n := len(auth.content)
-		sess.AddAttempt(report.Attempt{Username: report.Clean(string(name), report.MaxUsername), PasswordLength: &n})
+		p := report.Clean(string(auth.content), report.MaxPassword)
+		sess.AddAttempt(report.Attempt{Username: report.Clean(string(name), report.MaxUsername), Password: &p})
 		return resultInvalidCredentials, nil
 	case tagSASL:
 		return resultAuthMethodNotSupported, nil

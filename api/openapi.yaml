@@ -5220,7 +5220,7 @@ components:
       description: |
         What a sensor reported about one session of an attacker with a honeypot. The sensor and the attacker chose
         everything but `service` and `event_type`: the text is shortened, and invalid and non-printable characters
-        are replaced; treat it as claims, not facts. Personal data. A password is never stored, only its length.
+        are replaced; treat it as claims, not facts. Personal data, which includes the passwords of the attempts.
       properties:
         service:
           type: string
@@ -5297,16 +5297,24 @@ components:
     EventAttempt:
       type: object
       additionalProperties: false
-      required: [username, password_length, key_fingerprint]
+      required: [username, password, password_length, key_fingerprint]
       properties:
         username:
           type: string
           description: The user name or distinguished name that the attacker used. It may be empty.
+        password:
+          type: [string, "null"]
+          maxLength: 256
+          description: |
+            The password that was sent, with characters that are not printable replaced and cut to 256 bytes, or
+            null if none was or if the sensor is too old to send it. The empty text is an empty password. It was typed by the attacker, so it
+            is untrusted, and it can be the real password of someone who mistyped an address: it may hold personal
+            data, and never reaches an alert, a log or a metric.
         password_length:
           type: [integer, "null"]
           minimum: 0
           maximum: 65535
-          description: The length of the password that was sent, or null if none was. The password itself is not stored.
+          description: The length of the password that a sensor of an older version sent in place of the password, or null.
         key_fingerprint:
           type: [string, "null"]
           pattern: "^SHA256:[A-Za-z0-9+/]{43}$"

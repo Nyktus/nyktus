@@ -83,7 +83,7 @@ func (f fixture) newSession(t *testing.T) Session {
 	return Session{
 		ID: randomSessionID(t), Age: 2 * time.Second, Duration: 3 * time.Second,
 		ClientIP: netip.MustParseAddr("203.0.113.9"), Port: 22,
-		Attempts: []Attempt{{Username: "root", PasswordLength: intPtr(8)}},
+		Attempts: []Attempt{{Username: "root", Password: ptr("hunter2")}},
 	}
 }
 
@@ -123,9 +123,10 @@ func TestStore_RecordsASessionOfAnEnabledHoneypot(t *testing.T) {
 	s := f.newSession(t)
 	s.ClientVersion = "SSH-2.0-OpenSSH_9.6"
 	s.Attempts = []Attempt{
-		{Username: "root", PasswordLength: intPtr(8)},
+		{Username: "root", Password: ptr("hunter2")},
 		{Username: "admin", KeyFingerprint: "SHA256:" + strings.Repeat("A", 43)},
-		{Username: "", PasswordLength: intPtr(0)},
+		{Username: "", Password: ptr("")},
+		{Username: "old", PasswordLength: intPtr(8)},
 	}
 	res := f.session(t, secret, s)
 	if want := (ReportResult{Outcome: ReportRecorded, HoneypotID: id, Service: "ssh"}); res != want {
@@ -160,13 +161,14 @@ FROM events AS e`).Scan(&resourceType, &resourceID, &scenario, &channel, &eventT
 		t.Errorf("techniques = %v, want %v", techniques, want)
 	}
 
-	rows, err := f.owner.Query(t.Context(), `SELECT ordinal, username, password_length, key_fingerprint FROM event_attempts ORDER BY ordinal`)
+	rows, err := f.owner.Query(t.Context(), `SELECT ordinal, username, password, password_length, key_fingerprint FROM event_attempts ORDER BY ordinal`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	type row struct {
 		Ordinal     int
 		Username    string
+		Password    *string
 		Length      *int
 		Fingerprint *string
 	}
@@ -175,11 +177,12 @@ FROM events AS e`).Scan(&resourceType, &resourceID, &scenario, &channel, &eventT
 		t.Fatal(err)
 	}
 	fingerprint := "SHA256:" + strings.Repeat("A", 43)
-	if len(got) != 3 ||
-		got[0].Ordinal != 1 || got[0].Username != "root" || got[0].Length == nil || *got[0].Length != 8 || got[0].Fingerprint != nil ||
-		got[1].Ordinal != 2 || got[1].Username != "admin" || got[1].Length != nil || got[1].Fingerprint == nil || *got[1].Fingerprint != fingerprint ||
-		got[2].Ordinal != 3 || got[2].Username != "" || got[2].Length == nil || *got[2].Length != 0 || got[2].Fingerprint != nil {
-		t.Errorf("attempts = %+v, want root with 8, admin with a key, and an empty name with 0", got)
+	if len(got) != 4 ||
+		got[0].Ordinal != 1 || got[0].Username != "root" || got[0].Password == nil || *got[0].Password != "hunter2" || got[0].Length != nil || got[0].Fingerprint != nil ||
+		got[1].Ordinal != 2 || got[1].Username != "admin" || got[1].Password != nil || got[1].Length != nil || got[1].Fingerprint == nil || *got[1].Fingerprint != fingerprint ||
+		got[2].Ordinal != 3 || got[2].Username != "" || got[2].Password == nil || *got[2].Password != "" || got[2].Length != nil || got[2].Fingerprint != nil ||
+		got[3].Ordinal != 4 || got[3].Username != "old" || got[3].Password != nil || got[3].Length == nil || *got[3].Length != 8 || got[3].Fingerprint != nil {
+		t.Errorf("attempts = %+v, want root with its password, admin with a key, an empty name with an empty password, and a name with a length from an older sensor", got)
 	}
 }
 
@@ -190,7 +193,7 @@ func TestStore_RecordsEveryKindOfEvent(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
-	attempt := []Attempt{{Username: "u", PasswordLength: intPtr(1)}}
+	attempt := []Attempt{{Username: "u", Password: ptr("p")}}
 	for _, service := range []string{"ssh", "telnet", "postgres", "ldap", "mcp", "tcp"} {
 		_, secret := f.honeypot(t, enabled(service))
 		sessions := map[EventType]Session{
@@ -665,10 +668,9 @@ func TestStore_SessionIsNeverStoredWithoutItsJob(t *testing.T) {
 	}
 }
 
-// No password is stored, whatever reaches the function: the table has no column
-// for one, and a member of an attempt that the function does not know is
-// ignored. Nothing a password could be hides in the rows either.
-func TestStore_PasswordIsNeverStored(t *testing.T) {
+// A password is stored as it was sent, in the row of its attempt and nowhere
+// else, and a member that the function does not know is ignored.
+func TestStore_PasswordIsStoredInItsAttemptAndNowhereElse(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
@@ -677,8 +679,8 @@ func TestStore_PasswordIsNeverStored(t *testing.T) {
 	var outcome string
 	err := f.owner.QueryRow(t.Context(), `
 SELECT outcome FROM public.record_honeypot_session($1, gen_random_uuid(), interval '0', 0, '192.0.2.1', 22, 'login_attempt', NULL, NULL, NULL, NULL, NULL,
-	jsonb_build_array(jsonb_build_object('username', 'root', 'password_length', 15, 'password', $2::text, 'secret', $2::text)), '[]'::jsonb)`,
-		SecretHash(secret), password).Scan(&outcome)
+	jsonb_build_array(jsonb_build_object('username', 'root', 'password', $2::text, 'secret', $3::text)), '[]'::jsonb)`,
+		SecretHash(secret), password, "unknown-member").Scan(&outcome)
 	if err != nil || outcome != "recorded" {
 		t.Fatalf("record session = %s, %v", outcome, err)
 	}
@@ -691,11 +693,17 @@ SELECT outcome FROM public.record_honeypot_session($1, gen_random_uuid(), interv
 	if columns, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"event_id", "ordinal", "username", "password_length", "key_fingerprint"}; !slices.Equal(columns, want) {
+	if want := []string{"event_id", "ordinal", "username", "password", "password_length", "key_fingerprint"}; !slices.Equal(columns, want) {
 		t.Errorf("columns of event_attempts = %v, want %v", columns, want)
 	}
-	if n := f.count(t, "SELECT count(*) FROM (SELECT row_to_json(e)::text AS j FROM events AS e UNION ALL SELECT row_to_json(a)::text FROM event_attempts AS a) AS r WHERE j LIKE '%hunter2%'"); n != 0 {
-		t.Errorf("%d rows contain the password", n)
+	if n := f.count(t, "SELECT count(*) FROM event_attempts WHERE password = '"+password+"' AND password_length IS NULL"); n != 1 {
+		t.Errorf("%d attempts hold the password, want 1", n)
+	}
+	if n := f.count(t, "SELECT count(*) FROM events AS e WHERE row_to_json(e)::text LIKE '%hunter2%' OR row_to_json(e)::text LIKE '%unknown-member%'"); n != 0 {
+		t.Errorf("%d events contain the password or a member that is unknown", n)
+	}
+	if n := f.count(t, "SELECT count(*) FROM event_attempts AS a WHERE row_to_json(a)::text LIKE '%unknown-member%'"); n != 0 {
+		t.Errorf("%d attempts contain a member that is unknown", n)
 	}
 }
 
@@ -902,6 +910,28 @@ VALUES ('honeypot', $1, 'medium', now(), now(), 'sensor', '192.0.2.1', $2, 'ssh'
 			t.Errorf("%s: error = %v, want a violation of %s", tt.name, err, tt.constraint)
 		}
 	}
+	// The password is text that an attacker chose, within the limits that the trigger keeps.
+	const withPassword = `INSERT INTO event_attempts (event_id, ordinal, username, password, password_length) VALUES ($1, $2, 'u', $3, $4)`
+	if _, err := f.owner.Exec(t.Context(), withPassword, eventID, 5, strings.Repeat("p", 256), nil); err != nil {
+		t.Fatalf("a password at the limit: %v", err)
+	}
+	for _, tt := range []struct {
+		name     string
+		password any
+		length   any
+		want     string
+	}{
+		{"password beyond its length", strings.Repeat("p", 257), nil, "event_attempts_password_check"},
+		{"password with a line break", "a\nb", nil, "event_attempts_password_check"},
+		{"password with a control character", "a\x1bb", nil, "event_attempts_password_check"},
+		{"password that hides text", "a\u202eb", nil, "event_attempts_password_check"},
+		{"password and the length of one", "p", 1, "event_attempts_password_once_check"},
+	} {
+		_, err := f.owner.Exec(t.Context(), withPassword, eventID, 1, tt.password, tt.length)
+		if pgError(err) == nil || pgError(err).ConstraintName != tt.want {
+			t.Errorf("%s: error = %v, want a violation of %s", tt.name, err, tt.want)
+		}
+	}
 	// An attempt belongs to its event and leaves with it.
 	// Tool calls.
 	const toolCall = `INSERT INTO event_tool_calls (event_id, ordinal, tool_name, arguments_excerpt) VALUES ($1, $2, $3, $4)`
@@ -1082,7 +1112,7 @@ func TestTrigger_IdenticalReportResponsesWithTheDatabase(t *testing.T) {
 	cases["session that does not fit"] = fetch(t, srv, http.MethodPost, "/", bytes.NewReader(mutated(t, "session_postgres.json", func(map[string]any) {})), bearer(enabledSecret))
 	cases["database failure"] = fetch(t, failing, http.MethodPost, "/", bytes.NewReader(session(randomSessionID(t))), bearer(enabledSecret))
 	cases["unsupported version"] = fetch(t, srv, http.MethodPost, "/",
-		bytes.NewReader(mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 3 })), bearer(enabledSecret))
+		bytes.NewReader(mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 4 })), bearer(enabledSecret))
 	for name, got := range cases {
 		if !got.equal(want) {
 			t.Errorf("%s: response %+v, want %+v", name, got, want)

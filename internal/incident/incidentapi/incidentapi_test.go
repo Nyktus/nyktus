@@ -144,8 +144,9 @@ VALUES ('honeypot', $1, '{T1110,T1021.004}', 'critical', $2, $2, 'sensor', '198.
 RETURNING id`, resource, occurredAt, incidentID).Scan(&id)
 		if err == nil {
 			_, err = f.owner.Exec(t.Context(), `
-INSERT INTO event_attempts (event_id, ordinal, username, password_length, key_fingerprint) VALUES
-	($1, 1, 'root', 8, NULL), ($1, 2, 'admin', NULL, 'SHA256:' || repeat('A', 43)), ($1, 3, '', 0, NULL)`, id)
+INSERT INTO event_attempts (event_id, ordinal, username, password, password_length, key_fingerprint) VALUES
+	($1, 1, 'root', 'hunter2', NULL, NULL), ($1, 2, 'admin', NULL, NULL, 'SHA256:' || repeat('A', 43)), ($1, 3, '', '', NULL, NULL),
+	($1, 4, 'old', NULL, 8, NULL)`, id)
 		}
 	default:
 		err = f.owner.QueryRow(t.Context(), `
@@ -447,14 +448,15 @@ func TestGetEvent_ShowsTheSessionOfASensor(t *testing.T) {
 	}
 	s := got.Sensor
 	if s.Service != "ssh" || s.EventType != "login_attempt" || s.Port != 22 || s.DurationMS != 4200 || s.ClientVersion == nil ||
-		*s.ClientVersion != "SSH-2.0-OpenSSH_9.6" || s.Database != nil || s.ApplicationName != nil || s.Query != nil || len(s.Attempts) != 3 {
+		*s.ClientVersion != "SSH-2.0-OpenSSH_9.6" || s.Database != nil || s.ApplicationName != nil || s.Query != nil || len(s.Attempts) != 4 {
 		t.Errorf("session = %+v", s)
 	}
 	a := s.Attempts
-	if a[0].Username != "root" || a[0].PasswordLength == nil || *a[0].PasswordLength != 8 || a[0].KeyFingerprint != nil ||
-		a[1].Username != "admin" || a[1].PasswordLength != nil || a[1].KeyFingerprint == nil || *a[1].KeyFingerprint != "SHA256:"+strings.Repeat("A", 43) ||
-		a[2].Username != "" || a[2].PasswordLength == nil || *a[2].PasswordLength != 0 {
-		t.Errorf("attempts = %+v, want root with 8, admin with a key, and an empty name with 0", a)
+	if a[0].Username != "root" || a[0].Password == nil || *a[0].Password != "hunter2" || a[0].PasswordLength != nil || a[0].KeyFingerprint != nil ||
+		a[1].Username != "admin" || a[1].Password != nil || a[1].PasswordLength != nil || a[1].KeyFingerprint == nil || *a[1].KeyFingerprint != "SHA256:"+strings.Repeat("A", 43) ||
+		a[2].Username != "" || a[2].Password == nil || *a[2].Password != "" || a[2].PasswordLength != nil ||
+		a[3].Username != "old" || a[3].Password != nil || a[3].PasswordLength == nil || *a[3].PasswordLength != 8 {
+		t.Errorf("attempts = %+v, want root with its password, admin with a key, an empty name with an empty password, and a length from an older sensor", a)
 	}
 
 	// An event of another channel has no session.
@@ -468,8 +470,8 @@ func TestGetEvent_ShowsTheSessionOfASensor(t *testing.T) {
 		t.Fatalf("events = %+v, want the request, then the later session, then the first", page.Events)
 	}
 	for _, e := range page.Events[1:] {
-		if e.Sensor == nil || len(e.Sensor.Attempts) != 3 || e.Sensor.Attempts[0].Username != "root" || e.Sensor.Attempts[2].Username != "" {
-			t.Errorf("session of %s in the list = %+v, want its three attempts in order", e.ID, e.Sensor)
+		if e.Sensor == nil || len(e.Sensor.Attempts) != 4 || e.Sensor.Attempts[0].Username != "root" || e.Sensor.Attempts[2].Username != "" {
+			t.Errorf("session of %s in the list = %+v, want its four attempts in order", e.ID, e.Sensor)
 		}
 	}
 	if page.Events[0].Sensor != nil {

@@ -73,7 +73,7 @@ func TestTrigger_ReportsAreAnsweredLikeEveryOtherPost(t *testing.T) {
 		"no secret":                       fetch(t, accepting, http.MethodPost, "/", bytes.NewReader(session), nil),
 		"secret of the wrong form":        fetch(t, accepting, http.MethodPost, "/", bytes.NewReader(session), bearer("short")),
 		"unsupported version": fetch(t, accepting, http.MethodPost, "/",
-			bytes.NewReader(mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 3 })), bearer(testSecret)),
+			bytes.NewReader(mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 4 })), bearer(testSecret)),
 		"invalid report": fetch(t, accepting, http.MethodPost, "/", strings.NewReader("{"), bearer(testSecret)),
 		"no body":        fetch(t, accepting, http.MethodPost, "/", nil, bearer(testSecret)),
 	}
@@ -143,7 +143,7 @@ func TestTrigger_RejectedReportsAreNotRecorded(t *testing.T) {
 		{"no secret", session, nil, http.MethodPost, "/", ""},
 		{"secret of the wrong form", session, bearer("short"), http.MethodPost, "/", ""},
 		{"basic authentication", session, http.Header{"Authorization": {"Basic " + testSecret}}, http.MethodPost, "/", ""},
-		{"unsupported version", mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 3 }), bearer(testSecret), http.MethodPost, "/", "unsupported_version"},
+		{"unsupported version", mutated(t, "session_ssh.json", func(m map[string]any) { m["version"] = 4 }), bearer(testSecret), http.MethodPost, "/", "unsupported_version"},
 		{"no version", mutated(t, "session_ssh.json", func(m map[string]any) { delete(m, "version") }), bearer(testSecret), http.MethodPost, "/", "unsupported_version"},
 		{"unknown member", mutated(t, "session_ssh.json", func(m map[string]any) { m["password"] = "x" }), bearer(testSecret), http.MethodPost, "/", "invalid_report"},
 		{"not JSON", []byte("version 1"), bearer(testSecret), http.MethodPost, "/", "invalid_report"},

@@ -238,6 +238,7 @@ type dnsResponse struct {
 
 type attemptResponse struct {
 	Username       string  `json:"username"`
+	Password       *string `json:"password"`
 	PasswordLength *int    `json:"password_length"`
 	KeyFingerprint *string `json:"key_fingerprint"`
 }
@@ -327,7 +328,7 @@ func newSensorResponse(s *incident.Session) *sensorResponse {
 		out.Query = &sessionQueryResponse{BaseDN: s.Query.BaseDN, Filter: s.Query.Filter}
 	}
 	for _, a := range s.Attempts {
-		out.Attempts = append(out.Attempts, attemptResponse{Username: a.Username, PasswordLength: a.PasswordLength, KeyFingerprint: a.KeyFingerprint})
+		out.Attempts = append(out.Attempts, attemptResponse{Username: a.Username, Password: a.Password, PasswordLength: a.PasswordLength, KeyFingerprint: a.KeyFingerprint})
 	}
 	for _, c := range s.ToolCalls {
 		out.ToolCalls = append(out.ToolCalls, toolCallResponse{ToolName: c.ToolName, ArgumentsExcerpt: c.Arguments})

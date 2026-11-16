@@ -6,7 +6,9 @@ package report_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"reflect"
 	"strings"
@@ -120,9 +122,9 @@ func TestMarshal_TheLargestSession_FitsWhatTheTriggerReads(t *testing.T) {
 			ClientVersion: fill(report.MaxClientVersion), Database: fill(report.MaxDatabase), ApplicationName: fill(report.MaxApplicationName),
 			Query: &report.Query{BaseDN: fill(report.MaxBaseDN), Filter: fill(report.MaxFilter)},
 		}
-		length := 1
+		password := fill(report.MaxPassword)
 		for range report.MaxAttempts {
-			s.Attempts = append(s.Attempts, report.Attempt{Username: fill(report.MaxUsername), PasswordLength: &length, KeyFingerprint: "SHA256:" + strings.Repeat("A", 43)})
+			s.Attempts = append(s.Attempts, report.Attempt{Username: fill(report.MaxUsername), Password: &password, KeyFingerprint: "SHA256:" + strings.Repeat("A", 43)})
 		}
 		for range report.MaxToolCalls {
 			s.ToolCalls = append(s.ToolCalls, report.ToolCall{ToolName: fill(report.MaxToolName), Arguments: fill(report.MaxToolArguments)})
@@ -172,5 +174,21 @@ func TestClean(t *testing.T) {
 				t.Errorf("Clean(%q, %d) = %q, want %q", tt.in, tt.max, got, tt.want)
 			}
 		})
+	}
+}
+
+// An attempt holds what an attacker typed, a password included, so no way of
+// printing or logging one shows it.
+func TestAttempt_NeverPrintsThePassword(t *testing.T) {
+	t.Parallel()
+
+	const password = "Tr0ub4dor&3"
+	a := report.Attempt{Username: "root", Password: func() *string { p := password; return &p }()}
+	var logged bytes.Buffer
+	slog.New(slog.NewJSONHandler(&logged, nil)).Info("test", slog.Any("attempt", a))
+	for _, got := range []string{fmt.Sprint(a), fmt.Sprintf("%+v", a), fmt.Sprintf("%#v", a), fmt.Sprintf("%+v", []report.Attempt{a}), logged.String()} {
+		if strings.Contains(got, password) || strings.Contains(got, "root") {
+			t.Errorf("printed = %q, want neither the password nor the name", got)
+		}
 	}
 }

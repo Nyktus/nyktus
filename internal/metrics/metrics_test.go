@@ -30,6 +30,7 @@ const (
 	channelName    = "channel-name-qx"
 	honeypotName   = "honeypot-name-qx"
 	attackerName   = "attacker-name-qx"
+	attackerSecret = "attacker-password-qx"
 	attackerIP     = "198.51.100.78"
 	clientVersion  = "client-version-qx"
 )
@@ -48,7 +49,7 @@ func placeState(t *testing.T, owner *pgxpool.Pool) {
 ('ssh', '` + honeypotName + `', 'medium', sha256('b'), sha256('b'), now() - interval '2 hours', now() - interval '1 minute'),
 ('ldap', '` + honeypotName + `', 'medium', sha256('c'), sha256('c'), now() - interval '2 hours', now() - interval '1 hour')`,
 		`SELECT * FROM record_honeypot_session(sha256('b'), gen_random_uuid(), interval '0', 10, '` + attackerIP + `', 22, 'login_attempt',
-'` + clientVersion + `', NULL, NULL, NULL, NULL, '[{"username":"` + attackerName + `","password_length":3}]', '[]')`,
+'` + clientVersion + `', NULL, NULL, NULL, NULL, '[{"username":"` + attackerName + `","password":"` + attackerSecret + `"}]', '[]')`,
 		`INSERT INTO incidents (resource_type, resource_id, severity, first_event_at, last_event_at, notes, resource_name)
 SELECT 'honeytoken', id, 'high', now(), now(), '` + notes + `', name FROM honeytokens`,
 		`INSERT INTO incidents (resource_type, resource_id, status, severity, first_event_at, last_event_at, acknowledged_at, resource_name)
@@ -157,7 +158,7 @@ func TestHandler_ReportsNoInventoryOrPersonalData(t *testing.T) {
 	text := get(t, schematest.Open(t, consoleURL)).body
 	for _, secret := range []string{
 		honeytokenName, clientIP, userAgent, notes, channelName, strings.Repeat("a", 26),
-		honeypotName, attackerName, attackerIP, clientVersion, "ssh", "ldap",
+		honeypotName, attackerName, attackerSecret, attackerIP, clientVersion, "ssh", "ldap",
 	} {
 		if strings.Contains(text, secret) {
 			t.Errorf("metrics contain %q:\n%s", secret, text)

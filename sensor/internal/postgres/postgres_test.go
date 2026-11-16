@@ -62,33 +62,25 @@ func startupMessage(params ...string) []byte {
 	return packet(protocol30, body...)
 }
 
-const clientNonce = "rOprNGfwEbeRWgbNEkqO"
+// clientPassword is the password that the clients of the tests send.
+const clientPassword = "changeme"
 
-// proof is the part of the last message of the client that a password decides.
-const proof = "dHpI4RFPwZ2vjPxnXyqxGkvVv6cpbjT7RYhBHyyhkPU="
-
-func saslMessage(body string) []byte {
+// passwordMessage is the message of a client with its password: the type, the
+// length and the password with its end.
+func passwordMessage(password string) []byte {
 	b := []byte{'p'}
-	b = binary.BigEndian.AppendUint32(b, uint32(4+len(body))) //nolint:gosec // G115: the test messages are small
-	return append(b, body...)
+	b = binary.BigEndian.AppendUint32(b, uint32(5+len(password))) //nolint:gosec // G115: the test messages are small
+	return append(append(b, password...), 0)
 }
 
-// clientFirst is the first message of a SCRAM exchange with the given nonce.
-func clientFirst(nonce string) []byte {
-	data := "n,,n=,r=" + nonce
-	body := "SCRAM-SHA-256\x00" + string(binary.BigEndian.AppendUint32(nil, uint32(len(data)))) + data //nolint:gosec // G115: the test messages are small
-	return saslMessage(body)
-}
-
-// clientMessages is what a client sends for the whole exchange.
-func clientMessages() []byte {
-	return join(clientFirst(clientNonce), saslMessage("c=biws,r="+clientNonce+"server,p="+proof))
-}
+// clientMessages is what a client sends in answer to the request for a password.
+func clientMessages() []byte { return passwordMessage(clientPassword) }
 
 func join(parts ...[]byte) []byte { return bytes.Join(parts, nil) }
 
 var (
-	authRequest = []byte("R\x00\x00\x00\x17\x00\x00\x00\nSCRAM-SHA-256\x00\x00")
+	// authRequest is the request for a password in clear text.
+	authRequest = []byte{'R', 0, 0, 0, 8, 0, 0, 0, 3}
 	remote      = netip.MustParseAddrPort("203.0.113.9:51000")
 	local       = netip.MustParseAddrPort("10.0.0.5:5432")
 )
@@ -124,21 +116,23 @@ func sessionReport(t *testing.T, s *session.Session) report.Session {
 	return rep
 }
 
-// login is one attempt of a report: the name and the length of the password,
-// with -1 for none.
+// none stands for a login without a password in the comparison of logins.
+const none = "(no password)"
+
+// login is one attempt of a report: the name and the password.
 type login struct {
 	user string
-	pass int
+	pass string
 }
 
 func logins(rep report.Session) []login {
 	var out []login
 	for _, a := range rep.Attempts {
-		n := -1
-		if a.PasswordLength != nil {
-			n = *a.PasswordLength
+		p := none
+		if a.Password != nil {
+			p = *a.Password
 		}
-		out = append(out, login{a.Username, n})
+		out = append(out, login{a.Username, p})
 	}
 	return out
 }
@@ -156,24 +150,6 @@ func refusal(user string) []byte {
 	return append(b, fields...)
 }
 
-// splitAnswer checks an answer of a whole exchange and returns the text of its
-// challenge.
-func splitAnswer(t *testing.T, written, refused []byte) string {
-	t.Helper()
-	rest, ok := bytes.CutPrefix(written, refused)
-	if !ok {
-		t.Fatalf("written = %q, want it to start with %q", written, refused)
-	}
-	if !bytes.HasPrefix(rest, []byte{'R'}) || len(rest) < 9 {
-		t.Fatalf("written = %q, want the challenge", rest)
-	}
-	n := int(binary.BigEndian.Uint32(rest[1:]))
-	if binary.BigEndian.Uint32(rest[5:]) != 11 || len(rest) < 1+n {
-		t.Fatalf("written = %q, want a message of type 11", rest)
-	}
-	return string(rest[9 : 1+n])
-}
-
 func TestServe_Login_RecordsTheUserAndTheDatabase(t *testing.T) {
 	t.Parallel()
 
@@ -182,86 +158,84 @@ func TestServe_Login_RecordsTheUserAndTheDatabase(t *testing.T) {
 		clientMessages()))
 
 	rep := sessionReport(t, s)
-	if got := logins(rep); !reflect.DeepEqual(got, []login{{"postgres", -1}}) {
-		t.Errorf("logins = %+v, want postgres without the length of a password", got)
+	if got := logins(rep); !reflect.DeepEqual(got, []login{{"postgres", clientPassword}}) {
+		t.Errorf("logins = %+v, want postgres with its password", got)
 	}
 	if rep.Database != "app" || rep.ApplicationName != "psql" {
 		t.Errorf("database = %q, application name = %q, want app and psql", rep.Database, rep.ApplicationName)
 	}
-	challenge := splitAnswer(t, conn.Written(), authRequest)
-	if !strings.HasPrefix(challenge, "r="+clientNonce) || !strings.HasSuffix(challenge, ",i=4096") || !strings.Contains(challenge, ",s=") {
-		t.Errorf("challenge = %q, want the nonce of the client, a salt and 4096 iterations", challenge)
-	}
-	if !bytes.HasSuffix(conn.Written(), refusal("postgres")) {
-		t.Errorf("written = %q, want the refusal %q at the end", conn.Written(), refusal("postgres"))
+	if want := join(authRequest, refusal("postgres")); !bytes.Equal(conn.Written(), want) {
+		t.Errorf("written = %q, want the request for a password and the refusal %q", conn.Written(), want)
 	}
 	if got := s.EventType(); got != "login_attempt" {
 		t.Errorf("EventType() = %q, want login_attempt", got)
 	}
 }
 
-func TestServe_Proof_IsNeverKeptOrSentBack(t *testing.T) {
+// The password is what the report is for. It reaches neither the log nor the
+// answer of the honeypot.
+func TestServe_Password_IsRecordedAndNeverSentBackOrLogged(t *testing.T) {
 	t.Parallel()
 
-	s, conn := play(t, join(startupMessage("user", "root"), clientMessages()))
+	s, conn := play(t, join(startupMessage("user", "root"), passwordMessage("Tr0ub4dor&3")))
 
-	body, err := json.Marshal(sessionReport(t, s))
-	if err != nil {
-		t.Fatal(err)
+	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"root", "Tr0ub4dor&3"}}) {
+		t.Errorf("logins = %+v, want the password as it was sent", got)
 	}
-	if bytes.Contains(body, []byte(proof)) || strings.Contains(s.Attr().Value.String(), proof) || bytes.Contains(conn.Written(), []byte(proof)) {
-		t.Errorf("the proof is in the report, the log or the answer")
+	if strings.Contains(s.Attr().Value.String(), "Tr0ub4dor") || bytes.Contains(conn.Written(), []byte("Tr0ub4dor")) {
+		t.Errorf("the password is in the log or the answer")
 	}
 }
 
-func TestServe_Salt_IsTheSameForAUserAndDiffersBetweenUsers(t *testing.T) {
+func TestServe_Password_IsCutAndCleanedLikeEveryText(t *testing.T) {
 	t.Parallel()
 
-	clk := clocktest.New()
-	svc := postgres.New(postgres.Config{}, clk)
-	challenge := func(user string) (nonce, salt string) {
-		conn := conntest.New(join(startupMessage("user", user), clientMessages()))
-		s := start(t, clk)
-		svc.Serve(t.Context(), conn, s)
-		s.End()
-		fields := strings.Split(splitAnswer(t, conn.Written(), authRequest), ",")
-		return fields[0], fields[1]
+	tests := []struct {
+		name     string
+		password string
+		want     string
+	}{
+		{name: "empty", password: "", want: ""},
+		{name: "too long", password: strings.Repeat("p", 300), want: strings.Repeat("p", report.MaxPassword)},
+		{name: "cut in the middle of a character", password: strings.Repeat("p", 255) + "\u00e9", want: strings.Repeat("p", 255)},
+		{name: "not UTF-8", password: "a\xffb", want: "a\uFFFDb"},
+		{name: "ends at the first zero byte", password: "ab\x00cd", want: "ab"},
 	}
-	n1, s1 := challenge("root")
-	n2, s2 := challenge("root")
-	_, s3 := challenge("admin")
-	if s1 != s2 {
-		t.Errorf("salts of one user = %q and %q, want them equal, as on a server", s1, s2)
-	}
-	if s1 == s3 {
-		t.Errorf("salt of two users = %q, want them to differ", s1)
-	}
-	if n1 == n2 {
-		t.Errorf("nonce = %q twice, want a new one for every exchange", n1)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s, conn := play(t, join(startupMessage("user", "u"), passwordMessage(tt.password)))
+			if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"u", tt.want}}) {
+				t.Errorf("logins = %+v, want the password %q", got, tt.want)
+			}
+			if !bytes.HasSuffix(conn.Written(), refusal("u")) {
+				t.Errorf("written = %q, want the refusal at the end", conn.Written())
+			}
+		})
 	}
 }
 
-func TestServe_ClientFirst_ThatIsNotUsable_EndsTheExchange(t *testing.T) {
+// What is no password ends the exchange without a refusal, and the login stays
+// without one.
+func TestServe_PasswordMessage_ThatIsNotUsable_EndsTheExchange(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string][]byte{
-		"a nonce with a control character": clientFirst("abc\x01def"),
-		"a nonce with a space":             clientFirst("abc def"),
-		"a nonce that is too long":         clientFirst(strings.Repeat("a", 257)),
-		"an empty nonce":                   clientFirst(""),
-		"another mechanism":                saslMessage("PLAIN\x00\x00\x00\x00\x03abc"),
-		"a wrong length":                   saslMessage("SCRAM-SHA-256\x00\x00\x00\x00\x63n,,n=,r=abc"),
-		"too few fields":                   saslMessage("SCRAM-SHA-256\x00\x00\x00\x00\x02n,"),
+		"another type":                  {'Q', 0, 0, 0, 6, 'a', 0},
+		"no end of the string":          {'p', 0, 0, 0, 7, 'a', 'b', 'c'},
+		"nothing but the length":        {'p', 0, 0, 0, 4},
+		"a message that is too long":    append([]byte{'p', 0, 0, 0x08, 0x05}, bytes.Repeat([]byte("a"), 2049)...),
+		"a length that cannot be right": {'p', 0, 0, 0, 3, 0},
 	}
-	for name, first := range tests {
+	for name, message := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			s, conn := play(t, join(startupMessage("user", "u"), first, saslMessage("c=biws")))
+			s, conn := play(t, join(startupMessage("user", "u"), message))
 			if !bytes.Equal(conn.Written(), authRequest) {
-				t.Errorf("written = %q, want only the offer of the mechanism", conn.Written())
+				t.Errorf("written = %q, want only the request for a password", conn.Written())
 			}
-			if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"u", -1}}) {
-				t.Errorf("logins = %+v, want the login", got)
+			if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"u", none}}) {
+				t.Errorf("logins = %+v, want the login without a password", got)
 			}
 		})
 	}
@@ -284,11 +258,10 @@ func TestServe_WithoutACertificate_RequestsForEncryptionAreRefused(t *testing.T)
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s, conn := play(t, join(tt.prefix, startupMessage("user", "u"), clientMessages()))
-			splitAnswer(t, conn.Written(), join([]byte(tt.refused), authRequest))
-			if !bytes.HasSuffix(conn.Written(), refusal("u")) {
-				t.Errorf("written = %q, want the refusal at the end", conn.Written())
+			if want := join([]byte(tt.refused), authRequest, refusal("u")); !bytes.Equal(conn.Written(), want) {
+				t.Errorf("written = %q, want the refusal of encryption, the request for a password and the refusal %q", conn.Written(), want)
 			}
-			if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"u", -1}}) {
+			if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"u", clientPassword}}) {
 				t.Errorf("logins = %+v, want the login after the request", got)
 			}
 		})
@@ -370,12 +343,12 @@ func TestServe_EndOfTheStream(t *testing.T) {
 		script []byte
 		want   []login
 	}{
-		{name: "only the startup", script: startupMessage("user", "u"), want: []login{{"u", -1}}},
-		{name: "a message that is no answer", script: join(startupMessage("user", "u"), []byte{'Q', 0, 0, 0, 5, 0}), want: []login{{"u", -1}}},
-		{name: "terminate", script: join(startupMessage("user", "u"), []byte{'X', 0, 0, 0, 4}), want: []login{{"u", -1}}},
-		{name: "the type of the message only", script: join(startupMessage("user", "u"), []byte{'p'}), want: []login{{"u", -1}}},
-		{name: "a length that holds nothing", script: join(startupMessage("user", "u"), []byte{'p', 0, 0, 0, 4}), want: []login{{"u", -1}}},
-		{name: "a message that was not finished", script: join(startupMessage("user", "u"), long), want: []login{{"u", -1}}},
+		{name: "only the startup", script: startupMessage("user", "u"), want: []login{{"u", none}}},
+		{name: "a message that is no answer", script: join(startupMessage("user", "u"), []byte{'Q', 0, 0, 0, 5, 0}), want: []login{{"u", none}}},
+		{name: "terminate", script: join(startupMessage("user", "u"), []byte{'X', 0, 0, 0, 4}), want: []login{{"u", none}}},
+		{name: "the type of the message only", script: join(startupMessage("user", "u"), []byte{'p'}), want: []login{{"u", none}}},
+		{name: "a length that holds nothing", script: join(startupMessage("user", "u"), []byte{'p', 0, 0, 0, 4}), want: []login{{"u", none}}},
+		{name: "a message that was not finished", script: join(startupMessage("user", "u"), long), want: []login{{"u", none}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -485,7 +458,7 @@ func TestServe_MessageThatPromisesTooMuch_IsNotRead(t *testing.T) {
 	if conn.BytesRead() > 4096+len(script)-64<<10 {
 		t.Errorf("read %d bytes, want the message refused by its header", conn.BytesRead())
 	}
-	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"u", -1}}) {
+	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"u", none}}) {
 		t.Errorf("logins = %+v, want the login", got)
 	}
 }
@@ -500,7 +473,7 @@ func TestServe_NameEntered_IsRecordedWhenTheRequestCannotBeWritten(t *testing.T)
 	postgres.New(postgres.Config{}, clk).Serve(t.Context(), conn, s)
 	s.End()
 
-	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"root", -1}}) {
+	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"root", none}}) {
 		t.Errorf("logins = %+v, want the name without a password", got)
 	}
 	if len(conn.Written()) != 0 {
@@ -513,13 +486,13 @@ func TestServe_RefusalThatCannotBeWritten_KeepsTheLogin(t *testing.T) {
 
 	clk := clocktest.New()
 	conn := conntest.New(join(startupMessage("user", "root"), clientMessages()))
-	conn.FailAfter(2)
+	conn.FailAfter(1)
 	s := start(t, clk)
 	postgres.New(postgres.Config{}, clk).Serve(t.Context(), conn, s)
 	s.End()
 
-	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"root", -1}}) {
-		t.Errorf("logins = %+v, want the login", got)
+	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"root", clientPassword}}) {
+		t.Errorf("logins = %+v, want the login with its password", got)
 	}
 }
 
@@ -638,15 +611,9 @@ func TestServe_Dialog_WithAClientThatWaitsForTheAnswers(t *testing.T) {
 	}
 	send(startupMessage("user", "postgres", "database", "app"))
 	if got := read(len(authRequest)); !bytes.Equal(got, authRequest) {
-		t.Fatalf("request = %q, want the offer of SCRAM", got)
+		t.Fatalf("request = %q, want the request for a password in clear text", got)
 	}
-	send(clientFirst(clientNonce))
-	challengeHead := read(5)
-	if challengeHead[0] != 'R' {
-		t.Fatalf("message type = %q, want R", challengeHead[0])
-	}
-	_ = read(int(binary.BigEndian.Uint32(challengeHead[1:])) - 4)
-	send(saslMessage("c=biws,r=" + clientNonce + "x,p=" + proof))
+	send(passwordMessage(clientPassword))
 	head := read(5)
 	if head[0] != 'E' {
 		t.Fatalf("message type = %q, want E", head[0])
@@ -661,8 +628,8 @@ func TestServe_Dialog_WithAClientThatWaitsForTheAnswers(t *testing.T) {
 	}
 	_ = client.Close()
 	<-done
-	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"postgres", -1}}) {
-		t.Errorf("logins = %+v, want the login", got)
+	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"postgres", clientPassword}}) {
+		t.Errorf("logins = %+v, want the login with its password", got)
 	}
 }
 
@@ -732,8 +699,8 @@ func testCertificate(t *testing.T) *postgres.Certificate {
 	return &postgres.Certificate{Certificate: tls.Certificate{Certificate: [][]byte{der}, PrivateKey: priv}}
 }
 
-// A client that insists on TLS gets it, is offered channel binding, and the
-// login is recorded like any other.
+// A client that insists on TLS gets it, and the login is recorded like any
+// other.
 func TestServe_WithACertificate_TheLoginRunsInsideTLS(t *testing.T) {
 	t.Parallel()
 
@@ -760,22 +727,22 @@ func TestServe_WithACertificate_TheLoginRunsInsideTLS(t *testing.T) {
 	if _, err := tc.Write(startupMessage("user", "postgres")); err != nil {
 		t.Fatal(err)
 	}
-	head := make([]byte, 5)
-	if _, err := io.ReadFull(tc, head); err != nil {
+	request := make([]byte, len(authRequest))
+	if _, err := io.ReadFull(tc, request); err != nil || !bytes.Equal(request, authRequest) {
+		t.Fatalf("request = %q, %v, want the request for a password", request, err)
+	}
+	if _, err := tc.Write(passwordMessage(clientPassword)); err != nil {
 		t.Fatal(err)
 	}
-	offer := make([]byte, int(binary.BigEndian.Uint32(head[1:]))-4)
-	if _, err := io.ReadFull(tc, offer); err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(offer, []byte("SCRAM-SHA-256-PLUS\x00SCRAM-SHA-256\x00\x00")) {
-		t.Errorf("offer = %q, want channel binding and SCRAM", offer)
+	// The server ends the session without closing TLS, so the read ends with an error that says nothing.
+	if answer, _ := io.ReadAll(tc); !bytes.Equal(answer, refusal("postgres")) {
+		t.Errorf("answer = %q, want the refusal", answer)
 	}
 	_ = tc.Close()
 	_ = client.Close()
 	<-done
-	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"postgres", -1}}) {
-		t.Errorf("logins = %+v, want the login", got)
+	if got := logins(sessionReport(t, s)); !reflect.DeepEqual(got, []login{{"postgres", clientPassword}}) {
+		t.Errorf("logins = %+v, want the login with its password", got)
 	}
 }
 

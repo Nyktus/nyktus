@@ -27,10 +27,11 @@ import (
 
 // ReportVersion is the version of the report that sensors send. The trigger
 // also accepts the one before it, so that a sensor that has not been updated
-// keeps reporting; that version has no tool calls.
+// keeps reporting; that version sends the length of a password instead of the
+// password.
 const (
-	ReportVersion         = 2
-	previousReportVersion = 1
+	ReportVersion         = 3
+	previousReportVersion = 2
 )
 
 // Errors of a report that is not stored. The response is the same for every
@@ -104,6 +105,7 @@ const (
 	maxDatabase        = 64
 	maxApplicationName = 64
 	maxUsername        = 256
+	maxPassword        = 256
 	maxBaseDN          = 256
 	maxFilter          = 256
 	maxToolCalls       = 6
@@ -118,13 +120,15 @@ const (
 	maxAge = 5 * time.Minute
 )
 
-// Attempt is one login or bind of a session. The password is never part of it:
-// only its length.
+// Attempt is one login or bind of a session.
 type Attempt struct {
 	// Username is the user name or the distinguished name that the client used.
 	Username string
-	// PasswordLength is the length of the password that was sent, or nil if
-	// none was.
+	// Password is the password that was sent, or nil if none was. A sensor of
+	// the previous report version never sends it.
+	Password *string
+	// PasswordLength is the length of the password that a sensor of the
+	// previous report version sent in its place, or nil.
 	PasswordLength *int
 	// KeyFingerprint is the fingerprint of the public key that was offered, or
 	// empty.
@@ -235,6 +239,7 @@ type sessionWire struct {
 
 type attemptWire struct {
 	Username       *string `json:"username"`
+	Password       *string `json:"password"`
 	PasswordLength *int    `json:"password_length"`
 	KeyFingerprint *string `json:"key_fingerprint"`
 }
@@ -316,11 +321,6 @@ func (w sessionWire) session() (Session, bool) {
 	if w.SessionID == nil || w.AgeMS == nil || w.DurationMS == nil || w.ClientIP == nil || w.Port == nil || w.Attempts == nil {
 		return Session{}, false
 	}
-	// The member is new in the current version, and a new member needs a new
-	// version.
-	if w.Version == previousReportVersion && w.ToolCalls != nil {
-		return Session{}, false
-	}
 	ip, err := netip.ParseAddr(*w.ClientIP)
 	if err != nil || ip.Zone() != "" {
 		return Session{}, false
@@ -346,15 +346,23 @@ func (w sessionWire) session() (Session, bool) {
 		Attempts:        make([]Attempt, 0, len(*w.Attempts)),
 	}
 	for _, a := range *w.Attempts {
+		// A member belongs to one version: a new one needs a new version, and
+		// the length of a password has no place beside the password.
 		if a.Username == nil || (a.PasswordLength != nil && (*a.PasswordLength < 0 || *a.PasswordLength > maxPasswordLength)) ||
-			(a.KeyFingerprint != nil && !fingerprintFormat.MatchString(*a.KeyFingerprint)) {
+			(a.KeyFingerprint != nil && !fingerprintFormat.MatchString(*a.KeyFingerprint)) ||
+			(w.Version == ReportVersion && a.PasswordLength != nil) || (w.Version == previousReportVersion && a.Password != nil) {
 			return Session{}, false
 		}
-		s.Attempts = append(s.Attempts, Attempt{
+		attempt := Attempt{
 			Username:       untrusted(*a.Username, maxUsername),
 			PasswordLength: a.PasswordLength,
 			KeyFingerprint: deref(a.KeyFingerprint),
-		})
+		}
+		if a.Password != nil {
+			password := untrusted(*a.Password, maxPassword)
+			attempt.Password = &password
+		}
+		s.Attempts = append(s.Attempts, attempt)
 	}
 	if w.Query != nil {
 		// The root of a directory has the empty name, so an empty base is a value.

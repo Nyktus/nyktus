@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "type": "session",
   "session_id": "fedcba9876543210fedcba9876543210",
   "age_ms": 0,
@@ -10,7 +10,8 @@
   "application_name": "psql",
   "attempts": [
     {
-      "username": "postgres"
+      "username": "postgres",
+      "password": "changeme"
     }
   ]
 }

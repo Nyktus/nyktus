@@ -1475,9 +1475,8 @@ CREATE TABLE public.events (
 	-- random identifier, so that a report sent twice is stored once. The service
 	-- is a copy of the one of the honeypot. A session is stored when it ends, so
 	-- occurred_at is its start and the duration tells how long it lasted. The
-	-- port is the one the attacker reached. A password is never stored; the
-	-- attempts of the session are in event_attempts and the calls of tools in
-	-- event_tool_calls.
+	-- port is the one the attacker reached. The attempts of the session are in
+	-- event_attempts and the calls of tools in event_tool_calls.
 	sensor_session_id       uuid,
 	sensor_service          text,
 	-- The highest stage that the session reached: a tool call or a directory
@@ -1624,17 +1623,22 @@ WITH (autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0
 CREATE INDEX event_jobs_not_before_idx ON public.event_jobs (not_before);
 
 -- What an attacker tried during a session of a honeypot, in the order of the
--- attempts: the user name or bind DN, the key that was offered, and the length
--- of the password. The password itself is never stored, and no column could
--- hold it: whoever mistypes the address of a host in a terminal sends their own
--- password to the honeypot, and an event is readable by every viewer for half a
--- year. Like the session, the values are untrusted. The attempts belong to the
--- event and leave with it.
+-- attempts: the user name or bind DN, the password and the key that was offered.
+-- The password is stored as it was sent, cut to 256 bytes, because a refused
+-- login leaves nothing else to learn from it. Whoever mistypes the address of a
+-- host in a terminal sends their own password to the honeypot, and an event is
+-- readable by every viewer for half a year, so the password is shown only on
+-- the event, never in an alert, a log or a metric. Like the session, the values
+-- are untrusted. The attempts belong to the event and leave with it.
 CREATE TABLE public.event_attempts (
 	event_id        uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
 	ordinal         smallint NOT NULL,
 	username        text NOT NULL,
-	-- NULL if the attacker sent no password; 0 for an empty one.
+	-- NULL if the attacker sent no password; the empty text for an empty one.
+	password        text,
+	-- The length of the password that a sensor of the previous report version
+	-- sent in its place, which did not send the password itself. NULL for a
+	-- newer sensor.
 	password_length integer,
 	-- The SHA-256 fingerprint of an offered public key, such as the one OpenSSH
 	-- prints.
@@ -1645,7 +1649,9 @@ CREATE TABLE public.event_attempts (
 	-- the table.
 	CONSTRAINT event_attempts_ordinal_check CHECK (ordinal BETWEEN 1 AND 6),
 	CONSTRAINT event_attempts_username_check CHECK (public.untrusted_text_valid(username, 256)),
+	CONSTRAINT event_attempts_password_check CHECK (public.untrusted_text_valid(password, 256)),
 	CONSTRAINT event_attempts_password_length_check CHECK (password_length BETWEEN 0 AND 65535),
+	CONSTRAINT event_attempts_password_once_check CHECK (num_nonnulls(password, password_length) <= 1),
 	CONSTRAINT event_attempts_key_fingerprint_check CHECK (key_fingerprint ~ '^SHA256:[A-Za-z0-9+/]{43}$')
 );
 
@@ -1951,8 +1957,8 @@ BEGIN
 		RETURN;
 	END IF;
 
-	INSERT INTO public.event_attempts (event_id, ordinal, username, password_length, key_fingerprint)
-	SELECT new_event_id, a.ordinal, a.item ->> 'username', (a.item ->> 'password_length')::integer,
+	INSERT INTO public.event_attempts (event_id, ordinal, username, password, password_length, key_fingerprint)
+	SELECT new_event_id, a.ordinal, a.item ->> 'username', a.item ->> 'password', (a.item ->> 'password_length')::integer,
 		a.item ->> 'key_fingerprint'
 	FROM jsonb_array_elements(report_attempts) WITH ORDINALITY AS a (item, ordinal);
 	INSERT INTO public.event_tool_calls (event_id, ordinal, tool_name, arguments_excerpt)

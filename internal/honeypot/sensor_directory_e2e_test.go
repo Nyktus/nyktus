@@ -31,17 +31,18 @@ func dial(t *testing.T, port int) net.Conn {
 	return conn
 }
 
-// noPassword fails the test if the password reached the database.
-func noPassword(t *testing.T, env *sensorEnv, password string) {
+// passwordOnlyInItsAttempt fails the test if the password is in the database
+// anywhere but in the column of its attempt.
+func passwordOnlyInItsAttempt(t *testing.T, env *sensorEnv, password string) {
 	t.Helper()
 	var stored string
 	if err := env.owner.QueryRow(t.Context(), `
-SELECT coalesce(string_agg(row_to_json(e)::text, ' '), '') || coalesce((SELECT string_agg(row_to_json(a)::text, ' ') FROM event_attempts a), '')
+SELECT coalesce(string_agg(row_to_json(e)::text, ' '), '') || coalesce((SELECT string_agg((to_jsonb(a) - 'password')::text, ' ') FROM event_attempts a), '')
 FROM events e`).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(stored, password) {
-		t.Errorf("the database holds the password: %s", stored)
+		t.Errorf("the database holds the password outside its attempt: %s", stored)
 	}
 }
 
@@ -80,25 +81,14 @@ func TestSensor_PostgreSQL_EndToEnd(t *testing.T) { //nolint:paralleltest // see
 	if _, err := conn.Write(message(196608, []byte(params))); err != nil {
 		t.Fatal(err)
 	}
-	if got := read(24); !bytes.Contains(got, []byte("SCRAM-SHA-256")) {
-		t.Fatalf("offer = %q, want SCRAM", got)
+	if got := read(9); !bytes.Equal(got, []byte{'R', 0, 0, 0, 8, 0, 0, 0, 3}) {
+		t.Fatalf("request = %q, want the request for a password in clear text", got)
 	}
-	sasl := func(body string) []byte {
-		b := binary.BigEndian.AppendUint32([]byte{'p'}, uint32(4+len(body))) //nolint:gosec // G115: the test messages are small
-		return append(b, body...)
-	}
-	const clientFirst = "n,,n=,r=abcdefghijklmnop"
-	first := "SCRAM-SHA-256\x00" + string(binary.BigEndian.AppendUint32(nil, uint32(len(clientFirst)))) + clientFirst
-	if _, err := conn.Write(sasl(first)); err != nil {
+	const password = "hunter2-typed-this"
+	if _, err := conn.Write(binary.BigEndian.AppendUint32([]byte{'p'}, uint32(5+len(password)))); err != nil {
 		t.Fatal(err)
 	}
-	challenge := read(5)
-	if challenge[0] != 'R' {
-		t.Fatalf("message type = %c, want the challenge", challenge[0])
-	}
-	read(int(binary.BigEndian.Uint32(challenge[1:])) - 4)
-	const password = "hunter2-typed-this"
-	if _, err := conn.Write(sasl("c=biws,r=abcdefghijklmnopx,p=" + password)); err != nil {
+	if _, err := conn.Write([]byte(password + "\x00")); err != nil {
 		t.Fatal(err)
 	}
 	head := read(5)
@@ -114,7 +104,7 @@ func TestSensor_PostgreSQL_EndToEnd(t *testing.T) { //nolint:paralleltest // see
 		service, database, application string
 		techniques                     []string
 		user                           string
-		length                         *int
+		stored                         *string
 	)
 	if err := env.owner.QueryRow(t.Context(), `SELECT sensor_service, sensor_database, sensor_application_name, techniques FROM events WHERE id = $1`, eventID).
 		Scan(&service, &database, &application, &techniques); err != nil {
@@ -123,11 +113,11 @@ func TestSensor_PostgreSQL_EndToEnd(t *testing.T) { //nolint:paralleltest // see
 	if service != "postgres" || database != "payroll" || application != "psql" || !slices.Equal(techniques, []string{"T1110"}) {
 		t.Errorf("event = %s %q %q %v, want a login attempt at the PostgreSQL honeypot with the database and the application of the client", service, database, application, techniques)
 	}
-	if err := env.owner.QueryRow(t.Context(), `SELECT username, password_length FROM event_attempts WHERE event_id = $1`, eventID).Scan(&user, &length); err != nil {
+	if err := env.owner.QueryRow(t.Context(), `SELECT username, password FROM event_attempts WHERE event_id = $1`, eventID).Scan(&user, &stored); err != nil {
 		t.Fatal(err)
 	}
-	if user != "mallory-typed-this" || length != nil {
-		t.Errorf("attempt = %q with a password of %v bytes, want the login of the attacker without a length", user, length)
+	if user != "mallory-typed-this" || stored == nil || *stored != password {
+		t.Errorf("attempt = %q with the password %v, want the login of the attacker with its password", user, stored)
 	}
 
 	// A client that cancels is a connection.
@@ -141,7 +131,7 @@ func TestSensor_PostgreSQL_EndToEnd(t *testing.T) { //nolint:paralleltest // see
 		err := env.owner.QueryRow(t.Context(), `SELECT count(*) FROM events WHERE resource_id = $1 AND sensor_event_type = 'connection'`, env.created.ID).Scan(&n)
 		return err == nil && n == 1
 	})
-	noPassword(t, env, password)
+	passwordOnlyInItsAttempt(t, env, password)
 
 	if err := env.process.stop(t); err != nil {
 		t.Errorf("the sensor ended with %v, want a clean exit", err)
@@ -202,7 +192,7 @@ func TestSensor_LDAP_EndToEnd(t *testing.T) { //nolint:paralleltest // see above
 		service, base, filterText string
 		techniques                []string
 		user                      string
-		length                    *int
+		stored                    *string
 	)
 	if err := env.owner.QueryRow(t.Context(), `SELECT sensor_service, sensor_base_dn, sensor_filter, techniques FROM events WHERE id = $1`, eventID).
 		Scan(&service, &base, &filterText, &techniques); err != nil {
@@ -211,13 +201,13 @@ func TestSensor_LDAP_EndToEnd(t *testing.T) { //nolint:paralleltest // see above
 	if service != "ldap" || base != "dc=corp,dc=local" || filterText != "(&(objectClass=user)(!(mail=*)))" || !slices.Equal(techniques, []string{"T1087.002"}) {
 		t.Errorf("event = %s %q %q %v, want a directory query at the LDAP honeypot with the base and the filter", service, base, filterText, techniques)
 	}
-	if err := env.owner.QueryRow(t.Context(), `SELECT username, password_length FROM event_attempts WHERE event_id = $1`, eventID).Scan(&user, &length); err != nil {
+	if err := env.owner.QueryRow(t.Context(), `SELECT username, password FROM event_attempts WHERE event_id = $1`, eventID).Scan(&user, &stored); err != nil {
 		t.Fatal(err)
 	}
-	if user != dn || length == nil || *length != len(password) {
-		t.Errorf("attempt = %q with a password of %v bytes, want the failed bind", user, length)
+	if user != dn || stored == nil || *stored != password {
+		t.Errorf("attempt = %q with the password %v, want the failed bind with its password", user, stored)
 	}
-	noPassword(t, env, password)
+	passwordOnlyInItsAttempt(t, env, password)
 
 	if err := env.process.stop(t); err != nil {
 		t.Errorf("the sensor ended with %v, want a clean exit", err)

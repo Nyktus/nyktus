@@ -442,7 +442,7 @@ export const de: Record<MessageKey, string> = {
   'event.toolName': 'Tool',
   'event.toolArguments': 'Argumente (Anfang, wie gesendet)',
   'event.username': 'Benutzername',
-  'event.passwordLength': 'Passwort',
+  'event.password': 'Passwort',
   'event.keyFingerprint': 'Fingerabdruck',
   'event.characters': '{count} Zeichen',
   'eventType.connection': 'Verbindung',

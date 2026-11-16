@@ -267,7 +267,7 @@ func TestRun_TelnetSession_IsReportedWithItsAttempts(t *testing.T) {
 
 	// The honeypot says that it runs, with the secret of its honeypot.
 	hb := tr.next(t)
-	if hb.authorization != "Bearer "+secretOne || string(hb.body) != `{"version":2,"type":"heartbeat","sensor_version":"0.1.0"}` {
+	if hb.authorization != "Bearer "+secretOne || string(hb.body) != `{"version":3,"type":"heartbeat","sensor_version":"0.1.0"}` {
 		t.Errorf("first report = %+v, want the heartbeat of the honeypot", hb)
 	}
 
@@ -282,12 +282,9 @@ func TestRun_TelnetSession_IsReportedWithItsAttempts(t *testing.T) {
 	rc := tr.next(t)
 	s := decodeSession(t, rc)
 	_, port, _ := net.SplitHostPort(r.addr(idOne))
-	if rc.authorization != "Bearer "+secretOne || s.Version != 2 || s.Type != "session" || s.ClientIP != "127.0.0.1" || strconv.Itoa(s.Port) != port ||
-		len(s.Attempts) != 1 || s.Attempts[0].Username != "mallory-typed-this" || s.Attempts[0].PasswordLength == nil || *s.Attempts[0].PasswordLength != 18 {
+	if rc.authorization != "Bearer "+secretOne || s.Version != 3 || s.Type != "session" || s.ClientIP != "127.0.0.1" || strconv.Itoa(s.Port) != port ||
+		len(s.Attempts) != 1 || s.Attempts[0].Username != "mallory-typed-this" || s.Attempts[0].Password == nil || *s.Attempts[0].Password != "hunter2-typed-this" {
 		t.Errorf("report = %+v (%s), want the session with one login", s, rc.authorization)
-	}
-	if strings.Contains(string(rc.body), "hunter2") {
-		t.Errorf("report %s holds the password", rc.body)
 	}
 	if err := r.stop(); err != nil {
 		t.Errorf("Run() = %v", err)
@@ -370,7 +367,7 @@ func TestRun_Stop_ReportsOpenSessions(t *testing.T) {
 		t.Errorf("Run() = %v", err)
 	}
 	s := decodeSession(t, tr.next(t))
-	if len(s.Attempts) != 1 || s.Attempts[0].Username != "root" || s.Attempts[0].PasswordLength != nil {
+	if len(s.Attempts) != 1 || s.Attempts[0].Username != "root" || s.Attempts[0].Password != nil {
 		t.Errorf("attempts = %+v, want the login without a password", s.Attempts)
 	}
 }
@@ -544,7 +541,7 @@ func TestRun_TCPHoneypotWithSeveralPorts_ReportsThePortOfEachSession(t *testing.
 	entry := "  - id: " + idOne + "\n    service: tcp\n    listen: [\":3389\", \":445\", \":1433\"]\n    secret: " + secretOne + "\n    banner: \"hello\\r\\n\"\n"
 	r := start(t, parse(t, tr.URL, entry), nil)
 
-	if hb := tr.next(t); string(hb.body) != `{"version":2,"type":"heartbeat","sensor_version":"0.1.0"}` {
+	if hb := tr.next(t); string(hb.body) != `{"version":3,"type":"heartbeat","sensor_version":"0.1.0"}` {
 		t.Errorf("first report = %s, want the heartbeat", hb.body)
 	}
 	addrs := r.all[idOne]

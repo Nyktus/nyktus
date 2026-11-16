@@ -87,11 +87,8 @@ func TestRun_SSHSession_IsReportedWithItsAttemptsAndTheVersionOfTheClient(t *tes
 	_, port, _ := net.SplitHostPort(r.addr(idOne))
 	if rc.authorization != "Bearer "+secretOne || s.Type != "session" || s.ClientIP != "127.0.0.1" || strconv.Itoa(s.Port) != port ||
 		s.ClientVersion != "SSH-2.0-OpenSSH_9.6" || len(s.Attempts) != 1 || s.Attempts[0].Username != "mallory-typed-this" ||
-		s.Attempts[0].PasswordLength == nil || *s.Attempts[0].PasswordLength != 18 {
+		s.Attempts[0].Password == nil || *s.Attempts[0].Password != "hunter2-typed-this" {
 		t.Errorf("report = %+v (%s), want the session with one login and the version of the client", s, rc.authorization)
-	}
-	if strings.Contains(string(rc.body), "hunter2") {
-		t.Errorf("report %s holds the password", rc.body)
 	}
 	if err := r.stop(); err != nil {
 		t.Errorf("Run() = %v", err)

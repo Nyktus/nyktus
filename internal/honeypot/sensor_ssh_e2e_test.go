@@ -95,20 +95,20 @@ func TestSensor_SSH_EndToEnd(t *testing.T) { //nolint:paralleltest // see above.
 	if channel != "sensor" || service != "ssh" || version != "SSH-2.0-OpenSSH_9.6" || !slices.Equal(techniques, []string{"T1021.004", "T1110"}) {
 		t.Errorf("event = %s %s %q %v, want a login attempt at the SSH honeypot with the version of the client and the techniques of brute force and SSH", channel, service, version, techniques)
 	}
-	rows, err := env.owner.Query(t.Context(), `SELECT username, password_length, key_fingerprint FROM event_attempts WHERE event_id = $1 ORDER BY ordinal`, eventID)
+	rows, err := env.owner.Query(t.Context(), `SELECT username, password, key_fingerprint FROM event_attempts WHERE event_id = $1 ORDER BY ordinal`, eventID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
 	type attempt struct {
 		user        string
-		length      *int
+		password    *string
 		fingerprint *string
 	}
 	var attempts []attempt
 	for rows.Next() {
 		var a attempt
-		if err := rows.Scan(&a.user, &a.length, &a.fingerprint); err != nil {
+		if err := rows.Scan(&a.user, &a.password, &a.fingerprint); err != nil {
 			t.Fatal(err)
 		}
 		attempts = append(attempts, a)
@@ -118,9 +118,9 @@ func TestSensor_SSH_EndToEnd(t *testing.T) { //nolint:paralleltest // see above.
 	}
 	wantFingerprint := cryptossh.FingerprintSHA256(clientKey.PublicKey())
 	if len(attempts) != 2 ||
-		attempts[0].user != "mallory-typed-this" || attempts[0].length == nil || *attempts[0].length != 18 || attempts[0].fingerprint != nil ||
-		attempts[1].user != "mallory-typed-this" || attempts[1].length != nil || attempts[1].fingerprint == nil || *attempts[1].fingerprint != wantFingerprint {
-		t.Errorf("attempts = %+v, want the password of 18 bytes and then the key %s", attempts, wantFingerprint)
+		attempts[0].user != "mallory-typed-this" || attempts[0].password == nil || *attempts[0].password != "hunter2-typed-this" || attempts[0].fingerprint != nil ||
+		attempts[1].user != "mallory-typed-this" || attempts[1].password != nil || attempts[1].fingerprint == nil || *attempts[1].fingerprint != wantFingerprint {
+		t.Errorf("attempts = %+v, want the password and then the key %s", attempts, wantFingerprint)
 	}
 
 	// A client that never logs in is a connection with its version.
@@ -139,16 +139,8 @@ SELECT count(*) FROM events WHERE resource_id = $1 AND sensor_event_type = 'conn
 		return err == nil && n == 1
 	})
 
-	// The password is nowhere: not in the events, not in their attempts.
-	var stored string
-	if err := env.owner.QueryRow(t.Context(), `
-SELECT coalesce(string_agg(row_to_json(e)::text, ' '), '') || coalesce((SELECT string_agg(row_to_json(a)::text, ' ') FROM event_attempts a), '')
-FROM events e`).Scan(&stored); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(stored, "hunter2") {
-		t.Errorf("the database holds the password: %s", stored)
-	}
+	// The password is in the column of its attempt and nowhere else.
+	passwordOnlyInItsAttempt(t, env, "hunter2")
 
 	if err := env.process.stop(t); err != nil {
 		t.Errorf("the sensor ended with %v, want a clean exit", err)

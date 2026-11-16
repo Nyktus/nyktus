@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "type": "session",
   "session_id": "0123456789abcdef0123456789abcdef",
   "age_ms": 1500,
@@ -10,7 +10,7 @@
   "attempts": [
     {
       "username": "root",
-      "password_length": 8
+      "password": "letmein1"
     },
     {
       "username": "admin",

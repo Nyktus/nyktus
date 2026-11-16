@@ -151,7 +151,7 @@ func (h *honeypot) raw(t *testing.T, data []byte) {
 	}
 }
 
-func TestServe_Password_RecordsTheUserAndTheLengthOfThePassword(t *testing.T) {
+func TestServe_Password_RecordsTheUserAndThePassword(t *testing.T) {
 	t.Parallel()
 
 	h := serve(t)
@@ -160,22 +160,22 @@ func TestServe_Password_RecordsTheUserAndTheLengthOfThePassword(t *testing.T) {
 		t.Fatal("the login succeeded, want it refused")
 	}
 	rep := h.report(t)
-	if len(rep.Attempts) != 1 || rep.Attempts[0].Username != "root" || rep.Attempts[0].PasswordLength == nil || *rep.Attempts[0].PasswordLength != 8 || rep.Attempts[0].KeyFingerprint != "" {
-		t.Errorf("attempts = %+v, want one login of root with a password of 8 bytes", rep.Attempts)
+	if len(rep.Attempts) != 1 || rep.Attempts[0].Username != "root" || rep.Attempts[0].Password == nil || *rep.Attempts[0].Password != "p4ssw0rd" || rep.Attempts[0].KeyFingerprint != "" {
+		t.Errorf("attempts = %+v, want one login of root with the password p4ssw0rd", rep.Attempts)
 	}
 	if rep.ClientVersion != "SSH-2.0-OpenSSH_9.6" {
 		t.Errorf("client_version = %q, want the version of the client", rep.ClientVersion)
 	}
 }
 
-func TestServe_EmptyPassword_IsALoginWithLengthZero(t *testing.T) {
+func TestServe_EmptyPassword_IsALoginWithAnEmptyPassword(t *testing.T) {
 	t.Parallel()
 
 	h := serve(t)
 	_ = h.login(t, &cryptossh.ClientConfig{User: "root", Auth: []cryptossh.AuthMethod{cryptossh.Password("")}})
 	rep := h.report(t)
-	if len(rep.Attempts) != 1 || rep.Attempts[0].PasswordLength == nil || *rep.Attempts[0].PasswordLength != 0 {
-		t.Errorf("attempts = %+v, want one login with a password of length 0", rep.Attempts)
+	if len(rep.Attempts) != 1 || rep.Attempts[0].Password == nil || *rep.Attempts[0].Password != "" {
+		t.Errorf("attempts = %+v, want one login with an empty password", rep.Attempts)
 	}
 }
 
@@ -192,7 +192,7 @@ func TestServe_PublicKey_RecordsTheFingerprintAndRefusesTheKey(t *testing.T) {
 	}
 	rep := h.report(t)
 	want := cryptossh.FingerprintSHA256(key.PublicKey())
-	if len(rep.Attempts) != 1 || rep.Attempts[0].Username != "admin" || rep.Attempts[0].KeyFingerprint != want || rep.Attempts[0].PasswordLength != nil {
+	if len(rep.Attempts) != 1 || rep.Attempts[0].Username != "admin" || rep.Attempts[0].KeyFingerprint != want || rep.Attempts[0].Password != nil {
 		t.Errorf("attempts = %+v, want one login of admin with the key %s and no password", rep.Attempts, want)
 	}
 	if !fingerprintFormat.MatchString(rep.Attempts[0].KeyFingerprint) {
@@ -260,8 +260,8 @@ func TestServe_SeventhLogin_IsNeverOffered(t *testing.T) {
 		t.Fatalf("attempts = %d, want %d: the sixth refusal ends the connection", len(rep.Attempts), session.MaxAttempts)
 	}
 	for i, a := range rep.Attempts {
-		if a.PasswordLength == nil || *a.PasswordLength != i+1 {
-			t.Errorf("attempt %d = %+v, want a password of %d bytes", i, a, i+1)
+		if a.Password == nil || *a.Password != strings.Repeat("x", i+1) {
+			t.Errorf("attempt %d = %+v, want the password %q", i, a, strings.Repeat("x", i+1))
 		}
 	}
 	if next != session.MaxAttempts {
@@ -318,7 +318,7 @@ func shape(v any) any {
 	}
 }
 
-func TestServe_Password_AndKey_NeverReachTheReportOrTheLog(t *testing.T) {
+func TestServe_Password_IsReportedButNeverLogged_AndKeyIsNeverKept(t *testing.T) {
 	t.Parallel()
 
 	const password = "Tr0ub4dor&3-hunter2"
@@ -327,7 +327,7 @@ func TestServe_Password_AndKey_NeverReachTheReportOrTheLog(t *testing.T) {
 	_ = h.login(t, &cryptossh.ClientConfig{User: "root", Auth: []cryptossh.AuthMethod{cryptossh.Password(password), cryptossh.PublicKeys(key)}})
 	s := h.session(t)
 	rep, _ := s.Report(0)
-	data, err := json.Marshal(rep)
+	data, err := report.Marshal(rep)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,9 +336,15 @@ func TestServe_Password_AndKey_NeverReachTheReportOrTheLog(t *testing.T) {
 	slog.New(slog.NewJSONHandler(&log, nil)).Info("sensor: session", slog.Any("session", s))
 	blob := base64Key(key)
 	for name, text := range map[string]string{"report": string(data), "log": log.String()} {
-		if strings.Contains(text, password) || strings.Contains(text, blob) {
-			t.Errorf("the %s holds the password or the key: %s", name, text)
+		if strings.Contains(text, blob) {
+			t.Errorf("the %s holds the key: %s", name, text)
 		}
+	}
+	if strings.Contains(log.String(), password) {
+		t.Errorf("the log holds the password: %s", log.String())
+	}
+	if !strings.Contains(string(data), password) {
+		t.Errorf("the report = %s, want the password as it was sent", data)
 	}
 }
 

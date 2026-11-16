@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "type": "session",
   "session_id": "00112233445566778899aabbccddeeff",
   "age_ms": 800,
@@ -9,7 +9,7 @@
   "attempts": [
     {
       "username": "cn=admin,dc=example,dc=com",
-      "password_length": 0
+      "password": ""
     }
   ],
   "query": {

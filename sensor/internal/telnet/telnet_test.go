@@ -6,7 +6,6 @@ package telnet_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"nyktus.org/nyktus/sensor/internal/clock/clocktest"
+	"nyktus.org/nyktus/sensor/internal/report"
 	"nyktus.org/nyktus/sensor/internal/session"
 	"nyktus.org/nyktus/sensor/internal/telnet"
 )
@@ -103,42 +103,42 @@ func play(t *testing.T, cfg telnet.Config, script string) (*session.Session, *sc
 	return s, conn
 }
 
-// attempts returns the logins of the session as (username, password length)
-// pairs, with -1 for a login without a password.
-func attempts(t *testing.T, s *session.Session) []struct {
+// none stands for a login without a password in the comparison of attempts.
+const none = "(no password)"
+
+// attempt is one login of a report: the name and the password.
+type attempt struct {
 	user string
-	pass int
-} {
+	pass string
+}
+
+// attempts returns the logins of the session as (username, password) pairs,
+// with none for a login without a password.
+func attempts(t *testing.T, s *session.Session) []attempt {
 	t.Helper()
 	rep, ok := s.Report(0)
 	if !ok {
 		t.Fatal("Report() = not ok")
 	}
-	var out []struct {
-		user string
-		pass int
-	}
+	var out []attempt
 	for _, a := range rep.Attempts {
-		n := -1
-		if a.PasswordLength != nil {
-			n = *a.PasswordLength
+		n := none
+		if a.Password != nil {
+			n = *a.Password
 		}
-		out = append(out, struct {
-			user string
-			pass int
-		}{a.Username, n})
+		out = append(out, attempt{a.Username, n})
 	}
 	return out
 }
 
-func TestServe_Login_RecordsTheUserAndTheLengthOfThePassword(t *testing.T) {
+func TestServe_Login_RecordsTheUserAndThePassword(t *testing.T) {
 	t.Parallel()
 
 	s, conn := play(t, defaultConfig, "root\r\nhunter2\r\n")
 
 	got := attempts(t, s)
-	if len(got) != 1 || got[0].user != "root" || got[0].pass != 7 {
-		t.Errorf("attempts = %+v, want root with a password of 7 bytes", got)
+	if len(got) != 1 || got[0].user != "root" || got[0].pass != "hunter2" {
+		t.Errorf("attempts = %+v, want root with its password", got)
 	}
 	want := opening + "\r\nTest banner\r\n" + "login: " + "root" + "\r\n" + "Password: " + "\r\nLogin incorrect\r\n" + "login: "
 	if out := conn.written(); out != want {
@@ -146,22 +146,17 @@ func TestServe_Login_RecordsTheUserAndTheLengthOfThePassword(t *testing.T) {
 	}
 }
 
-// A password is not kept: not in the session, not in the report and not
-// shown back to the client.
-func TestServe_Password_IsNeverKeptOrEchoed(t *testing.T) {
+// A password is recorded in the session and never shown back to the client.
+func TestServe_Password_IsRecordedAndNeverEchoed(t *testing.T) {
 	t.Parallel()
 
 	s, conn := play(t, defaultConfig, "root\r\nhunter2-typed-this\r\n")
 
-	rep, _ := s.Report(0)
-	body, err := json.Marshal(rep)
-	if err != nil {
-		t.Fatal(err)
+	if got := attempts(t, s); len(got) != 1 || got[0].pass != "hunter2-typed-this" {
+		t.Errorf("attempts = %+v, want the password as it was typed", got)
 	}
-	for name, out := range map[string]string{"report": string(body), "written": conn.written()} {
-		if strings.Contains(out, "hunter2") {
-			t.Errorf("%s holds the password: %s", name, out)
-		}
+	if out := conn.written(); strings.Contains(out, "hunter2") {
+		t.Errorf("written holds the password: %s", out)
 	}
 }
 
@@ -185,25 +180,13 @@ func TestServe_EndOfTheStream(t *testing.T) {
 	tests := []struct {
 		name   string
 		script string
-		want   []struct {
-			user string
-			pass int
-		}
+		want   []attempt
 	}{
 		{name: "nothing typed", script: ""},
 		{name: "a name that was not entered", script: "roo"},
-		{name: "a name without a password", script: "root\r\n", want: []struct {
-			user string
-			pass int
-		}{{"root", -1}}},
-		{name: "an empty password", script: "root\r\n\r\n", want: []struct {
-			user string
-			pass int
-		}{{"root", 0}}},
-		{name: "a password that was not entered", script: "root\r\nabc", want: []struct {
-			user string
-			pass int
-		}{{"root", 3}}},
+		{name: "a name without a password", script: "root\r\n", want: []attempt{{"root", none}}},
+		{name: "an empty password", script: "root\r\n\r\n", want: []attempt{{"root", ""}}},
+		{name: "a password that was not entered", script: "root\r\nabc", want: []attempt{{"root", "abc"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -274,8 +257,8 @@ func TestServe_LineEndings(t *testing.T) {
 			t.Parallel()
 			s, _ := play(t, defaultConfig, tt.script)
 			got := attempts(t, s)
-			if len(got) != 1 || got[0].user != "root" || got[0].pass != 2 {
-				t.Errorf("attempts = %+v, want root with a password of 2 bytes", got)
+			if len(got) != 1 || got[0].user != "root" || got[0].pass != "ab" {
+				t.Errorf("attempts = %+v, want root with the password ab", got)
 			}
 		})
 	}
@@ -299,7 +282,7 @@ func TestServe_Commands_AreNotData(t *testing.T) {
 			t.Parallel()
 			s, _ := play(t, defaultConfig, tt.script)
 			got := attempts(t, s)
-			if len(got) != 1 || got[0].user != tt.user || got[0].pass != 2 {
+			if len(got) != 1 || got[0].user != tt.user || got[0].pass != "pw" {
 				t.Errorf("attempts = %+v, want %q with a password of 2 bytes", got, tt.user)
 			}
 		})
@@ -368,14 +351,14 @@ func TestServe_MoreThan16KiB_EndsTheSession(t *testing.T) {
 
 // The budget covers the whole connection: what the first line used is not
 // available to the second.
-func TestServe_LongPassword_IsCutByTheBudgetOfTheConnection(t *testing.T) {
+func TestServe_LongPassword_KeepsTheFirst256BytesAndTheBudgetOfTheConnectionEndsIt(t *testing.T) {
 	t.Parallel()
 
 	s, _ := play(t, defaultConfig, "root\r\n"+strings.Repeat("p", 20<<10)+"\r\nroot\r\npw\r\n")
 
 	got := attempts(t, s)
-	if len(got) != 1 || got[0].pass != 16<<10-len("root\r\n") {
-		t.Errorf("attempts = %+v, want one login whose password is cut by the budget", got)
+	if len(got) != 1 || got[0].pass != strings.Repeat("p", report.MaxPassword) {
+		t.Errorf("attempts = %.40q, want one login whose password is cut to the limit of the report", got)
 	}
 }
 
@@ -385,7 +368,7 @@ func TestServe_LongUsername_KeepsTheFirst256BytesAndCountsNoMore(t *testing.T) {
 	s, _ := play(t, defaultConfig, strings.Repeat("u", 300)+"\r\npw\r\n")
 
 	got := attempts(t, s)
-	if len(got) != 1 || len(got[0].user) != 256 || got[0].pass != 2 {
+	if len(got) != 1 || len(got[0].user) != 256 || got[0].pass != "pw" {
 		t.Errorf("attempts = %+v, want a name of 256 bytes", got)
 	}
 }
@@ -428,7 +411,7 @@ func TestServe_NameEntered_IsRecordedWhenThePasswordPromptCannotBeWritten(t *tes
 	telnet.New(defaultConfig, clk).Serve(t.Context(), conn, s)
 
 	got := attempts(t, s)
-	if len(got) != 1 || got[0].user != "root" || got[0].pass != -1 {
+	if len(got) != 1 || got[0].user != "root" || got[0].pass != none {
 		t.Errorf("attempts = %+v, want the name without a password", got)
 	}
 }

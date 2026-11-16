@@ -419,7 +419,7 @@ FROM generate_series(0, $2::int) AS i`, beyond, kept); err != nil {
 
 // The attempts and the tool calls of a session leave with the event beyond the
 // retention, and those of a session within it stay: nothing that an attacker
-// typed outlives its event, so that the user names and the arguments of tools
+// typed outlives its event, so that the user names, the passwords and the arguments of tools
 // are kept no longer than the events.
 func TestDeleteExpiredIncidentData_RemovesTheDetailsOfExpiredEvents(t *testing.T) {
 	t.Parallel()
@@ -428,7 +428,7 @@ func TestDeleteExpiredIncidentData_RemovesTheDetailsOfExpiredEvents(t *testing.T
 		name, service, eventType, attempts, toolCalls, table string
 		port, rows                                           int
 	}{
-		{"attempts", "ssh", "login_attempt", `[{"username":"root","password_length":3},{"username":"admin"}]`, `[]`, "event_attempts", 22, 2},
+		{"attempts", "ssh", "login_attempt", `[{"username":"root","password":"hunter2"},{"username":"admin"}]`, `[]`, "event_attempts", 22, 2},
 		{"tool calls", "mcp", "tool_call", `[]`, `[{"tool_name":"search","arguments":"{\"q\":\"vpn\"}"},{"tool_name":"get_page","arguments":"{}"}]`, "event_tool_calls", 8080, 2},
 	}
 	for _, tt := range tests {
