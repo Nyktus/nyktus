@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Nyktus sensor up to version 0.2.0 are documented in this file. From version 0.4.0 on, the sensor has the version of the server, and its changes are listed in [CHANGELOG.md](../CHANGELOG.md) with the scope `sensor`.
+All notable changes to the Nyktus sensor up to version 0.2.0 are documented in this file. From the release after 0.3.0 on, the sensor has the version of the server, and its changes are listed in [CHANGELOG.md](../CHANGELOG.md) with the scope `sensor`.
 
 ## [0.2.0](https://github.com/Nyktus/nyktus/compare/sensor/v0.1.0...sensor/v0.2.0) (2026-11-11)
 

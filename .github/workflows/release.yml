@@ -59,20 +59,19 @@ jobs:
           docker buildx create --name release --driver docker-container \
             --driver-opt image=moby/buildkit@sha256:0168606be2315b7c807a03b3d8aa79beefdb31c98740cebdffdfeebf31190c9f \
             --use
-      - name: Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make release
       # The sensor is a module of its own, and "go install" resolves its version
       # from a tag with the prefix of its directory. The tag points at the commit
       # of the release and exists only for that; a tag that the workflow token
-      # creates starts no workflow, so it releases nothing a second time.
+      # creates starts no workflow, so it releases nothing a second time. It is
+      # made before the release, so that a run that is started again finds it
+      # and the one step that cannot be repeated cheaply comes last.
       - name: Tag the module of the sensor
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          have=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/sensor/$TAG" --jq '.[] | select(.ref == "refs/tags/sensor/'"$TAG"'") | .object.sha')
+          # A missing tag is a 404; any other failure shows when the tag is created.
+          have=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/sensor/$TAG" --jq .object.sha 2>/dev/null || true)
           if [ -z "$have" ]; then
             gh api "repos/$GITHUB_REPOSITORY/git/refs" --method POST \
               --field "ref=refs/tags/sensor/$TAG" --field "sha=$GITHUB_SHA" >/dev/null
@@ -80,3 +79,7 @@ jobs:
             echo "::error::sensor/$TAG exists and points at another commit."
             exit 1
           fi
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make release
