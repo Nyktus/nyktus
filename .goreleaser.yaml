@@ -1,14 +1,16 @@
 # SPDX-FileCopyrightText: The Nyktus Authors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Release of the server, built for the tag "vX.Y.Z". The sensor has a
-# configuration of its own, .goreleaser.sensor.yaml, because it is released
-# under its own tag. Run it through the targets of the Makefile, which pin the
-# tools: "make release-snapshot" builds everything locally without publishing.
+# Release of the server and the sensor, built for the tag "vX.Y.Z". Both have
+# the version of the tag, so a release is one run: the same checksums and the
+# same signature cover the archives of both, and each has an archive, an image
+# and an SBOM of its own. Run it through the targets of the Makefile, which pin
+# the tools: "make release-snapshot" builds everything locally without
+# publishing.
 #
-# The version is the tag. The build passes no linker flag for it: the toolchain
-# stamps the tag of the checkout into the binary, which is what "nyktus version"
-# reads.
+# The server reads its version from the toolchain, which stamps the tag of the
+# checkout into the binary. The sensor is a module in a subdirectory, for which
+# the toolchain stamps no tag, so its version is linked in.
 
 version: 2
 project_name: nyktus
@@ -38,14 +40,44 @@ builds:
         goarch: amd64
     mod_timestamp: "{{ .CommitTimestamp }}"
 
+  - id: nyktus-sensor
+    dir: sensor
+    main: ./cmd/nyktus-sensor
+    binary: nyktus-sensor
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -buildid=
+      - -X nyktus.org/nyktus/sensor/internal/version.linked={{ .Version }}
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: darwin
+        goarch: amd64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
 archives:
   - id: nyktus
+    ids: [nyktus]
     formats: [tar.gz]
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "nyktus_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE
       - NOTICE
       - THIRD-PARTY-NOTICES.md
+      - README.md
+
+  - id: nyktus-sensor
+    ids: [nyktus-sensor]
+    formats: [tar.gz]
+    name_template: "nyktus-sensor_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - NOTICE
+      - src: sensor/THIRD-PARTY-NOTICES.md
+        dst: THIRD-PARTY-NOTICES.md
       - README.md
 
 checksum:
@@ -109,8 +141,34 @@ dockers_v2:
     # below, so that the tool is pinned like the others.
     sbom: false
 
+  - id: nyktus-sensor
+    ids: [nyktus-sensor]
+    dockerfile: deploy/release/Dockerfile.sensor
+    images:
+      - ghcr.io/nyktus/nyktus-sensor
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms: [linux/amd64, linux/arm64]
+    extra_files:
+      - LICENSE
+      - NOTICE
+      - sensor/THIRD-PARTY-NOTICES.md
+    labels:
+      org.opencontainers.image.title: Nyktus sensor
+      org.opencontainers.image.description: Honeypot sensor of Nyktus for monitored networks
+      org.opencontainers.image.url: https://docs.nyktus.org
+      org.opencontainers.image.source: https://github.com/Nyktus/nyktus
+      org.opencontainers.image.licenses: AGPL-3.0-or-later
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .Date }}"
+    sbom: false
+
 # The signature covers the digest of the image index, so every tag of it is
-# verified by one signature.
+# verified by one signature. Both images are manifests, so both entries below
+# run once for each.
 docker_signs:
   - cmd: go
     args:

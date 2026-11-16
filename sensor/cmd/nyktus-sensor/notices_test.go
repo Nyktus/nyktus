@@ -21,8 +21,8 @@ func TestRelease_ShipsTheThirdPartyNotices(t *testing.T) {
 		file string
 		want string
 	}{
-		{".goreleaser.sensor.yaml", "- src: " + notices + "\n        dst: THIRD-PARTY-NOTICES.md\n"},
-		{".goreleaser.sensor.yaml", "extra_files:\n      - LICENSE\n      - NOTICE\n      - " + notices + "\n"},
+		{".goreleaser.yaml", "- src: " + notices + "\n        dst: THIRD-PARTY-NOTICES.md\n"},
+		{".goreleaser.yaml", "extra_files:\n      - LICENSE\n      - NOTICE\n      - " + notices + "\n"},
 		{"deploy/release/Dockerfile.sensor", "COPY LICENSE NOTICE " + notices + " /licenses/\n"},
 	}
 	for _, tc := range cases {
