@@ -33,8 +33,8 @@ const saved = ref(false);
 const busy = ref(false);
 const deleting = ref(false);
 const replacing = ref(false);
-// The secret is held by this page only while it is shown: it is in no store, no address and no history.
-const revealed = ref<{ secret: string; config: string } | undefined>();
+// The config holds the secret and is held by this page only while it is shown: it is in no store, no address and no history.
+const revealed = ref<string | undefined>();
 const canWrite = computed(() => session.can('honeypots:write'));
 
 function show(failure: unknown): string {
@@ -83,8 +83,7 @@ async function showSecret(): Promise<void> {
   busy.value = true;
   error.value = undefined;
   try {
-    const { secret, sensor_config: config } = (await api.call('getHoneypotSecret', { path: { id: id.value } })).body;
-    revealed.value = { secret, config };
+    revealed.value = (await api.call('getHoneypotSecret', { path: { id: id.value } })).body.sensor_config;
   } catch (failure) {
     error.value = show(failure);
   } finally {
@@ -98,7 +97,7 @@ async function replaceSecret(): Promise<void> {
   try {
     const { secret, sensor_config: config, ...rest } = (await api.call('replaceHoneypotSecret', { path: { id: id.value } })).body;
     honeypot.value = rest;
-    revealed.value = { secret, config };
+    revealed.value = config;
   } catch (failure) {
     error.value = show(failure);
   } finally {
@@ -150,7 +149,7 @@ onBeforeUnmount(discard);
       </div>
 
       <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
-      <SecretReveal v-if="revealed" :secret="revealed.secret" :config="revealed.config" @done="discard" />
+      <SecretReveal v-if="revealed" :config="revealed" @done="discard" />
 
       <div class="section panel">
         <dl class="definition">

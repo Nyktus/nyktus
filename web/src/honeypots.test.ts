@@ -178,7 +178,7 @@ describe('the secret of a new honeypot', () => {
     const { wrapper } = await make();
     expect(wrapper.get('[role=region]').text()).toContain(honeypotSecret);
     expect(wrapper.get('pre').text()).toBe(honeypotConfig.trimEnd());
-    expect(wrapper.text()).toContain('Treat the secret like a password.');
+    expect(wrapper.text()).toContain('Copy the config and adjust it to your needs. The config can be shown again.');
   });
 
   test('is gone once the user says that they copied it, and the page of the honeypot opens', async () => {
@@ -264,7 +264,7 @@ describe('a honeypot', () => {
 
   describe('with its secret read again', () => {
     const shown = () => json(200, { ...honeypot(), secret: honeypotSecret, sensor_config: honeypotConfig }, { 'Cache-Control': 'no-store' });
-    const showButton = (wrapper: Awaited<ReturnType<typeof boot>>['wrapper']) => wrapper.findAll('button').find((b) => b.text() === 'Show the secret');
+    const showButton = (wrapper: Awaited<ReturnType<typeof boot>>['wrapper']) => wrapper.findAll('button').find((b) => b.text() === 'Show config');
 
     test('is offered to whoever may change honeypots, and not to a viewer', async () => {
       for (const [role, offered] of [['admin', true], ['user', true], ['viewer', false]] as const) {
@@ -360,7 +360,7 @@ describe('a honeypot', () => {
     async function ask(extra: Record<string, () => Response> = {}) {
       const s = one(honeypot(), { [`POST ${detail}/secret`]: () => json(200, withSecret(honeypot()), { 'Cache-Control': 'no-store' }), ...extra });
       const app = await boot(s, path);
-      await app.wrapper.findAll('button').find((b) => b.text() === 'Replace the secret')!.trigger('click');
+      await app.wrapper.findAll('button').find((b) => b.text() === 'Replace secret')!.trigger('click');
       await flushPromises();
       return { ...app, s };
     }

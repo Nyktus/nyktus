@@ -607,6 +607,16 @@ describe('the events of an incident', () => {
     expect(rows[0]?.get('a').attributes('href')).toBe(`/events/${eventId}`);
   });
 
+  test('shows the address of the client of every event, and says when there is none', async () => {
+    const without = event({ client_ip: null });
+    const s = server('admin', { 'GET /api/v1/events': () => json(200, { events: [event(), without] }) });
+    const { wrapper } = await boot(s, path);
+    expect(wrapper.findAll('.table thead th').map((th) => th.text())).toContain('Client address');
+    const rows = wrapper.findAll('.table tbody tr');
+    expect(rows[0]?.text()).toContain('203.0.113.7');
+    expect(rows[1]?.text()).not.toContain('203.0.113.7');
+  });
+
   test('shows a session without attempts without a user name', async () => {
     const quiet = sensorEvent({ sensor: { ...sensorEvent().sensor!, event_type: 'connection', attempts: [] } });
     const { wrapper } = await boot(server('admin', { 'GET /api/v1/events': () => json(200, { events: [quiet] }) }), path);

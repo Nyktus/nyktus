@@ -37,4 +37,16 @@ describe('ConfirmDialog', () => {
     await wrapper.get('.danger').trigger('click');
     expect(wrapper.emitted('confirm')).toHaveLength(1);
   });
+
+  // A password manager offers its entries for fields that appear in the page, so a field that has sat in a closed dialog since the page was loaded is never offered one.
+  test('renders its body only while it is open, and takes it away when it closes', async () => {
+    const wrapper = dialog(false);
+    expect(wrapper.text()).not.toContain('Body');
+    await wrapper.setProps({ open: true });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.text()).toContain('Body');
+    await wrapper.setProps({ open: false });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.text()).not.toContain('Body');
+  });
 });
