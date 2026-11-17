@@ -463,10 +463,10 @@ func TestStore_AcceptsAsManyValuesAsTheTriggerSends(t *testing.T) {
 	for i := range maxCandidates - 1 {
 		values = append(values, strings.Repeat(string(rune('a'+i)), triggerValueLength))
 	}
-	if res, err := f.store.Record(t.Context(), Request{Values: append(values, enabled), Method: http.MethodGet}); err != nil || res.Outcome != OutcomeRecorded {
+	if res, err := f.store.Record(t.Context(), Request{Values: slices.Concat(values, []string{enabled}), Method: http.MethodGet}); err != nil || res.Outcome != OutcomeRecorded {
 		t.Errorf("Record(%d values) = %+v, %v, want recorded", maxCandidates, res, err)
 	}
-	if _, err := f.store.Record(t.Context(), Request{Values: append(values, enabled, enabled), Method: http.MethodGet}); err == nil {
+	if _, err := f.store.Record(t.Context(), Request{Values: slices.Concat(values, []string{enabled, enabled}), Method: http.MethodGet}); err == nil {
 		t.Errorf("Record(%d values) error = nil, want a refusal", maxCandidates+1)
 	}
 	if n := f.count(t, "SELECT count(*) FROM events"); n != 1 {

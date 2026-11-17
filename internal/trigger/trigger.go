@@ -11,8 +11,8 @@
 // redirect target that the operator configured for a honeytoken.
 //
 // The trigger never reads the inventory. It depends on Recorder, which resolves
-// the trigger values of one request and records it in one step, and on Reporter, which
-// does the same for the secret of a honeypot.
+// the trigger values of one request and records it in one step, and on
+// Reporter, which does the same for the secret of a honeypot.
 package trigger
 
 import (

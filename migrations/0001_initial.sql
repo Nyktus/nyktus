@@ -1702,11 +1702,11 @@ END
 $$;
 
 -- The trigger answers requests from the internet and must never be able to read
--- the inventory. It records a request through this function, which resolves one
--- trigger value, writes the event and its job in one transaction if the
+-- the inventory. It records a request through this function, which resolves the
+-- values of that request, writes the event and its job in one transaction if the
 -- honeytoken is enabled, and returns only what the response and the log need.
--- Whoever controls the trigger can test a value they already know, but cannot
--- list honeytokens or write an event without a job.
+-- Whoever controls the trigger can test a few values they already know, but
+-- cannot list honeytokens or write an event without a job.
 --
 -- A disabled honeytoken still returns its redirect target, so that disabling
 -- it does not change what a client sees.
