@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -52,8 +53,11 @@ func (f *fakeRecorder) Record(ctx context.Context, r Request) (Result, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		return Result{}, errors.New("no deadline")
 	}
-	if res, ok := f.results[r.Value]; ok {
-		return res, nil
+	// The first value that belongs to a honeytoken decides, as in the database.
+	for _, v := range r.Values {
+		if res, ok := f.results[v]; ok {
+			return res, nil
+		}
 	}
 	return Result{Outcome: OutcomeUnknown}, nil
 }
@@ -611,12 +615,12 @@ func TestTrigger_RecordsTheRequest(t *testing.T) {
 	got := rec.recorded()
 	want := []Request{
 		{
-			Value: value, Method: http.MethodGet, ClientIP: netip.MustParseAddr("198.51.100.7"),
+			Values: []string{value}, Method: http.MethodGet, ClientIP: netip.MustParseAddr("198.51.100.7"),
 			UserAgent: "curl/8.0\uFFFD\uFFFDx", Referer: "https://intranet.example.com/finance", AcceptLanguage: "de-DE,de;q=0.9",
 		},
-		{Value: value, Method: http.MethodHead, ClientIP: netip.MustParseAddr("127.0.0.1"), UserAgent: "Go-http-client/1.1"},
+		{Values: []string{value}, Method: http.MethodHead, ClientIP: netip.MustParseAddr("127.0.0.1"), UserAgent: "Go-http-client/1.1"},
 	}
-	if !slices.Equal(got, want) {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("recorded %+v, want %+v", got, want)
 	}
 }
@@ -634,7 +638,7 @@ func TestTrigger_ReadsURLsInAnyCase(t *testing.T) {
 	if got, want := fetch(t, srv, http.MethodGet, "/"+strings.ToUpper(value)+".GIF", nil, nil), fetch(t, srv, http.MethodGet, "/x.gif", nil, nil); !got.equal(want) {
 		t.Errorf("upper case image = %+v, want %+v", got, want)
 	}
-	if got := rec.recorded(); len(got) != 2 || got[0].Value != value || got[1].Value != value {
+	if got := rec.recorded(); len(got) != 2 || !slices.Equal(got[0].Values, []string{value}) || !slices.Equal(got[1].Values, []string{value}) {
 		t.Errorf("looked up %+v, want the value in lower case twice", got)
 	}
 }

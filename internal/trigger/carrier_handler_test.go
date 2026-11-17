@@ -37,7 +37,7 @@ func TestTrigger_RecordsTheValueWhereverItStands(t *testing.T) {
 		srv, _ := newServer(t, rec)
 		fetch(t, srv, tt.method, tt.path, strings.NewReader("x"), tt.header)
 		got := rec.recorded()
-		if len(got) != 1 || got[0].Value != value || got[0].Method != tt.method {
+		if len(got) != 1 || !slices.Equal(got[0].Values, []string{value}) || got[0].Method != tt.method {
 			t.Errorf("%s: recorded %+v, want one request of %s for the value", name, got, tt.method)
 		}
 	}
@@ -115,10 +115,10 @@ func TestTrigger_ConfiguredRedirectAppliesWhereverTheValueStands(t *testing.T) {
 	}
 }
 
-// A request with several values is recorded once, for the first that belongs to
-// a honeytoken, in the order of the path, the query and the headers, and the
-// lookups stop there.
-func TestTrigger_RecordsTheFirstKnownValueOnly(t *testing.T) {
+// A request with several values is handed over in one call, in the order of the
+// path, the query and the headers, and the recorder decides which of them counts:
+// the first that belongs to a honeytoken, also a disabled one.
+func TestTrigger_HandsOverAllValuesInOneCallInTheirOrder(t *testing.T) {
 	t.Parallel()
 
 	rec := &fakeRecorder{results: map[string]Result{
@@ -128,19 +128,16 @@ func TestTrigger_RecordsTheFirstKnownValueOnly(t *testing.T) {
 	srv, log := newServer(t, rec)
 	fetch(t, srv, http.MethodGet, "/"+value+"?a="+second, nil, http.Header{"X-Api-Key": {third}})
 
-	var looked []string
-	for _, r := range rec.recorded() {
-		looked = append(looked, r.Value)
-	}
-	if want := []string{value, second}; !slices.Equal(looked, want) {
-		t.Errorf("looked up %q, want %q: the first known value ends the search, also when it is disabled", looked, want)
+	got := rec.recorded()
+	if len(got) != 1 || !slices.Equal(got[0].Values, []string{value, second, third}) {
+		t.Errorf("recorded %+v, want one call with the values in order", got)
 	}
 	if !strings.Contains(log.String(), `"honeytoken_id":"2"`) || strings.Contains(log.String(), `"honeytoken_id":"3"`) {
 		t.Errorf("log does not name only the honeytoken of the first known value: %s", log)
 	}
 }
 
-func TestTrigger_LooksUpAtMostAFewValuesPerRequest(t *testing.T) {
+func TestTrigger_HandsOverAtMostAFewValues(t *testing.T) {
 	t.Parallel()
 
 	var many []string
@@ -150,8 +147,8 @@ func TestTrigger_LooksUpAtMostAFewValuesPerRequest(t *testing.T) {
 	rec := &fakeRecorder{}
 	srv, _ := newServer(t, rec)
 	fetch(t, srv, http.MethodGet, "/"+strings.Join(many, "/"), nil, nil)
-	if got := len(rec.recorded()); got != maxCandidates {
-		t.Errorf("looked up %d values, want %d", got, maxCandidates)
+	if got := rec.recorded(); len(got) != 1 || !slices.Equal(got[0].Values, many[:maxCandidates]) {
+		t.Errorf("recorded %+v, want one call with the first %d values", got, maxCandidates)
 	}
 }
 
@@ -206,7 +203,7 @@ func TestTrigger_RecordsTheValueInOddPaths(t *testing.T) {
 		rec := &fakeRecorder{}
 		srv, _ := newServer(t, rec)
 		fetch(t, srv, http.MethodGet, path, nil, nil)
-		if got := rec.recorded(); len(got) != 1 || got[0].Value != value {
+		if got := rec.recorded(); len(got) != 1 || !slices.Equal(got[0].Values, []string{value}) {
 			t.Errorf("GET %s: looked up %+v, want the value once", path, got)
 		}
 	}

@@ -11,8 +11,8 @@
 // redirect target that the operator configured for a honeytoken.
 //
 // The trigger never reads the inventory. It depends on Recorder, which resolves
-// one trigger value and records the request in one step, and on Reporter, which
-// does the same for the secret of a honeypot.
+// the trigger values of one request and records it in one step, and on
+// Reporter, which does the same for the secret of a honeypot.
 package trigger
 
 import (
@@ -22,7 +22,10 @@ import (
 
 // Request is what the trigger records about a request of a trigger value.
 type Request struct {
-	Value  string
+	// Values are the strings of the request that have the form of a trigger
+	// value, in the order in which they were found. The first that belongs to a
+	// honeytoken records the request.
+	Values []string
 	Method string
 	// ClientIP is the address of the client, or the zero Addr if it is unknown.
 	ClientIP netip.Addr
@@ -107,9 +110,10 @@ type Reporter interface {
 	RecordHeartbeat(ctx context.Context, secretHash []byte, h Heartbeat) (ReportResult, error)
 }
 
-// Recorder resolves a trigger value and records its request in one step, so
-// that the trigger can neither look up a value without leaving an event nor
-// learn more about a honeytoken than its answer needs.
+// Recorder resolves the first trigger value of a request that belongs to a
+// honeytoken and records the request in one step, so that the trigger can
+// neither look up a value without leaving an event nor learn more about a
+// honeytoken than its answer needs.
 type Recorder interface {
 	Record(ctx context.Context, r Request) (Result, error)
 }

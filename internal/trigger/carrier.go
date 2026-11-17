@@ -16,11 +16,11 @@ const (
 	// triggerValueLength is the length of a trigger value: 128 bits in lowercase
 	// base32 without padding.
 	triggerValueLength = 26
-	// maxCandidates bounds how many different values one request can make the
-	// trigger look up, so that a request that carries many strings of the form of
-	// a value costs a few queries, not one per string. Strings of the form that
-	// something else sent, such as identifiers, take a place as well, so the bound
-	// leaves room for the value among them.
+	// maxCandidates bounds how many different values one request hands to the
+	// database function, which refuses more than this (the number is repeated in
+	// record_honeytoken_request, and a test compares both). Strings of the form
+	// that something else sent, such as identifiers, take a place as well, so the
+	// bound leaves room for the value among them.
 	maxCandidates = 8
 	// maxBasicBytes bounds the credentials of an Authorization header of the
 	// scheme Basic that are decoded.

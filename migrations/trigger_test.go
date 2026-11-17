@@ -18,7 +18,7 @@ import (
 	"nyktus.org/nyktus/internal/platform/schematest"
 )
 
-const recordRequest = "SELECT * FROM public.record_honeytoken_request(repeat('a', 26), 'GET', NULL, '', '', '', '')"
+const recordRequest = "SELECT * FROM public.record_honeytoken_request(ARRAY[repeat('a', 26)], 'GET', NULL, '', '', '', '')"
 
 func TestTriggerRole_PassesLeastPrivilegeCheck(t *testing.T) {
 	t.Parallel()
@@ -119,7 +119,7 @@ func expectDenied(t *testing.T, pool *pgxpool.Pool, statement string) {
 // Functions that the internet-facing roles may execute.
 var (
 	triggerFunctions = []string{
-		"public.record_honeytoken_request(text, text, inet, text, text, text, text)",
+		"public.record_honeytoken_request(text[], text, inet, text, text, text, text)",
 		"public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb, jsonb)",
 		"public.record_honeypot_heartbeat(bytea, text)",
 	}

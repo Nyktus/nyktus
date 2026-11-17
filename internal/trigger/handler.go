@@ -235,7 +235,8 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 		attrs = append(attrs, slog.String("outcome", "not_looked_up"))
 	default:
 		var err error
-		res, err = h.record(r.Context(), values, Request{
+		res, err = h.record(r.Context(), Request{
+			Values:         values,
 			Method:         r.Method,
 			ClientIP:       request.ClientIP(r.Context()),
 			UserAgent:      untrusted(r.Header.Get("User-Agent"), maxUserAgentBytes),
@@ -299,21 +300,12 @@ func (h *Handler) answer(w http.ResponseWriter, method, path, redirectURL string
 	return http.StatusFound
 }
 
-// record looks up the values in their order until one belongs to a honeytoken,
-// which records the request, so that a request with several values is recorded
-// once, for the first of them that is known. The lookups share one deadline.
-func (h *Handler) record(ctx context.Context, values []string, req Request) (Result, error) {
+// record hands the values to the recorder in one call, which records the
+// request for the first that belongs to a honeytoken.
+func (h *Handler) record(ctx context.Context, req Request) (Result, error) {
 	ctx, cancel := recordingContext(ctx)
 	defer cancel()
-	var res Result
-	for _, v := range values {
-		req.Value = v
-		var err error
-		if res, err = h.recorder.Record(ctx, req); err != nil || res.Outcome != OutcomeUnknown {
-			return res, err
-		}
-	}
-	return res, nil
+	return h.recorder.Record(ctx, req)
 }
 
 // recordingContext returns the context of a recording. A client that closes
