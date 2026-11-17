@@ -57,6 +57,7 @@ func TestCandidates_FindsTheValueInEveryPlace(t *testing.T) {
 		"prefixed api key":          newRequest(t, "/", http.Header{"X-Api-Key": {"sk-live-" + value}}),
 		"cookie":                    newRequest(t, "/", http.Header{"Cookie": {"a=b; sid=" + value + "; c=d"}}),
 		"basic credentials":         newRequest(t, "/", http.Header{"Authorization": {"Basic " + basicOf("svc:"+value)}}),
+		"basic for a proxy":         newRequest(t, "/", http.Header{"Proxy-Authorization": {"Basic " + basicOf("svc:"+value)}}),
 		"basic user name":           newRequest(t, "/", http.Header{"Authorization": {"basic " + basicOf(value+":x")}}),
 		"basic unpadded":            newRequest(t, "/", http.Header{"Authorization": {"Basic " + strings.TrimRight(basicOf("svc:"+value+"!"), "=")}}),
 		"basic in upper case":       newRequest(t, "/", http.Header{"Authorization": {"Basic " + basicOf("svc:"+strings.ToUpper(value))}}),

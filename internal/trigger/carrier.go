@@ -43,9 +43,9 @@ const (
 // but not inside a longer run. Of Basic credentials the decoded text counts too.
 // The body of a request is not searched.
 //
-// At most maxCandidates strings are returned; a value beyond them is not found. The order decides which honeytoken
-// a request with several values is recorded for, so it must not depend on the
-// iteration order of a map.
+// At most maxCandidates strings are returned; a value beyond them is not found.
+// The order decides which honeytoken a request with several values is recorded
+// for, so it must not depend on the iteration order of a map.
 func candidates(r *http.Request) []string {
 	var c collector
 	c.scan(r.URL.Path)
@@ -53,16 +53,20 @@ func candidates(r *http.Request) []string {
 	// one is decoded on its own, so that a malformed escape in one parameter does
 	// not keep another from being decoded; one that cannot be decoded is searched
 	// as it was sent.
-	for part := range strings.FieldsFuncSeq(r.URL.RawQuery, func(r rune) bool { return r == '&' || r == ';' }) {
+	for part := range strings.FieldsFuncSeq(r.URL.RawQuery, func(c rune) bool { return c == '&' || c == ';' }) {
 		if decoded, err := url.QueryUnescape(part); err == nil {
 			part = decoded
 		}
 		c.scan(part)
 	}
+	if c.full() {
+		return c.values
+	}
 	for _, name := range slices.Sorted(maps.Keys(r.Header)) {
 		for _, v := range r.Header[name] {
 			c.scan(v)
-			if name == "Authorization" {
+			// A client sends the credentials of a URL to a proxy in the second header.
+			if name == "Authorization" || name == "Proxy-Authorization" {
 				c.scan(basicCredentials(v))
 			}
 		}
@@ -70,8 +74,8 @@ func candidates(r *http.Request) []string {
 	return c.values
 }
 
-// basicCredentials returns the decoded credentials of an Authorization header
-// of the scheme Basic, which carries them as base64 of "user:password" (the
+// basicCredentials returns the decoded credentials of an Authorization or
+// Proxy-Authorization header of the scheme Basic, which carries them as base64 of "user:password" (the
 // form in which a client sends a URL of the form https://user:password@host),
 // or "" for any other header or credentials that are not base64 or too long.
 func basicCredentials(header string) string {
