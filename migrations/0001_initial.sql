@@ -1710,8 +1710,17 @@ $$;
 --
 -- A disabled honeytoken still returns its redirect target, so that disabling
 -- it does not change what a client sees.
+--
+-- The value of a honeytoken may stand anywhere in a request, and the trigger
+-- cannot tell where, so it hands over every string of the form of a value in
+-- the order in which it found them. The first that belongs to a honeytoken
+-- decides, also if the honeytoken is disabled, so a request is recorded once
+-- and for the same honeytoken whatever the order of the rows. At most eight
+-- values are accepted, which is what the trigger sends at most: a compromised
+-- trigger cannot test more values in one call than a request of its own
+-- could carry.
 CREATE FUNCTION public.record_honeytoken_request(
-	requested_value text,
+	requested_values text[],
 	request_method text,
 	request_client_ip inet,
 	request_user_agent text,
@@ -1731,10 +1740,15 @@ DECLARE
 	new_event_id uuid;
 	now_at timestamptz := clock_timestamp();
 BEGIN
+	IF cardinality(requested_values) > 8 THEN
+		RAISE EXCEPTION 'too many trigger values' USING ERRCODE = 'program_limit_exceeded';
+	END IF;
 	SELECT t.id, t.type, t.name, t.enabled, t.techniques, t.severity, t.scenario_id, t.redirect_url,
 		(SELECT s.name FROM public.scenarios AS s WHERE s.id = t.scenario_id) AS scenario_name INTO h
 	FROM public.honeytokens AS t
-	WHERE t.trigger_value = requested_value;
+	WHERE t.trigger_value = ANY (requested_values)
+	ORDER BY array_position(requested_values, t.trigger_value)
+	LIMIT 1;
 	IF NOT FOUND THEN
 		outcome := 'unknown';
 		RETURN;
@@ -2175,7 +2189,7 @@ REVOKE ALL ON public.events, public.event_attempts, public.event_tool_calls, pub
 REVOKE ALL ON FUNCTION public.incidents_change_status() FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.untrusted_text_valid(text, integer) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.event_limit_reached(uuid) FROM PUBLIC, nyktus_console;
-REVOKE ALL ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text, text)
+REVOKE ALL ON FUNCTION public.record_honeytoken_request(text[], text, inet, text, text, text, text)
 	FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_dns_query(text, text, text, text, text, inet, interval) FROM PUBLIC, nyktus_console;
 REVOKE ALL ON FUNCTION public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text,
@@ -2239,7 +2253,7 @@ BEGIN
 			'public.incidents_change_status()',
 			'public.untrusted_text_valid(text, integer)',
 			'public.event_limit_reached(uuid)',
-			'public.record_honeytoken_request(text, text, inet, text, text, text, text)',
+			'public.record_honeytoken_request(text[], text, inet, text, text, text, text)',
 			'public.record_dns_query(text, text, text, text, text, inet, interval)',
 			'public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb, jsonb)',
 			'public.record_honeypot_heartbeat(bytea, text)'
@@ -2899,7 +2913,7 @@ REVOKE ALL ON ALL TABLES IN SCHEMA public FROM nyktus_trigger, nyktus_dns, nyktu
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM nyktus_trigger, nyktus_dns, nyktus_worker;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM nyktus_trigger, nyktus_dns, nyktus_worker;
 GRANT USAGE ON SCHEMA public TO nyktus_trigger, nyktus_dns, nyktus_worker;
-GRANT EXECUTE ON FUNCTION public.record_honeytoken_request(text, text, inet, text, text, text, text) TO nyktus_trigger;
+GRANT EXECUTE ON FUNCTION public.record_honeytoken_request(text[], text, inet, text, text, text, text) TO nyktus_trigger;
 GRANT EXECUTE ON FUNCTION public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text,
 	text, text, text, jsonb, jsonb) TO nyktus_trigger;
 GRANT EXECUTE ON FUNCTION public.record_honeypot_heartbeat(bytea, text) TO nyktus_trigger;
@@ -2915,7 +2929,7 @@ DECLARE
 BEGIN
 	FOR role_name, function_names IN VALUES
 		('nyktus_trigger', ARRAY[
-			'public.record_honeytoken_request(text, text, inet, text, text, text, text)',
+			'public.record_honeytoken_request(text[], text, inet, text, text, text, text)',
 			'public.record_honeypot_session(bytea, uuid, interval, integer, inet, integer, text, text, text, text, text, text, jsonb, jsonb)',
 			'public.record_honeypot_heartbeat(bytea, text)'
 		]),

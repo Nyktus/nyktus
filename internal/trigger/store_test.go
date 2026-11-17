@@ -86,7 +86,7 @@ func TestStore_RecordsARequestOfAnEnabledHoneytoken(t *testing.T) {
 
 	id, value := f.honeytoken(t, "web_url", true, ptr("https://wiki.example.com/"), []string{"T1213", "T1083"})
 	res, err := f.store.Record(t.Context(), Request{
-		Value: value, Method: http.MethodGet, ClientIP: netip.MustParseAddr("2001:db8::7"),
+		Values: []string{value}, Method: http.MethodGet, ClientIP: netip.MustParseAddr("2001:db8::7"),
 		UserAgent: "curl/8.0", Referer: "https://intranet.example.com/", AcceptLanguage: "de",
 	})
 	if err != nil {
@@ -122,7 +122,7 @@ func TestStore_UnknownAndDisabledValuesAreNotRecorded(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
-	res, err := f.store.Record(t.Context(), Request{Value: strings.Repeat("a", 26), Method: http.MethodGet})
+	res, err := f.store.Record(t.Context(), Request{Values: []string{strings.Repeat("a", 26)}, Method: http.MethodGet})
 	if err != nil || res != (Result{Outcome: OutcomeUnknown}) {
 		t.Errorf("Record(unknown) = %+v, %v; want unknown", res, err)
 	}
@@ -130,7 +130,7 @@ func TestStore_UnknownAndDisabledValuesAreNotRecorded(t *testing.T) {
 	// A disabled honeytoken keeps redirecting to its target, so that disabling
 	// it changes nothing that a client sees.
 	id, value := f.honeytoken(t, "web_url", false, ptr("https://wiki.example.com/"), nil)
-	res, err = f.store.Record(t.Context(), Request{Value: value, Method: http.MethodGet})
+	res, err = f.store.Record(t.Context(), Request{Values: []string{value}, Method: http.MethodGet})
 	if want := (Result{Outcome: OutcomeDisabled, HoneytokenID: id, RedirectURL: "https://wiki.example.com/"}); err != nil || res != want {
 		t.Errorf("Record(disabled) = %+v, %v; want %+v", res, err, want)
 	}
@@ -149,7 +149,7 @@ func TestStore_LimitsEventsPerHoneytokenAndMinute(t *testing.T) {
 	id, value := f.honeytoken(t, "web_image", true, nil, nil)
 	_, other := f.honeytoken(t, "web_image", true, nil, nil)
 	for i := range 12 {
-		res, err := f.store.Record(t.Context(), Request{Value: value, Method: http.MethodGet})
+		res, err := f.store.Record(t.Context(), Request{Values: []string{value}, Method: http.MethodGet})
 		want := OutcomeRecorded
 		if i >= 10 {
 			want = OutcomeLimited
@@ -159,7 +159,7 @@ func TestStore_LimitsEventsPerHoneytokenAndMinute(t *testing.T) {
 		}
 	}
 	// The limit applies per honeytoken.
-	if res, err := f.store.Record(t.Context(), Request{Value: other, Method: http.MethodGet}); err != nil || res.Outcome != OutcomeRecorded {
+	if res, err := f.store.Record(t.Context(), Request{Values: []string{other}, Method: http.MethodGet}); err != nil || res.Outcome != OutcomeRecorded {
 		t.Errorf("Record(other) = %+v, %v; want recorded", res, err)
 	}
 
@@ -167,7 +167,7 @@ func TestStore_LimitsEventsPerHoneytokenAndMinute(t *testing.T) {
 	if _, err := f.owner.Exec(t.Context(), "UPDATE events SET occurred_at = occurred_at - interval '61 seconds', recorded_at = recorded_at - interval '61 seconds'"); err != nil {
 		t.Fatal(err)
 	}
-	if res, err := f.store.Record(t.Context(), Request{Value: value, Method: http.MethodHead}); err != nil || res.Outcome != OutcomeRecorded {
+	if res, err := f.store.Record(t.Context(), Request{Values: []string{value}, Method: http.MethodHead}); err != nil || res.Outcome != OutcomeRecorded {
 		t.Errorf("Record() after a minute = %+v, %v; want recorded", res, err)
 	}
 	if n := f.count(t, "SELECT count(*) FROM events WHERE resource_id = $1", id); n != 11 {
@@ -232,13 +232,13 @@ func TestStore_EventIsNeverStoredWithoutItsJob(t *testing.T) {
 	f := newFixture(t)
 
 	_, value := f.honeytoken(t, "web_url", true, nil, nil)
-	if _, err := f.store.Record(t.Context(), Request{Value: value, Method: http.MethodGet}); err != nil {
+	if _, err := f.store.Record(t.Context(), Request{Values: []string{value}, Method: http.MethodGet}); err != nil {
 		t.Fatalf("Record() error = %v", err)
 	}
 	if _, err := f.owner.Exec(t.Context(), "ALTER TABLE event_jobs ADD CONSTRAINT event_jobs_reject CHECK (false) NOT VALID"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.Record(t.Context(), Request{Value: value, Method: http.MethodGet}); err == nil {
+	if _, err := f.store.Record(t.Context(), Request{Values: []string{value}, Method: http.MethodGet}); err == nil {
 		t.Fatal("Record() succeeded although the job could not be written")
 	}
 
@@ -257,7 +257,7 @@ func TestStore_EventsOutliveChangesAndDeletion(t *testing.T) {
 	f := newFixture(t)
 
 	id, value := f.honeytoken(t, "web_url", true, nil, []string{"T1213"})
-	if _, err := f.store.Record(t.Context(), Request{Value: value, Method: http.MethodGet}); err != nil {
+	if _, err := f.store.Record(t.Context(), Request{Values: []string{value}, Method: http.MethodGet}); err != nil {
 		t.Fatalf("Record() error = %v", err)
 	}
 	if _, err := f.owner.Exec(t.Context(), "UPDATE honeytokens SET techniques = '{T1083}' WHERE id = $1", id); err != nil {
@@ -282,7 +282,7 @@ func TestStore_AcceptsWhatTheHandlerProduces(t *testing.T) {
 	refused := string([]rune{0x85, 0xad, 0x61c, 0x180e, 0x200b, 0x2028, 0x202e, 0x2066, 0xfeff, 0xfff9, 0xe0041})
 	worst := strings.Repeat("\x01\xff\u00e4\U0001F600a"+refused, 1000)
 	res, err := f.store.Record(t.Context(), Request{
-		Value: value, Method: http.MethodHead,
+		Values: []string{value}, Method: http.MethodHead,
 		UserAgent:      untrusted(worst, maxUserAgentBytes),
 		Referer:        untrusted(worst, maxRefererBytes),
 		AcceptLanguage: untrusted(worst, maxAcceptLanguageBytes),
@@ -309,7 +309,7 @@ func TestStore_RecordsAPostWithItsBody(t *testing.T) {
 	if len(worst) < maxBodyExcerptBytes-4 {
 		t.Fatalf("the worst body has %d bytes, want one that fills the excerpt", len(worst))
 	}
-	res, err := f.store.Record(t.Context(), Request{Value: value, Method: http.MethodPost, Body: worst})
+	res, err := f.store.Record(t.Context(), Request{Values: []string{value}, Method: http.MethodPost, Body: worst})
 	if err != nil || res.Outcome != OutcomeRecorded || res.HoneytokenID != id {
 		t.Fatalf("Record() = %+v, %v; want recorded", res, err)
 	}
@@ -322,7 +322,7 @@ func TestStore_RecordsAPostWithItsBody(t *testing.T) {
 	}
 
 	for _, method := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions} {
-		if _, err := f.store.Record(t.Context(), Request{Value: value, Method: method}); err == nil {
+		if _, err := f.store.Record(t.Context(), Request{Values: []string{value}, Method: method}); err == nil {
 			t.Errorf("Record(%s) recorded the request, want an error", method)
 		}
 	}
@@ -392,13 +392,12 @@ func TestTrigger_IdenticalResponsesWithTheDatabase(t *testing.T) {
 }
 
 // The value of a honeytoken records its request wherever it stands, once per
-// request, for the first value that belongs to a honeytoken.
+// request.
 func TestTrigger_RecordsTheValueFromQueryAndHeadersWithTheDatabase(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 
 	enabledID, enabled := f.honeytoken(t, "web_url", true, nil, nil)
-	_, disabled := f.honeytoken(t, "web_url", false, nil, nil)
 	srv, _ := newServer(t, f.store)
 	unknown := strings.Repeat("a", 26)
 
@@ -409,11 +408,69 @@ func TestTrigger_RecordsTheValueFromQueryAndHeadersWithTheDatabase(t *testing.T)
 	if n := f.count(t, "SELECT count(*) FROM events WHERE resource_id = $1", enabledID); n != 4 {
 		t.Errorf("%d events, want 4: one per request", n)
 	}
+}
 
-	// The first value that belongs to a honeytoken decides, also if it is disabled.
-	fetch(t, srv, http.MethodGet, "/status?key="+disabled+"&other="+enabled, nil, nil)
-	if n := f.count(t, "SELECT count(*) FROM events"); n != 4 {
-		t.Errorf("%d events, want 4: a disabled honeytoken records nothing and ends the search", n)
+// The first value that belongs to a honeytoken decides, also if the honeytoken is
+// disabled, and not the order in which the database finds the rows.
+func TestStore_FirstKnownValueDecides(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	enabledID, enabled := f.honeytoken(t, "web_url", true, nil, nil)
+	disabledID, disabled := f.honeytoken(t, "web_url", false, ptr("https://a.example.com/"), nil)
+	unknown := strings.Repeat("a", 26)
+
+	res, err := f.store.Record(t.Context(), Request{Values: []string{unknown, disabled, enabled}, Method: http.MethodGet})
+	if err != nil {
+		t.Fatalf("Record() error = %v", err)
+	}
+	if want := (Result{Outcome: OutcomeDisabled, HoneytokenID: disabledID, RedirectURL: "https://a.example.com/"}); res != want {
+		t.Errorf("Record(unknown, disabled, enabled) = %+v, want %+v", res, want)
+	}
+	if n := f.count(t, "SELECT count(*) FROM events"); n != 0 {
+		t.Errorf("%d events, want none: the disabled honeytoken ended the search", n)
+	}
+
+	// Either order, repeated, so that the order of the rows cannot decide.
+	for range 5 {
+		res, err = f.store.Record(t.Context(), Request{Values: []string{enabled, disabled}, Method: http.MethodGet})
+		if err != nil || res.Outcome != OutcomeRecorded || res.HoneytokenID != enabledID {
+			t.Fatalf("Record(enabled, disabled) = %+v, %v, want the enabled honeytoken", res, err)
+		}
+	}
+	if n := f.count(t, "SELECT count(*) FROM events"); n != 5 {
+		t.Errorf("%d events, want 5, one for each request", n)
+	}
+
+	res, err = f.store.Record(t.Context(), Request{Values: []string{unknown, strings.Repeat("b", 26)}, Method: http.MethodGet})
+	if err != nil || res.Outcome != OutcomeUnknown {
+		t.Errorf("Record(unknown, unknown) = %+v, %v, want unknown", res, err)
+	}
+	if res, err = f.store.Record(t.Context(), Request{Method: http.MethodGet}); err != nil || res.Outcome != OutcomeUnknown {
+		t.Errorf("Record() without values = %+v, %v, want unknown", res, err)
+	}
+}
+
+// The database accepts as many values as the trigger sends at most and refuses
+// more, so that a compromised trigger cannot test many values in one call. The
+// two numbers are compared here.
+func TestStore_AcceptsAsManyValuesAsTheTriggerSends(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	_, enabled := f.honeytoken(t, "web_url", true, nil, nil)
+	var values []string
+	for i := range maxCandidates - 1 {
+		values = append(values, strings.Repeat(string(rune('a'+i)), triggerValueLength))
+	}
+	if res, err := f.store.Record(t.Context(), Request{Values: append(values, enabled), Method: http.MethodGet}); err != nil || res.Outcome != OutcomeRecorded {
+		t.Errorf("Record(%d values) = %+v, %v, want recorded", maxCandidates, res, err)
+	}
+	if _, err := f.store.Record(t.Context(), Request{Values: append(values, enabled, enabled), Method: http.MethodGet}); err == nil {
+		t.Errorf("Record(%d values) error = nil, want a refusal", maxCandidates+1)
+	}
+	if n := f.count(t, "SELECT count(*) FROM events"); n != 1 {
+		t.Errorf("%d events, want 1: the refused call records nothing", n)
 	}
 }
 
@@ -437,7 +494,7 @@ func TestStore_EventFreezesTheScenario(t *testing.T) {
 		if _, err := f.owner.Exec(t.Context(), `UPDATE honeytokens SET scenario_id = $2 WHERE id = $1`, id, scenarioID); err != nil {
 			t.Fatal(err)
 		}
-		if res, err := f.store.Record(t.Context(), Request{Value: value, Method: http.MethodGet}); err != nil || res.Outcome != OutcomeRecorded {
+		if res, err := f.store.Record(t.Context(), Request{Values: []string{value}, Method: http.MethodGet}); err != nil || res.Outcome != OutcomeRecorded {
 			t.Fatalf("Record() = %+v, %v", res, err)
 		}
 	}
@@ -475,7 +532,7 @@ func TestStore_EventFreezesTheNames(t *testing.T) {
 	}
 	record := func() {
 		t.Helper()
-		if res, err := f.store.Record(t.Context(), Request{Value: value, Method: http.MethodGet}); err != nil || res.Outcome != OutcomeRecorded {
+		if res, err := f.store.Record(t.Context(), Request{Values: []string{value}, Method: http.MethodGet}); err != nil || res.Outcome != OutcomeRecorded {
 			t.Fatalf("Record() = %+v, %v", res, err)
 		}
 	}
