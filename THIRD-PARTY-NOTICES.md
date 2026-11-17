@@ -853,11 +853,11 @@ THE SOFTWARE.
 
 ---
 
-- @vue/reactivity 3.5.44
-- @vue/runtime-core 3.5.44
-- @vue/runtime-dom 3.5.44
-- @vue/shared 3.5.44
-- vue 3.5.44
+- @vue/reactivity 3.5.45
+- @vue/runtime-core 3.5.45
+- @vue/runtime-dom 3.5.45
+- @vue/shared 3.5.45
+- vue 3.5.45
 
 ```text
 The MIT License (MIT)
