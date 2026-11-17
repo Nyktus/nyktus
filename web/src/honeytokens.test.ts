@@ -345,6 +345,12 @@ describe('a honeytoken', () => {
     expect(wrapper.text()).toContain('A log forwarder sends its events to such a URL with POST');
   });
 
+  test('shows the value on its own and says that it triggers wherever a request carries it', async () => {
+    const { wrapper } = await boot(one(honeytoken({ trigger_value: 'abcdefghijklmnopqrstuvwxyz' })), path);
+    expect(wrapper.findAll('.value').map((n) => n.text())).toContain('abcdefghijklmnopqrstuvwxyz');
+    expect(wrapper.text()).toContain('also triggers wherever a request to the trigger carries it');
+  });
+
   // The page of a resource loads it once, so another resource at the same page must be another page.
   test('shows the other honeytoken when the address changes to it, and acts on that one', async () => {
     const otherId = 'c0ffee00-9999-4222-8333-944444444444';

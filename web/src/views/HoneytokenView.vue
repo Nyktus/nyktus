@@ -122,6 +122,12 @@ onMounted(load);
               <code class="mono value">{{ honeytoken.trigger_url }}</code>
               <CopyButton :value="honeytoken.trigger_url" />
             </div>
+            <div class="row">
+              <span class="hint">{{ t('honeytokens.place.value') }}</span>
+              <code class="mono value">{{ honeytoken.trigger_value }}</code>
+              <CopyButton :value="honeytoken.trigger_value" />
+            </div>
+            <p class="hint">{{ t('honeytokens.place.anywhere') }}</p>
             <p class="hint">{{ t('honeytokens.place.fixed') }}</p>
             <p v-if="honeytoken.type === 'web_url'" class="hint">{{ t('honeytokens.place.link') }}</p>
           </div>

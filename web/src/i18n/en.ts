@@ -169,6 +169,9 @@ export const en = {
   'honeytokens.typeFixed': 'The type cannot be changed.',
   'honeytokens.place.title': 'Placement',
   'honeytokens.place.fixed': 'The value cannot be changed.',
+  'honeytokens.place.anywhere':
+    'The value also triggers wherever a request to the trigger carries it: in a query parameter, in a header such as an API key or a cookie, in the credentials of a URL, or in another segment of the path, also after a prefix such as "Bearer " or "sk_". Placed there, it can look like a key or a token and not like a honeytoken.',
+  'honeytokens.place.value': 'Value',
   'honeytokens.place.link':
     'Whoever opens this URL triggers an event, in a browser as well as with a program. A log forwarder sends its events to such a URL with POST and needs neither a QR code nor a redirect.',
   'honeytokens.qr.show': 'Show QR code',

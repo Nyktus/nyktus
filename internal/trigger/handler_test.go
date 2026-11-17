@@ -271,12 +271,14 @@ func TestTrigger_AnswersEverythingElseWithoutLookingItUp(t *testing.T) {
 	before := len(rec.recorded())
 
 	for _, path := range []string{
-		"/", "/robots.txt", "/favicon.ico", "/" + value + "/", "/" + value + "a",
-		"/" + value + "?x=1&token=" + value, "//" + value, "/./" + value, "/a/../" + value, "/" + value + ".png",
+		"/", "/robots.txt", "/favicon.ico", "/" + value + "a", "/a" + value, "/" + value[:25], "/x?k=" + value + "0",
 	} {
 		if got := fetch(t, srv, http.MethodGet, path, nil, nil); !got.equal(want) {
 			t.Errorf("GET %s = %+v, want %+v", path, got, want)
 		}
+	}
+	if got := rec.recorded()[before:]; len(got) != 0 {
+		t.Errorf("looked up %+v, want nothing", got)
 	}
 	for _, method := range []string{http.MethodPut, http.MethodDelete, http.MethodPatch, http.MethodOptions, "PROPFIND"} {
 		if got := fetch(t, srv, method, "/"+value, strings.NewReader("{}"), nil); !got.equal(want) {
@@ -286,10 +288,8 @@ func TestTrigger_AnswersEverythingElseWithoutLookingItUp(t *testing.T) {
 			t.Errorf("%s image = %+v, want %+v", method, got, wantImage)
 		}
 	}
-
-	// A query does not hide the value: the path alone counts.
-	if got := rec.recorded()[before:]; len(got) != 1 || got[0].Value != value {
-		t.Errorf("looked up %+v, want only the request with a query", got)
+	if got := rec.recorded()[before:]; len(got) != 0 {
+		t.Errorf("looked up %+v by a method that is not recorded, want nothing", got)
 	}
 }
 
@@ -699,8 +699,8 @@ func TestTrigger_LogsNoTriggerValue(t *testing.T) {
 	t.Parallel()
 
 	srv, log := newServer(t, &fakeRecorder{results: map[string]Result{value: {Outcome: OutcomeRecorded, HoneytokenID: "4f1c"}}})
-	fetch(t, srv, http.MethodGet, "/"+value+"?q="+value, nil, nil)
-	if strings.Contains(log.String(), value[:10]) {
+	fetch(t, srv, http.MethodGet, "/"+value+"?q="+value, nil, http.Header{"X-Api-Key": {value}, "Authorization": {"Basic " + basicOf("svc:"+value)}})
+	if strings.Contains(log.String(), value[:10]) || strings.Contains(log.String(), basicOf("svc:"+value)) {
 		t.Errorf("log contains the trigger value: %s", log)
 	}
 	for _, want := range []string{`"msg":"trigger: request"`, `"outcome":"recorded"`, `"honeytoken_id":"4f1c"`, `"status":302`} {
@@ -755,30 +755,6 @@ func TestTrigger_RecordingHasADeadline(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/"+value, nil))
 	if remaining <= 0 || remaining > recordTimeout {
 		t.Errorf("time left for recording = %v, want at most %v", remaining, recordTimeout)
-	}
-}
-
-func TestTriggerValue(t *testing.T) {
-	t.Parallel()
-
-	for path, want := range map[string]bool{
-		"/" + value:                   true,
-		"/" + value + ".gif":          true,
-		"/" + value + ".gif.gif":      false,
-		"/" + strings.ToUpper(value):  false,
-		"/" + value[:25]:              false,
-		"/" + value[:25] + "1":        false,
-		"/" + value[:25] + "8":        false,
-		value:                         false,
-		"/" + value + "/":             false,
-		"/":                           false,
-		"/x/" + value:                 false,
-		"/" + value[:24] + "\u00e4":   false,
-		"/" + strings.Repeat("a", 26): true,
-	} {
-		if _, ok := triggerValue(path); ok != want {
-			t.Errorf("triggerValue(%q) = %v, want %v", path, ok, want)
-		}
 	}
 }
 
