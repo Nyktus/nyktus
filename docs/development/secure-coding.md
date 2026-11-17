@@ -342,7 +342,7 @@ The sensor runs inside the monitored network and talks to attackers directly.
 ## Dependencies and supply chain
 
 - Every new dependency needs a justification in its pull request: why the standard library is not enough, how well the project is maintained, its license compatibility with the AGPL, and its transitive footprint.
-- CI runs `govulncheck` and `npm audit` and fails on known vulnerabilities in reachable code.
+- CI runs `govulncheck` and `npm audit` and fails on known vulnerabilities in reachable code. For the web console that is what the build bundles: the audit fails on the packages in `dependencies` and what they pull in. The packages in `devDependencies` (build, test and type-check tools) run only on developer and CI machines, on files of the repository, and are audited as well, but without failing, so that an advisory without a fixed release in a tool does not block every change. A finding in one of them is fixed or the tool replaced as soon as a fixed release exists.
 - GitHub Actions are pinned to a full commit SHA, and workflows declare minimal `permissions`.
 - Releases ship with checksums, signatures and a software bill of materials.
 
