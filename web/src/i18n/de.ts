@@ -167,6 +167,9 @@ export const de: Record<MessageKey, string> = {
   'honeytokens.typeFixed': 'Der Typ lässt sich nicht ändern.',
   'honeytokens.place.title': 'Platzieren',
   'honeytokens.place.fixed': 'Der Wert lässt sich nicht ändern.',
+  'honeytokens.place.anywhere':
+    'Der Wert löst auch überall dort aus, wo eine Anfrage an den Trigger ihn trägt: in einem Query-Parameter, in einem Header wie einem API-Schlüssel oder einem Cookie, in den Zugangsdaten einer URL oder in einem anderen Pfadsegment, auch nach einem Präfix wie „Bearer “ oder „sk_“. So platziert wirkt er wie ein Schlüssel oder ein Token und nicht wie ein Honeytoken.',
+  'honeytokens.place.value': 'Wert',
   'honeytokens.place.link':
     'Wer diese URL öffnet, löst ein Ereignis aus, im Browser wie mit einem Programm. Ein Log-Forwarder sendet seine Ereignisse per POST an eine solche URL und braucht weder QR-Code noch Weiterleitung.',
   'honeytokens.qr.show': 'QR-Code anzeigen',

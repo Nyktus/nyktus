@@ -193,12 +193,14 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	// Paths are compared in lower case: a URL can be written in upper case on
 	// its way, for example in the alphanumeric mode of a QR code.
 	path := strings.ToLower(r.URL.Path)
-	value, ok := triggerValue(path)
-	isReport := r.Method == http.MethodPost && path == reportPath
+	// A POST to the report path with the form of a secret is the report of a
+	// sensor. Any other request to it, such as the POST of a log shipper that
+	// carries a value in a header or the query, is one of a honeytoken.
 	var secret string
-	if isReport {
+	if r.Method == http.MethodPost && path == reportPath {
 		secret, _ = bearerSecret(r.Header.Get("Authorization"))
 	}
+	isReport := secret != ""
 	// Every POST is read, whichever path it goes to: net/http sends the interim
 	// response to Expect: 100-continue only when the handler reads, so a request
 	// that was not read would be answered differently. The report of a sensor,
@@ -213,27 +215,27 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	)
 	switch {
 	case r.Method != http.MethodPost:
-	case isReport && secret != "":
+	case isReport:
 		report, readErr = io.ReadAll(r.Body)
 	default:
 		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(h.bodyTimeout))
 		body = readBodyExcerpt(r.Body)
 	}
+	// The value of a honeytoken may stand anywhere in the request, see candidates.
+	var values []string
+	if !isReport && recordedMethod(r.Method) {
+		values = candidates(r)
+	}
 	switch {
 	case isReport:
-		// A sensor reports here. The answer is the one that every other POST
-		// receives, whatever became of the report.
-		if secret == "" {
-			attrs = append(attrs, slog.String("outcome", "not_looked_up"))
-		} else {
-			attrs = h.report(r, secret, report, readErr, attrs)
-		}
-	case !ok || !recordedMethod(r.Method):
+		// The answer is the one that every other POST receives, whatever became
+		// of the report.
+		attrs = h.report(r, secret, report, readErr, attrs)
+	case len(values) == 0:
 		attrs = append(attrs, slog.String("outcome", "not_looked_up"))
 	default:
 		var err error
-		res, err = h.record(r.Context(), Request{
-			Value:          value,
+		res, err = h.record(r.Context(), values, Request{
 			Method:         r.Method,
 			ClientIP:       request.ClientIP(r.Context()),
 			UserAgent:      untrusted(r.Header.Get("User-Agent"), maxUserAgentBytes),
@@ -260,7 +262,8 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 
 	status := h.answer(w, r.Method, path, res.RedirectURL)
 
-	// The path holds the trigger value, so it stays out of the log.
+	// The path, the query and the headers may hold the trigger value, so they stay
+	// out of the log.
 	attrs = append(attrs, slog.Int("status", status), slog.Duration("duration", time.Since(start)))
 	if ip := request.ClientIP(r.Context()); ip.IsValid() {
 		attrs = append(attrs, slog.String("client_ip", ip.String()))
@@ -296,10 +299,21 @@ func (h *Handler) answer(w http.ResponseWriter, method, path, redirectURL string
 	return http.StatusFound
 }
 
-func (h *Handler) record(ctx context.Context, req Request) (Result, error) {
+// record looks up the values in their order until one belongs to a honeytoken,
+// which records the request, so that a request with several values is recorded
+// once, for the first of them that is known. The lookups share one deadline.
+func (h *Handler) record(ctx context.Context, values []string, req Request) (Result, error) {
 	ctx, cancel := recordingContext(ctx)
 	defer cancel()
-	return h.recorder.Record(ctx, req)
+	var res Result
+	for _, v := range values {
+		req.Value = v
+		var err error
+		if res, err = h.recorder.Record(ctx, req); err != nil || res.Outcome != OutcomeUnknown {
+			return res, err
+		}
+	}
+	return res, nil
 }
 
 // recordingContext returns the context of a recording. A client that closes
@@ -367,31 +381,6 @@ func bearerSecret(header string) (string, bool) {
 	}
 	secret := header[len(scheme):]
 	return secret, isSecret(secret)
-}
-
-// triggerValue extracts the trigger value from the lowercase path of a URL of a
-// honeytoken, "/<value>" or "/<value>.gif". Other paths, such as "/" or
-// "/robots.txt", hold no value and are answered without asking the database.
-func triggerValue(path string) (string, bool) {
-	value, ok := strings.CutPrefix(path, "/")
-	value = strings.TrimSuffix(value, imageSuffix)
-	return value, ok && isTriggerValue(value)
-}
-
-// triggerValueLength is the length of a trigger value: 128 bits in lowercase
-// base32 without padding.
-const triggerValueLength = 26
-
-func isTriggerValue(s string) bool {
-	if len(s) != triggerValueLength {
-		return false
-	}
-	for i := range len(s) {
-		if c := s[i]; (c < 'a' || c > 'z') && (c < '2' || c > '7') {
-			return false
-		}
-	}
-	return true
 }
 
 // readBodyExcerpt returns the start of a request body as untrusted text. The

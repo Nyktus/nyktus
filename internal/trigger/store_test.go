@@ -391,6 +391,32 @@ func TestTrigger_IdenticalResponsesWithTheDatabase(t *testing.T) {
 	}
 }
 
+// The value of a honeytoken records its request wherever it stands, once per
+// request, for the first value that belongs to a honeytoken.
+func TestTrigger_RecordsTheValueFromQueryAndHeadersWithTheDatabase(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	enabledID, enabled := f.honeytoken(t, "web_url", true, nil, nil)
+	_, disabled := f.honeytoken(t, "web_url", false, nil, nil)
+	srv, _ := newServer(t, f.store)
+	unknown := strings.Repeat("a", 26)
+
+	fetch(t, srv, http.MethodGet, "/status?key="+enabled, nil, nil)
+	fetch(t, srv, http.MethodGet, "/status", nil, http.Header{"X-Api-Key": {"sk_" + enabled}})
+	fetch(t, srv, http.MethodPost, "/", strings.NewReader("{}"), http.Header{"Authorization": {"Basic " + basicOf("svc:"+enabled)}})
+	fetch(t, srv, http.MethodGet, "/"+unknown+"/"+enabled, nil, nil)
+	if n := f.count(t, "SELECT count(*) FROM events WHERE resource_id = $1", enabledID); n != 4 {
+		t.Errorf("%d events, want 4: one per request", n)
+	}
+
+	// The first value that belongs to a honeytoken decides, also if it is disabled.
+	fetch(t, srv, http.MethodGet, "/status?key="+disabled+"&other="+enabled, nil, nil)
+	if n := f.count(t, "SELECT count(*) FROM events"); n != 4 {
+		t.Errorf("%d events, want 4: a disabled honeytoken records nothing and ends the search", n)
+	}
+}
+
 // An event keeps the scenario that its honeytoken belonged to when it was
 // requested, or none, so that the worker correlates it by that scenario even
 // if the honeytoken changes its scenario before the event is processed.
