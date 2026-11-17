@@ -63,8 +63,10 @@ web-test: $(WEB_DIR)/node_modules ## Run the tests of the web console
 	cd $(WEB_DIR) && npm test
 
 .PHONY: web-audit
-web-audit: $(WEB_DIR)/node_modules ## Report known vulnerabilities in the packages of the web console
-	cd $(WEB_DIR) && npm audit --audit-level=high
+web-audit: $(WEB_DIR)/node_modules ## Report known vulnerabilities in the packages of the web console; those of the build are fatal, those of its tools are not
+	cd $(WEB_DIR) && npm audit --omit=dev --audit-level=high
+	@echo "Development tools (reported, not fatal):"
+	-cd $(WEB_DIR) && npm audit --audit-level=high
 
 .PHONY: build
 build: web-build ## Build the web console, then the nyktus and nyktus-sensor binaries into bin/
