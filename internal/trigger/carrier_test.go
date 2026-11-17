@@ -39,28 +39,29 @@ func TestCandidates_FindsTheValueInEveryPlace(t *testing.T) {
 
 	encoded := "%" + "71" + value[1:] // percent-encoded first letter
 	for name, r := range map[string]*http.Request{
-		"first path segment":       newRequest(t, "/"+value, nil),
-		"image":                    newRequest(t, "/"+value+".gif", nil),
-		"other extension":          newRequest(t, "/"+value+".png", nil),
-		"later path segment":       newRequest(t, "/api/v1/"+value+"/items", nil),
-		"prefix after a delimiter": newRequest(t, "/key_"+value, nil),
-		"empty segments":           newRequest(t, "//"+value, nil),
-		"upper case":               newRequest(t, "/"+strings.ToUpper(value), nil),
-		"query value":              newRequest(t, "/?token="+value, nil),
-		"query without a name":     newRequest(t, "/?"+value, nil),
-		"query name":               newRequest(t, "/?"+value+"=1", nil),
-		"query percent-encoded":    newRequest(t, "/?token="+encoded, nil),
-		"query after another":      newRequest(t, "/?a=1&b=2;c="+value, nil),
-		"bearer token":             newRequest(t, "/", http.Header{"Authorization": {"Bearer " + value}}),
-		"api key":                  newRequest(t, "/", http.Header{"X-Api-Key": {value}}),
-		"prefixed api key":         newRequest(t, "/", http.Header{"X-Api-Key": {"sk-live-" + value}}),
-		"cookie":                   newRequest(t, "/", http.Header{"Cookie": {"a=b; sid=" + value + "; c=d"}}),
-		"basic credentials":        newRequest(t, "/", http.Header{"Authorization": {"Basic " + basicOf("svc:"+value)}}),
-		"basic user name":          newRequest(t, "/", http.Header{"Authorization": {"basic " + basicOf(value+":x")}}),
-		"basic unpadded":           newRequest(t, "/", http.Header{"Authorization": {"Basic " + strings.TrimRight(basicOf("svc:"+value+"!"), "=")}}),
-		"basic in upper case":      newRequest(t, "/", http.Header{"Authorization": {"Basic " + basicOf("svc:"+strings.ToUpper(value))}}),
-		"any other header":         newRequest(t, "/", http.Header{"X-Something": {"a " + value + " b"}}),
-		"a second header value":    newRequest(t, "/", http.Header{"X-Something": {"nothing", value}}),
+		"first path segment":        newRequest(t, "/"+value, nil),
+		"image":                     newRequest(t, "/"+value+".gif", nil),
+		"other extension":           newRequest(t, "/"+value+".png", nil),
+		"later path segment":        newRequest(t, "/api/v1/"+value+"/items", nil),
+		"prefix after a delimiter":  newRequest(t, "/key_"+value, nil),
+		"empty segments":            newRequest(t, "//"+value, nil),
+		"upper case":                newRequest(t, "/"+strings.ToUpper(value), nil),
+		"query value":               newRequest(t, "/?token="+value, nil),
+		"query without a name":      newRequest(t, "/?"+value, nil),
+		"query name":                newRequest(t, "/?"+value+"=1", nil),
+		"query percent-encoded":     newRequest(t, "/?token="+encoded, nil),
+		"query beside a bad escape": newRequest(t, "/?ref=100%&token="+encoded, nil),
+		"query after another":       newRequest(t, "/?a=1&b=2;c="+value, nil),
+		"bearer token":              newRequest(t, "/", http.Header{"Authorization": {"Bearer " + value}}),
+		"api key":                   newRequest(t, "/", http.Header{"X-Api-Key": {value}}),
+		"prefixed api key":          newRequest(t, "/", http.Header{"X-Api-Key": {"sk-live-" + value}}),
+		"cookie":                    newRequest(t, "/", http.Header{"Cookie": {"a=b; sid=" + value + "; c=d"}}),
+		"basic credentials":         newRequest(t, "/", http.Header{"Authorization": {"Basic " + basicOf("svc:"+value)}}),
+		"basic user name":           newRequest(t, "/", http.Header{"Authorization": {"basic " + basicOf(value+":x")}}),
+		"basic unpadded":            newRequest(t, "/", http.Header{"Authorization": {"Basic " + strings.TrimRight(basicOf("svc:"+value+"!"), "=")}}),
+		"basic in upper case":       newRequest(t, "/", http.Header{"Authorization": {"Basic " + basicOf("svc:"+strings.ToUpper(value))}}),
+		"any other header":          newRequest(t, "/", http.Header{"X-Something": {"a " + value + " b"}}),
+		"a second header value":     newRequest(t, "/", http.Header{"X-Something": {"nothing", value}}),
 	} {
 		if got := candidates(r); !slices.Equal(got, []string{value}) {
 			t.Errorf("%s: candidates = %q, want [%q]", name, got, value)
@@ -101,7 +102,7 @@ func TestCandidates_IgnoresWhatIsNoValue(t *testing.T) {
 func TestCandidates_OrderIsPathQueryThenHeadersByName(t *testing.T) {
 	t.Parallel()
 
-	r := newRequest(t, "/"+value+"/?a="+second, http.Header{
+	r := newRequest(t, "/"+value+"/?x=%zz&a="+second, http.Header{
 		"X-B": {fourth},
 		"X-A": {third, value},
 	})
@@ -118,9 +119,12 @@ func TestCandidates_OrderIsPathQueryThenHeadersByName(t *testing.T) {
 func TestCandidates_AreBounded(t *testing.T) {
 	t.Parallel()
 
-	r := newRequest(t, "/"+value+"/"+second+"/"+third+"/"+fourth+"/"+fifth+"?a="+strings.Repeat(value+"&", 100), nil)
-	got := candidates(r)
-	if want := []string{value, second, third, fourth}; maxCandidates != 4 || !slices.Equal(got, want) {
+	var values []string
+	for i := range maxCandidates + 2 {
+		values = append(values, strings.Repeat(string(rune('a'+i)), triggerValueLength))
+	}
+	r := newRequest(t, "/"+strings.Join(values, "/")+"?a="+strings.Repeat(value+"&", 100), nil)
+	if got, want := candidates(r), values[:maxCandidates]; !slices.Equal(got, want) {
 		t.Errorf("candidates = %q, want the first %d: %q", got, maxCandidates, want)
 	}
 }

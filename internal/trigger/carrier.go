@@ -18,8 +18,10 @@ const (
 	triggerValueLength = 26
 	// maxCandidates bounds how many different values one request can make the
 	// trigger look up, so that a request that carries many strings of the form of
-	// a value costs a few queries, not one per string.
-	maxCandidates = 4
+	// a value costs a few queries, not one per string. Strings of the form that
+	// something else sent, such as identifiers, take a place as well, so the bound
+	// leaves room for the value among them.
+	maxCandidates = 8
 	// maxBasicBytes bounds the credentials of an Authorization header of the
 	// scheme Basic that are decoded.
 	maxBasicBytes = 1024
@@ -41,19 +43,21 @@ const (
 // but not inside a longer run. Of Basic credentials the decoded text counts too.
 // The body of a request is not searched.
 //
-// At most maxCandidates strings are returned. The order decides which honeytoken
+// At most maxCandidates strings are returned; a value beyond them is not found. The order decides which honeytoken
 // a request with several values is recorded for, so it must not depend on the
 // iteration order of a map.
 func candidates(r *http.Request) []string {
 	var c collector
 	c.scan(r.URL.Path)
-	if q := r.URL.RawQuery; q != "" {
-		// A parameter can be percent-encoded, which the separators do not hide. A
-		// query that cannot be decoded is searched as it was sent.
-		if decoded, err := url.QueryUnescape(q); err == nil {
-			q = decoded
+	// A parameter can be percent-encoded, which the separators do not hide. Each
+	// one is decoded on its own, so that a malformed escape in one parameter does
+	// not keep another from being decoded; one that cannot be decoded is searched
+	// as it was sent.
+	for part := range strings.FieldsFuncSeq(r.URL.RawQuery, func(r rune) bool { return r == '&' || r == ';' }) {
+		if decoded, err := url.QueryUnescape(part); err == nil {
+			part = decoded
 		}
-		c.scan(q)
+		c.scan(part)
 	}
 	for _, name := range slices.Sorted(maps.Keys(r.Header)) {
 		for _, v := range r.Header[name] {

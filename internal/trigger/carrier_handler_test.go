@@ -143,11 +143,15 @@ func TestTrigger_RecordsTheFirstKnownValueOnly(t *testing.T) {
 func TestTrigger_LooksUpAtMostAFewValuesPerRequest(t *testing.T) {
 	t.Parallel()
 
+	var many []string
+	for i := range 2 * maxCandidates {
+		many = append(many, strings.Repeat(string(rune('a'+i)), triggerValueLength))
+	}
 	rec := &fakeRecorder{}
 	srv, _ := newServer(t, rec)
-	fetch(t, srv, http.MethodGet, "/"+value+"/"+second+"/"+third+"/"+fourth+"/"+fifth, nil, nil)
+	fetch(t, srv, http.MethodGet, "/"+strings.Join(many, "/"), nil, nil)
 	if got := len(rec.recorded()); got != maxCandidates {
-		t.Errorf("looked up %d values, want at most %d", got, maxCandidates)
+		t.Errorf("looked up %d values, want %d", got, maxCandidates)
 	}
 }
 
@@ -187,5 +191,23 @@ func TestTrigger_LogsNoValueFromQueryOrHeaders(t *testing.T) {
 	}
 	if strings.Count(log.String(), `"outcome":"recorded"`) != 3 {
 		t.Errorf("log does not name three recorded requests: %s", log)
+	}
+}
+
+// A path that net/http does not clean, and any ending, still carries the value:
+// the request is recorded once.
+func TestTrigger_RecordsTheValueInOddPaths(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{
+		"/" + value + "/", "//" + value, "/./" + value, "/a/../" + value, "/" + value + ".png", "/" + value + "/x.gif",
+		"/x?token=" + value, "/x?token=" + strings.ToUpper(value),
+	} {
+		rec := &fakeRecorder{}
+		srv, _ := newServer(t, rec)
+		fetch(t, srv, http.MethodGet, path, nil, nil)
+		if got := rec.recorded(); len(got) != 1 || got[0].Value != value {
+			t.Errorf("GET %s: looked up %+v, want the value once", path, got)
+		}
 	}
 }
