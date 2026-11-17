@@ -22,7 +22,7 @@ import (
 type valueRecorder struct{ values []string }
 
 func (r *valueRecorder) Record(_ context.Context, req trigger.Request) (trigger.Result, error) {
-	r.values = append(r.values, req.Value)
+	r.values = append(r.values, req.Values...)
 	return trigger.Result{Outcome: trigger.OutcomeRecorded}, nil
 }
 

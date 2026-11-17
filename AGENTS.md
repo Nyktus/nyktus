@@ -39,7 +39,7 @@ The server binary `nyktus` runs one or more roles in a process:
 | `dns` | Authoritative DNS for DNS honeytokens | Internet |
 | `worker` | Incident correlation, alert delivery, scheduled jobs | Internal, outbound only |
 
-Roles communicate only through PostgreSQL and use separate database roles with least privilege. The `trigger` and `dns` roles have no table read access: they resolve one trigger value at a time through a database function and can never enumerate the inventory. The sensor `nyktus-sensor` runs inside monitored networks and reports to the trigger endpoint.
+Roles communicate only through PostgreSQL and use separate database roles with least privilege. The `trigger` and `dns` roles have no table read access: they resolve the trigger values of one request (the trigger up to eight, the DNS role one) through a database function and can never enumerate the inventory. The sensor `nyktus-sensor` runs inside monitored networks and reports to the trigger endpoint.
 
 ## Repository layout
 
