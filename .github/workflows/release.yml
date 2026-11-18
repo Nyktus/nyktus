@@ -70,9 +70,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          # A missing tag is a 404; any other failure shows when the tag is created.
-          have=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/sensor/$TAG" --jq .object.sha 2>/dev/null || true)
-          if [ -z "$have" ]; then
+          # A missing tag is a 404; any other failure shows when the tag is created. The
+          # exit status decides, not the output: on an error, gh prints the body of the
+          # answer to stdout without applying --jq.
+          if ! have=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/sensor/$TAG" --jq .object.sha 2>/dev/null); then
             gh api "repos/$GITHUB_REPOSITORY/git/refs" --method POST \
               --field "ref=refs/tags/sensor/$TAG" --field "sha=$GITHUB_SHA" >/dev/null
           elif [ "$have" != "$GITHUB_SHA" ]; then

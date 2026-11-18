@@ -7,7 +7,6 @@
     ".": {
       "release-type": "go",
       "package-name": "nyktus",
-      "release-as": "0.4.0",
       "include-component-in-tag": false,
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
