@@ -56,6 +56,7 @@ deploy/             reference deployment configuration
 tools/              generators for embedded data and web types, run by developers, never by the server
 docs/development/   contributor documentation and guidelines
 docs/public/        the published deception catalog, generated; the documentation site copies it
+docs/images/        images of the README, such as the screenshot of the console
 ```
 
 Directories are created when their first code lands. Do not add placeholder files. The one exception is `web/dist/.gitkeep`, which keeps the directory that the embedding of the web console needs, see [Web console](docs/development/engineering.md#web-console).
