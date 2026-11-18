@@ -52,6 +52,51 @@ make dev-reset  # stop, delete the data
 
 Everything listens on the loopback address only, and the passwords are public: the environment is for development data. `make dev-up` creates the encryption key once in `deploy/dev/.env`, which Git ignores. If you lose the setup URL, run `docker compose --file deploy/dev/compose.yaml logs console`, or restart the console with `docker compose --file deploy/dev/compose.yaml restart console`.
 
+### Run the binaries yourself
+
+You need Go (the version in `go.mod`), Node.js 24, Docker, Make and Git. To build a release instead of the current development state, check out its tag first.
+
+Build the binaries and start a disposable PostgreSQL on port 55432, whose data is gone when the container stops (`make db-down`):
+
+```sh
+make build
+make db-up
+```
+
+Create the group roles, the owner, the database and the logins:
+
+```sh
+docker exec -i nyktus-test-db psql --username postgres --set ON_ERROR_STOP=1 < deploy/postgres/roles.sql
+
+docker exec -i nyktus-test-db psql --username postgres --set ON_ERROR_STOP=1 <<'SQL'
+CREATE ROLE nyktus_owner LOGIN PASSWORD 'owner-pass';
+CREATE DATABASE nyktus OWNER nyktus_owner ENCODING 'UTF8';
+CREATE ROLE nyktus_console_login LOGIN PASSWORD 'console-pass' IN ROLE nyktus_console;
+CREATE ROLE nyktus_trigger_login LOGIN PASSWORD 'trigger-pass' IN ROLE nyktus_trigger;
+CREATE ROLE nyktus_worker_login LOGIN PASSWORD 'worker-pass' IN ROLE nyktus_worker;
+SQL
+```
+
+Put the settings into a file that only you can read, because it holds the encryption key, then apply the migrations and start the server:
+
+```sh
+umask 077
+cat > nyktus.env <<'EOF'
+export NYKTUS_ENV=development
+export NYKTUS_ENCRYPTION_KEYS="1:$(openssl rand -base64 32)"
+export NYKTUS_TRIGGER_URL=http://127.0.0.1:8081
+export NYKTUS_TRIGGER_DEFAULT_REDIRECT=https://www.example.com/
+export NYKTUS_CONSOLE_DATABASE_URL='postgres://nyktus_console_login:console-pass@127.0.0.1:55432/nyktus?sslmode=disable'
+export NYKTUS_TRIGGER_DATABASE_URL='postgres://nyktus_trigger_login:trigger-pass@127.0.0.1:55432/nyktus?sslmode=disable'
+export NYKTUS_WORKER_DATABASE_URL='postgres://nyktus_worker_login:worker-pass@127.0.0.1:55432/nyktus?sslmode=disable'
+EOF
+. ./nyktus.env
+NYKTUS_DATABASE_URL='postgres://nyktus_owner:owner-pass@127.0.0.1:55432/nyktus?sslmode=disable' bin/nyktus migrate
+bin/nyktus serve --roles=console,worker,trigger
+```
+
+The server prints the setup URL of the first administrator. The console runs on http://127.0.0.1:8080, the trigger on http://127.0.0.1:8081, and `bin/nyktus-sensor` is built next to the server.
+
 ## Pull requests
 
 - Keep a pull request focused on one change. Separate refactorings from behavior changes.
