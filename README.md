@@ -10,7 +10,7 @@ The open cyber deception platform.
 
 Nyktus detects intruders, insider threats and data breaches with believable decoys: honeytokens and honeypots that you place across your infrastructure.
 
-Log-based detection collects everything and searches for the needle afterwards. Deception works the other way round: you place decoys (Honeytokens & Honeypots) that have no legitimate use. Nobody connects to a decoy SSH server by accident, and nobody resolves a DNS name that only exists inside a backup archive. When a decoy fires, someone is where they should not be.
+Log-based detection collects everything and searches for the needle afterwards. Deception works the other way round: you place decoys, honeytokens and honeypots, that have no legitimate use. Nobody connects to a decoy SSH server by accident, and nobody resolves a DNS name that only exists inside a backup archive. When a decoy fires, someone is where they should not be.
 
 This makes Nyktus a good fit for teams without a security operations center, and a low-noise source for teams that already run a SIEM.
 
@@ -35,8 +35,8 @@ make dev-up
 
 The command builds the images, starts Nyktus with PostgreSQL and prints the setup link of the first administrator. Open it in your browser and create the account. The console runs on http://localhost:8080.
 
-This environment is for evaluation only. 
-For a production ready installation, follow the [quickstart](https://docs.nyktus.org/getting-started/quickstart) with the released containers and the [deployment guide](https://docs.nyktus.org/operate/deploy).
+This environment is for evaluation only.
+For a production-ready installation, follow the [quickstart](https://docs.nyktus.org/getting-started/quickstart) with the released containers and the [deployment guide](https://docs.nyktus.org/operate/deploy).
 
 ## Documentation
 
