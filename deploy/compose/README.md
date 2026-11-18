@@ -114,12 +114,12 @@ Releases are signed by the release workflow with its identity, without a key to 
 
 <!-- x-release-please-start-version -->
 ```sh
-cosign verify ghcr.io/nyktus/nyktus:0.3.0 \
+cosign verify ghcr.io/nyktus/nyktus:0.4.0 \
   --certificate-identity-regexp '^https://github.com/Nyktus/nyktus/\.github/workflows/release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-The image of the sensor, `ghcr.io/nyktus/nyktus-sensor`, has the same version and the same signature identity: replace the name in the command above. Pin the digest that it prints in your copy of the compose file (`image: ghcr.io/nyktus/nyktus:0.3.0@sha256:…`); the sensor image is pinned the same way.
+The image of the sensor, `ghcr.io/nyktus/nyktus-sensor`, has the same version and the same signature identity: replace the name in the command above. Pin the digest that it prints in your copy of the compose file (`image: ghcr.io/nyktus/nyktus:0.4.0@sha256:…`); the sensor image is pinned the same way.
 <!-- x-release-please-end -->
 
 ## Logs

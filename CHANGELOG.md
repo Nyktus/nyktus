@@ -2,6 +2,20 @@
 
 All notable changes to Nyktus are documented in this file. The server and the sensor have the same version; changes of the sensor carry the scope `sensor`. The changes of the sensor before it joined the version of the server are in [sensor/CHANGELOG.md](sensor/CHANGELOG.md).
 
+## [0.4.0](https://github.com/Nyktus/nyktus/compare/v0.3.0...v0.4.0) (2026-11-18)
+
+
+### Features
+
+* record the passwords that attackers try at honeypots ([#161](https://github.com/Nyktus/nyktus/issues/161)) ([8495e71](https://github.com/Nyktus/nyktus/commit/8495e71aae582d290b0d1424eebdd6c92229d7a7))
+* **sensor:** add a honeypot for ports without a protocol ([#157](https://github.com/Nyktus/nyktus/issues/157)) ([f54752f](https://github.com/Nyktus/nyktus/commit/f54752f5c07077a301559a6202ad3eadd0b0954f))
+* **trigger:** find the value of a honeytoken in the path, query and headers ([#163](https://github.com/Nyktus/nyktus/issues/163)) ([2b9853f](https://github.com/Nyktus/nyktus/commit/2b9853f612212a418c4ba4d508d884b697173d21))
+
+
+### Bug Fixes
+
+* **web:** offer password managers the confirmation field and polish four views ([#160](https://github.com/Nyktus/nyktus/issues/160)) ([141a7da](https://github.com/Nyktus/nyktus/commit/141a7da8e7ef56356c65fa954fdb9c387056b2da))
+
 ## [0.3.0](https://github.com/Nyktus/nyktus/compare/v0.2.0...v0.3.0) (2026-11-11)
 
 
