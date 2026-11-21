@@ -1,0 +1,18 @@
+- id: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d"
+  service: "smtp"
+  # Address and port to listen on. Ports below 1024 need CAP_NET_BIND_SERVICE.
+  listen: ":587"
+  # The name of the server, which its greeting and its answer to EHLO give,
+  # and how a client reaches TLS: "starttls", as on ports 25 and 587, or
+  # "implicit", TLS from the first byte, as on port 465. Fill in both: the
+  # sensor does not start before, because a name that every installation
+  # shares would identify the honeypot.
+  hostname: ""
+  tls_mode: ""
+  # The certificate of the server and its private key, which you provide: the
+  # sensor never makes one. The certificate names the hostname above in its
+  # subject alternative names, which clients check. The paths are relative
+  # to this file.
+  tls_cert_file: ""
+  tls_key_file: ""
+  secret: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"

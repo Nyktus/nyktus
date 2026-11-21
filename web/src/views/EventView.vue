@@ -136,7 +136,8 @@ onMounted(load);
           <dt>{{ t('event.duration') }}</dt>
           <dd>{{ t('unit.seconds', { count: (event.sensor.duration_ms / 1000).toFixed(1) }) }}</dd>
           <template v-if="event.sensor.client_version !== null">
-            <dt>{{ t('event.clientVersion') }}</dt>
+            <!-- A mail client names itself, not its version, in EHLO. -->
+            <dt>{{ t(event.sensor.service === 'smtp' ? 'event.clientName' : 'event.clientVersion') }}</dt>
             <dd><UntrustedText :value="event.sensor.client_version" /></dd>
           </template>
           <template v-if="event.sensor.database !== null">

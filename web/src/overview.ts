@@ -59,7 +59,7 @@ export interface HoneypotSummary {
   byService: { service: Honeypot['service']; count: number }[];
 }
 
-const honeypotServices: readonly Honeypot['service'][] = ['ssh', 'telnet', 'postgres', 'ldap', 'mcp', 'tcp'];
+const honeypotServices: readonly Honeypot['service'][] = ['ssh', 'telnet', 'postgres', 'ldap', 'mcp', 'smtp', 'tcp'];
 
 export function summarizeHoneypots(page: Counted<Honeypot>): HoneypotSummary {
   const enabled = page.items.filter((honeypot) => honeypot.enabled);

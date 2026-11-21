@@ -808,6 +808,18 @@ describe('an event', () => {
     expect(wrapper.find('.table').exists()).toBe(false);
   });
 
+  test('shows the logins of an SMTP session and the name that the client gave in EHLO', async () => {
+    const e = sensorEvent({ sensor: { ...sensorEvent().sensor!, service: 'smtp', port: 587, client_version: 'client.example', tool_calls: [] } });
+    const { wrapper } = await boot(one(e), at(e.id));
+    const text = wrapper.text();
+    expect(text).toContain('SMTP');
+    expect(text).toContain('Name in EHLO');
+    expect(text).not.toContain('Client version');
+    expect(wrapper.findAll('dd bdi.untrusted').map((cell) => cell.text())).toContain('client.example');
+    expect(text).toContain('Login attempts');
+    expect(wrapper.findAll('.table tbody tr')[0]?.findAll('td')[1]?.text()).toBe('hunter2');
+  });
+
   test('says that an MCP session called no tool', async () => {
     const e = sensorEvent({ sensor: { ...sensorEvent().sensor!, service: 'mcp', event_type: 'connection', attempts: [], tool_calls: [] } });
     const { wrapper } = await boot(one(e), at(e.id));

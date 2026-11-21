@@ -17,10 +17,11 @@ import (
 // is a module of its own, so the two sides cannot import each other: this
 // file is what they agree on.
 const (
-	goldenEntry    = "../../sensor/internal/config/testdata/console_entry.yaml"
-	goldenSSHEntry = "../../sensor/internal/config/testdata/console_entry_ssh.yaml"
-	goldenMCPEntry = "../../sensor/internal/config/testdata/console_entry_mcp.yaml"
-	goldenTCPEntry = "../../sensor/internal/config/testdata/console_entry_tcp.yaml"
+	goldenEntry     = "../../sensor/internal/config/testdata/console_entry.yaml"
+	goldenSSHEntry  = "../../sensor/internal/config/testdata/console_entry_ssh.yaml"
+	goldenMCPEntry  = "../../sensor/internal/config/testdata/console_entry_mcp.yaml"
+	goldenTCPEntry  = "../../sensor/internal/config/testdata/console_entry_tcp.yaml"
+	goldenSMTPEntry = "../../sensor/internal/config/testdata/console_entry_smtp.yaml"
 )
 
 func TestCreated_SensorConfig_IsTheEntryThatTheSensorReads(t *testing.T) {
@@ -105,6 +106,7 @@ func TestCreated_SensorConfig_NamesTheUsualPortOfEveryService(t *testing.T) {
 		honeypot.ServicePostgres: ":5432",
 		honeypot.ServiceLDAP:     ":389",
 		honeypot.ServiceMCP:      ":8080",
+		honeypot.ServiceSMTP:     ":587",
 	}
 	for _, service := range honeypot.Services {
 		if service == honeypot.ServiceTCP {
@@ -196,5 +198,24 @@ func TestCreated_SensorConfig_TCP_IsTheEntryThatTheSensorReads(t *testing.T) {
 	}
 	if got := c.SensorConfig(); got != string(want) {
 		t.Errorf("SensorConfig() = %q, want the content of %s: %q", got, goldenTCPEntry, want)
+	}
+}
+
+// The entry of an SMTP honeypot has an empty name, an empty mode of TLS and no
+// certificate yet, which the sensor refuses until the operator has filled them
+// in.
+func TestCreated_SensorConfig_SMTP_IsTheEntryThatTheSensorReads(t *testing.T) {
+	t.Parallel()
+
+	want, err := os.ReadFile(goldenSMTPEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := honeypot.Created{
+		Honeypot: honeypot.Honeypot{ID: "7d2a51c4-3b8e-4f0a-9c6d-1e2f3a4b5c6d", Service: honeypot.ServiceSMTP, Name: "Mail relay", Notes: "rack 4"},
+		Secret:   honeypot.Secret(strings.Repeat("A", 43)),
+	}
+	if got := c.SensorConfig(); got != string(want) {
+		t.Errorf("SensorConfig() = %q, want the content of %s: %q", got, goldenSMTPEntry, want)
 	}
 }

@@ -2067,7 +2067,7 @@ paths:
           description: Lists only honeypots of this service.
           schema:
             type: string
-            enum: [ssh, telnet, postgres, ldap, mcp, tcp]
+            enum: [ssh, telnet, postgres, ldap, mcp, smtp, tcp]
         - name: enabled
           in: query
           description: Lists only enabled (`true`) or disabled (`false`) honeypots.
@@ -4396,7 +4396,7 @@ components:
                 type: string
               service:
                 type: string
-                enum: [ssh, telnet, postgres, ldap, mcp, tcp]
+                enum: [ssh, telnet, postgres, ldap, mcp, smtp, tcp]
         files:
           type: array
           description: |
@@ -4520,7 +4520,7 @@ components:
           format: uuid
         service:
           type: string
-          enum: [ssh, telnet, postgres, ldap, mcp, tcp]
+          enum: [ssh, telnet, postgres, ldap, mcp, smtp, tcp]
           description: The network service that the sensor emulates. It cannot be changed.
         name:
           type: string
@@ -4576,7 +4576,7 @@ components:
           format: uuid
         service:
           type: string
-          enum: [ssh, telnet, postgres, ldap, mcp, tcp]
+          enum: [ssh, telnet, postgres, ldap, mcp, smtp, tcp]
         name:
           type: string
         notes:
@@ -4619,7 +4619,10 @@ components:
             sensor: a list item for `honeypots:`, in YAML, with the identifier,
             the service, the usual port of the service as the address to listen
             on, and the secret. For `ssh` it also names the file of the host
-            key, which the operator creates. For `tcp`, which has no usual port,
+            key, which the operator creates. For `mcp` and `smtp` it holds what
+            the server presents, with empty values, and for `smtp` the files of
+            the certificate, which the operator provides; the sensor does not
+            start before they are filled in. For `tcp`, which has no usual port,
             the address is empty and the sensor does not start before the
             operator has named the ports. It holds the secret. Name and notes
             are not part of it.
@@ -4634,7 +4637,7 @@ components:
           format: uuid
         service:
           type: string
-          enum: [ssh, telnet, postgres, ldap, mcp, tcp]
+          enum: [ssh, telnet, postgres, ldap, mcp, smtp, tcp]
           description: The network service that the sensor emulates. It cannot be changed.
         name:
           type: string
@@ -4690,7 +4693,10 @@ components:
             sensor: a list item for `honeypots:`, in YAML, with the identifier,
             the service, the usual port of the service as the address to listen
             on, and the secret. For `ssh` it also names the file of the host
-            key, which the operator creates. For `tcp`, which has no usual port,
+            key, which the operator creates. For `mcp` and `smtp` it holds what
+            the server presents, with empty values, and for `smtp` the files of
+            the certificate, which the operator provides; the sensor does not
+            start before they are filled in. For `tcp`, which has no usual port,
             the address is empty and the sensor does not start before the
             operator has named the ports. It holds the secret. Name and notes
             are not part of it.
@@ -4715,7 +4721,7 @@ components:
       properties:
         service:
           type: string
-          enum: [ssh, telnet, postgres, ldap, mcp, tcp]
+          enum: [ssh, telnet, postgres, ldap, mcp, smtp, tcp]
         name:
           type: string
           minLength: 1
@@ -5227,7 +5233,7 @@ components:
       properties:
         service:
           type: string
-          enum: [ssh, telnet, postgres, ldap, mcp, tcp]
+          enum: [ssh, telnet, postgres, ldap, mcp, smtp, tcp]
           description: The service of the honeypot when the session ended.
         event_type:
           type: string

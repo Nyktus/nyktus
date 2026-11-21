@@ -285,7 +285,7 @@ export interface CatalogDeception {
   }[];
   honeypots: {
     label: string;
-    service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'tcp';
+    service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'smtp' | 'tcp';
   }[];
   files: {
     name: string;
@@ -322,7 +322,7 @@ export interface AssignScenarioRequest {
 
 export interface Honeypot {
   id: string;
-  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'tcp';
+  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'smtp' | 'tcp';
   name: string;
   notes: string;
   enabled: boolean;
@@ -338,7 +338,7 @@ export interface Honeypot {
 
 export interface CreatedHoneypot {
   id: string;
-  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'tcp';
+  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'smtp' | 'tcp';
   name: string;
   notes: string;
   enabled: boolean;
@@ -356,7 +356,7 @@ export interface CreatedHoneypot {
 
 export interface HoneypotSecret {
   id: string;
-  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'tcp';
+  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'smtp' | 'tcp';
   name: string;
   notes: string;
   enabled: boolean;
@@ -378,7 +378,7 @@ export interface HoneypotPage {
 }
 
 export interface CreateHoneypotRequest {
-  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'tcp';
+  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'smtp' | 'tcp';
   name: string;
   notes?: string;
   enabled?: boolean;
@@ -516,7 +516,7 @@ export interface Event {
 }
 
 export interface EventSession {
-  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'tcp';
+  service: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'smtp' | 'tcp';
   event_type: 'connection' | 'login_attempt' | 'directory_query' | 'tool_call';
   port: number;
   duration_ms: number;
@@ -965,7 +965,7 @@ export interface OperationTypes {
   };
   listHoneypots: {
     path: Record<string, never>;
-    query: { limit?: number; cursor?: string; service?: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'tcp'; enabled?: 'true' | 'false'; scenario_id?: string };
+    query: { limit?: number; cursor?: string; service?: 'ssh' | 'telnet' | 'postgres' | 'ldap' | 'mcp' | 'smtp' | 'tcp'; enabled?: 'true' | 'false'; scenario_id?: string };
     body: undefined;
     responses: { 200: HoneypotPage };
   };

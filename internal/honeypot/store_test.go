@@ -163,7 +163,7 @@ func TestStore_Create_ValidatesBeforeWriting(t *testing.T) {
 		spec honeypot.Spec
 		err  error
 	}{
-		{honeypot.Spec{Service: "smtp", Name: "a"}, honeypot.ErrInvalidService},
+		{honeypot.Spec{Service: "ftp", Name: "a"}, honeypot.ErrInvalidService},
 		{honeypot.Spec{Service: honeypot.ServiceSSH, Name: " a"}, honeypot.ErrInvalidName},
 		{honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", Notes: "\x00"}, honeypot.ErrInvalidNotes},
 		{honeypot.Spec{Service: honeypot.ServiceSSH, Name: "a", Techniques: []string{"T9999"}}, honeypot.ErrInvalidTechniques},
@@ -636,7 +636,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 		args       []any
 		constraint string
 	}{
-		{"unknown service", with(0, "smtp"), "honeypots_service_check"},
+		{"unknown service", with(0, "ftp"), "honeypots_service_check"},
 		{"empty name", with(1, ""), "honeypots_name_check"},
 		{"long name", with(1, strings.Repeat("x", 101)), "honeypots_name_check"},
 		{"name with spaces around", with(1, " a"), "honeypots_name_check"},

@@ -75,7 +75,7 @@ func TestSpec_ValidatesTheService(t *testing.T) {
 			t.Errorf("service %q: %v", s, err)
 		}
 	}
-	for _, s := range []Service{"", "smtp", "http", "SSH", "ssh "} {
+	for _, s := range []Service{"", "ftp", "http", "SSH", "ssh "} {
 		if err := (Spec{Service: s, Name: "a"}).validate(); !errors.Is(err, ErrInvalidService) {
 			t.Errorf("service %q: %v, want ErrInvalidService", s, err)
 		}
@@ -92,7 +92,7 @@ func TestService_DefaultSeverity(t *testing.T) {
 			t.Errorf("%s.DefaultSeverity() = %q, want medium", s, l)
 		}
 	}
-	if l := Service("smtp").DefaultSeverity(); l != "" {
+	if l := Service("ftp").DefaultSeverity(); l != "" {
 		t.Errorf("DefaultSeverity of an unknown service = %q, want none", l)
 	}
 }

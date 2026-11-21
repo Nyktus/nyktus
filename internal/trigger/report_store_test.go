@@ -194,7 +194,7 @@ func TestStore_RecordsEveryKindOfEvent(t *testing.T) {
 	f := newFixture(t)
 
 	attempt := []Attempt{{Username: "u", Password: ptr("p")}}
-	for _, service := range []string{"ssh", "telnet", "postgres", "ldap", "mcp", "tcp"} {
+	for _, service := range []string{"ssh", "telnet", "postgres", "ldap", "mcp", "smtp", "tcp"} {
 		_, secret := f.honeypot(t, enabled(service))
 		sessions := map[EventType]Session{
 			EventConnection:   {Attempts: []Attempt{}},
@@ -206,6 +206,12 @@ func TestStore_RecordsEveryKindOfEvent(t *testing.T) {
 		if service == "ssh" {
 			s := sessions[EventLoginAttempt]
 			s.ClientVersion = "SSH-2.0-x"
+			sessions[EventLoginAttempt] = s
+		}
+		if service == "smtp" {
+			// The name that a mail client gives in EHLO.
+			s := sessions[EventLoginAttempt]
+			s.ClientVersion = "client.example"
 			sessions[EventLoginAttempt] = s
 		}
 		if service == "tcp" {
@@ -260,6 +266,8 @@ func TestStore_DoesNotRecordASessionThatDoesNotFitTheService(t *testing.T) {
 		{"client version to telnet", "telnet", func(s *Session) { s.ClientVersion = "x" }},
 		{"login attempt to tcp", "tcp", func(*Session) {}},
 		{"client version to tcp", "tcp", func(s *Session) { s.Attempts = []Attempt{}; s.ClientVersion = "x" }},
+		{"directory query to smtp", "smtp", func(s *Session) { s.Query = query }},
+		{"database to smtp", "smtp", func(s *Session) { s.Database = "postgres" }},
 	}
 	for _, tt := range tests {
 		_, secret := f.honeypot(t, enabled(tt.service))
@@ -827,6 +835,9 @@ VALUES ($1, gen_random_uuid(), 'medium', now(), now(), $2, $3, $4, $5, $6, $7, $
 	if _, err := f.owner.Exec(t.Context(), insert, with(map[string]any{"service": "tcp", "event_type": "connection"})...); err != nil {
 		t.Fatalf("a connection to a tcp honeypot: %v", err)
 	}
+	if _, err := f.owner.Exec(t.Context(), insert, with(map[string]any{"service": "smtp", "port": 587, "client_version": "client.example"})...); err != nil {
+		t.Fatalf("a login to an smtp honeypot with the name of the client: %v", err)
+	}
 	tests := []struct {
 		name       string
 		changes    map[string]any
@@ -841,7 +852,8 @@ VALUES ($1, gen_random_uuid(), 'medium', now(), now(), $2, $3, $4, $5, $6, $7, $
 		{"no port", map[string]any{"port": nil}, "events_sensor_check"},
 		{"no duration", map[string]any{"duration": nil}, "events_sensor_check"},
 		{"no address", map[string]any{"client_ip": nil}, "events_sensor_check"},
-		{"unknown service", map[string]any{"service": "smtp"}, "events_sensor_service_check"},
+		{"unknown service", map[string]any{"service": "ftp"}, "events_sensor_service_check"},
+		{"directory query to smtp", map[string]any{"service": "smtp", "event_type": "directory_query", "base_dn": "dc=a", "filter": "(a=b)"}, "events_sensor_fields_check"},
 		{"unknown event type", map[string]any{"event_type": "scan"}, "events_sensor_event_type_check"},
 		{"port 0", map[string]any{"port": 0}, "events_sensor_port_check"},
 		{"port 65536", map[string]any{"port": 65536}, "events_sensor_port_check"},
