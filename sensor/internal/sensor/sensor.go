@@ -100,9 +100,7 @@ func newService(hp config.Honeypot, clk clock.Clock) service {
 // so it opens and reports them itself.
 func newMCP(c config.Honeypot, hp *session.Honeypot, clk clock.Clock, rep *reporter.Reporter) *mcp.Service {
 	cfg := *c.MCP
-	if c.TLSCertificate != nil {
-		cfg.Certificate = &c.TLSCertificate.Certificate
-	}
+	cfg.Certificate = c.TLSCertificate
 	return mcp.New(mcp.Options{
 		Config: &cfg,
 		Clock:  clk,

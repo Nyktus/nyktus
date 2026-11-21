@@ -18,13 +18,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"log/slog"
 	"net"
 
 	"nyktus.org/nyktus/sensor/internal/clock"
 	"nyktus.org/nyktus/sensor/internal/guard"
 	"nyktus.org/nyktus/sensor/internal/report"
 	"nyktus.org/nyktus/sensor/internal/session"
+	"nyktus.org/nyktus/sensor/internal/tlscert"
 )
 
 // Limits of the dialog, within those of the connection.
@@ -60,29 +60,8 @@ var errMalformed = errors.New("postgres: malformed message")
 type Config struct {
 	// Certificate, if set, lets a client ask for TLS. It comes from the
 	// operator: a certificate that the sensor made itself would identify it.
-	Certificate *Certificate
+	Certificate *tlscert.Certificate
 }
-
-// Certificate is a certificate with its private key. It writes nothing but a
-// placeholder, whatever formats or logs a value that holds it ends up in.
-type Certificate struct {
-	tls.Certificate
-}
-
-const redacted = "[redacted]"
-
-// String implements fmt.Stringer.
-func (Certificate) String() string { return redacted }
-
-// GoString implements fmt.GoStringer, which %#v and %+v of a struct use.
-func (Certificate) GoString() string { return redacted }
-
-// LogValue implements slog.LogValuer.
-func (Certificate) LogValue() slog.Value { return slog.StringValue(redacted) }
-
-// MarshalText implements encoding.TextMarshaler, which JSON and YAML encoders
-// use.
-func (Certificate) MarshalText() ([]byte, error) { return []byte(redacted), nil }
 
 // Service is the PostgreSQL honeypot.
 type Service struct {
@@ -97,7 +76,7 @@ func New(cfg Config, clk clock.Clock) *Service {
 	}
 	s := &Service{clock: clk}
 	if cfg.Certificate != nil {
-		s.tls = &tls.Config{Certificates: []tls.Certificate{cfg.Certificate.Certificate}, MinVersion: tls.VersionTLS12}
+		s.tls = cfg.Certificate.ServerConfig()
 	}
 	return s
 }

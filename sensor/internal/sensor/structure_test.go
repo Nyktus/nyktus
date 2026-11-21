@@ -44,7 +44,7 @@ func TestServices_ImportNothingThatRunsOrForwards(t *testing.T) {
 		"golang.org/x/crypto/ssh/terminal":   "opens a terminal",
 	}
 	services := []string{"ssh", "telnet", "postgres", "ldap", "mcp", "tcp"}
-	helpers := []string{"clock", "config", "conntest", "guard", "listener", "report", "reporter", "secret", "sensor", "session", "version"}
+	helpers := []string{"clock", "config", "conntest", "guard", "listener", "report", "reporter", "secret", "sensor", "session", "tlscert", "version"}
 	packages, err := fs.ReadDir(os.DirFS(".."), ".")
 	if err != nil {
 		t.Fatal(err)
