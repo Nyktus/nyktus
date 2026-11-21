@@ -7,16 +7,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
-	"math/big"
 	"net"
 	"net/http"
 	"net/netip"
@@ -31,6 +27,7 @@ import (
 	"nyktus.org/nyktus/sensor/internal/mcp"
 	"nyktus.org/nyktus/sensor/internal/report"
 	"nyktus.org/nyktus/sensor/internal/session"
+	"nyktus.org/nyktus/sensor/internal/tlscert/tlscerttest"
 )
 
 const (
@@ -1285,7 +1282,7 @@ func TestTLS(t *testing.T) {
 	t.Parallel()
 
 	cfg := config()
-	cfg.Certificate = testCertificate(t)
+	cfg.Certificate = tlscerttest.New(t, "mcp")
 	h := newHarness(t, cfg)
 	server, client := net.Pipe()
 	var serving sync.WaitGroup
@@ -1320,27 +1317,13 @@ func TestTLS_PlainClientGetsNoHTTP(t *testing.T) {
 	t.Parallel()
 
 	cfg := config()
-	cfg.Certificate = testCertificate(t)
+	cfg.Certificate = tlscerttest.New(t, "mcp")
 	h := newHarness(t, cfg)
 	conn := conntest.New(call{method: "tools/list"}.bytes(t))
 	h.service.Serve(t.Context(), conn, remote, local)
 	if bytes.Contains(conn.Written(), []byte("HTTP/1.1")) {
 		t.Errorf("written = %q", conn.Written())
 	}
-}
-
-func testCertificate(t *testing.T) *tls.Certificate {
-	t.Helper()
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), NotAfter: time.Now().Add(time.Hour)}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, priv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: priv}
 }
 
 func TestNew_PanicsWithoutADependency(t *testing.T) {

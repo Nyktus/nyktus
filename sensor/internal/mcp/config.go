@@ -4,7 +4,6 @@
 package mcp
 
 import (
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"regexp"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"nyktus.org/nyktus/sensor/internal/tlscert"
 )
 
 // Limits of the configuration. They bound what one listing of the tools sends.
@@ -39,7 +40,7 @@ type Config struct {
 	Tools         []Tool `yaml:"tools"`
 	// Certificate, if set, makes the port speak TLS. It comes from the operator:
 	// a certificate that the sensor made itself would identify it.
-	Certificate *tls.Certificate `yaml:"-"`
+	Certificate *tlscert.Certificate `yaml:"-"`
 }
 
 // Tool is an entry of the list of tools with its fixed answers. Nothing is run:

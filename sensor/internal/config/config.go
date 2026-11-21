@@ -25,9 +25,9 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"nyktus.org/nyktus/sensor/internal/mcp"
-	"nyktus.org/nyktus/sensor/internal/postgres"
 	"nyktus.org/nyktus/sensor/internal/secret"
 	"nyktus.org/nyktus/sensor/internal/ssh"
+	"nyktus.org/nyktus/sensor/internal/tlscert"
 )
 
 // Limits of the file and of its fields.
@@ -148,7 +148,7 @@ type Honeypot struct {
 	TLSCertFile string `yaml:"tls_cert_file"`
 	TLSKeyFile  string `yaml:"tls_key_file"`
 	// TLSCertificate is what Load read from those two files.
-	TLSCertificate *postgres.Certificate `yaml:"-"`
+	TLSCertificate *tlscert.Certificate `yaml:"-"`
 }
 
 var (
@@ -308,7 +308,7 @@ func readSecretFile(path string) (secret.Secret, error) {
 
 // readCertificate reads a certificate chain and its key. The key is held to the
 // rules of a secret; the chain is public.
-func readCertificate(certPath, keyPath string) (*postgres.Certificate, error) {
+func readCertificate(certPath, keyPath string) (*tlscert.Certificate, error) {
 	f, err := os.Open(certPath) //nolint:gosec // G304: the operator names the file.
 	if err != nil {
 		return nil, errors.New("cannot read the certificate file")
@@ -326,7 +326,7 @@ func readCertificate(certPath, keyPath string) (*postgres.Certificate, error) {
 	if err != nil {
 		return nil, errors.New("the certificate and its key do not form a valid pair")
 	}
-	return &postgres.Certificate{Certificate: cert}, nil
+	return &tlscert.Certificate{Certificate: cert}, nil
 }
 
 // readHostKey reads the private key of an SSH honeypot from a file that only its

@@ -6,17 +6,11 @@ package postgres_test
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/fs"
-	"math/big"
 	"net"
 	"net/netip"
 	"os"
@@ -31,6 +25,7 @@ import (
 	"nyktus.org/nyktus/sensor/internal/postgres"
 	"nyktus.org/nyktus/sensor/internal/report"
 	"nyktus.org/nyktus/sensor/internal/session"
+	"nyktus.org/nyktus/sensor/internal/tlscert/tlscerttest"
 )
 
 const secretValue = "Abcdefghijklmnopqrstuvwxyz0123456789-_ABCDE"
@@ -685,20 +680,6 @@ func FuzzServe(f *testing.F) {
 	})
 }
 
-func testCertificate(t *testing.T) *postgres.Certificate {
-	t.Helper()
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "db"}, NotAfter: time.Now().Add(time.Hour)}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, priv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &postgres.Certificate{Certificate: tls.Certificate{Certificate: [][]byte{der}, PrivateKey: priv}}
-}
-
 // A client that insists on TLS gets it, and the login is recorded like any
 // other.
 func TestServe_WithACertificate_TheLoginRunsInsideTLS(t *testing.T) {
@@ -711,7 +692,7 @@ func TestServe_WithACertificate_TheLoginRunsInsideTLS(t *testing.T) {
 	go func() {
 		defer close(done)
 		defer func() { _ = server.Close() }()
-		postgres.New(postgres.Config{Certificate: testCertificate(t)}, clk).Serve(t.Context(), server, s)
+		postgres.New(postgres.Config{Certificate: tlscerttest.New(t, "db")}, clk).Serve(t.Context(), server, s)
 	}()
 	if _, err := client.Write(sslRequest); err != nil {
 		t.Fatal(err)
@@ -754,23 +735,12 @@ func TestServe_BytesAfterTheRequestForTLS_EndTheSession(t *testing.T) {
 	clk := clocktest.New()
 	conn := conntest.New(join(sslRequest, startupMessage("user", "injected")))
 	s := start(t, clk)
-	postgres.New(postgres.Config{Certificate: testCertificate(t)}, clk).Serve(t.Context(), conn, s)
+	postgres.New(postgres.Config{Certificate: tlscerttest.New(t, "db")}, clk).Serve(t.Context(), conn, s)
 	s.End()
 	if got := logins(sessionReport(t, s)); len(got) != 0 {
 		t.Errorf("logins = %+v, want none", got)
 	}
 	if string(conn.Written()) != "S" {
 		t.Errorf("written = %q, want only the answer to the request", conn.Written())
-	}
-}
-
-func TestCertificate_NeverPrintsTheKey(t *testing.T) {
-	t.Parallel()
-
-	cert := testCertificate(t)
-	for _, got := range []string{fmt.Sprint(*cert), fmt.Sprintf("%+v", *cert), fmt.Sprintf("%#v", *cert)} {
-		if got != "[redacted]" {
-			t.Errorf("printed = %q, want the placeholder", got)
-		}
 	}
 }

@@ -109,11 +109,7 @@ func New(o Options) *Service {
 		},
 	}
 	if o.Config.Certificate != nil {
-		s.tls = &tls.Config{
-			Certificates: []tls.Certificate{*o.Config.Certificate},
-			MinVersion:   tls.VersionTLS12,
-			NextProtos:   []string{"http/1.1"},
-		}
+		s.tls = o.Config.Certificate.ServerConfig("http/1.1")
 	}
 	s.meta = encode(map[string]any{metaServer: map[string]string{"name": o.Config.ServerName, "version": o.Config.ServerVersion}})
 	listed := make([]listedTool, 0, len(o.Config.Tools))
