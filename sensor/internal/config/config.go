@@ -11,6 +11,7 @@ package config
 import (
 	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -21,11 +22,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
 	"nyktus.org/nyktus/sensor/internal/mcp"
 	"nyktus.org/nyktus/sensor/internal/secret"
+	"nyktus.org/nyktus/sensor/internal/smtp"
 	"nyktus.org/nyktus/sensor/internal/ssh"
 	"nyktus.org/nyktus/sensor/internal/tlscert"
 )
@@ -38,9 +41,14 @@ const (
 	// maxListen is the number of addresses of a honeypot that listens on
 	// several, and maxListeners the number of all addresses of a sensor, each of
 	// which holds a socket and its own limits.
-	maxListen      = 32
-	maxListeners   = 256
-	maxBanner      = 256
+	maxListen    = 32
+	maxListeners = 256
+	maxBanner    = 256
+	// maxSMTPBanner keeps the greeting of an SMTP server, with the longest
+	// hostname, within the 512 bytes of a reply line (RFC 5321, section 4.5.3.1.5).
+	maxSMTPBanner = 128
+	// maxHostname is the longest name of a host in DNS (RFC 1035).
+	maxHostname    = 253
 	maxLoginPrompt = 64
 	maxHostKeyFile = 8 << 10
 	// maxCertFile is the longest certificate chain that is read.
@@ -71,6 +79,7 @@ const (
 	Postgres Service = "postgres"
 	LDAP     Service = "ldap"
 	MCP      Service = "mcp"
+	SMTP     Service = "smtp"
 	TCP      Service = "tcp"
 )
 
@@ -125,7 +134,8 @@ type Honeypot struct {
 	// service; tcp has none and says nothing before the client does. An empty
 	// value means no banner, which an SSH server cannot do: its first words are
 	// its identification string. PostgreSQL, LDAP and MCP say nothing before a
-	// client does, so they take none.
+	// client does, so they take none. For smtp it is the rest of the greeting
+	// after the hostname and "ESMTP", one line, and has no default either.
 	Banner *string `yaml:"banner"`
 	// LoginPrompt is the prompt for the user name; telnet only.
 	LoginPrompt *string `yaml:"login_prompt"`
@@ -142,9 +152,16 @@ type Honeypot struct {
 	RSAHostKey ssh.HostKey `yaml:"-"`
 	// MCP is what an MCP honeypot presents; mcp only, and required there.
 	MCP *mcp.Config `yaml:"mcp"`
-	// TLSCertFile and TLSKeyFile name the certificate and its key; postgres
-	// and mcp only, optional, and always both. The sensor never makes a certificate of
-	// its own: it would identify the honeypot.
+	// Hostname is the name of an SMTP server in its greeting and its answer
+	// to EHLO, and TLSMode how a client reaches TLS; smtp only, and required
+	// there without a default, because a name that every installation shared
+	// would identify the honeypot.
+	Hostname string    `yaml:"hostname"`
+	TLSMode  smtp.Mode `yaml:"tls_mode"`
+	// TLSCertFile and TLSKeyFile name the certificate and its key; postgres,
+	// mcp and smtp only, always both, optional for postgres and mcp and
+	// required for smtp. The sensor never makes a certificate of its own: it
+	// would identify the honeypot.
 	TLSCertFile string `yaml:"tls_cert_file"`
 	TLSKeyFile  string `yaml:"tls_key_file"`
 	// TLSCertificate is what Load read from those two files.
@@ -228,12 +245,19 @@ func Load(path string) (*Config, error) {
 				hostKeys[id] = i
 			}
 		}
-		if (hp.Service == Postgres || hp.Service == MCP) && hp.TLSCertFile != "" && hp.TLSKeyFile != "" {
+		if hp.takesCertificate() && hp.TLSCertFile != "" && hp.TLSKeyFile != "" {
 			cert, err := readCertificate(resolve(filepath.Dir(path), hp.TLSCertFile), resolve(filepath.Dir(path), hp.TLSKeyFile))
 			if err != nil {
 				problems = append(problems, fmt.Errorf("honeypots[%d].tls_cert_file: %w", i, err))
 			}
 			hp.TLSCertificate = cert
+			// A client checks the name of the server against its certificate,
+			// and one that does not match is a mark that a scanner can see.
+			if err == nil && hp.Service == SMTP && validateHostname(hp.Hostname) == nil {
+				if err := cert.Leaf.VerifyHostname(hp.Hostname); err != nil {
+					problems = append(problems, fmt.Errorf("honeypots[%d].tls_cert_file: the certificate does not name the hostname %q in its subject alternative names", i, hp.Hostname))
+				}
+			}
 		}
 		if hp.Secret != "" {
 			inline = true
@@ -325,6 +349,13 @@ func readCertificate(certPath, keyPath string) (*tlscert.Certificate, error) {
 	cert, err := tls.X509KeyPair(chain, key)
 	if err != nil {
 		return nil, errors.New("the certificate and its key do not form a valid pair")
+	}
+	// X509KeyPair parses the leaf unless GODEBUG says otherwise, and the check
+	// of the hostname needs it.
+	if cert.Leaf == nil {
+		if cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0]); err != nil {
+			return nil, errors.New("cannot parse the certificate")
+		}
 	}
 	return &tlscert.Certificate{Certificate: cert}, nil
 }
@@ -466,7 +497,7 @@ func (hp *Honeypot) validate() []error {
 		add("id: must be the identifier of the honeypot in the console, a lowercase UUID")
 	}
 	switch hp.Service {
-	case Telnet, SSH, Postgres, LDAP, MCP, TCP:
+	case Telnet, SSH, Postgres, LDAP, MCP, SMTP, TCP:
 	case "":
 		add("service: required")
 	default:
@@ -501,7 +532,9 @@ func (hp *Honeypot) validate() []error {
 		case SSH:
 			err = validateSSHVersion(*hp.Banner)
 		case Postgres, LDAP, MCP:
-			err = errors.New("only for ssh, telnet and tcp: the service says nothing before the client does")
+			err = errors.New("only for ssh, telnet, smtp and tcp: the service says nothing before the client does")
+		case SMTP:
+			err = validateText(*hp.Banner, maxSMTPBanner, false)
 		default:
 			err = validateText(*hp.Banner, maxBanner, true)
 		}
@@ -515,11 +548,28 @@ func (hp *Honeypot) validate() []error {
 	case hp.Service != SSH && hp.HostKeyFile != "":
 		add("host_key_file: only for ssh")
 	}
-	if hp.Service != Postgres && hp.Service != MCP && (hp.TLSCertFile != "" || hp.TLSKeyFile != "") {
-		add("tls_cert_file and tls_key_file: only for postgres and mcp")
-	}
-	if (hp.TLSCertFile == "") != (hp.TLSKeyFile == "") {
+	switch {
+	case !hp.takesCertificate() && (hp.TLSCertFile != "" || hp.TLSKeyFile != ""):
+		add("tls_cert_file and tls_key_file: only for postgres, mcp and smtp")
+	case (hp.TLSCertFile == "") != (hp.TLSKeyFile == ""):
 		add("tls_cert_file and tls_key_file: set both or neither")
+	case hp.Service == SMTP && hp.TLSCertFile == "":
+		add("tls_cert_file and tls_key_file: required for smtp: a mail server without TLS looks like one that nobody uses, and the sensor never makes a certificate")
+	}
+	if hp.Service == SMTP {
+		if err := validateHostname(hp.Hostname); err != nil {
+			add("hostname: %v", err)
+		}
+		if !hp.TLSMode.Valid() {
+			add("tls_mode: must be %q or %q", smtp.StartTLS, smtp.Implicit)
+		}
+	} else {
+		if hp.Hostname != "" {
+			add("hostname: only for smtp")
+		}
+		if hp.TLSMode != "" {
+			add("tls_mode: only for smtp")
+		}
 	}
 	if hp.Service != SSH && hp.RSAHostKeyFile != "" {
 		add("rsa_host_key_file: only for ssh")
@@ -542,6 +592,40 @@ func (hp *Honeypot) validate() []error {
 		}
 	}
 	return problems
+}
+
+// takesCertificate reports whether the service of hp speaks TLS.
+func (hp *Honeypot) takesCertificate() bool {
+	return hp.Service == Postgres || hp.Service == MCP || hp.Service == SMTP
+}
+
+// validateHostname accepts a name of a host in DNS: labels of letters, digits
+// and hyphens, which neither start nor end with a hyphen. There is no default,
+// because a name that every installation shares would identify the honeypot.
+func validateHostname(s string) error {
+	err := fmt.Errorf("must be the name of the server, such as mail.example.com: labels of letters, digits and hyphens, at most %d bytes", maxHostname)
+	if s == "" {
+		return errors.New("required: a name that every installation shared would identify the honeypot")
+	}
+	if len(s) > maxHostname {
+		return err
+	}
+	for label := range strings.SplitSeq(s, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return err
+		}
+		for i := range len(label) {
+			if !hostnameByte(label[i]) {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// hostnameByte reports whether c may stand in a label of a hostname.
+func hostnameByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-'
 }
 
 // validateText accepts printable ASCII, and line breaks and tabs where the
