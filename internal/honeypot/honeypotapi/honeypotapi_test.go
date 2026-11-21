@@ -209,7 +209,7 @@ func TestCreate_RejectsInvalidRequests(t *testing.T) {
 
 	for _, body := range []string{
 		`{"name": "a"}`,
-		`{"service": "smtp", "name": "a"}`,
+		`{"service": "ftp", "name": "a"}`,
 		`{"service": "SSH", "name": "a"}`,
 		`{"service": "ssh"}`,
 		`{"service": "ssh", "name": null}`,
@@ -235,7 +235,7 @@ func TestCreate_RejectsInvalidRequests(t *testing.T) {
 		}
 	}
 	for body, rule := range map[string]string{
-		`{"service": "smtp", "name": "a"}`:                    "service must be one of ssh, telnet, postgres, ldap",
+		`{"service": "ftp", "name": "a"}`:                     "service must be one of ssh, telnet, postgres, ldap",
 		`{"service": "ssh", "name": "a", "severity": ""}`:     "severity must be",
 		`{"service": "ssh", "name": "a", "severity": "info"}`: "severity must be",
 	} {
@@ -309,7 +309,7 @@ func TestList_PagesAndFilters(t *testing.T) {
 	if got, _ := list("service=telnet"); got.Honeypots == nil {
 		t.Error("an empty list is null, want []")
 	}
-	for _, query := range []string{"service=smtp", "service=", "enabled=yes", "service=ssh&service=ldap", "status=online", "limit=201", "scenario_id=x"} {
+	for _, query := range []string{"service=ftp", "service=", "enabled=yes", "service=ssh&service=ldap", "status=online", "limit=201", "scenario_id=x"} {
 		if _, code := list(query); code != http.StatusBadRequest {
 			t.Errorf("GET ?%s = %d, want 400", query, code)
 		}

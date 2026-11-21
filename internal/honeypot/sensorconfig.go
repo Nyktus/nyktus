@@ -18,6 +18,8 @@ var sensorPorts = map[Service]string{
 	ServiceLDAP:     ":389",
 	// MCP has no usual port; this is a common one for an internal web service.
 	ServiceMCP: ":8080",
+	// The port on which mail clients sign in to send.
+	ServiceSMTP: ":587",
 }
 
 // SensorConfig returns the entry of this honeypot for the configuration file
@@ -72,11 +74,34 @@ const mcpFields = `  # What the server calls itself and what it offers. Fill in 
         response: ""
 `
 
+// smtpFields is the frame of what an SMTP honeypot presents. Its values are
+// empty on purpose, as for MCP: the sensor has no defaults and starts only once
+// they are filled in. The certificate is required, because a mail server that
+// offers no TLS looks like none in use, and it comes from the operator, because
+// one that the sensor made would identify it.
+const smtpFields = `  # The name of the server, which its greeting and its answer to EHLO give,
+  # and how a client reaches TLS: "starttls", as on ports 25 and 587, or
+  # "implicit", TLS from the first byte, as on port 465. Fill in both: the
+  # sensor does not start before, because a name that every installation
+  # shares would identify the honeypot.
+  hostname: ""
+  tls_mode: ""
+  # The certificate of the server and its private key, which you provide: the
+  # sensor never makes one. The certificate names the hostname above in its
+  # subject alternative names, which clients check. The paths are relative
+  # to this file.
+  tls_cert_file: ""
+  tls_key_file: ""
+`
+
 // serviceFields returns the lines that a service needs besides the common ones.
 // A comment holds no value of the honeypot, and the value of a field is quoted.
 func (c Created) serviceFields() string {
 	if c.Service == ServiceMCP {
 		return mcpFields
+	}
+	if c.Service == ServiceSMTP {
+		return smtpFields
 	}
 	if c.Service != ServiceSSH {
 		return ""

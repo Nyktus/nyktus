@@ -31,6 +31,7 @@ const (
 	ServicePostgres Service = "postgres"
 	ServiceLDAP     Service = "ldap"
 	ServiceMCP      Service = "mcp"
+	ServiceSMTP     Service = "smtp"
 	ServiceTCP      Service = "tcp"
 )
 
@@ -40,7 +41,7 @@ const ResourceType = "honeypot"
 
 // Services lists every service, in the order in which documentation names
 // them.
-var Services = []Service{ServiceSSH, ServiceTelnet, ServicePostgres, ServiceLDAP, ServiceMCP, ServiceTCP}
+var Services = []Service{ServiceSSH, ServiceTelnet, ServicePostgres, ServiceLDAP, ServiceMCP, ServiceSMTP, ServiceTCP}
 
 // Valid reports whether s is a known service.
 func (s Service) Valid() bool {
@@ -56,6 +57,7 @@ var defaultSeverity = map[Service]severity.Level{
 	ServicePostgres: severity.Medium,
 	ServiceLDAP:     severity.Medium,
 	ServiceMCP:      severity.Medium,
+	ServiceSMTP:     severity.Medium,
 	ServiceTCP:      severity.Medium,
 }
 

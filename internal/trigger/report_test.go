@@ -403,7 +403,10 @@ func TestKindTechniques(t *testing.T) {
 		{"mcp", EventToolCall, []string{"T1213"}},
 		{"mcp", EventLoginAttempt, nil},
 		{"ldap", EventToolCall, nil},
-		{"smtp", EventConnection, nil},
+		{"smtp", EventConnection, []string{"T1046"}},
+		{"smtp", EventLoginAttempt, []string{"T1110"}},
+		{"smtp", EventDirectoryQuery, nil},
+		{"ftp", EventConnection, nil},
 	}
 	for _, tt := range tests {
 		if got := KindTechniques(tt.service, tt.event); !slices.Equal(got, tt.want) {

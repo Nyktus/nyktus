@@ -1248,7 +1248,7 @@ CREATE TABLE public.honeypots (
 	-- Set by the trigger below on insert, as for accounts.
 	updated_at     timestamptz NOT NULL,
 
-	CONSTRAINT honeypots_service_check CHECK (service IN ('ssh', 'telnet', 'postgres', 'ldap', 'mcp', 'tcp')),
+	CONSTRAINT honeypots_service_check CHECK (service IN ('ssh', 'telnet', 'postgres', 'ldap', 'mcp', 'smtp', 'tcp')),
 	CONSTRAINT honeypots_name_check CHECK (
 		char_length(name) BETWEEN 1 AND 100
 		AND name = btrim(name)
@@ -1553,14 +1553,14 @@ CREATE TABLE public.events (
 			AND (sensor_event_type = 'directory_query') = (sensor_filter IS NOT NULL)
 			AND (sensor_event_type <> 'directory_query' OR sensor_service = 'ldap')
 			AND ((sensor_database IS NULL AND sensor_application_name IS NULL) OR sensor_service = 'postgres')
-			AND (sensor_client_version IS NULL OR sensor_service IN ('ssh', 'mcp'))
+			AND (sensor_client_version IS NULL OR sensor_service IN ('ssh', 'mcp', 'smtp'))
 			AND (sensor_event_type <> 'tool_call' OR sensor_service = 'mcp')
 			AND (sensor_service <> 'mcp' OR sensor_event_type IN ('connection', 'tool_call'))
 			-- A port without a protocol has no login to record.
 			AND (sensor_service <> 'tcp' OR sensor_event_type = 'connection')
 		)
 	),
-	CONSTRAINT events_sensor_service_check CHECK (sensor_service IN ('ssh', 'telnet', 'postgres', 'ldap', 'mcp', 'tcp')),
+	CONSTRAINT events_sensor_service_check CHECK (sensor_service IN ('ssh', 'telnet', 'postgres', 'ldap', 'mcp', 'smtp', 'tcp')),
 	CONSTRAINT events_sensor_event_type_check CHECK (
 		sensor_event_type IN ('connection', 'login_attempt', 'directory_query', 'tool_call')
 	),
@@ -1934,7 +1934,7 @@ BEGIN
 		OR (report_event_type = 'directory_query') <> (report_base_dn IS NOT NULL AND report_filter IS NOT NULL)
 		OR (report_filter IS NOT NULL AND report_base_dn IS NULL)
 		OR ((report_database IS NOT NULL OR report_application_name IS NOT NULL) AND h.service <> 'postgres')
-		OR (report_client_version IS NOT NULL AND h.service NOT IN ('ssh', 'mcp')) THEN
+		OR (report_client_version IS NOT NULL AND h.service NOT IN ('ssh', 'mcp', 'smtp')) THEN
 		outcome := 'invalid';
 		RETURN;
 	END IF;

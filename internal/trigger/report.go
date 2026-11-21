@@ -78,12 +78,14 @@ var kindTechniques = map[kind][]string{
 	{"postgres", EventConnection}: {"T1046"},
 	{"ldap", EventConnection}:     {"T1046"},
 	{"mcp", EventConnection}:      {"T1046"},
+	{"smtp", EventConnection}:     {"T1046"},
 	{"tcp", EventConnection}:      {"T1046"},
 
 	{"ssh", EventLoginAttempt}:      {"T1110", "T1021.004"},
 	{"telnet", EventLoginAttempt}:   {"T1110"},
 	{"postgres", EventLoginAttempt}: {"T1110"},
 	{"ldap", EventLoginAttempt}:     {"T1110"},
+	{"smtp", EventLoginAttempt}:     {"T1110"},
 
 	{"ldap", EventDirectoryQuery}: {"T1087.002"},
 

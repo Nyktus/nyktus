@@ -53,7 +53,7 @@ describe('the list of honeypots', () => {
     const s = server();
     const { wrapper } = await boot(s, '/honeypots');
     const options = wrapper.findAll('#filter-service option').map((option) => option.attributes('value'));
-    expect(options).toEqual(['', 'ssh', 'telnet', 'postgres', 'ldap', 'mcp', 'tcp']);
+    expect(options).toEqual(['', 'ssh', 'telnet', 'postgres', 'ldap', 'mcp', 'smtp', 'tcp']);
     await wrapper.get('#filter-service').setValue('mcp');
     await flushPromises();
     expect(s.requests.at(-1)?.url).toBe('/api/v1/honeypots?limit=50&service=mcp');
