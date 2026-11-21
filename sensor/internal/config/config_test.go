@@ -27,6 +27,7 @@ import (
 	cryptossh "golang.org/x/crypto/ssh"
 
 	"nyktus.org/nyktus/sensor/internal/config"
+	"nyktus.org/nyktus/sensor/internal/smtp"
 )
 
 const (
@@ -141,9 +142,9 @@ func TestParse_Invalid_NamesTheRule(t *testing.T) {
 		{name: "an ssh banner with a tab", yaml: sshEntry("    banner: \"SSH-2.0-a\\tb\"\n"), want: "banner: must be an identification string"},
 		{name: "an ssh banner with a non-ASCII character", yaml: sshEntry("    banner: \"SSH-2.0-a\\u00e9\"\n"), want: "banner: must be an identification string"},
 		{name: "an ssh banner that is too long", yaml: sshEntry("    banner: SSH-2.0-" + strings.Repeat("a", 246) + "\n"), want: "banner: must be an identification string"},
-		{name: "a banner for postgres", yaml: strings.Replace(valid, "service: telnet", "service: postgres", 1) + "    banner: \"14.13\"\n", want: "banner: only for ssh, telnet and tcp"},
-		{name: "a banner for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    banner: \"x\"\n", want: "banner: only for ssh, telnet and tcp"},
-		{name: "an empty banner for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    banner: \"\"\n", want: "banner: only for ssh, telnet and tcp"},
+		{name: "a banner for postgres", yaml: strings.Replace(valid, "service: telnet", "service: postgres", 1) + "    banner: \"14.13\"\n", want: "banner: only for ssh, telnet, smtp and tcp"},
+		{name: "a banner for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    banner: \"x\"\n", want: "banner: only for ssh, telnet, smtp and tcp"},
+		{name: "an empty banner for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    banner: \"\"\n", want: "banner: only for ssh, telnet, smtp and tcp"},
 		{name: "a prompt for postgres", yaml: strings.Replace(valid, "service: telnet", "service: postgres", 1) + "    login_prompt: x\n", want: "login_prompt: only for telnet"},
 		{name: "a host key file for ldap", yaml: strings.Replace(valid, "service: telnet", "service: ldap", 1) + "    host_key_file: ssh_host_key\n", want: "host_key_file: only for ssh"},
 		{name: "a prompt with a line break", yaml: entry("    login_prompt: \"a\\r\\nb\"\n"), want: "login_prompt: printable ASCII only"},
@@ -1273,7 +1274,7 @@ func TestParse_TCP_TakesABannerAndNothingElseOfTheOthers(t *testing.T) {
 		"a banner with a byte above ASCII": {"    banner: \"a\\xFFb\"\n", "banner: printable ASCII"},
 		"a login prompt":                   {"    login_prompt: \"x\"\n", "login_prompt: only for telnet"},
 		"a host key file":                  {"    host_key_file: k\n", "host_key_file: only for ssh"},
-		"a certificate":                    {"    tls_cert_file: a\n    tls_key_file: b\n", "only for postgres and mcp"},
+		"a certificate":                    {"    tls_cert_file: a\n    tls_key_file: b\n", "only for postgres, mcp and smtp"},
 	} {
 		_, err := config.Parse([]byte(tcpHoneypot + tt.extra))
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -1326,5 +1327,155 @@ func TestParse_TCPConsoleEntry_IsRefusedUntilThePortsAreNamed(t *testing.T) {
 	}
 	if hp := cfg.Honeypots[0]; hp.Service != config.TCP || !slices.Equal(hp.Listen, config.Listen{":3389"}) {
 		t.Errorf("honeypot = %+v", hp)
+	}
+}
+
+const smtpHoneypot = `
+trigger_url: https://trigger.example.com/
+honeypots:
+  - id: ` + idOne + `
+    service: smtp
+    listen: ":587"
+    secret: ` + secretOne + `
+    hostname: mail.example.com
+    tls_mode: starttls
+    tls_cert_file: server.crt
+    tls_key_file: server.key
+`
+
+func TestParse_SMTP_IsValidWithItsFields(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Parse([]byte(smtpHoneypot + "    banner: \"Postfix (Debian/GNU)\"\n"))
+	if err != nil {
+		t.Fatalf("Parse() = %v", err)
+	}
+	hp := cfg.Honeypots[0]
+	if hp.Service != config.SMTP || hp.Hostname != "mail.example.com" || hp.TLSMode != smtp.StartTLS || hp.Banner == nil || *hp.Banner != "Postfix (Debian/GNU)" {
+		t.Errorf("honeypot = %+v", hp)
+	}
+	if _, err := config.Parse([]byte(strings.Replace(smtpHoneypot, "tls_mode: starttls", "tls_mode: implicit", 1))); err != nil {
+		t.Errorf("Parse() with implicit TLS = %v", err)
+	}
+}
+
+func TestParse_SMTP_Invalid(t *testing.T) {
+	t.Parallel()
+
+	without := func(line string) string { return strings.Replace(smtpHoneypot, line, "", 1) }
+	with := func(old, repl string) string { return strings.Replace(smtpHoneypot, old, repl, 1) }
+	for name, tt := range map[string]struct{ yaml, want string }{
+		"no hostname":                   {without("    hostname: mail.example.com\n"), "hostname: required"},
+		"a hostname with an underscore": {with("mail.example.com", "mail_1.example.com"), "hostname: must be the name of the server"},
+		"a hostname with a space":       {with("hostname: mail.example.com", `hostname: "mail example"`), "hostname: must be the name of the server"},
+		"an empty label":                {with("mail.example.com", "mail..example.com"), "hostname: must be the name of the server"},
+		"a trailing dot":                {with("mail.example.com", "mail.example.com."), "hostname: must be the name of the server"},
+		"a label that starts with -":    {with("mail.example.com", "-mail.example.com"), "hostname: must be the name of the server"},
+		"a label that ends with -":      {with("mail.example.com", "mail-.example.com"), "hostname: must be the name of the server"},
+		"a label of 64 bytes":           {with("mail.example.com", strings.Repeat("a", 64)+".example.com"), "hostname: must be the name of the server"},
+		"a name of 254 bytes":           {with("mail.example.com", strings.Repeat("a.", 126)+"ab"), "hostname: must be the name of the server"},
+		"no mode of TLS":                {without("    tls_mode: starttls\n"), "tls_mode: must be"},
+		"an unknown mode of TLS":        {with("tls_mode: starttls", "tls_mode: tls"), "tls_mode: must be"},
+		"no certificate":                {without("    tls_cert_file: server.crt\n    tls_key_file: server.key\n"), "required for smtp"},
+		"only the certificate":          {without("    tls_key_file: server.key\n"), "set both or neither"},
+		"a banner of two lines":         {smtpHoneypot + "    banner: \"a\\r\\n250 b\"\n", "banner: printable ASCII only"},
+		"a banner that is too long":     {smtpHoneypot + "    banner: " + strings.Repeat("a", 129) + "\n", "banner: at most 128"},
+		"a hostname for telnet":         {valid + "    hostname: mail.example.com\n", "hostname: only for smtp"},
+		"a mode of TLS for postgres":    {strings.Replace(valid, "service: telnet", "service: postgres", 1) + "    tls_mode: starttls\n", "tls_mode: only for smtp"},
+	} {
+		_, err := config.Parse([]byte(tt.yaml))
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: Parse() = %v, want %q", name, err, tt.want)
+		}
+	}
+	// The longest name and labels are accepted.
+	longest := strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("a", 61)
+	for _, name := range []string{"mx", "MAIL-1.Example.COM", strings.Repeat("a", 63) + ".example.com", longest} {
+		if _, err := config.Parse([]byte(with("mail.example.com", name))); err != nil {
+			t.Errorf("hostname %q: Parse() = %v", name, err)
+		}
+	}
+}
+
+// The entry that the console shows for an SMTP honeypot has empty values, which
+// the sensor refuses until the operator has filled them in.
+func TestParse_ConsoleEntryOfSMTP_IsRefusedUntilItIsFilledIn(t *testing.T) {
+	t.Parallel()
+
+	entry, err := os.ReadFile("testdata/console_entry_smtp.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const head = "trigger_url: https://trigger.example.com/\nhoneypots:\n"
+	_, err = config.Parse(append([]byte(head), entry...))
+	if err == nil {
+		t.Fatal("Parse() of the empty frame succeeded")
+	}
+	for _, want := range []string{"hostname: required", "tls_mode: must be", "tls_cert_file and tls_key_file: required for smtp"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Parse() = %v, want a problem of %s", err, want)
+		}
+	}
+	filled := strings.NewReplacer(`hostname: ""`, `hostname: "mail.example.com"`, `tls_mode: ""`, `tls_mode: "implicit"`,
+		`tls_cert_file: ""`, `tls_cert_file: "smtp.crt"`, `tls_key_file: ""`, `tls_key_file: "smtp.key"`).Replace(string(entry))
+	cfg, err := config.Parse([]byte(head + filled))
+	if err != nil {
+		t.Fatalf("Parse() of the filled frame = %v", err)
+	}
+	if hp := cfg.Honeypots[0]; hp.Service != config.SMTP || !slices.Equal(hp.Listen, config.Listen{":587"}) || hp.TLSMode != smtp.Implicit {
+		t.Errorf("honeypot = %+v", hp)
+	}
+}
+
+// namedCertificateFiles writes a certificate for the DNS names and its key.
+func namedCertificateFiles(t *testing.T, dir string, names ...string) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "mail.example.com"}, DNSNames: names, NotAfter: time.Now().Add(time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, dir, "server.crt", string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), 0o644)
+	write(t, dir, "server.key", string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: key})), 0o600)
+}
+
+func TestLoad_SMTP_ReadsACertificateThatNamesTheHostname(t *testing.T) {
+	t.Parallel()
+
+	for _, names := range [][]string{{"mail.example.com"}, {"*.example.com"}, {"smtp.example.com", "MAIL.example.com"}} {
+		dir := t.TempDir()
+		namedCertificateFiles(t, dir, names...)
+		cfg, err := config.Load(write(t, dir, "sensor.yaml", smtpHoneypot, 0o600))
+		if err != nil {
+			t.Errorf("%v: Load() = %v", names, err)
+			continue
+		}
+		if cfg.Honeypots[0].TLSCertificate == nil {
+			t.Errorf("%v: TLSCertificate = nil, want the certificate of the files", names)
+		}
+	}
+}
+
+// A client compares the name of the server with its certificate; one that
+// does not match would be a mark of the honeypot. The common name does not
+// count, as for every client since the subject alternative names exist.
+func TestLoad_SMTP_RefusesACertificateForAnotherName(t *testing.T) {
+	t.Parallel()
+
+	for _, names := range [][]string{{"smtp.example.com"}, {"*.mail.example.com"}, nil} {
+		dir := t.TempDir()
+		namedCertificateFiles(t, dir, names...)
+		_, err := config.Load(write(t, dir, "sensor.yaml", smtpHoneypot, 0o600))
+		if err == nil || !strings.Contains(err.Error(), `honeypots[0].tls_cert_file: the certificate does not name the hostname "mail.example.com"`) {
+			t.Errorf("%v: Load() = %v, want the certificate refused", names, err)
+		}
 	}
 }

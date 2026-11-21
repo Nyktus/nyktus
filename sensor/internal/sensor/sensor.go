@@ -23,6 +23,7 @@ import (
 	"nyktus.org/nyktus/sensor/internal/postgres"
 	"nyktus.org/nyktus/sensor/internal/reporter"
 	"nyktus.org/nyktus/sensor/internal/session"
+	"nyktus.org/nyktus/sensor/internal/smtp"
 	"nyktus.org/nyktus/sensor/internal/ssh"
 	"nyktus.org/nyktus/sensor/internal/tcp"
 	"nyktus.org/nyktus/sensor/internal/telnet"
@@ -91,6 +92,12 @@ func newService(hp config.Honeypot, clk clock.Clock) service {
 		return postgres.New(postgres.Config{Certificate: hp.TLSCertificate}, clk)
 	case config.LDAP:
 		return ldap.New(clk)
+	case config.SMTP:
+		cfg := smtp.Config{Hostname: hp.Hostname, Mode: hp.TLSMode, Certificate: hp.TLSCertificate}
+		if hp.Banner != nil {
+			cfg.Banner = *hp.Banner
+		}
+		return smtp.New(cfg, clk)
 	default:
 		panic("sensor: unknown service " + string(hp.Service))
 	}
